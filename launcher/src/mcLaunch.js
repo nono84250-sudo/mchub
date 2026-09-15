@@ -16,8 +16,12 @@ const GAME_ROOT = path.join(app.getPath("userData"), "minecraft");
 function launchMinecraft({ authorization, version, serverIp, onProgress }) {
   const launcher = new Client();
 
-  launcher.on("debug", (e) => onProgress?.(String(e)));
-  launcher.on("data", (e) => onProgress?.(String(e)));
+  // "debug"/"data" incluent la ligne de commande Java complète, qui contient
+  // le jeton d'accès Minecraft en clair (--accessToken ...) — on les garde
+  // seulement dans la console du processus principal (jamais transmis au
+  // renderer via onProgress/IPC, qui les afficherait en clair à l'écran).
+  launcher.on("debug", (e) => console.debug("[mcLaunch]", String(e)));
+  launcher.on("data", (e) => console.debug("[mcLaunch]", String(e)));
   launcher.on("progress", (e) => {
     if (e && e.type && typeof e.task === "number" && typeof e.total === "number") {
       onProgress?.(`${e.type} : ${e.task}/${e.total}`);
@@ -44,6 +48,7 @@ function launchMinecraft({ authorization, version, serverIp, onProgress }) {
     launcher.on("close", (code) => {
       if (!started) reject(new Error(`Le jeu s'est fermé avant de démarrer (code ${code}).`));
     });
+    onProgress?.("Lancement du jeu…");
     launcher
       .launch(opts)
       .then((proc) => {
