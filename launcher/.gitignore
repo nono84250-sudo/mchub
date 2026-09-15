@@ -5,6 +5,9 @@
 /dist
 /out
 
+# secrets
+.env
+
 # misc
 .DS_Store
 *.log

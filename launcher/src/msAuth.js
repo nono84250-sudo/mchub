@@ -13,6 +13,23 @@ const CLIENT_ID = "5ce3be4b-5a19-4eb2-93a8-bd106d0c2f9e";
 const REDIRECT_URI = "https://login.microsoftonline.com/common/oauth2/nativeclient";
 const AUTHORITY = "https://login.microsoftonline.com/consumers";
 const SCOPE = "XboxLive.signin offline_access";
+const REQUEST_TIMEOUT_MS = 8000;
+
+// Sans ça, un serveur Microsoft/Xbox qui ne répond jamais bloquerait la
+// promesse indéfiniment — et comme boot() attend la restauration de session
+// avant d'afficher quoi que ce soit, la fenêtre resterait vide pour toujours.
+async function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("Le serveur Microsoft n'a pas répondu à temps.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 // Erreur speciale : distincte des vraies pannes reseau, pour afficher un
 // message clair plutot qu'une erreur brute tant que Microsoft n'a pas
@@ -88,27 +105,39 @@ function openLoginWindow(authUrl) {
   });
 }
 
-async function exchangeCodeForToken(code, verifier) {
-  const body = new URLSearchParams({
-    client_id: CLIENT_ID,
+async function requestToken(params) {
+  const res = await fetchWithTimeout(`${AUTHORITY}/oauth2/v2.0/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: CLIENT_ID, scope: SCOPE, ...params }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const error = new Error(data.error_description || "Échec de l'échange avec Microsoft");
+    // "invalid_grant" = le refresh_token lui-meme est invalide/revoque par
+    // Microsoft. Les autres codes (reseau, indisponibilite temporaire...)
+    // ne veulent pas dire que le refresh_token est mauvais.
+    error.code = data.error;
+    throw error;
+  }
+  return data; // { access_token, refresh_token, expires_in, ... }
+}
+
+function exchangeCodeForToken(code, verifier) {
+  return requestToken({
     grant_type: "authorization_code",
     code,
     redirect_uri: REDIRECT_URI,
     code_verifier: verifier,
-    scope: SCOPE,
   });
-  const res = await fetch(`${AUTHORITY}/oauth2/v2.0/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error_description || "Échec de l'échange du code Microsoft");
-  return data;
+}
+
+function refreshAccessToken(refreshToken) {
+  return requestToken({ grant_type: "refresh_token", refresh_token: refreshToken });
 }
 
 async function authenticateXboxLive(msAccessToken) {
-  const res = await fetch("https://user.auth.xboxlive.com/user/authenticate", {
+  const res = await fetchWithTimeout("https://user.auth.xboxlive.com/user/authenticate", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -126,7 +155,7 @@ async function authenticateXboxLive(msAccessToken) {
 }
 
 async function authenticateXsts(xblToken) {
-  const res = await fetch("https://xsts.auth.xboxlive.com/xsts/authorize", {
+  const res = await fetchWithTimeout("https://xsts.auth.xboxlive.com/xsts/authorize", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -148,7 +177,7 @@ async function authenticateXsts(xblToken) {
 }
 
 async function loginWithXbox(xstsToken, userHash) {
-  const res = await fetch("https://api.minecraftservices.com/authentication/login_with_xbox", {
+  const res = await fetchWithTimeout("https://api.minecraftservices.com/authentication/login_with_xbox", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ identityToken: `XBL3.0 x=${userHash};${xstsToken}` }),
@@ -160,7 +189,7 @@ async function loginWithXbox(xstsToken, userHash) {
 }
 
 async function getMinecraftProfile(minecraftAccessToken) {
-  const res = await fetch("https://api.minecraftservices.com/minecraft/profile", {
+  const res = await fetchWithTimeout("https://api.minecraftservices.com/minecraft/profile", {
     headers: { Authorization: `Bearer ${minecraftAccessToken}` },
   });
   if (res.status === 403) throw new PendingApprovalError();
@@ -170,31 +199,72 @@ async function getMinecraftProfile(minecraftAccessToken) {
   return data;
 }
 
-async function signIn() {
-  const { verifier, challenge } = createPkcePair();
-  const authUrl = buildAuthUrl(challenge);
+// Format attendu par minecraft-launcher-core (voir mcLaunch.js) — construit
+// nous-memes puisque MCLC ne gere pas l'auth Microsoft lui-meme. Utilise
+// aussi par le "mode test" (main.js) pour rester dans le meme format.
+function buildAuthorization({ accessToken, uuid, name, xuid, clientId }) {
+  return {
+    access_token: accessToken,
+    client_token: crypto.randomUUID(),
+    uuid,
+    name,
+    user_properties: "{}",
+    meta: { type: "msa", demo: false, xuid, clientId },
+  };
+}
 
-  const code = await openLoginWindow(authUrl);
-  const msToken = await exchangeCodeForToken(code, verifier);
-  const xbl = await authenticateXboxLive(msToken.access_token);
+// Suite commune une fois qu'on a un access_token Microsoft valide (que ce
+// soit juste apres la connexion interactive, ou via un refresh_token
+// memorise) : Xbox Live -> XSTS -> Minecraft -> profil.
+async function finishSignIn(msAccessToken) {
+  const xbl = await authenticateXboxLive(msAccessToken);
   const userHash = xbl.DisplayClaims.xui[0].uhs;
   const xsts = await authenticateXsts(xbl.Token);
   const xuid = xsts.DisplayClaims.xui[0].xid;
   const mcAuth = await loginWithXbox(xsts.Token, userHash);
   const profile = await getMinecraftProfile(mcAuth.access_token);
 
-  // Format attendu par minecraft-launcher-core (voir mcLaunch.js) — construit
-  // nous-memes puisque MCLC ne gere pas l'auth Microsoft lui-meme.
-  const authorization = {
-    access_token: mcAuth.access_token,
-    client_token: crypto.randomUUID(),
+  const authorization = buildAuthorization({
+    accessToken: mcAuth.access_token,
     uuid: profile.id,
     name: profile.name,
-    user_properties: "{}",
-    meta: { type: "msa", demo: false, xuid, clientId: CLIENT_ID },
-  };
+    xuid,
+    clientId: CLIENT_ID,
+  });
 
   return { profile, authorization };
 }
 
-module.exports = { signIn, PendingApprovalError };
+async function signIn() {
+  const { verifier, challenge } = createPkcePair();
+  const authUrl = buildAuthUrl(challenge);
+
+  const code = await openLoginWindow(authUrl);
+  const msToken = await exchangeCodeForToken(code, verifier);
+  const result = await finishSignIn(msToken.access_token);
+  return { ...result, refreshToken: msToken.refresh_token };
+}
+
+// Reconnexion silencieuse (sans fenetre) a partir d'un refresh_token
+// memorise ("Se souvenir de moi") — Microsoft peut renvoyer un nouveau
+// refresh_token a chaque utilisation (et invalider l'ancien), donc on
+// renvoie toujours le dernier pour que l'appelant le re-sauvegarde.
+async function refreshSession(refreshToken) {
+  const msToken = await refreshAccessToken(refreshToken);
+  const latestRefreshToken = msToken.refresh_token || refreshToken;
+
+  try {
+    const result = await finishSignIn(msToken.access_token);
+    return { ...result, refreshToken: latestRefreshToken };
+  } catch (error) {
+    // Microsoft a peut-etre deja renouvele (et donc invalide l'ancien) le
+    // refresh_token meme si la suite echoue ensuite (ex: en attente
+    // d'approbation Minecraft) — on l'attache a l'erreur pour que
+    // l'appelant le sauvegarde quand meme, sinon la session memorisee
+    // devient orpheline des le prochain essai.
+    error.rotatedRefreshToken = latestRefreshToken;
+    throw error;
+  }
+}
+
+module.exports = { signIn, refreshSession, buildAuthorization, PendingApprovalError };

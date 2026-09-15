@@ -20,6 +20,7 @@
   }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
 
   body {
     margin: 0;
@@ -144,20 +145,55 @@
   }
   .join-btn:disabled { cursor: not-allowed; opacity: 0.6; }
   .join-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
+
+  #gate {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 32px;
+    gap: 18px;
+  }
+  #gate .logo { font-size: 26px; }
+  #gate p.tagline { color: var(--muted); font-size: 14px; margin: 0; max-width: 360px; }
+  .gate-remember {
+    display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+  }
+  .gate-message { font-size: 13px; max-width: 360px; }
+  .gate-test-link {
+    background: none; border: none; color: var(--muted); font-size: 12px;
+    text-decoration: underline; cursor: pointer; margin-top: 4px;
+  }
+  .gate-test-link:hover { color: var(--foreground); }
 </style>
 </head>
 <body>
-  <header>
+  <div id="gate" hidden>
     <div class="logo">MC<span>Hub</span> Launcher</div>
-    <div id="ms-account">
-      <button id="ms-login" class="ms-login">Se connecter avec Microsoft</button>
-    </div>
-  </header>
-  <main>
-    <div id="status">Chargement des serveurs…</div>
-    <div id="list" class="grid" hidden></div>
-    <div id="detail" class="detail" hidden></div>
-  </main>
+    <p class="tagline">Connecte-toi avec ton compte Microsoft pour voir les serveurs et jouer.</p>
+    <button id="gate-login" class="ms-login" style="padding: 10px 20px; font-size: 14px;">Se connecter avec Microsoft</button>
+    <label class="gate-remember">
+      <input type="checkbox" id="gate-remember" checked />
+      Se souvenir de moi
+    </label>
+    <p class="gate-message" id="gate-message"></p>
+    <button class="gate-test-link" id="gate-test-mode">Mode test (sans compte, développement)</button>
+  </div>
+
+  <div id="app" hidden style="flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;">
+    <header>
+      <div class="logo">MC<span>Hub</span> Launcher</div>
+      <div id="ms-account"></div>
+    </header>
+    <main>
+      <div id="status">Chargement des serveurs…</div>
+      <div id="list" class="grid" hidden></div>
+      <div id="detail" class="detail" hidden></div>
+    </main>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

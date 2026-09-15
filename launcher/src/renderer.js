@@ -1,9 +1,23 @@
+const gateEl = document.getElementById("gate");
+const gateMessageEl = document.getElementById("gate-message");
+const gateLoginBtn = document.getElementById("gate-login");
+const gateTestBtn = document.getElementById("gate-test-mode");
+const appEl = document.getElementById("app");
 const statusEl = document.getElementById("status");
 const listEl = document.getElementById("list");
 const detailEl = document.getElementById("detail");
 const msAccountEl = document.getElementById("ms-account");
 
 let signedIn = false;
+
+// Désactive/réactive les deux boutons du portail — utilisé pendant une
+// connexion en cours (évite qu'une session de test écrase une vraie
+// connexion, ou l'inverse) ET quand on revient au portail après une
+// déconnexion (sinon ils restent grisés depuis la dernière connexion).
+function setGateBusy(busy) {
+  gateLoginBtn.disabled = busy;
+  gateTestBtn.disabled = busy;
+}
 
 function typeBadge(type) {
   return type === "modded"
@@ -78,6 +92,8 @@ function renderDetail(server) {
         }</p>`
       : "";
 
+  // signedIn est toujours vrai ici (le portail bloque l'accès sans connexion),
+  // mais on garde le garde-fou par prudence.
   const joinSection = signedIn
     ? `
       <button class="join-btn" id="join-btn">Rejoindre le serveur</button>
@@ -162,39 +178,93 @@ async function loadServers() {
   renderList(result.servers);
 }
 
-function wireMsLoginButton() {
-  const btn = document.getElementById("ms-login");
-  if (!btn) return;
-  btn.addEventListener("click", async () => {
-    msAccountEl.innerHTML = `<button class="ms-login" disabled>Connexion en cours…</button>`;
-
-    const result = await window.mchub.signIn();
-
-    if (result.ok) {
-      signedIn = true;
-      msAccountEl.innerHTML = `<span class="ms-account-name"><span class="status-dot online"></span>${escapeHtml(result.profile.name)}</span>`;
+function renderAccountHeader(profile, { testMode, rememberFailed } = {}) {
+  msAccountEl.innerHTML = `
+    <span class="ms-account-name">
+      <span class="status-dot online"></span>${escapeHtml(profile.name)}${testMode ? " (mode test)" : ""}
+    </span>
+    ${rememberFailed ? '<span class="ms-error" style="margin-left: 8px;">session non mémorisée</span>' : ""}
+    <button id="sign-out" class="ms-login" style="margin-left: 10px;">Se déconnecter</button>
+  `;
+  document.getElementById("sign-out").addEventListener("click", async () => {
+    const result = await window.mchub.signOut();
+    if (!result.ok) {
+      // La session reste active côté processus principal (le nettoyage a
+      // échoué) : ne pas faire croire à l'écran que le joueur est déconnecté.
       return;
     }
-
-    if (result.pendingApproval) {
-      msAccountEl.innerHTML = `
-        <span class="ms-pending">Connexion Microsoft OK — en attente de validation par Microsoft pour l'accès Minecraft.</span>
-        <button id="ms-login" class="ms-login">Réessayer</button>
-      `;
-      wireMsLoginButton();
-      return;
-    }
-
-    msAccountEl.innerHTML = `
-      <span class="ms-error">${escapeHtml(result.error)}</span>
-      <button id="ms-login" class="ms-login">Réessayer</button>
-    `;
-    wireMsLoginButton();
+    signedIn = false;
+    appEl.hidden = true;
+    gateEl.hidden = false;
+    gateMessageEl.textContent = "";
+    setGateBusy(false);
   });
 }
 
-wireMsLoginButton();
-loadServers();
+function enterApp(profile, opts) {
+  signedIn = true;
+  gateEl.hidden = true;
+  appEl.hidden = false;
+  renderAccountHeader(profile, opts);
+  loadServers();
+}
+
+const PENDING_APPROVAL_MESSAGE =
+  "Connexion Microsoft OK — en attente de validation par Microsoft pour l'accès Minecraft.";
+
+function wireGate() {
+  gateLoginBtn.addEventListener("click", async () => {
+    const remember = document.getElementById("gate-remember").checked;
+    setGateBusy(true);
+    gateMessageEl.textContent = "Connexion en cours…";
+    gateMessageEl.classList.remove("ms-error");
+
+    const result = await window.mchub.signIn(remember);
+
+    if (result.ok) {
+      enterApp(result.profile, { rememberFailed: result.rememberFailed });
+      return;
+    }
+
+    setGateBusy(false);
+
+    if (result.pendingApproval) {
+      gateMessageEl.textContent = PENDING_APPROVAL_MESSAGE;
+      return;
+    }
+
+    gateMessageEl.textContent = result.error;
+    gateMessageEl.classList.add("ms-error");
+  });
+
+  // TEMPORAIRE, pour développement uniquement — voir TEST_MODE_ENABLED côté main.js.
+  gateTestBtn.addEventListener("click", async () => {
+    setGateBusy(true);
+    const result = await window.mchub.startTestSession();
+    if (result.ok) {
+      enterApp(result.profile, { testMode: true });
+      return;
+    }
+    setGateBusy(false);
+  });
+}
+
+async function boot() {
+  wireGate();
+
+  const restored = await window.mchub.tryRestoreSession();
+  if (restored.ok) {
+    enterApp(restored.profile);
+    return;
+  }
+
+  gateEl.hidden = false;
+  if (restored.pendingApproval) {
+    gateMessageEl.textContent = PENDING_APPROVAL_MESSAGE;
+  }
+}
+
+boot();
 
 // Modèle "polling" retenu pour le MVP (cahier des charges, section 3) :
 // pas de WebSocket, juste un rafraîchissement régulier en arrière-plan.
@@ -204,7 +274,7 @@ loadServers();
 const REFRESH_INTERVAL_MS = 30_000;
 
 async function silentRefreshList() {
-  if (listEl.hidden) return;
+  if (!signedIn || listEl.hidden) return;
   const result = await window.mchub.listServers();
   if (result.ok) renderList(result.servers);
 }

@@ -12,6 +12,7 @@
     "electron": "^44.3.0"
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
     "minecraft-launcher-core": "^3.18.2"
   }
 }
