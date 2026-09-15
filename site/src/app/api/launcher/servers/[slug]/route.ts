@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/prisma/db";
+import { getServerWithIpBySlug } from "@/lib/public-servers";
 
 // Route reservee au launcher (jamais au site public) : c'est la SEULE
 // route qui renvoie l'IP d'un serveur. Protegee par un secret partage
@@ -16,15 +16,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   }
 
   const { slug } = await ctx.params;
-  const server = await db.orm.public.Server.select(
-    "name",
-    "type",
-    "ip",
-    "minecraftVersion",
-    "curseforgeModpackId",
-  )
-    .where({ slug })
-    .first();
+  const server = await getServerWithIpBySlug(slug);
 
   if (!server) {
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });

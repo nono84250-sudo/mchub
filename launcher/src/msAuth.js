@@ -99,6 +99,14 @@ function openLoginWindow(authUrl) {
 
     win.webContents.on("will-redirect", (_event, url) => checkUrl(url));
     win.webContents.on("will-navigate", (_event, url) => checkUrl(url));
+    win.webContents.on("did-fail-load", (_event, errorCode) => {
+      // errorCode -3 (ERR_ABORTED) est normal quand will-redirect a deja
+      // intercepte l'URL de retour avant la fin du chargement — pas une
+      // vraie panne reseau, `finish` ignore de toute facon les appels une
+      // fois la connexion deja resolue.
+      if (errorCode === -3) return;
+      finish(reject, new Error("Impossible de contacter Microsoft — vérifie ta connexion internet."));
+    });
     win.on("closed", () => finish(reject, new Error("Fenêtre de connexion fermée")));
 
     win.loadURL(authUrl);
@@ -183,9 +191,8 @@ async function loginWithXbox(xstsToken, userHash) {
     body: JSON.stringify({ identityToken: `XBL3.0 x=${userHash};${xstsToken}` }),
   });
   if (res.status === 403) throw new PendingApprovalError();
-  const data = await res.json();
   if (!res.ok) throw new Error("Échec de la connexion Minecraft");
-  return data;
+  return res.json();
 }
 
 async function getMinecraftProfile(minecraftAccessToken) {
@@ -194,9 +201,8 @@ async function getMinecraftProfile(minecraftAccessToken) {
   });
   if (res.status === 403) throw new PendingApprovalError();
   if (res.status === 404) throw new Error("Ce compte Microsoft ne possède pas Minecraft.");
-  const data = await res.json();
   if (!res.ok) throw new Error("Impossible de récupérer le profil Minecraft");
-  return data;
+  return res.json();
 }
 
 // Format attendu par minecraft-launcher-core (voir mcLaunch.js) — construit

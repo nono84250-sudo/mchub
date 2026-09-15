@@ -56,6 +56,39 @@ export async function listPublicServers(): Promise<PublicServerSummary[]> {
   );
 }
 
+export type LauncherServerDetail = {
+  name: string;
+  type: "vanilla" | "modded";
+  ip: string;
+  minecraftVersion: string;
+  curseforgeModpackId: string | null;
+};
+
+// Seule fonction du fichier qui renvoie `ip` — réservée à la route
+// /api/launcher/servers/[slug], protégée par LAUNCHER_API_KEY. Ne jamais
+// exposer ce résultat via une route publique.
+export async function getServerWithIpBySlug(slug: string): Promise<LauncherServerDetail | null> {
+  const row = await db.orm.public.Server.select(
+    "name",
+    "type",
+    "ip",
+    "minecraftVersion",
+    "curseforgeModpackId",
+  )
+    .where({ slug })
+    .first();
+
+  if (!row) return null;
+
+  return {
+    name: row.name,
+    type: row.type,
+    ip: row.ip,
+    minecraftVersion: row.minecraftVersion,
+    curseforgeModpackId: row.curseforgeModpackId,
+  };
+}
+
 export async function getPublicServerBySlug(slug: string): Promise<PublicServerDetail | null> {
   const row = await db.orm.public.Server.select(
     "id",

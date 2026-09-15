@@ -240,17 +240,27 @@ function wireGate() {
   // TEMPORAIRE, pour développement uniquement — voir TEST_MODE_ENABLED côté main.js.
   gateTestBtn.addEventListener("click", async () => {
     setGateBusy(true);
+    gateMessageEl.textContent = "";
+    gateMessageEl.classList.remove("ms-error");
     const result = await window.mchub.startTestSession();
     if (result.ok) {
       enterApp(result.profile, { testMode: true });
       return;
     }
     setGateBusy(false);
+    gateMessageEl.textContent = result.error;
+    gateMessageEl.classList.add("ms-error");
   });
 }
 
 async function boot() {
   wireGate();
+  gateEl.hidden = false;
+  gateMessageEl.textContent = "Reprise de la session…";
+
+  window.mchub.isTestModeEnabled().then((enabled) => {
+    gateTestBtn.hidden = !enabled;
+  });
 
   const restored = await window.mchub.tryRestoreSession();
   if (restored.ok) {
@@ -258,10 +268,7 @@ async function boot() {
     return;
   }
 
-  gateEl.hidden = false;
-  if (restored.pendingApproval) {
-    gateMessageEl.textContent = PENDING_APPROVAL_MESSAGE;
-  }
+  gateMessageEl.textContent = restored.pendingApproval ? PENDING_APPROVAL_MESSAGE : "";
 }
 
 boot();

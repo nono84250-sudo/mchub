@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("node:path");
 const msAuth = require("./msAuth");
@@ -13,7 +13,7 @@ const SITE_URL = process.env.MCHUB_SITE_URL || "http://localhost:3000";
 // la SEULE route qui renvoie l'IP d'un serveur, jamais l'API publique. Vient
 // du fichier .env (non versionné) — jamais de valeur par défaut en dur ici,
 // une ancienne clé a fuité dans le dépôt public pour cette raison exacte.
-const LAUNCHER_API_KEY = process.env.MCHUB_LAUNCHER_KEY;
+const LAUNCHER_API_KEY = process.env.LAUNCHER_API_KEY;
 const REQUEST_TIMEOUT_MS = 8000;
 
 // TEMPORAIRE (à retirer avant toute diffusion réelle) : permet de tester le
@@ -30,6 +30,11 @@ const TEST_MODE_ENABLED = !app.isPackaged;
 // coché "se souvenir de moi" (voir sessionStore.js).
 let currentSession = null;
 
+function setSession(profile, authorization) {
+  currentSession = { profile, authorization };
+  return profile;
+}
+
 async function fetchJson(url, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -39,6 +44,9 @@ async function fetchJson(url, options = {}) {
       throw new Error(`Réponse ${res.status} du site MCHub`);
     }
     return await res.json();
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("Le site MCHub n'a pas répondu à temps.");
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -90,7 +98,7 @@ ipcMain.handle("auth:signIn", async (_event, remember) => {
     // Toujours défini avant la tentative de sauvegarde : si le compte
     // signIn a réussi, cette réponse doit rester "ok" même si la
     // persistance échoue ensuite (écriture disque, coffre indisponible...).
-    currentSession = { profile, authorization };
+    setSession(profile, authorization);
 
     let remembered = false;
     try {
@@ -123,7 +131,7 @@ ipcMain.handle("auth:tryRestore", async () => {
 
   try {
     const { profile, authorization, refreshToken: newRefreshToken } = await msAuth.refreshSession(refreshToken);
-    currentSession = { profile, authorization };
+    setSession(profile, authorization);
     try {
       sessionStore.saveRefreshToken(newRefreshToken);
     } catch {
@@ -137,7 +145,12 @@ ipcMain.handle("auth:tryRestore", async () => {
     // passagère, ni sur le blocage temporaire "en attente d'approbation"
     // (les identifiants Microsoft/Xbox restent valides dans ce cas).
     if (error.code === "invalid_grant") {
-      sessionStore.clearRefreshToken();
+      try {
+        sessionStore.clearRefreshToken();
+      } catch {
+        // Rien de plus à faire : le refresh_token est de toute façon invalide
+        // côté Microsoft, seul le nettoyage du fichier local a échoué.
+      }
     } else if (error.rotatedRefreshToken) {
       // Microsoft a quand même pu renouveler (et donc invalider l'ancien)
       // le refresh_token avant que la suite échoue : on garde le nouveau
@@ -168,28 +181,39 @@ ipcMain.handle("auth:signOut", () => {
   return { ok: true };
 });
 
+ipcMain.handle("app:isTestModeEnabled", () => TEST_MODE_ENABLED);
+
 // TEMPORAIRE (voir TEST_MODE_ENABLED ci-dessus).
 ipcMain.handle("auth:startTestSession", () => {
   if (!TEST_MODE_ENABLED) return { ok: false, error: "Mode test désactivé." };
 
   const profile = { id: "00000000-0000-0000-0000-000000000000", name: "JoueurTest" };
-  currentSession = {
+  setSession(
     profile,
-    authorization: msAuth.buildAuthorization({
+    msAuth.buildAuthorization({
       accessToken: "test-mode-fake-token",
       uuid: profile.id,
       name: profile.name,
       xuid: "0",
       clientId: "test-mode",
     }),
-  };
+  );
   return { ok: true, profile, testMode: true };
 });
+
+let gameLaunchInProgress = false;
 
 ipcMain.handle("game:launch", async (event, slug) => {
   if (!currentSession) {
     return { ok: false, error: "Connecte-toi avec ton compte Microsoft avant de rejoindre un serveur." };
   }
+  if (gameLaunchInProgress) {
+    // minecraft-launcher-core n'est pas conçu pour deux lancements simultanés
+    // (même GAME_ROOT, mêmes fichiers) : un double-clic ou un deuxième appel
+    // IPC pendant un lancement en cours pourrait corrompre le téléchargement.
+    return { ok: false, error: "Un lancement du jeu est déjà en cours." };
+  }
+  gameLaunchInProgress = true;
 
   try {
     const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
@@ -207,6 +231,8 @@ ipcMain.handle("game:launch", async (event, slug) => {
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  } finally {
+    gameLaunchInProgress = false;
   }
 });
 
@@ -216,7 +242,7 @@ app.whenReady().then(() => {
     // fenêtre : sinon l'app quitte sans qu'on sache pourquoi.
     dialog.showErrorBox(
       "Configuration manquante",
-      "MCHUB_LAUNCHER_KEY est introuvable — vérifie le fichier .env du launcher.",
+      "LAUNCHER_API_KEY est introuvable — vérifie le fichier .env du launcher.",
     );
     app.exit(1);
     return;

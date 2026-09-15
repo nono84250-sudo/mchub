@@ -1,4 +1,5 @@
 const path = require("node:path");
+const { spawn } = require("node:child_process");
 const { app } = require("electron");
 const { Client } = require("minecraft-launcher-core");
 
@@ -8,12 +9,29 @@ const { Client } = require("minecraft-launcher-core");
 // tard (voir cahier des charges, "launcher complet autonome").
 const GAME_ROOT = path.join(app.getPath("userData"), "minecraft");
 
+// minecraft-launcher-core spawn Java lui-meme sans jamais ecouter l'evenement
+// "error" du processus — si "java" est introuvable (ENOENT), Node le relance
+// comme exception non interceptee et plante tout le processus principal.
+// On verifie donc nous-memes, AVANT d'appeler MCLC, avec notre propre
+// ecouteur d'erreur.
+function ensureJavaAvailable(javaPath) {
+  return new Promise((resolve, reject) => {
+    const check = spawn(javaPath || "java", ["-version"]);
+    check.on("error", () => {
+      reject(new Error("Java est introuvable — installe Java pour pouvoir lancer Minecraft."));
+    });
+    check.on("exit", () => resolve());
+  });
+}
+
 /**
  * Lance Minecraft (vanilla). `onProgress(status)` reçoit des mises à jour
  * lisibles pendant le téléchargement ; la promesse se résout dès que le
  * processus du jeu démarre (pas quand le joueur quitte le jeu).
  */
-function launchMinecraft({ authorization, version, serverIp, onProgress }) {
+async function launchMinecraft({ authorization, version, serverIp, onProgress }) {
+  await ensureJavaAvailable();
+
   const launcher = new Client();
 
   // "debug"/"data" incluent la ligne de commande Java complète, qui contient
@@ -52,6 +70,14 @@ function launchMinecraft({ authorization, version, serverIp, onProgress }) {
     launcher
       .launch(opts)
       .then((proc) => {
+        if (!proc) {
+          // minecraft-launcher-core avale certaines erreurs internes
+          // (echec reseau pendant le telechargement, manifeste corrompu...)
+          // et resout avec `null` au lieu de rejeter — sans ce controle on
+          // annoncerait un lancement reussi alors que rien n'a demarre.
+          reject(new Error("Le lancement du jeu a échoué (voir les journaux pour le détail)."));
+          return;
+        }
         started = true;
         resolve(proc);
       })
