@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:;" />
+<title>MCHub Launcher</title>
+<style>
+  :root {
+    --background: #0b0b14;
+    --surface: #14141f;
+    --surface-raised: #1b1b29;
+    --border: #2a2a3d;
+    --foreground: #e7e6f0;
+    --muted: #9695ab;
+    --accent: #7c5cff;
+    --accent-hover: #9179ff;
+    --accent-foreground: #ffffff;
+    --danger: #ff5c7a;
+    --success: #4ade80;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(20, 20, 31, 0.8);
+    flex: 0 0 auto;
+  }
+
+  .logo { font-weight: 700; font-size: 18px; letter-spacing: -0.02em; }
+  .logo span { color: var(--accent); }
+
+  button.ms-login {
+    background: var(--surface-raised);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: not-allowed;
+  }
+
+  main {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 20px;
+  }
+
+  #status { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+  #status.error { color: var(--danger); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.15s ease;
+  }
+  .card:hover { border-color: var(--accent); }
+
+  .banner {
+    height: 96px;
+    background: var(--surface-raised);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 12px;
+    position: relative;
+  }
+  .banner img { width: 100%; height: 100%; object-fit: cover; }
+
+  .badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .badge.modded { background: var(--accent); color: var(--accent-foreground); border: none; }
+
+  .card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .card-body h3 { margin: 0; font-size: 15px; }
+  .card-body p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; max-height: 2.8em; overflow: hidden; }
+  .players { margin-top: auto; font-size: 12px; color: var(--muted); display: flex; align-items: center; }
+  .status-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--muted); flex: 0 0 auto; vertical-align: middle; margin-right: 6px;
+  }
+  .status-dot.online { background: var(--success); }
+
+  .detail { max-width: 640px; }
+  .detail button.back {
+    background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 0 16px 0;
+  }
+  .detail h2 { margin: 0 0 4px 0; }
+  .detail .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .detail .desc { line-height: 1.6; margin-bottom: 20px; }
+
+  .join-btn {
+    background: var(--accent);
+    color: var(--accent-foreground);
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 14px;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  .join-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo">MC<span>Hub</span> Launcher</div>
+    <button class="ms-login" title="Connexion Microsoft — bientôt disponible" disabled>
+      Se connecter avec Microsoft (bientôt)
+    </button>
+  </header>
+  <main>
+    <div id="status">Chargement des serveurs…</div>
+    <div id="list" class="grid" hidden></div>
+    <div id="detail" class="detail" hidden></div>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

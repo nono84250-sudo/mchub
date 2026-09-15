@@ -1,0 +1,10 @@
+# dependencies
+/node_modules
+
+# electron-builder output (Phase 4 / packaging)
+/dist
+/out
+
+# misc
+.DS_Store
+*.log

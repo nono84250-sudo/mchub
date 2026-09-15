@@ -1,0 +1,49 @@
+// use prisma-8
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  passwordHash String
+  name         String
+  servers      Server[]
+
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+}
+
+enum server_type {
+  @@type("pg/text@1")
+  vanilla = "vanilla"
+  modded  = "modded"
+}
+
+// Fiche serveur. Deux niveaux d'info : les champs publics (annuaire du
+// site) et `ip`, qui n'est jamais exposee par l'API publique - elle ne
+// sera lue que par l'application (Phase 3), une fois le joueur connecte.
+model Server {
+  id          String      @id @default(uuid())
+  slug        String      @unique
+  name        String
+  description String
+  bannerUrl   String?
+  type        server_type @default(vanilla)
+
+  minecraftVersion String
+  ip               String
+
+  curseforgeModpackId      String?
+  curseforgeModpackName    String?
+  curseforgeModpackVersion String?
+
+  playerCount    Int?
+  playerCapacity Int?
+  lastPingedAt   TimestamptzString?
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+
+  @@index([ownerId])
+}

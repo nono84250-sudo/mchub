@@ -1,0 +1,14 @@
+{
+  "name": "launcher",
+  "productName": "MCHub Launcher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Launcher Minecraft MCHub — lit les serveurs publiés sur le site MCHub et lance le jeu.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.3.0"
+  }
+}
