@@ -14,6 +14,7 @@ type ServerFormValues = {
   curseforgeModpackId: string;
   curseforgeModpackName: string;
   curseforgeModpackVersion: string;
+  recommendedRamGB: string;
 };
 
 const EMPTY_VALUES: ServerFormValues = {
@@ -26,6 +27,7 @@ const EMPTY_VALUES: ServerFormValues = {
   curseforgeModpackId: "",
   curseforgeModpackName: "",
   curseforgeModpackVersion: "",
+  recommendedRamGB: "",
 };
 
 type ServerFormProps = {
@@ -164,6 +166,26 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
         />
         <p className="text-xs text-muted">
           Jamais affichée publiquement sur le site — uniquement transmise par le launcher.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="recommendedRamGB" className="field-label">
+          RAM recommandée (Go, optionnel)
+        </label>
+        <input
+          id="recommendedRamGB"
+          name="recommendedRamGB"
+          type="number"
+          min={1}
+          step={1}
+          placeholder="ex : 4"
+          defaultValue={values.recommendedRamGB}
+          className="field-input"
+        />
+        <p className="text-xs text-muted">
+          Suggérée au joueur dans le launcher avant de rejoindre — jamais imposée, et le launcher
+          avertit si elle dépasse ce que sa machine peut raisonnablement fournir.
         </p>
       </div>
 

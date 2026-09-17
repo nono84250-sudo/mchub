@@ -54,6 +54,12 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
           <div className="stat-label">Type</div>
           <div className="stat-value">{server.type === "modded" ? "Moddé" : "Vanilla"}</div>
         </div>
+        {server.recommendedRamGB ? (
+          <div className="stat-tile">
+            <div className="stat-label">RAM recommandée</div>
+            <div className="stat-value">{server.recommendedRamGB} Go</div>
+          </div>
+        ) : null}
       </div>
 
       {server.type === "modded" && server.curseforgeModpackName ? (

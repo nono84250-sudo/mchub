@@ -8,6 +8,7 @@ const detailEl = document.getElementById("detail");
 const msAccountEl = document.getElementById("ms-account");
 const settingsPanelEl = document.getElementById("settings-panel");
 const accountPanelEl = document.getElementById("account-panel");
+const onboardingEl = document.getElementById("onboarding");
 const navServersBtn = document.getElementById("nav-servers");
 const navSettingsBtn = document.getElementById("nav-settings");
 
@@ -138,6 +139,14 @@ function renderDetail(server) {
         <div class="stat-label">Joueurs</div>
         <div class="stat-value">${escapeHtml(playersText(server))}</div>
       </div>
+      ${
+        server.recommendedRamGB
+          ? `<div class="stat-tile">
+              <div class="stat-label">RAM recommandée</div>
+              <div class="stat-value">${server.recommendedRamGB} Go</div>
+            </div>`
+          : ""
+      }
     </div>
     <div class="tag-row">${tags.join("")}</div>
     <p class="desc">${escapeHtml(server.description)}</p>
@@ -148,12 +157,74 @@ function renderDetail(server) {
 
   const joinBtn = document.getElementById("join-btn");
   if (joinBtn) {
-    joinBtn.addEventListener("click", () => joinServer(server.slug, joinBtn));
+    joinBtn.addEventListener("click", () => joinServer(server, joinBtn));
   }
 }
 
-async function joinServer(slug, joinBtn) {
+// Un serveur peut suggérer une RAM (voir ServerForm côté site) — comparée à
+// la RAM totale de la machine avant de lancer, avec un vrai avertissement
+// de sécurité si la valeur demandée est irréaliste pour ce PC (voir cahier
+// des charges, "avertissement de sécurité RAM"). Renvoie true si le
+// lancement doit continuer.
+async function applyRecommendedRamIfNeeded(server) {
+  if (!server.recommendedRamGB) return true;
+
+  const settings = await window.mchub.settings.get();
+  const recommended = server.recommendedRamGB;
+  // Au-dela de 80% de la RAM totale, il ne resterait quasiment rien pour
+  // l'OS et le reste du systeme — on refuse d'appliquer la valeur telle
+  // quelle, meme si "toujours utiliser la RAM recommandée" est coché.
+  const isUnsafe = recommended > settings.totalGB * 0.8;
+
+  if (isUnsafe) {
+    const fallbackMaxGB = Math.max(1, Math.floor(settings.totalGB / 2));
+    const fallbackMinGB = Math.max(1, Math.floor(fallbackMaxGB / 2));
+    const result = await showModal({
+      title: "RAM recommandée trop élevée pour cette machine",
+      body: `Ce serveur recommande ${recommended} Go de RAM, mais cette machine n'a que ${settings.totalGB} Go au total. Le jeu va démarrer avec ${fallbackMaxGB} Go à la place (la moitié de la RAM totale) — au-delà, attends-toi à des latences, des bugs ou des plantages.`,
+      confirmLabel: "Continuer quand même",
+      cancelLabel: "Annuler",
+    });
+    if (!result.confirmed) return false;
+    await window.mchub.settings.set({ memoryMinGB: fallbackMinGB, memoryMaxGB: fallbackMaxGB });
+    return true;
+  }
+
+  if (settings.alwaysUseRecommendedRam) {
+    await window.mchub.settings.set({
+      memoryMinGB: Math.max(1, Math.floor(recommended / 2)),
+      memoryMaxGB: recommended,
+    });
+    return true;
+  }
+
+  const result = await showModal({
+    title: "RAM recommandée pour ce serveur",
+    body: `Ce serveur recommande ${recommended} Go de RAM. Lancer le jeu avec cette valeur ?`,
+    confirmLabel: `Lancer avec ${recommended} Go`,
+    cancelLabel: "Garder mes paramètres actuels",
+    checkboxLabel: "Toujours lancer avec la RAM recommandée du serveur",
+  });
+
+  if (result.confirmed) {
+    await window.mchub.settings.set({
+      memoryMinGB: Math.max(1, Math.floor(recommended / 2)),
+      memoryMaxGB: recommended,
+      alwaysUseRecommendedRam: result.checked,
+    });
+  } else if (result.checked) {
+    await window.mchub.settings.set({ alwaysUseRecommendedRam: true });
+  }
+  return true;
+}
+
+async function joinServer(server, joinBtn) {
   const joinStatus = document.getElementById("join-status");
+  const slug = server.slug;
+
+  const shouldContinue = await applyRecommendedRamIfNeeded(server);
+  if (!shouldContinue) return;
+
   joinBtn.disabled = true;
   joinBtn.textContent = "Lancement…";
 
@@ -443,7 +514,49 @@ async function showSettingsView() {
   document.getElementById("settings-version").textContent = settings.appVersion ? `v${settings.appVersion}` : "—";
   document.getElementById("settings-mem-min").value = settings.memoryMinGB;
   document.getElementById("settings-mem-max").value = settings.memoryMaxGB;
+  document.getElementById("settings-always-recommended").checked = settings.alwaysUseRecommendedRam;
   document.getElementById("settings-game-root").textContent = settings.gameRoot;
+
+  await refreshJavaStatus("settings-java-status", "settings-java-install");
+}
+
+// Partagé entre l'assistant de premier démarrage et les paramètres : verifie
+// Java (voir javaManager.js — 64 bits requis pour allouer beaucoup de
+// mémoire) et affiche un bouton d'installation automatique si besoin.
+async function refreshJavaStatus(statusElId, installBtnId) {
+  const statusEl2 = document.getElementById(statusElId);
+  const installBtn = document.getElementById(installBtnId);
+  statusEl2.textContent = "Vérification de Java…";
+  installBtn.hidden = true;
+
+  const java = await window.mchub.java.detect();
+  if (java.found && java.is64Bit) {
+    statusEl2.textContent = `Java détecté${java.version ? ` (${java.version}, 64 bits)` : " (64 bits)"} ✓`;
+  } else if (java.found) {
+    statusEl2.textContent = "Java 32 bits détecté — insuffisant pour allouer beaucoup de mémoire.";
+    installBtn.hidden = false;
+  } else {
+    statusEl2.textContent = "Java introuvable — nécessaire pour lancer Minecraft.";
+    installBtn.hidden = false;
+  }
+
+  if (installBtn.dataset.wired) return;
+  installBtn.dataset.wired = "1";
+  installBtn.addEventListener("click", async () => {
+    installBtn.disabled = true;
+    const stopListening = window.mchub.onJavaInstallProgress((status) => {
+      statusEl2.textContent = status;
+    });
+    const result = await window.mchub.java.install();
+    stopListening();
+    installBtn.disabled = false;
+    if (result.ok) {
+      statusEl2.textContent = `Java ${result.version} installé ✓`;
+      installBtn.hidden = true;
+    } else {
+      statusEl2.textContent = `Échec de l'installation : ${result.error}`;
+    }
+  });
 }
 
 // Page "Gérer le compte" : accessible depuis le menu déroulant du pseudo
@@ -653,11 +766,13 @@ function wireSettingsPanel() {
   document.getElementById("settings-save").addEventListener("click", async () => {
     const min = Number(document.getElementById("settings-mem-min").value);
     const max = Number(document.getElementById("settings-mem-max").value);
+    const alwaysUseRecommendedRam = document.getElementById("settings-always-recommended").checked;
     const settingsStatusEl = document.getElementById("settings-status");
 
-    const updated = await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max });
+    const updated = await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max, alwaysUseRecommendedRam });
     document.getElementById("settings-mem-min").value = updated.memoryMinGB;
     document.getElementById("settings-mem-max").value = updated.memoryMaxGB;
+    document.getElementById("settings-always-recommended").checked = updated.alwaysUseRecommendedRam;
     settingsStatusEl.classList.remove("ms-error");
     settingsStatusEl.textContent = "Paramètres enregistrés.";
   });
@@ -667,12 +782,75 @@ function wireSettingsPanel() {
   });
 }
 
-async function boot() {
-  wireGate();
-  wireWindowControls();
-  wireSidebar();
-  wireSettingsPanel();
-  wireMcStatus();
+// Modale générique (confirmation / avertissement) — utilisée par
+// l'avertissement de sécurité RAM, réutilisable pour n'importe quel prompt
+// bloquant futur. Résout avec { confirmed, checked } plutôt que de bloquer
+// le thread comme un confirm() natif, pour rester cohérent avec le reste de
+// l'UI (pas de fenêtre système grise dans une appli aussi personnalisée).
+function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel }) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("modal-overlay");
+    const confirmBtn = document.getElementById("modal-confirm");
+    const cancelBtn = document.getElementById("modal-cancel");
+    const checkboxRow = document.getElementById("modal-checkbox-row");
+    const checkbox = document.getElementById("modal-checkbox");
+
+    document.getElementById("modal-title").textContent = title;
+    document.getElementById("modal-body").textContent = body;
+    confirmBtn.textContent = confirmLabel;
+    cancelBtn.hidden = !cancelLabel;
+    cancelBtn.textContent = cancelLabel || "";
+    checkboxRow.hidden = !checkboxLabel;
+    document.getElementById("modal-checkbox-label").textContent = checkboxLabel || "";
+    checkbox.checked = false;
+
+    overlay.hidden = false;
+
+    const cleanup = () => {
+      overlay.hidden = true;
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+    };
+    const onConfirm = () => {
+      const checked = checkbox.checked;
+      cleanup();
+      resolve({ confirmed: true, checked });
+    };
+    const onCancel = () => {
+      const checked = checkbox.checked;
+      cleanup();
+      resolve({ confirmed: false, checked });
+    };
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+  });
+}
+
+// Assistant de premier démarrage : affiché une seule fois (voir
+// settings.onboarded) avant même le portail de connexion, pour choisir une
+// RAM raisonnable dès le départ et vérifier Java sans attendre le premier
+// clic sur "Rejoindre".
+async function showOnboarding(settings) {
+  onboardingEl.hidden = false;
+  document.getElementById("onboarding-mem-min").value = settings.suggestedMinGB;
+  document.getElementById("onboarding-mem-max").value = settings.suggestedMaxGB;
+  document.getElementById("onboarding-ram-note").textContent =
+    `Cette machine a ${settings.totalGB} Go de RAM au total — ${settings.suggestedMinGB}/${settings.suggestedMaxGB} Go est une valeur prudente pour commencer, modifiable plus tard dans les paramètres.`;
+
+  await refreshJavaStatus("onboarding-java-status", "onboarding-java-install");
+}
+
+function wireOnboarding() {
+  document.getElementById("onboarding-continue").addEventListener("click", async () => {
+    const min = Number(document.getElementById("onboarding-mem-min").value);
+    const max = Number(document.getElementById("onboarding-mem-max").value);
+    await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max, onboarded: true });
+    onboardingEl.hidden = true;
+    await proceedToGate();
+  });
+}
+
+async function proceedToGate() {
   gateEl.hidden = false;
   gateMessageEl.textContent = "Reprise de la session…";
 
@@ -683,6 +861,23 @@ async function boot() {
   }
 
   gateMessageEl.textContent = restored.pendingApproval ? PENDING_APPROVAL_MESSAGE : "";
+}
+
+async function boot() {
+  wireGate();
+  wireWindowControls();
+  wireSidebar();
+  wireSettingsPanel();
+  wireMcStatus();
+  wireOnboarding();
+
+  const settings = await window.mchub.settings.get();
+  if (!settings.onboarded) {
+    await showOnboarding(settings);
+    return;
+  }
+
+  await proceedToGate();
 }
 
 boot();

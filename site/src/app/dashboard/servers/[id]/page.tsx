@@ -45,6 +45,7 @@ export default async function EditServerPage({ params }: PageProps<"/dashboard/s
             curseforgeModpackId: server.curseforgeModpackId ?? "",
             curseforgeModpackName: server.curseforgeModpackName ?? "",
             curseforgeModpackVersion: server.curseforgeModpackVersion ?? "",
+            recommendedRamGB: server.recommendedRamGB?.toString() ?? "",
           }}
         />
       </div>

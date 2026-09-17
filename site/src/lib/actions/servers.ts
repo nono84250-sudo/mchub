@@ -18,6 +18,7 @@ type ServerFormValues = {
   curseforgeModpackId: string | null;
   curseforgeModpackName: string | null;
   curseforgeModpackVersion: string | null;
+  recommendedRamGB: number | null;
 };
 
 function readForm(formData: FormData): ServerFormValues | { error: string } {
@@ -30,12 +31,17 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   const curseforgeModpackId = String(formData.get("curseforgeModpackId") ?? "").trim() || null;
   const curseforgeModpackName = String(formData.get("curseforgeModpackName") ?? "").trim() || null;
   const curseforgeModpackVersion = String(formData.get("curseforgeModpackVersion") ?? "").trim() || null;
+  const recommendedRamRaw = String(formData.get("recommendedRamGB") ?? "").trim();
+  const recommendedRamGB = recommendedRamRaw ? Number(recommendedRamRaw) : null;
 
   if (!name || !description || !minecraftVersion || !ip) {
     return { error: "Nom, description, version et IP sont obligatoires." };
   }
   if (type === "modded" && !curseforgeModpackId) {
     return { error: "Un serveur moddé doit indiquer l'identifiant de son modpack CurseForge." };
+  }
+  if (recommendedRamRaw && (!Number.isInteger(recommendedRamGB) || recommendedRamGB! < 1)) {
+    return { error: "La RAM recommandée doit être un nombre entier de Go (1 ou plus)." };
   }
 
   return {
@@ -48,6 +54,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
     curseforgeModpackId: type === "modded" ? curseforgeModpackId : null,
     curseforgeModpackName: type === "modded" ? curseforgeModpackName : null,
     curseforgeModpackVersion: type === "modded" ? curseforgeModpackVersion : null,
+    recommendedRamGB,
   };
 }
 

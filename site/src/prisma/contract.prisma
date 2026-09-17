@@ -39,6 +39,12 @@ model Server {
   playerCapacity Int?
   lastPingedAt   TimestamptzString?
 
+  // Suggeree au lancement par le launcher : comparee a la RAM totale de la
+  // machine du joueur pour choisir/avertir avant de demarrer le jeu (voir
+  // cahier des charges, "avertissement de securite RAM"). Jamais imposee :
+  // juste une recommandation cote proprietaire du serveur.
+  recommendedRamGB Int?
+
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 

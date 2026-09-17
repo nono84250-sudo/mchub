@@ -405,7 +405,7 @@
   .join-btn:disabled { cursor: not-allowed; opacity: 0.6; }
   .join-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
 
-  #gate {
+  #gate, #onboarding {
     position: relative;
     flex: 1 1 auto;
     display: flex;
@@ -415,8 +415,9 @@
     text-align: center;
     padding: 32px;
     gap: 18px;
+    overflow-y: auto;
   }
-  #gate::before {
+  #gate::before, #onboarding::before {
     content: "";
     position: absolute;
     inset: 0;
@@ -425,8 +426,21 @@
       radial-gradient(40% 35% at 75% 15%, rgba(45, 216, 138, 0.16), transparent 70%);
     pointer-events: none;
   }
-  #gate > * { position: relative; }
-  #gate .logo { font-size: 26px; }
+  #gate > *, #onboarding > * { position: relative; }
+  #gate .logo, #onboarding .logo { font-size: 26px; }
+  .onboarding-box {
+    text-align: left;
+    width: 100%;
+    max-width: 380px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .onboarding-box h3 { margin: 0 0 4px 0; font-size: 14px; }
   #gate-login {
     background-image: var(--gradient-brand);
     color: var(--accent-foreground);
@@ -482,6 +496,31 @@
   .mc-status-row-latency { color: var(--muted); font-size: 11px; }
   .status-dot.degraded { background: #f5b942; box-shadow: 0 0 6px rgba(245, 185, 66, 0.8); }
   .status-dot.offline { background: var(--danger); box-shadow: 0 0 6px rgba(255, 107, 129, 0.8); }
+
+  /* Modale generique (confirmation/avertissement RAM) : fond assombri +
+     boite centree, reutilisable pour n'importe quel prompt bloquant. */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 7, 14, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+    max-width: 380px;
+    width: calc(100% - 48px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    text-align: left;
+  }
+  .modal-box h3 { margin: 0 0 10px 0; font-size: 16px; }
+  .modal-box p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 </style>
 </head>
 <body>
@@ -514,6 +553,34 @@
     </div>
   </div>
 
+  <div id="onboarding" hidden>
+    <div class="logo" style="font-size: 22px;">Bienvenue sur Omniscient <span>Launcher</span></div>
+    <p class="tagline">Deux ou trois réglages avant de commencer — modifiables plus tard dans les paramètres.</p>
+
+    <div class="onboarding-box">
+      <h3>Mémoire allouée au jeu</h3>
+      <div class="settings-field">
+        <label for="onboarding-mem-min" class="field-label">Minimale (Go)</label>
+        <input type="number" id="onboarding-mem-min" min="1" max="32" class="settings-input" />
+      </div>
+      <div class="settings-field">
+        <label for="onboarding-mem-max" class="field-label">Maximale (Go)</label>
+        <input type="number" id="onboarding-mem-max" min="1" max="32" class="settings-input" />
+      </div>
+      <p class="join-note" id="onboarding-ram-note"></p>
+    </div>
+
+    <div class="onboarding-box">
+      <h3>Java (64 bits, requis pour jouer)</h3>
+      <p class="join-note" id="onboarding-java-status">Vérification…</p>
+      <button id="onboarding-java-install" class="ms-login" type="button" hidden>Installer Java automatiquement</button>
+    </div>
+
+    <button id="onboarding-continue" class="ms-login" style="padding: 10px 20px; font-size: 14px;" type="button">
+      Continuer
+    </button>
+  </div>
+
   <div id="gate" hidden>
     <div class="logo" style="font-size: 26px;">Omniscient <span>Launcher</span></div>
     <p class="tagline">Connecte-toi avec ton compte Microsoft pour voir les serveurs et jouer.</p>
@@ -523,6 +590,21 @@
       Se souvenir de moi
     </label>
     <p class="gate-message" id="gate-message"></p>
+  </div>
+
+  <div class="modal-overlay" id="modal-overlay" hidden>
+    <div class="modal-box">
+      <h3 id="modal-title"></h3>
+      <p id="modal-body"></p>
+      <label class="gate-remember" id="modal-checkbox-row" hidden style="margin-top: 12px;">
+        <input type="checkbox" id="modal-checkbox" />
+        <span id="modal-checkbox-label"></span>
+      </label>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="ms-login" type="button" hidden></button>
+        <button id="modal-confirm" class="join-btn" type="button"></button>
+      </div>
+    </div>
   </div>
 
   <div id="app" hidden style="flex: 1 1 auto; display: flex; min-height: 0;">
@@ -563,10 +645,20 @@
           <label for="settings-mem-max" class="field-label">Mémoire maximale (Go)</label>
           <input type="number" id="settings-mem-max" min="1" max="32" class="settings-input" />
         </div>
+        <label class="gate-remember" style="margin-bottom: 8px;">
+          <input type="checkbox" id="settings-always-recommended" />
+          Toujours lancer avec la RAM recommandée du serveur
+        </label>
         <button id="settings-save" class="join-btn">Enregistrer</button>
         <p class="join-note" id="settings-status"></p>
 
         <div class="settings-field" style="margin-top: 24px;">
+          <span class="field-label">Java (64 bits, requis pour jouer)</span>
+          <p class="join-note" id="settings-java-status">Vérification…</p>
+          <button id="settings-java-install" class="ms-login" hidden>Installer Java automatiquement</button>
+        </div>
+
+        <div class="settings-field" style="margin-top: 8px;">
           <span class="field-label">Dossier du jeu</span>
           <p class="settings-path" id="settings-game-root"></p>
           <button id="settings-open-folder" class="ms-login">Ouvrir le dossier</button>

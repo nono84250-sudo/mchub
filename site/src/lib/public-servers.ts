@@ -22,6 +22,7 @@ export type PublicServerDetail = PublicServerSummary & {
   minecraftVersion: string;
   curseforgeModpackName: string | null;
   curseforgeModpackVersion: string | null;
+  recommendedRamGB: number | null;
 };
 
 export async function listPublicServers(): Promise<PublicServerSummary[]> {
@@ -62,6 +63,7 @@ export type LauncherServerDetail = {
   ip: string;
   minecraftVersion: string;
   curseforgeModpackId: string | null;
+  recommendedRamGB: number | null;
 };
 
 // Seule fonction du fichier qui renvoie `ip` — réservée à la route
@@ -74,6 +76,7 @@ export async function getServerWithIpBySlug(slug: string): Promise<LauncherServe
     "ip",
     "minecraftVersion",
     "curseforgeModpackId",
+    "recommendedRamGB",
   )
     .where({ slug })
     .first();
@@ -86,6 +89,7 @@ export async function getServerWithIpBySlug(slug: string): Promise<LauncherServe
     ip: row.ip,
     minecraftVersion: row.minecraftVersion,
     curseforgeModpackId: row.curseforgeModpackId,
+    recommendedRamGB: row.recommendedRamGB,
   };
 }
 
@@ -104,6 +108,7 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     "playerCount",
     "playerCapacity",
     "lastPingedAt",
+    "recommendedRamGB",
   )
     .where({ slug })
     .first();
@@ -123,5 +128,6 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     curseforgeModpackVersion: row.curseforgeModpackVersion,
     playerCount: status.playerCount,
     playerCapacity: status.playerCapacity,
+    recommendedRamGB: row.recommendedRamGB,
   };
 }

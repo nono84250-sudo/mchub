@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'a2417b707814788de18c7dcd98d70a5cdf1e9a877071c3cd76b7d87d05721ca5'>;
+  StorageHashBase<'8aba9713fc4e60caa178634af73a70e03cb187132df09e5870698b2c0fe60de0'>;
 export type ExecutionHash =
   ExecutionHashBase<'4927fee92361149193c89d065ff169c82c3f1224924de9a318e1801c1d0488ec'>;
 export type ProfileHash =
@@ -257,6 +257,7 @@ export type FieldOutputTypes = {
       readonly playerCount: CodecTypes['pg/int4@1']['output'] | null;
       readonly playerCapacity: CodecTypes['pg/int4@1']['output'] | null;
       readonly lastPingedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
+      readonly recommendedRamGB: CodecTypes['pg/int4@1']['output'] | null;
       readonly ownerId: CodecTypes['pg/text@1']['output'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -288,6 +289,7 @@ export type FieldInputTypes = {
       readonly playerCount: CodecTypes['pg/int4@1']['input'] | null;
       readonly playerCapacity: CodecTypes['pg/int4@1']['input'] | null;
       readonly lastPingedAt: CodecTypes['pg/timestamptz-string@1']['input'] | null;
+      readonly recommendedRamGB: CodecTypes['pg/int4@1']['input'] | null;
       readonly ownerId: CodecTypes['pg/text@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
@@ -319,6 +321,7 @@ export type StorageColumnTypes = {
       readonly ownerId: CodecTypes['pg/text@1']['output'];
       readonly playerCapacity: CodecTypes['pg/int4@1']['output'] | null;
       readonly playerCount: CodecTypes['pg/int4@1']['output'] | null;
+      readonly recommendedRamGB: CodecTypes['pg/int4@1']['output'] | null;
       readonly slug: CodecTypes['pg/text@1']['output'];
       readonly type: 'vanilla' | 'modded';
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -350,6 +353,7 @@ export type StorageColumnInputTypes = {
       readonly ownerId: CodecTypes['pg/text@1']['input'];
       readonly playerCapacity: CodecTypes['pg/int4@1']['input'] | null;
       readonly playerCount: CodecTypes['pg/int4@1']['input'] | null;
+      readonly recommendedRamGB: CodecTypes['pg/int4@1']['input'] | null;
       readonly slug: CodecTypes['pg/text@1']['input'];
       readonly type: 'vanilla' | 'modded';
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
@@ -391,6 +395,7 @@ export namespace Models {
     playerCount: CodecTypes['pg/int4@1']['output'] | null;
     playerCapacity: CodecTypes['pg/int4@1']['output'] | null;
     lastPingedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
+    recommendedRamGB: CodecTypes['pg/int4@1']['output'] | null;
     ownerId: CodecTypes['pg/text@1']['output'];
     createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
     updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -498,6 +503,11 @@ type ContractBase = Omit<
                 readonly lastPingedAt: {
                   readonly nativeType: 'timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
+                  readonly nullable: true;
+                };
+                readonly recommendedRamGB: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
                   readonly nullable: true;
                 };
                 readonly ownerId: {
@@ -666,6 +676,10 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                 };
               };
+              readonly recommendedRamGB: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
               readonly ownerId: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -714,6 +728,7 @@ type ContractBase = Omit<
                 readonly playerCount: { readonly column: 'playerCount' };
                 readonly playerCapacity: { readonly column: 'playerCapacity' };
                 readonly lastPingedAt: { readonly column: 'lastPingedAt' };
+                readonly recommendedRamGB: { readonly column: 'recommendedRamGB' };
                 readonly ownerId: { readonly column: 'ownerId' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };

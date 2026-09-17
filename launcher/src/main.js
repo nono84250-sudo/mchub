@@ -1,11 +1,13 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("node:path");
+const os = require("node:os");
 const msAuth = require("./msAuth");
 const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
 const { checkMinecraftStatus } = require("./minecraftStatus");
+const javaManager = require("./javaManager");
 
 // URL du site Omniscient, source de vérité (voir cahier des charges, section
 // "modèle de synchronisation"). En dur sur le localhost de dev pour l'instant
@@ -297,15 +299,44 @@ ipcMain.handle("window:isMaximized", (event) => {
   return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
 });
 
+// Suggestion simple et prudente : la moitie de la RAM systeme, plafonnee a
+// 8 Go (rarement utile pour du Minecraft vanilla meme sur une grosse
+// machine) et jamais en dessous de 2 Go pour la valeur max suggeree.
+function suggestMemoryGB() {
+  const totalGB = Math.round(os.totalmem() / 1024 ** 3);
+  const suggestedMaxGB = Math.max(2, Math.min(8, Math.floor(totalGB / 2)));
+  const suggestedMinGB = Math.max(1, Math.floor(suggestedMaxGB / 2));
+  return { totalGB, suggestedMinGB, suggestedMaxGB };
+}
+
 ipcMain.handle("settings:get", () => ({
   ...settingsStore.loadSettings(),
   gameRoot: GAME_ROOT,
   appVersion: app.getVersion(),
+  ...suggestMemoryGB(),
 }));
 
 ipcMain.handle("settings:set", (_event, partial) => settingsStore.saveSettings(partial || {}));
 
 ipcMain.handle("settings:openGameFolder", () => shell.openPath(GAME_ROOT));
+
+ipcMain.handle("java:detect", async () => {
+  const settings = settingsStore.loadSettings();
+  const result = await javaManager.detectJava(settings.javaPath || undefined);
+  return { ...result, managed: !!settings.javaPath };
+});
+
+ipcMain.handle("java:install", async (event) => {
+  try {
+    const { javaPath, version } = await javaManager.downloadAndInstallJava((status) =>
+      event.sender.send("java:installProgress", status),
+    );
+    settingsStore.saveSettings({ javaPath });
+    return { ok: true, version };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
 
 // Mis en cache brievement : un clic repete sur le bouton de statut ne doit
 // pas re-solliciter 5 services externes a chaque fois.
@@ -349,6 +380,7 @@ ipcMain.handle("game:launch", async (event, slug) => {
       serverIp: server.ip,
       onProgress: (status) => event.sender.send("game:progress", status),
       memory: { min: `${settings.memoryMinGB}G`, max: `${settings.memoryMaxGB}G` },
+      javaPath: settings.javaPath || undefined,
     });
 
     return { ok: true };

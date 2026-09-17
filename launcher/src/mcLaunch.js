@@ -29,8 +29,8 @@ function ensureJavaAvailable(javaPath) {
  * lisibles pendant le téléchargement ; la promesse se résout dès que le
  * processus du jeu démarre (pas quand le joueur quitte le jeu).
  */
-async function launchMinecraft({ authorization, version, serverIp, onProgress, memory }) {
-  await ensureJavaAvailable();
+async function launchMinecraft({ authorization, version, serverIp, onProgress, memory, javaPath }) {
+  await ensureJavaAvailable(javaPath);
 
   const launcher = new Client();
 
@@ -52,6 +52,7 @@ async function launchMinecraft({ authorization, version, serverIp, onProgress, m
     version: { number: version, type: "release" },
     memory: memory || { max: "4G", min: "1G" },
   };
+  if (javaPath) opts.javaPath = javaPath;
 
   if (serverIp) {
     const [host, port] = serverIp.split(":");

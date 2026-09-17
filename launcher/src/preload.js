@@ -36,4 +36,13 @@ contextBridge.exposeInMainWorld("mchub", {
     changeSkin: (variant, fileBuffer) => ipcRenderer.invoke("account:changeSkin", { variant, fileBuffer }),
     resetSkin: () => ipcRenderer.invoke("account:resetSkin"),
   },
+  java: {
+    detect: () => ipcRenderer.invoke("java:detect"),
+    install: () => ipcRenderer.invoke("java:install"),
+  },
+  onJavaInstallProgress: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on("java:installProgress", listener);
+    return () => ipcRenderer.removeListener("java:installProgress", listener);
+  },
 });
