@@ -6,17 +6,23 @@
 <title>MCHub Launcher</title>
 <style>
   :root {
-    --background: #0b0b14;
-    --surface: #14141f;
-    --surface-raised: #1b1b29;
-    --border: #2a2a3d;
-    --foreground: #e7e6f0;
-    --muted: #9695ab;
-    --accent: #7c5cff;
-    --accent-hover: #9179ff;
-    --accent-foreground: #ffffff;
-    --danger: #ff5c7a;
-    --success: #4ade80;
+    /* Bleu nuit + turquoise (au lieu du violet) : fond profond, lueurs et
+       liens en turquoise, et un vert emeraude dedie a "jouer"/"en ligne"
+       (convention universelle des launchers de jeu — Lunar Client par ex. —
+       et coherent avec le point vert de statut deja utilise ailleurs). */
+    --background: #070c16;
+    --surface: #0f1729;
+    --surface-raised: #16213a;
+    --border: #223252;
+    --foreground: #e8edf7;
+    --muted: #8ea0bd;
+    --accent: #22d3ee;
+    --accent-hover: #5ee2f5;
+    --accent-foreground: #052029;
+    --accent-2: #2dd88a;
+    --gradient-brand: linear-gradient(135deg, var(--accent), var(--accent-2));
+    --danger: #ff6b81;
+    --success: #2dd88a;
   }
 
   * { box-sizing: border-box; }
@@ -41,11 +47,17 @@
     padding: 14px 20px;
     border-bottom: 1px solid var(--border);
     background: rgba(20, 20, 31, 0.8);
+    backdrop-filter: blur(8px);
     flex: 0 0 auto;
   }
 
   .logo { font-weight: 700; font-size: 18px; letter-spacing: -0.02em; }
-  .logo span { color: var(--accent); }
+  .logo span {
+    background-image: var(--gradient-brand);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
 
   #ms-account { font-size: 13px; }
   button.ms-login {
@@ -135,66 +147,158 @@
     cursor: pointer;
     display: flex;
     flex-direction: column;
-    transition: border-color 0.15s ease;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   }
-  .card:hover { border-color: var(--accent); }
+  .card:hover {
+    border-color: var(--accent);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 32px -12px rgba(34, 211, 238, 0.45);
+  }
 
   .banner {
-    height: 96px;
-    background: var(--surface-raised);
+    height: 110px;
+    background-image:
+      radial-gradient(circle at 20% 15%, rgba(34, 211, 238, 0.35), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(45, 216, 138, 0.28), transparent 55%),
+      var(--surface-raised);
     display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--muted);
-    font-size: 12px;
+    align-items: flex-end;
     position: relative;
   }
-  .banner img { width: 100%; height: 100%; object-fit: cover; }
+  .banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .banner-scrim {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    padding: 24px 12px 10px;
+    background-image: linear-gradient(to top, rgba(7, 12, 22, 0.85), transparent);
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--foreground);
+  }
 
   .badge {
     position: absolute;
     top: 8px;
     right: 8px;
+    z-index: 2;
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 999px;
-    background: var(--surface-raised);
+    background: rgba(15, 23, 41, 0.8);
+    backdrop-filter: blur(4px);
     border: 1px solid var(--border);
     color: var(--muted);
   }
-  .badge.modded { background: var(--accent); color: var(--accent-foreground); border: none; }
+  .badge.modded { background-image: var(--gradient-brand); color: var(--accent-foreground); border: none; }
+
+  .server-icon {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-image: var(--gradient-brand);
+    color: var(--accent-foreground);
+    font-weight: 700;
+    font-size: 12px;
+  }
 
   .card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .card-title-row { display: flex; align-items: center; gap: 8px; }
   .card-body h3 { margin: 0; font-size: 15px; }
   .card-body p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; max-height: 2.8em; overflow: hidden; }
-  .players { margin-top: auto; font-size: 12px; color: var(--muted); display: flex; align-items: center; }
+  .players {
+    margin-top: auto;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--foreground);
+    display: flex;
+    align-items: center;
+  }
   .status-dot {
     display: inline-block; width: 6px; height: 6px; border-radius: 50%;
     background: var(--muted); flex: 0 0 auto; vertical-align: middle; margin-right: 6px;
   }
-  .status-dot.online { background: var(--success); }
+  .status-dot.online { background: var(--success); box-shadow: 0 0 6px rgba(45, 216, 138, 0.8); }
 
   .detail { max-width: 640px; }
   .detail button.back {
     background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 0 16px 0;
   }
+  .detail-banner {
+    position: relative;
+    height: 150px;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 36px;
+    background-image:
+      radial-gradient(circle at 20% 15%, rgba(34, 211, 238, 0.35), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(45, 216, 138, 0.28), transparent 55%),
+      var(--surface-raised);
+  }
+  .detail-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .detail-icon {
+    position: absolute;
+    left: 20px;
+    bottom: -22px;
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-image: var(--gradient-brand);
+    color: var(--accent-foreground);
+    font-weight: 700;
+    font-size: 22px;
+    border: 3px solid var(--background);
+  }
+  .detail-header { padding-left: 88px; min-height: 34px; }
   .detail h2 { margin: 0 0 4px 0; }
   .detail .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
   .detail .desc { line-height: 1.6; margin-bottom: 20px; }
 
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .stat-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+  }
+  .stat-tile .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .stat-tile .stat-value { margin-top: 2px; font-size: 14px; font-weight: 600; color: var(--foreground); }
+
+  .tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+  .tag-chip {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+  }
+
   .join-btn {
-    background: var(--accent);
+    background: var(--accent-2);
     color: var(--accent-foreground);
     border: none;
     border-radius: 8px;
     padding: 10px 18px;
     font-size: 14px;
+    font-weight: 600;
     cursor: pointer;
+    box-shadow: 0 8px 24px -8px rgba(45, 216, 138, 0.55);
+    transition: filter 0.15s ease, transform 0.15s ease;
   }
+  .join-btn:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
   .join-btn:disabled { cursor: not-allowed; opacity: 0.6; }
   .join-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
 
   #gate {
+    position: relative;
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
@@ -204,7 +308,26 @@
     padding: 32px;
     gap: 18px;
   }
+  #gate::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(45% 40% at 30% 20%, rgba(34, 211, 238, 0.22), transparent 70%),
+      radial-gradient(40% 35% at 75% 15%, rgba(45, 216, 138, 0.16), transparent 70%);
+    pointer-events: none;
+  }
+  #gate > * { position: relative; }
   #gate .logo { font-size: 26px; }
+  #gate-login {
+    background-image: var(--gradient-brand);
+    color: var(--accent-foreground);
+    border: none;
+    font-weight: 600;
+    box-shadow: 0 8px 24px -8px rgba(34, 211, 238, 0.55);
+    transition: filter 0.15s ease, transform 0.15s ease;
+  }
+  #gate-login:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
   #gate p.tagline { color: var(--muted); font-size: 14px; margin: 0; max-width: 360px; }
   .gate-remember {
     display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);

@@ -43,6 +43,10 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
+function serverInitial(name) {
+  return escapeHtml((name || "?").trim().charAt(0).toUpperCase() || "?");
+}
+
 function renderList(servers) {
   detailEl.hidden = true;
   listEl.hidden = false;
@@ -60,11 +64,18 @@ function renderList(servers) {
       (server) => `
       <div class="card" data-slug="${escapeHtml(server.slug)}">
         <div class="banner">
-          ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : "Pas d'image"}
+          ${
+            server.bannerUrl
+              ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />`
+              : `<div class="banner-scrim">${escapeHtml(server.name)}</div>`
+          }
           ${typeBadge(server.type)}
         </div>
         <div class="card-body">
-          <h3>${escapeHtml(server.name)}</h3>
+          <div class="card-title-row">
+            <span class="server-icon">${serverInitial(server.name)}</span>
+            <h3>${escapeHtml(server.name)}</h3>
+          </div>
           <p>${escapeHtml(server.description)}</p>
           <div class="players">${playersLabel(server)}</div>
         </div>
@@ -82,31 +93,45 @@ function renderDetail(server) {
   statusEl.hidden = true;
   detailEl.hidden = false;
 
-  const modpack =
-    server.type === "modded" && server.curseforgeModpackName
-      ? `<p class="meta">Modpack CurseForge : ${escapeHtml(server.curseforgeModpackName)}${
-          server.curseforgeModpackVersion ? ` — ${escapeHtml(server.curseforgeModpackVersion)}` : ""
-        }</p>`
-      : "";
+  const tags = [`<span class="tag-chip">${server.type === "modded" ? "Moddé" : "Vanilla"}</span>`];
+  if (server.type === "modded" && server.curseforgeModpackName) {
+    const version = server.curseforgeModpackVersion ? ` — ${escapeHtml(server.curseforgeModpackVersion)}` : "";
+    tags.push(`<span class="tag-chip">${escapeHtml(server.curseforgeModpackName)}${version}</span>`);
+  }
 
   // signedIn est toujours vrai ici (le portail bloque l'accès sans connexion),
   // mais on garde le garde-fou par prudence.
   const joinSection = signedIn
     ? `
-      <button class="join-btn" id="join-btn">Rejoindre le serveur</button>
+      <button class="join-btn" id="join-btn">▶ Rejoindre le serveur</button>
       <p class="join-note" id="join-status"></p>
     `
     : `
-      <button class="join-btn" disabled>Rejoindre le serveur</button>
+      <button class="join-btn" disabled>▶ Rejoindre le serveur</button>
       <p class="join-note">Connecte-toi avec ton compte Microsoft pour rejoindre ce serveur.</p>
     `;
 
   detailEl.innerHTML = `
     <button class="back">&larr; Retour à la liste</button>
-    <h2>${escapeHtml(server.name)}</h2>
-    <p class="meta">Minecraft ${escapeHtml(server.minecraftVersion)}</p>
-    <p class="meta">${playersLabel(server)}</p>
-    ${modpack}
+    <div class="detail-banner">
+      ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
+      <div class="detail-icon">${serverInitial(server.name)}</div>
+    </div>
+    <div class="detail-header">
+      <h2>${escapeHtml(server.name)}</h2>
+      <p class="meta">${playersLabel(server)}</p>
+    </div>
+    <div class="stat-row">
+      <div class="stat-tile">
+        <div class="stat-label">Version</div>
+        <div class="stat-value">${escapeHtml(server.minecraftVersion)}</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Joueurs</div>
+        <div class="stat-value">${escapeHtml(playersText(server))}</div>
+      </div>
+    </div>
+    <div class="tag-row">${tags.join("")}</div>
     <p class="desc">${escapeHtml(server.description)}</p>
     ${joinSection}
   `;
