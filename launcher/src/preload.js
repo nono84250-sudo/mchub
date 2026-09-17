@@ -29,4 +29,11 @@ contextBridge.exposeInMainWorld("mchub", {
     openGameFolder: () => ipcRenderer.invoke("settings:openGameFolder"),
   },
   getMinecraftStatus: () => ipcRenderer.invoke("status:getMinecraftStatus"),
+  account: {
+    list: () => ipcRenderer.invoke("account:list"),
+    switch: (id) => ipcRenderer.invoke("account:switch", id),
+    remove: (id) => ipcRenderer.invoke("account:remove", id),
+    changeSkin: (variant, fileBuffer) => ipcRenderer.invoke("account:changeSkin", { variant, fileBuffer }),
+    resetSkin: () => ipcRenderer.invoke("account:resetSkin"),
+  },
 });

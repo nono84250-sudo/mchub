@@ -7,10 +7,15 @@ const listEl = document.getElementById("list");
 const detailEl = document.getElementById("detail");
 const msAccountEl = document.getElementById("ms-account");
 const settingsPanelEl = document.getElementById("settings-panel");
+const accountPanelEl = document.getElementById("account-panel");
 const navServersBtn = document.getElementById("nav-servers");
 const navSettingsBtn = document.getElementById("nav-settings");
 
 let signedIn = false;
+// Profil du compte actif tel que reçu du processus principal — conservé ici
+// pour que la page "Gérer le compte" puisse afficher le skin sans un
+// nouvel aller-retour IPC.
+let currentProfile = null;
 
 // Désactive/réactive le bouton de connexion — utilisé pendant une connexion
 // en cours ET quand on revient au portail après une déconnexion (sinon il
@@ -220,6 +225,7 @@ function skinUrlFor(profile) {
 }
 
 function renderAccountHeader(profile, { rememberFailed } = {}) {
+  currentProfile = profile;
   const skinUrl = skinUrlFor(profile);
 
   // Avatar dans la barre latérale : la tête du skin si on l'a, sinon
@@ -254,6 +260,7 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
         }
         <div class="account-dropdown-name">${escapeHtml(profile.name)}</div>
         ${rememberFailed ? '<p class="ms-error account-dropdown-note">Session non mémorisée</p>' : ""}
+        <button id="manage-account" class="ms-login account-dropdown-signout" type="button">Gérer le compte</button>
         <button id="sign-out" class="ms-login account-dropdown-signout" type="button">Se déconnecter</button>
       </div>
     </div>
@@ -282,10 +289,17 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
       return;
     }
     signedIn = false;
+    currentProfile = null;
     appEl.hidden = true;
     gateEl.hidden = false;
     gateMessageEl.textContent = "";
     setGateBusy(false);
+  });
+
+  document.getElementById("manage-account").addEventListener("click", (event) => {
+    event.stopPropagation();
+    document.getElementById("account-dropdown").hidden = true;
+    showAccountView();
   });
 }
 
@@ -406,6 +420,7 @@ function wireMcStatus() {
 // pour matcher la convention des launchers du genre (Lunar, Modrinth...).
 function showServersView() {
   settingsPanelEl.hidden = true;
+  accountPanelEl.hidden = true;
   navSettingsBtn.classList.remove("active");
   navServersBtn.classList.add("active");
   loadServers();
@@ -415,6 +430,7 @@ async function showSettingsView() {
   statusEl.hidden = true;
   listEl.hidden = true;
   detailEl.hidden = true;
+  accountPanelEl.hidden = true;
   settingsPanelEl.hidden = false;
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.add("active");
@@ -428,6 +444,204 @@ async function showSettingsView() {
   document.getElementById("settings-mem-min").value = settings.memoryMinGB;
   document.getElementById("settings-mem-max").value = settings.memoryMaxGB;
   document.getElementById("settings-game-root").textContent = settings.gameRoot;
+}
+
+// Page "Gérer le compte" : accessible depuis le menu déroulant du pseudo
+// (pas depuis la barre latérale, pour ne pas la surcharger d'icônes) —
+// changement de skin et bascule entre comptes Microsoft mémorisés.
+async function showAccountView() {
+  statusEl.hidden = true;
+  listEl.hidden = true;
+  detailEl.hidden = true;
+  settingsPanelEl.hidden = true;
+  accountPanelEl.hidden = false;
+  navServersBtn.classList.remove("active");
+  navSettingsBtn.classList.remove("active");
+  await renderAccountPanel();
+}
+
+async function renderAccountPanel() {
+  const skinUrl = currentProfile ? skinUrlFor(currentProfile) : "";
+  const skinPreviewHtml = skinUrl
+    ? `
+      <div class="skin-face-wrap">
+        <div class="skin-face" style="background-image: url('${escapeHtml(skinUrl)}')"></div>
+        <div class="skin-face-overlay" style="background-image: url('${escapeHtml(skinUrl)}')"></div>
+      </div>`
+    : `<span class="server-icon" style="width: 72px; height: 72px; font-size: 28px;">${serverInitial(currentProfile?.name || "?")}</span>`;
+
+  accountPanelEl.innerHTML = `
+    <h2>Mon compte</h2>
+    <div class="account-skin-row">
+      ${skinPreviewHtml}
+      <div>
+        <div class="account-dropdown-name">${escapeHtml(currentProfile?.name || "")}</div>
+        <p class="join-note" style="margin: 4px 0 0;">Skin actuel</p>
+      </div>
+    </div>
+
+    <div class="settings-field">
+      <span class="field-label">Changer de skin (PNG, 64×64)</span>
+      <input type="file" accept="image/png" id="skin-file-input" class="settings-input" />
+    </div>
+    <div class="account-variant-row">
+      <label><input type="radio" name="skin-variant" value="classic" checked /> Classic (Steve)</label>
+      <label><input type="radio" name="skin-variant" value="slim" /> Slim (Alex)</label>
+    </div>
+    <div style="display: flex; gap: 8px; margin-top: 10px;">
+      <button id="skin-upload-btn" class="join-btn" type="button">Changer de skin</button>
+      <button id="skin-reset-btn" class="ms-login" type="button">Réinitialiser</button>
+    </div>
+    <p class="join-note" id="account-skin-status"></p>
+
+    <h2 style="margin-top: 32px;">Comptes mémorisés</h2>
+    <div id="account-list" style="margin-top: 12px;"></div>
+    <p class="join-note" id="account-list-status"></p>
+    <button id="account-add-btn" class="ms-login" type="button">+ Ajouter un compte</button>
+  `;
+
+  wireAccountPanelActions();
+  await refreshAccountList();
+}
+
+async function refreshAccountList() {
+  const listContainer = document.getElementById("account-list");
+  const { accounts, activeId } = await window.mchub.account.list();
+
+  if (accounts.length === 0) {
+    listContainer.innerHTML = '<p class="join-note">Aucun compte mémorisé — coche "Se souvenir de moi" à la connexion.</p>';
+    return;
+  }
+
+  listContainer.innerHTML = accounts
+    .map(
+      (a) => `
+      <div class="account-list-row">
+        <span class="account-list-row-name">
+          <span class="server-icon" style="width: 26px; height: 26px; font-size: 11px;">${serverInitial(a.name)}</span>
+          ${escapeHtml(a.name)}
+          ${a.id === activeId ? '<span class="account-active-tag">Actif</span>' : ""}
+        </span>
+        <span class="account-list-row-actions">
+          ${a.id === activeId ? "" : `<button class="ms-login account-switch-btn" type="button" data-id="${escapeHtml(a.id)}">Basculer</button>`}
+          <button class="ms-login account-remove-btn" type="button" data-id="${escapeHtml(a.id)}">Oublier</button>
+        </span>
+      </div>`,
+    )
+    .join("");
+
+  const listStatusEl = document.getElementById("account-list-status");
+
+  listContainer.querySelectorAll(".account-switch-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id;
+      btn.disabled = true;
+      btn.textContent = "Bascule…";
+      listStatusEl.textContent = "";
+      listStatusEl.classList.remove("ms-error");
+
+      const result = await window.mchub.account.switch(id);
+      if (result.ok) {
+        renderAccountHeader(result.profile, {});
+        await renderAccountPanel();
+        return;
+      }
+      btn.disabled = false;
+      btn.textContent = "Basculer";
+      listStatusEl.textContent = result.pendingApproval ? PENDING_APPROVAL_MESSAGE : result.error;
+      listStatusEl.classList.add("ms-error");
+    });
+  });
+
+  listContainer.querySelectorAll(".account-remove-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id;
+      await window.mchub.account.remove(id);
+      if (id === activeId) {
+        // Le compte actif vient d'être oublié : retour au portail, comme
+        // une déconnexion normale (plus rien à afficher/gérer ici).
+        signedIn = false;
+        currentProfile = null;
+        appEl.hidden = true;
+        gateEl.hidden = false;
+        gateMessageEl.textContent = "";
+        setGateBusy(false);
+        return;
+      }
+      await refreshAccountList();
+    });
+  });
+}
+
+function wireAccountPanelActions() {
+  const uploadBtn = document.getElementById("skin-upload-btn");
+  const resetBtn = document.getElementById("skin-reset-btn");
+  const fileInput = document.getElementById("skin-file-input");
+  const skinStatusEl = document.getElementById("account-skin-status");
+
+  uploadBtn.addEventListener("click", async () => {
+    const file = fileInput.files[0];
+    if (!file) {
+      skinStatusEl.textContent = "Choisis d'abord un fichier PNG.";
+      skinStatusEl.classList.add("ms-error");
+      return;
+    }
+    const variant = document.querySelector('input[name="skin-variant"]:checked')?.value || "classic";
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = "Envoi…";
+    skinStatusEl.textContent = "";
+    skinStatusEl.classList.remove("ms-error");
+
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const result = await window.mchub.account.changeSkin(variant, buffer);
+
+    if (result.ok) {
+      renderAccountHeader(result.profile, {});
+      await renderAccountPanel();
+      document.getElementById("account-skin-status").textContent = "Skin mis à jour.";
+      return;
+    }
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = "Changer de skin";
+    skinStatusEl.textContent = result.error;
+    skinStatusEl.classList.add("ms-error");
+  });
+
+  resetBtn.addEventListener("click", async () => {
+    resetBtn.disabled = true;
+    const result = await window.mchub.account.resetSkin();
+    if (result.ok) {
+      renderAccountHeader(result.profile, {});
+      await renderAccountPanel();
+      document.getElementById("account-skin-status").textContent = "Skin réinitialisé.";
+      return;
+    }
+    resetBtn.disabled = false;
+    skinStatusEl.textContent = result.error;
+    skinStatusEl.classList.add("ms-error");
+  });
+
+  document.getElementById("account-add-btn").addEventListener("click", async () => {
+    const addBtn = document.getElementById("account-add-btn");
+    const listStatusEl = document.getElementById("account-list-status");
+    addBtn.disabled = true;
+    addBtn.textContent = "Connexion…";
+    listStatusEl.textContent = "";
+    listStatusEl.classList.remove("ms-error");
+
+    // "Ajouter un compte" mémorise toujours le nouveau compte (sinon il
+    // n'apparaîtrait pas dans la liste juste après l'avoir ajouté).
+    const result = await window.mchub.signIn(true);
+    if (result.ok) {
+      renderAccountHeader(result.profile, { rememberFailed: result.rememberFailed });
+      await renderAccountPanel();
+      return;
+    }
+    addBtn.disabled = false;
+    addBtn.textContent = "+ Ajouter un compte";
+    listStatusEl.textContent = result.pendingApproval ? PENDING_APPROVAL_MESSAGE : result.error;
+    listStatusEl.classList.add("ms-error");
+  });
 }
 
 function wireSidebar() {

@@ -102,18 +102,16 @@ ipcMain.handle("auth:signIn", async (_event, remember) => {
     setSession(profile, authorization);
 
     let remembered = false;
-    try {
-      if (remember && refreshToken) {
-        remembered = sessionStore.saveRefreshToken(refreshToken);
-      } else {
-        // Pas de "se souvenir de moi" : on efface toute session mémorisée
-        // précédente (ex: un autre compte sur une machine partagée), sinon
-        // elle resterait accessible au prochain démarrage malgré ce choix.
-        sessionStore.clearRefreshToken();
+    if (remember && refreshToken) {
+      try {
+        remembered = !!sessionStore.rememberAccount(profile.id, profile.name, refreshToken);
+      } catch {
+        remembered = false;
       }
-    } catch {
-      remembered = false;
     }
+    // Pas de "se souvenir de moi" : on ne touche plus aux AUTRES comptes
+    // déjà mémorisés (multi-compte) — juste cette session-ci ne survivra
+    // pas au redémarrage.
 
     return { ok: true, profile, rememberFailed: remember && !remembered };
   } catch (error) {
@@ -124,30 +122,33 @@ ipcMain.handle("auth:signIn", async (_event, remember) => {
   }
 });
 
-// Appelé une fois au démarrage de l'app : tente de reprendre la session
-// mémorisée sans ouvrir de fenêtre de connexion.
+// Appelé une fois au démarrage de l'app : tente de reprendre le compte actif
+// mémorisé sans ouvrir de fenêtre de connexion.
 ipcMain.handle("auth:tryRestore", async () => {
-  const refreshToken = sessionStore.loadRefreshToken();
-  if (!refreshToken) return { ok: false };
+  const { accounts, activeId } = sessionStore.loadAccounts();
+  const active = accounts.find((a) => a.id === activeId);
+  if (!active) return { ok: false };
 
   try {
-    const { profile, authorization, refreshToken: newRefreshToken } = await msAuth.refreshSession(refreshToken);
+    const { profile, authorization, refreshToken: newRefreshToken } = await msAuth.refreshSession(
+      active.refreshToken,
+    );
     setSession(profile, authorization);
     try {
-      sessionStore.saveRefreshToken(newRefreshToken);
+      sessionStore.rememberAccount(profile.id, profile.name, newRefreshToken);
     } catch {
       // La session reste valide en mémoire pour cette fois ; seule la
       // mémorisation pour la prochaine fois est perdue.
     }
     return { ok: true, profile };
   } catch (error) {
-    // Ne vider le refresh_token mémorisé que s'il est vraiment invalide/
-    // révoqué côté Microsoft ("invalid_grant") — pas sur une panne réseau
-    // passagère, ni sur le blocage temporaire "en attente d'approbation"
-    // (les identifiants Microsoft/Xbox restent valides dans ce cas).
+    // N'oublier le compte que s'il est vraiment invalide/révoqué côté
+    // Microsoft ("invalid_grant") — pas sur une panne réseau passagère, ni
+    // sur le blocage temporaire "en attente d'approbation" (les identifiants
+    // Microsoft/Xbox restent valides dans ce cas).
     if (error.code === "invalid_grant") {
       try {
-        sessionStore.clearRefreshToken();
+        sessionStore.forgetAccount(active.id);
       } catch {
         // Rien de plus à faire : le refresh_token est de toute façon invalide
         // côté Microsoft, seul le nettoyage du fichier local a échoué.
@@ -157,7 +158,7 @@ ipcMain.handle("auth:tryRestore", async () => {
       // le refresh_token avant que la suite échoue : on garde le nouveau
       // pour ne pas se retrouver avec un token déjà mort au prochain essai.
       try {
-        sessionStore.saveRefreshToken(error.rotatedRefreshToken);
+        sessionStore.rememberAccount(active.id, active.name, error.rotatedRefreshToken);
       } catch {
         // idem : tant pis pour cette fois.
       }
@@ -170,16 +171,108 @@ ipcMain.handle("auth:tryRestore", async () => {
 });
 
 ipcMain.handle("auth:signOut", () => {
-  // currentSession n'est mis à null qu'après le nettoyage disque : si celui-ci
-  // échoue, l'appelant le sait (ok:false) plutôt que de désynchroniser l'état
-  // du processus principal de celui affiché dans le renderer.
+  // Ne retire pas le compte de la liste mémorisée (juste désactive la
+  // reprise automatique) : on peut y rebasculer rapidement depuis la page
+  // de gestion du compte sans se reconnecter à Microsoft.
   try {
-    sessionStore.clearRefreshToken();
+    sessionStore.clearActiveAccount();
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
   currentSession = null;
   return { ok: true };
+});
+
+// Multi-compte : liste des comptes mémorisés (jamais leur refresh_token),
+// bascule vers un autre compte déjà mémorisé, et oubli définitif d'un
+// compte. "Ajouter un compte" réutilise auth:signIn tel quel côté renderer.
+ipcMain.handle("account:list", () => {
+  const { accounts, activeId } = sessionStore.loadAccounts();
+  return { accounts: accounts.map((a) => ({ id: a.id, name: a.name })), activeId };
+});
+
+ipcMain.handle("account:switch", async (_event, id) => {
+  const { accounts } = sessionStore.loadAccounts();
+  const account = accounts.find((a) => a.id === id);
+  if (!account) return { ok: false, error: "Compte introuvable." };
+
+  try {
+    const { profile, authorization, refreshToken: newRefreshToken } = await msAuth.refreshSession(
+      account.refreshToken,
+    );
+    setSession(profile, authorization);
+    sessionStore.rememberAccount(profile.id, profile.name, newRefreshToken);
+    return { ok: true, profile };
+  } catch (error) {
+    if (error.code === "invalid_grant") {
+      sessionStore.forgetAccount(id);
+    }
+    if (error instanceof msAuth.PendingApprovalError) {
+      return { ok: false, pendingApproval: true, error: error.message };
+    }
+    return { ok: false, error: error instanceof Error ? error.message : "Impossible de basculer sur ce compte." };
+  }
+});
+
+ipcMain.handle("account:remove", (_event, id) => {
+  sessionStore.forgetAccount(id);
+  if (currentSession?.profile?.id === id) currentSession = null;
+  return { ok: true };
+});
+
+// Changement de skin : le renderer lit le fichier choisi et envoie ses
+// octets bruts par IPC (jamais d'accès réseau direct depuis le renderer,
+// même principe que fetchJson côté serveurs — voir plus haut).
+ipcMain.handle("account:changeSkin", async (_event, { variant, fileBuffer }) => {
+  if (!currentSession) return { ok: false, error: "Connecte-toi d'abord avec ton compte Microsoft." };
+  try {
+    const form = new FormData();
+    form.append("variant", variant === "slim" ? "slim" : "classic");
+    form.append("file", new Blob([fileBuffer], { type: "image/png" }), "skin.png");
+
+    const res = await fetch("https://api.minecraftservices.com/minecraft/profile/skins", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${currentSession.authorization.access_token}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { ok: false, error: data.errorMessage || `Le serveur Minecraft a refusé le skin (${res.status}).` };
+    }
+    const profile = await res.json();
+    setSession(profile, currentSession.authorization);
+    return { ok: true, profile };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+ipcMain.handle("account:resetSkin", async () => {
+  if (!currentSession) return { ok: false, error: "Connecte-toi d'abord avec ton compte Microsoft." };
+  try {
+    const res = await fetch("https://api.minecraftservices.com/minecraft/profile/skins/active", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${currentSession.authorization.access_token}` },
+    });
+    if (!res.ok) {
+      return { ok: false, error: `Le serveur Minecraft a refusé la réinitialisation (${res.status}).` };
+    }
+    let profile = currentSession.profile;
+    try {
+      profile = await res.json();
+    } catch {
+      // Corps de réponse vide : on relit le profil pour renvoyer l'état à
+      // jour au renderer plutôt que de garder l'ancien skin en mémoire.
+      const profileRes = await fetch("https://api.minecraftservices.com/minecraft/profile", {
+        headers: { Authorization: `Bearer ${currentSession.authorization.access_token}` },
+      });
+      if (profileRes.ok) profile = await profileRes.json();
+    }
+    setSession(profile, currentSession.authorization);
+    return { ok: true, profile };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
 });
 
 // Boutons de la barre de titre custom (fenêtre sans cadre natif, voir
