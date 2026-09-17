@@ -16,15 +16,6 @@ const SITE_URL = process.env.MCHUB_SITE_URL || "http://localhost:3000";
 const LAUNCHER_API_KEY = process.env.LAUNCHER_API_KEY;
 const REQUEST_TIMEOUT_MS = 8000;
 
-// TEMPORAIRE (à retirer avant toute diffusion réelle) : permet de tester le
-// téléchargement/lancement du jeu tant que Microsoft n'a pas approuvé l'accès
-// à l'API Minecraft (voir cahier des charges, section 4). Ne remplace jamais
-// une vraie session — juste un raccourci de développement. Indexé sur
-// app.isPackaged plutôt qu'un simple booléen : une version empaquetée (donc
-// potentiellement distribuée) n'a jamais ce contournement, même si on oublie
-// de l'enlever à la main avant de construire un build.
-const TEST_MODE_ENABLED = !app.isPackaged;
-
 // Session du joueur connecté (compte Microsoft/Minecraft), en mémoire.
 // Le refresh_token est en plus sauvegardé chiffré sur disque si le joueur a
 // coché "se souvenir de moi" (voir sessionStore.js).
@@ -179,26 +170,6 @@ ipcMain.handle("auth:signOut", () => {
   }
   currentSession = null;
   return { ok: true };
-});
-
-ipcMain.handle("app:isTestModeEnabled", () => TEST_MODE_ENABLED);
-
-// TEMPORAIRE (voir TEST_MODE_ENABLED ci-dessus).
-ipcMain.handle("auth:startTestSession", () => {
-  if (!TEST_MODE_ENABLED) return { ok: false, error: "Mode test désactivé." };
-
-  const profile = { id: "00000000-0000-0000-0000-000000000000", name: "JoueurTest" };
-  setSession(
-    profile,
-    msAuth.buildAuthorization({
-      accessToken: "test-mode-fake-token",
-      uuid: profile.id,
-      name: profile.name,
-      xuid: "0",
-      clientId: "test-mode",
-    }),
-  );
-  return { ok: true, profile, testMode: true };
 });
 
 let gameLaunchInProgress = false;

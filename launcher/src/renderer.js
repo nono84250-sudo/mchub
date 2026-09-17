@@ -1,7 +1,6 @@
 const gateEl = document.getElementById("gate");
 const gateMessageEl = document.getElementById("gate-message");
 const gateLoginBtn = document.getElementById("gate-login");
-const gateTestBtn = document.getElementById("gate-test-mode");
 const appEl = document.getElementById("app");
 const statusEl = document.getElementById("status");
 const listEl = document.getElementById("list");
@@ -10,13 +9,11 @@ const msAccountEl = document.getElementById("ms-account");
 
 let signedIn = false;
 
-// Désactive/réactive les deux boutons du portail — utilisé pendant une
-// connexion en cours (évite qu'une session de test écrase une vraie
-// connexion, ou l'inverse) ET quand on revient au portail après une
-// déconnexion (sinon ils restent grisés depuis la dernière connexion).
+// Désactive/réactive le bouton de connexion — utilisé pendant une connexion
+// en cours ET quand on revient au portail après une déconnexion (sinon il
+// reste grisé depuis la dernière tentative).
 function setGateBusy(busy) {
   gateLoginBtn.disabled = busy;
-  gateTestBtn.disabled = busy;
 }
 
 function typeBadge(type) {
@@ -178,15 +175,64 @@ async function loadServers() {
   renderList(result.servers);
 }
 
-function renderAccountHeader(profile, { testMode, rememberFailed } = {}) {
+// Un seul écouteur global pour fermer le menu au clic extérieur — posé une
+// fois pour toutes (pas à chaque renderAccountHeader, sinon une reconnexion
+// après déconnexion en empilerait un nouveau à chaque fois). Redemande
+// l'élément par son id à chaque clic plutôt que de garder une référence,
+// puisque innerHTML le recrée à chaque appel de renderAccountHeader.
+let accountMenuOutsideClickWired = false;
+
+function skinUrlFor(profile) {
+  const skins = profile.skins || [];
+  const url = (skins.find((s) => s.state === "ACTIVE") || skins[0])?.url || "";
+  // L'API Mojang renvoie ces URLs en http:// même si le CDN sert aussi en
+  // https — notre CSP (img-src 'self' https: data:) bloquerait silencieusement
+  // l'image sinon.
+  return url.replace(/^http:/, "https:");
+}
+
+function renderAccountHeader(profile, { rememberFailed } = {}) {
+  const skinUrl = skinUrlFor(profile);
+
   msAccountEl.innerHTML = `
-    <span class="ms-account-name">
-      <span class="status-dot online"></span>${escapeHtml(profile.name)}${testMode ? " (mode test)" : ""}
-    </span>
-    ${rememberFailed ? '<span class="ms-error" style="margin-left: 8px;">session non mémorisée</span>' : ""}
-    <button id="sign-out" class="ms-login" style="margin-left: 10px;">Se déconnecter</button>
+    <div class="account-menu">
+      <button class="account-trigger" id="account-trigger" type="button">
+        <span class="status-dot online"></span>${escapeHtml(profile.name)}
+      </button>
+      <div class="account-dropdown" id="account-dropdown" hidden>
+        ${
+          skinUrl
+            ? `
+          <div class="skin-face-wrap">
+            <div class="skin-face" style="background-image: url('${escapeHtml(skinUrl)}')"></div>
+            <div class="skin-face-overlay" style="background-image: url('${escapeHtml(skinUrl)}')"></div>
+          </div>
+        `
+            : ""
+        }
+        <div class="account-dropdown-name">${escapeHtml(profile.name)}</div>
+        ${rememberFailed ? '<p class="ms-error account-dropdown-note">Session non mémorisée</p>' : ""}
+        <button id="sign-out" class="ms-login account-dropdown-signout" type="button">Se déconnecter</button>
+      </div>
+    </div>
   `;
-  document.getElementById("sign-out").addEventListener("click", async () => {
+
+  document.getElementById("account-trigger").addEventListener("click", (event) => {
+    event.stopPropagation();
+    const dropdown = document.getElementById("account-dropdown");
+    dropdown.hidden = !dropdown.hidden;
+  });
+
+  if (!accountMenuOutsideClickWired) {
+    accountMenuOutsideClickWired = true;
+    document.addEventListener("click", () => {
+      const dropdown = document.getElementById("account-dropdown");
+      if (dropdown) dropdown.hidden = true;
+    });
+  }
+
+  document.getElementById("sign-out").addEventListener("click", async (event) => {
+    event.stopPropagation();
     const result = await window.mchub.signOut();
     if (!result.ok) {
       // La session reste active côté processus principal (le nettoyage a
@@ -236,31 +282,12 @@ function wireGate() {
     gateMessageEl.textContent = result.error;
     gateMessageEl.classList.add("ms-error");
   });
-
-  // TEMPORAIRE, pour développement uniquement — voir TEST_MODE_ENABLED côté main.js.
-  gateTestBtn.addEventListener("click", async () => {
-    setGateBusy(true);
-    gateMessageEl.textContent = "";
-    gateMessageEl.classList.remove("ms-error");
-    const result = await window.mchub.startTestSession();
-    if (result.ok) {
-      enterApp(result.profile, { testMode: true });
-      return;
-    }
-    setGateBusy(false);
-    gateMessageEl.textContent = result.error;
-    gateMessageEl.classList.add("ms-error");
-  });
 }
 
 async function boot() {
   wireGate();
   gateEl.hidden = false;
   gateMessageEl.textContent = "Reprise de la session…";
-
-  window.mchub.isTestModeEnabled().then((enabled) => {
-    gateTestBtn.hidden = !enabled;
-  });
 
   const restored = await window.mchub.tryRestoreSession();
   if (restored.ok) {
