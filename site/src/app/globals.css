@@ -10,8 +10,11 @@
   --accent: #7c5cff;
   --accent-hover: #9179ff;
   --accent-foreground: #ffffff;
+  --accent-2: #22d3ee;
   --danger: #ff5c7a;
   --success: #4ade80;
+  --gradient-brand: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --glow-accent: 0 0 60px -12px rgba(124, 92, 255, 0.45);
 }
 
 @theme inline {
@@ -24,6 +27,7 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-2: var(--accent-2);
   --color-danger: var(--danger);
   --color-success: var(--success);
   --font-sans: var(--font-geist-sans);
@@ -38,4 +42,98 @@ body {
 
 * {
   border-color: var(--border);
+}
+
+@layer components {
+  /* Panneau de base partagé par les cartes, formulaires et blocs d'info —
+     un seul endroit à ajuster pour changer le style de surface du site. */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+  }
+
+  .field-label {
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+
+  .field-input {
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    padding: 0.6rem 0.85rem;
+    color: var(--foreground);
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .field-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18);
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    background-image: var(--gradient-brand);
+    color: var(--accent-foreground);
+    font-weight: 500;
+    padding: 0.65rem 1.25rem;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+    box-shadow: 0 8px 24px -8px rgba(124, 92, 255, 0.55);
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.6;
+    transform: none;
+  }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    font-weight: 500;
+    padding: 0.65rem 1.25rem;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--accent);
+    background: var(--surface-raised);
+  }
+
+  .gradient-text {
+    background-image: var(--gradient-brand);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .glow-card {
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .glow-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent);
+    box-shadow: var(--glow-accent);
+  }
+
+  .banner-placeholder {
+    background-image:
+      radial-gradient(circle at 20% 20%, rgba(124, 92, 255, 0.35), transparent 55%),
+      radial-gradient(circle at 80% 80%, rgba(34, 211, 238, 0.28), transparent 55%),
+      var(--surface-raised);
+  }
 }

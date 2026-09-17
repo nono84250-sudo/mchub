@@ -15,18 +15,22 @@ export function ServerCard({ slug, name, description, bannerUrl, type, playerCou
   return (
     <Link
       href={`/servers/${slug}`}
-      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition-colors hover:border-accent"
+      className="glow-card group flex flex-col overflow-hidden rounded-xl border border-border bg-surface"
     >
-      <div className="relative h-32 w-full bg-surface-raised">
+      <div className="relative h-32 w-full banner-placeholder">
         {bannerUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={bannerUrl} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted text-sm">Pas d&apos;image</div>
+          <div className="flex h-full items-center justify-center text-sm font-medium text-foreground/70">
+            {name}
+          </div>
         )}
         <span
-          className={`absolute top-2 right-2 rounded-full px-2 py-0.5 text-xs font-medium ${
-            type === "modded" ? "bg-accent text-accent-foreground" : "bg-surface-raised text-muted border border-border"
+          className={`absolute top-2 right-2 rounded-full px-2 py-0.5 text-xs font-medium backdrop-blur ${
+            type === "modded"
+              ? "bg-accent/90 text-accent-foreground"
+              : "bg-surface-raised/80 text-muted border border-border"
           }`}
         >
           {type === "modded" ? "Moddé" : "Vanilla"}

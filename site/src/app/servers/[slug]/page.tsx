@@ -22,18 +22,20 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 py-12">
       <AutoRefresh intervalMs={30_000} />
-      <div className="h-48 w-full overflow-hidden rounded-xl bg-surface-raised">
+      <div className="relative h-48 w-full overflow-hidden rounded-xl banner-placeholder">
         {server.bannerUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={server.bannerUrl} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted">Pas d&apos;image</div>
+          <div className="flex h-full items-center justify-center text-2xl font-semibold text-foreground/70">
+            {server.name}
+          </div>
         )}
       </div>
 
       <div className="mt-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">{server.name}</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">{server.name}</h1>
           <p className="mt-1 text-muted">Minecraft {server.minecraftVersion}</p>
         </div>
         <span
@@ -48,7 +50,7 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
       <p className="mt-6 text-foreground whitespace-pre-wrap">{server.description}</p>
 
       {server.type === "modded" && server.curseforgeModpackName ? (
-        <div className="mt-6 rounded-lg border border-border bg-surface p-4">
+        <div className="panel mt-6 p-4">
           <p className="text-sm text-muted">Modpack CurseForge</p>
           <p className="mt-1 font-medium text-foreground">
             {server.curseforgeModpackName}

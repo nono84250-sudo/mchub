@@ -14,13 +14,15 @@ export default async function ServersPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-12">
       <AutoRefresh intervalMs={30_000} />
-      <h1 className="text-2xl font-bold text-foreground">Annuaire des serveurs</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-foreground">Annuaire des serveurs</h1>
       <p className="mt-1 text-muted">
         {servers.length} serveur{servers.length === 1 ? "" : "s"} référencé{servers.length === 1 ? "" : "s"}.
       </p>
 
       {servers.length === 0 ? (
-        <p className="mt-8 text-muted">Aucun serveur pour le moment — sois le premier à en publier un.</p>
+        <div className="panel mt-8 p-8 text-center text-muted">
+          Aucun serveur pour le moment — sois le premier à en publier un.
+        </div>
       ) : (
         <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {servers.map((server) => (

@@ -49,21 +49,14 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
   return (
     <form action={formAction} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="name" className="text-sm text-muted">
+        <label htmlFor="name" className="field-label">
           Nom du serveur
         </label>
-        <input
-          id="name"
-          name="name"
-          type="text"
-          required
-          defaultValue={values.name}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-foreground outline-none focus:border-accent"
-        />
+        <input id="name" name="name" type="text" required defaultValue={values.name} className="field-input" />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="description" className="text-sm text-muted">
+        <label htmlFor="description" className="field-label">
           Description
         </label>
         <textarea
@@ -72,12 +65,12 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           required
           rows={4}
           defaultValue={values.description}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-foreground outline-none focus:border-accent"
+          className="field-input"
         />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="bannerUrl" className="text-sm text-muted">
+        <label htmlFor="bannerUrl" className="field-label">
           URL de la bannière (optionnel)
         </label>
         <input
@@ -86,12 +79,12 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           type="url"
           defaultValue={values.bannerUrl}
           placeholder="https://..."
-          className="rounded-md border border-border bg-surface px-3 py-2 text-foreground outline-none focus:border-accent"
+          className="field-input"
         />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm text-muted">Type de serveur</span>
+        <span className="field-label">Type de serveur</span>
         <div className="flex gap-4">
           <label className="flex items-center gap-2 text-sm text-foreground">
             <input
@@ -117,7 +110,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="minecraftVersionSelect" className="text-sm text-muted">
+        <label htmlFor="minecraftVersionSelect" className="field-label">
           Version de Minecraft
         </label>
         <select
@@ -125,7 +118,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           required
           value={versionChoice}
           onChange={(event) => setVersionChoice(event.target.value)}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-foreground outline-none focus:border-accent"
+          className="field-input"
         >
           <option value="" disabled>
             Choisir une version...
@@ -146,7 +139,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
             placeholder="ex : 1.21.5"
             value={customVersion}
             onChange={(event) => setCustomVersion(event.target.value)}
-            className="rounded-md border border-border bg-surface px-3 py-2 text-foreground outline-none focus:border-accent"
+            className="field-input"
           />
         ) : (
           <input type="hidden" name="minecraftVersion" value={versionChoice} />
@@ -157,7 +150,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="ip" className="text-sm text-muted">
+        <label htmlFor="ip" className="field-label">
           Adresse de connexion (IP)
         </label>
         <input
@@ -167,7 +160,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           required
           placeholder="play.monserveur.fr:25565"
           defaultValue={values.ip}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-foreground outline-none focus:border-accent"
+          className="field-input"
         />
         <p className="text-xs text-muted">
           Jamais affichée publiquement sur le site — uniquement transmise par le launcher.
@@ -175,10 +168,10 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
       </div>
 
       {type === "modded" ? (
-        <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4">
+        <div className="panel flex flex-col gap-4 p-4">
           <p className="text-sm font-medium text-foreground">Modpack CurseForge</p>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="curseforgeModpackId" className="text-sm text-muted">
+            <label htmlFor="curseforgeModpackId" className="field-label">
               Identifiant du modpack
             </label>
             <input
@@ -187,11 +180,11 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
               type="text"
               required={type === "modded"}
               defaultValue={values.curseforgeModpackId}
-              className="rounded-md border border-border bg-background px-3 py-2 text-foreground outline-none focus:border-accent"
+              className="field-input"
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="curseforgeModpackName" className="text-sm text-muted">
+            <label htmlFor="curseforgeModpackName" className="field-label">
               Nom du modpack
             </label>
             <input
@@ -199,11 +192,11 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
               name="curseforgeModpackName"
               type="text"
               defaultValue={values.curseforgeModpackName}
-              className="rounded-md border border-border bg-background px-3 py-2 text-foreground outline-none focus:border-accent"
+              className="field-input"
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="curseforgeModpackVersion" className="text-sm text-muted">
+            <label htmlFor="curseforgeModpackVersion" className="field-label">
               Version du modpack
             </label>
             <input
@@ -211,7 +204,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
               name="curseforgeModpackVersion"
               type="text"
               defaultValue={values.curseforgeModpackVersion}
-              className="rounded-md border border-border bg-background px-3 py-2 text-foreground outline-none focus:border-accent"
+              className="field-input"
             />
           </div>
         </div>
@@ -219,11 +212,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
 
       {state?.error ? <p className="text-sm text-danger">{state.error}</p> : null}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="self-start rounded-md bg-accent px-5 py-2.5 font-medium text-accent-foreground hover:bg-accent-hover transition-colors disabled:opacity-60"
-      >
+      <button type="submit" disabled={pending} className="btn-primary self-start">
         {pending ? "Enregistrement..." : submitLabel}
       </button>
     </form>

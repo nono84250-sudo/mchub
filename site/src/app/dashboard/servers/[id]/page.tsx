@@ -30,22 +30,24 @@ export default async function EditServerPage({ params }: PageProps<"/dashboard/s
         </form>
       </div>
 
-      <ServerForm
-        action={boundUpdate}
-        submitLabel="Enregistrer les modifications"
-        versions={versions}
-        defaultValues={{
-          name: server.name,
-          description: server.description,
-          bannerUrl: server.bannerUrl ?? "",
-          type: server.type,
-          minecraftVersion: server.minecraftVersion,
-          ip: server.ip,
-          curseforgeModpackId: server.curseforgeModpackId ?? "",
-          curseforgeModpackName: server.curseforgeModpackName ?? "",
-          curseforgeModpackVersion: server.curseforgeModpackVersion ?? "",
-        }}
-      />
+      <div className="panel p-6 sm:p-8">
+        <ServerForm
+          action={boundUpdate}
+          submitLabel="Enregistrer les modifications"
+          versions={versions}
+          defaultValues={{
+            name: server.name,
+            description: server.description,
+            bannerUrl: server.bannerUrl ?? "",
+            type: server.type,
+            minecraftVersion: server.minecraftVersion,
+            ip: server.ip,
+            curseforgeModpackId: server.curseforgeModpackId ?? "",
+            curseforgeModpackName: server.curseforgeModpackName ?? "",
+            curseforgeModpackVersion: server.curseforgeModpackVersion ?? "",
+          }}
+        />
+      </div>
     </div>
   );
 }

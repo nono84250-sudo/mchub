@@ -10,35 +10,21 @@ export function SignupForm() {
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="name" className="text-sm text-muted">
+        <label htmlFor="name" className="field-label">
           Nom
         </label>
-        <input
-          id="name"
-          name="name"
-          type="text"
-          required
-          autoComplete="name"
-          className="rounded-md border border-border bg-surface px-3 py-2 text-foreground outline-none focus:border-accent"
-        />
+        <input id="name" name="name" type="text" required autoComplete="name" className="field-input" />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="email" className="text-sm text-muted">
+        <label htmlFor="email" className="field-label">
           Email
         </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          required
-          autoComplete="email"
-          className="rounded-md border border-border bg-surface px-3 py-2 text-foreground outline-none focus:border-accent"
-        />
+        <input id="email" name="email" type="email" required autoComplete="email" className="field-input" />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="password" className="text-sm text-muted">
+        <label htmlFor="password" className="field-label">
           Mot de passe
         </label>
         <input
@@ -48,18 +34,14 @@ export function SignupForm() {
           required
           minLength={8}
           autoComplete="new-password"
-          className="rounded-md border border-border bg-surface px-3 py-2 text-foreground outline-none focus:border-accent"
+          className="field-input"
         />
         <p className="text-xs text-muted">8 caractères minimum.</p>
       </div>
 
       {state?.error ? <p className="text-sm text-danger">{state.error}</p> : null}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-accent px-4 py-2.5 font-medium text-accent-foreground hover:bg-accent-hover transition-colors disabled:opacity-60"
-      >
+      <button type="submit" disabled={pending} className="btn-primary">
         {pending ? "Création..." : "Créer mon compte"}
       </button>
 

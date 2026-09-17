@@ -17,30 +17,33 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-6 py-12">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Mes serveurs</h1>
-        <Link
-          href="/dashboard/servers/new"
-          className="rounded-md bg-accent px-4 py-2 font-medium text-accent-foreground hover:bg-accent-hover transition-colors"
-        >
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Mes serveurs</h1>
+        <Link href="/dashboard/servers/new" className="btn-primary">
           + Nouveau serveur
         </Link>
       </div>
 
       {servers.length === 0 ? (
-        <p className="mt-8 text-muted">
+        <div className="panel mt-8 p-8 text-center text-muted">
           Tu n&apos;as pas encore de serveur. Crée ta première fiche pour apparaître dans l&apos;annuaire.
-        </p>
+        </div>
       ) : (
         <ul className="mt-8 flex flex-col gap-3">
           {servers.map((server) => (
             <li key={server.id}>
               <Link
                 href={`/dashboard/servers/${server.id}`}
-                className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3 hover:border-accent transition-colors"
+                className="glow-card flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3"
               >
-                <div>
-                  <p className="font-medium text-foreground">{server.name}</p>
-                  <p className="text-sm text-muted">{server.type === "modded" ? "Moddé" : "Vanilla"}</p>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`h-2 w-2 rounded-full ${server.type === "modded" ? "bg-accent" : "bg-accent-2"}`}
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <p className="font-medium text-foreground">{server.name}</p>
+                    <p className="text-sm text-muted">{server.type === "modded" ? "Moddé" : "Vanilla"}</p>
+                  </div>
                 </div>
                 <span className="text-sm text-accent">Gérer →</span>
               </Link>
