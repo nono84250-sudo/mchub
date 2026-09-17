@@ -347,6 +347,60 @@ function wireWindowControls() {
   window.mchub.windowControls.onMaximizedChange(setMaximizedIcon);
 }
 
+// Statut des services Minecraft/Microsoft dont ce launcher depend
+// reellement (voir minecraftStatus.js — Mojang n'a plus d'API de statut
+// officielle depuis 2022). Le point du bouton prend la pire couleur parmi
+// tous les services.
+const mcStatusTrigger = document.getElementById("mc-status-trigger");
+const mcStatusDot = document.getElementById("mc-status-dot");
+const mcStatusPanel = document.getElementById("mc-status-panel");
+const mcStatusList = document.getElementById("mc-status-list");
+
+const MC_STATUS_RANK = { ok: 0, degraded: 1, offline: 2 };
+const MC_STATUS_CLASS = { ok: "online", degraded: "degraded", offline: "offline" };
+const MC_STATUS_LABEL = { ok: "OK", degraded: "Dégradé", offline: "Hors ligne" };
+
+function renderMcStatus(services) {
+  const worst = services.reduce(
+    (acc, s) => (MC_STATUS_RANK[s.state] > MC_STATUS_RANK[acc] ? s.state : acc),
+    "ok",
+  );
+  mcStatusDot.className = `status-dot ${MC_STATUS_CLASS[worst]}`;
+
+  mcStatusList.innerHTML = services
+    .map(
+      (s) => `
+      <div class="mc-status-row">
+        <span class="mc-status-row-label">
+          <span class="status-dot ${MC_STATUS_CLASS[s.state]}"></span>${escapeHtml(s.name)}
+        </span>
+        <span class="mc-status-row-latency">${s.latencyMs !== null ? `${s.latencyMs} ms` : MC_STATUS_LABEL[s.state]}</span>
+      </div>`,
+    )
+    .join("");
+}
+
+async function loadMcStatus() {
+  mcStatusList.innerHTML = '<div class="mc-status-row">Vérification…</div>';
+  const services = await window.mchub.getMinecraftStatus();
+  renderMcStatus(services);
+}
+
+function wireMcStatus() {
+  mcStatusTrigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const wasHidden = mcStatusPanel.hidden;
+    mcStatusPanel.hidden = !mcStatusPanel.hidden;
+    if (wasHidden) loadMcStatus();
+  });
+  document.addEventListener("click", () => {
+    mcStatusPanel.hidden = true;
+  });
+  // Vérifié dès le démarrage (avant même la connexion) pour que le point
+  // ait une vraie couleur sans attendre un clic.
+  loadMcStatus();
+}
+
 // Bascule entre la vue "serveurs" (liste/détail) et la vue "paramètres" dans
 // la barre latérale — deux destinations distinctes plutôt qu'un simple lien,
 // pour matcher la convention des launchers du genre (Lunar, Modrinth...).
@@ -404,6 +458,7 @@ async function boot() {
   wireWindowControls();
   wireSidebar();
   wireSettingsPanel();
+  wireMcStatus();
   gateEl.hidden = false;
   gateMessageEl.textContent = "Reprise de la session…";
 

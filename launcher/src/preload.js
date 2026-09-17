@@ -28,4 +28,5 @@ contextBridge.exposeInMainWorld("mchub", {
     set: (partial) => ipcRenderer.invoke("settings:set", partial),
     openGameFolder: () => ipcRenderer.invoke("settings:openGameFolder"),
   },
+  getMinecraftStatus: () => ipcRenderer.invoke("status:getMinecraftStatus"),
 });

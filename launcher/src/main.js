@@ -5,6 +5,7 @@ const msAuth = require("./msAuth");
 const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
+const { checkMinecraftStatus } = require("./minecraftStatus");
 
 // URL du site Omniscient, source de vérité (voir cahier des charges, section
 // "modèle de synchronisation"). En dur sur le localhost de dev pour l'instant
@@ -212,6 +213,21 @@ ipcMain.handle("settings:get", () => ({
 ipcMain.handle("settings:set", (_event, partial) => settingsStore.saveSettings(partial || {}));
 
 ipcMain.handle("settings:openGameFolder", () => shell.openPath(GAME_ROOT));
+
+// Mis en cache brievement : un clic repete sur le bouton de statut ne doit
+// pas re-solliciter 5 services externes a chaque fois.
+const STATUS_CACHE_MS = 30_000;
+let statusCache = null;
+
+ipcMain.handle("status:getMinecraftStatus", async () => {
+  const now = Date.now();
+  if (statusCache && now - statusCache.fetchedAt < STATUS_CACHE_MS) {
+    return statusCache.services;
+  }
+  const services = await checkMinecraftStatus();
+  statusCache = { fetchedAt: now, services };
+  return services;
+});
 
 let gameLaunchInProgress = false;
 
