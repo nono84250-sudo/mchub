@@ -1,9 +1,10 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("node:path");
 const msAuth = require("./msAuth");
-const { launchMinecraft } = require("./mcLaunch");
+const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
 const sessionStore = require("./sessionStore");
+const settingsStore = require("./settingsStore");
 
 // URL du site Omniscient, source de vérité (voir cahier des charges, section
 // "modèle de synchronisation"). En dur sur le localhost de dev pour l'instant
@@ -49,8 +50,9 @@ function createWindow() {
     height: 720,
     minWidth: 720,
     minHeight: 480,
-    backgroundColor: "#0b0b14",
-    autoHideMenuBar: true,
+    backgroundColor: "#070c16",
+    frame: false,
+    icon: path.join(__dirname, "..", "build", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -58,6 +60,13 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  // Sans barre de titre native (frame: false), l'etat maximise/restaure
+  // n'est visible nulle part ailleurs : le renderer doit le connaitre pour
+  // afficher la bonne icone sur son propre bouton.
+  const sendMaximizedState = () => win.webContents.send("window:maximized-changed", win.isMaximized());
+  win.on("maximize", sendMaximizedState);
+  win.on("unmaximize", sendMaximizedState);
 
   win.loadFile(path.join(__dirname, "index.html"));
 }
@@ -172,6 +181,38 @@ ipcMain.handle("auth:signOut", () => {
   return { ok: true };
 });
 
+// Boutons de la barre de titre custom (fenêtre sans cadre natif, voir
+// createWindow) — chaque handler agit sur la fenêtre de l'appelant, jamais
+// une fenêtre codée en dur, au cas où plusieurs fenêtres existeraient.
+ipcMain.handle("window:minimize", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.minimize();
+});
+
+ipcMain.handle("window:toggleMaximize", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  if (win.isMaximized()) win.unmaximize();
+  else win.maximize();
+});
+
+ipcMain.handle("window:close", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
+});
+
+ipcMain.handle("window:isMaximized", (event) => {
+  return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+});
+
+ipcMain.handle("settings:get", () => ({
+  ...settingsStore.loadSettings(),
+  gameRoot: GAME_ROOT,
+  appVersion: app.getVersion(),
+}));
+
+ipcMain.handle("settings:set", (_event, partial) => settingsStore.saveSettings(partial || {}));
+
+ipcMain.handle("settings:openGameFolder", () => shell.openPath(GAME_ROOT));
+
 let gameLaunchInProgress = false;
 
 ipcMain.handle("game:launch", async (event, slug) => {
@@ -191,12 +232,14 @@ ipcMain.handle("game:launch", async (event, slug) => {
       headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` },
     });
     const server = data.server;
+    const settings = settingsStore.loadSettings();
 
     await launchMinecraft({
       authorization: currentSession.authorization,
       version: server.minecraftVersion,
       serverIp: server.ip,
       onProgress: (status) => event.sender.send("game:progress", status),
+      memory: { min: `${settings.memoryMinGB}G`, max: `${settings.memoryMaxGB}G` },
     });
 
     return { ok: true };

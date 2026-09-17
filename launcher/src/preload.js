@@ -12,4 +12,20 @@ contextBridge.exposeInMainWorld("mchub", {
     ipcRenderer.on("game:progress", listener);
     return () => ipcRenderer.removeListener("game:progress", listener);
   },
+  windowControls: {
+    minimize: () => ipcRenderer.invoke("window:minimize"),
+    toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
+    close: () => ipcRenderer.invoke("window:close"),
+    isMaximized: () => ipcRenderer.invoke("window:isMaximized"),
+    onMaximizedChange: (callback) => {
+      const listener = (_event, isMaximized) => callback(isMaximized);
+      ipcRenderer.on("window:maximized-changed", listener);
+      return () => ipcRenderer.removeListener("window:maximized-changed", listener);
+    },
+  },
+  settings: {
+    get: () => ipcRenderer.invoke("settings:get"),
+    set: (partial) => ipcRenderer.invoke("settings:set", partial),
+    openGameFolder: () => ipcRenderer.invoke("settings:openGameFolder"),
+  },
 });

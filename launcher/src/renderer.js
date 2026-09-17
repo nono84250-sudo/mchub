@@ -6,6 +6,9 @@ const statusEl = document.getElementById("status");
 const listEl = document.getElementById("list");
 const detailEl = document.getElementById("detail");
 const msAccountEl = document.getElementById("ms-account");
+const settingsPanelEl = document.getElementById("settings-panel");
+const navServersBtn = document.getElementById("nav-servers");
+const navSettingsBtn = document.getElementById("nav-settings");
 
 let signedIn = false;
 
@@ -219,10 +222,24 @@ function skinUrlFor(profile) {
 function renderAccountHeader(profile, { rememberFailed } = {}) {
   const skinUrl = skinUrlFor(profile);
 
+  // Avatar dans la barre latérale : la tête du skin si on l'a, sinon
+  // l'initiale du pseudo — jamais le pseudo en texte, la sidebar est trop
+  // étroite (56px) pour ça. Le pseudo complet reste visible en infobulle et
+  // dans le menu déroulant.
+  const avatarHtml = skinUrl
+    ? `
+      <div class="mini-skin-face-wrap">
+        <div class="mini-skin-face" style="background-image: url('${escapeHtml(skinUrl)}')"></div>
+        <div class="mini-skin-face-overlay" style="background-image: url('${escapeHtml(skinUrl)}')"></div>
+      </div>
+    `
+    : `<span class="server-icon" style="width: 32px; height: 32px;">${serverInitial(profile.name)}</span>`;
+
   msAccountEl.innerHTML = `
     <div class="account-menu">
-      <button class="account-trigger" id="account-trigger" type="button">
-        <span class="status-dot online"></span>${escapeHtml(profile.name)}
+      <button class="account-trigger" id="account-trigger" type="button" title="${escapeHtml(profile.name)}">
+        ${avatarHtml}
+        <span class="status-dot online"></span>
       </button>
       <div class="account-dropdown" id="account-dropdown" hidden>
         ${
@@ -309,8 +326,84 @@ function wireGate() {
   });
 }
 
+// Barre de titre custom (fenêtre sans cadre natif, voir main.js) : les
+// boutons appellent l'IPC exposé par preload.js plutôt que des raccourcis
+// natifs, puisqu'il n'y a plus de barre système pour les fournir.
+function wireWindowControls() {
+  document.getElementById("win-min").addEventListener("click", () => window.mchub.windowControls.minimize());
+  document.getElementById("win-close").addEventListener("click", () => window.mchub.windowControls.close());
+
+  const maxBtn = document.getElementById("win-max");
+  maxBtn.addEventListener("click", () => window.mchub.windowControls.toggleMaximize());
+
+  const RESTORE_ICON =
+    '<svg viewBox="0 0 10 10"><rect x="2" y="0.5" width="7" height="7" fill="none" stroke="currentColor" /><rect x="0.5" y="2.5" width="7" height="7" fill="rgba(15,23,41,0.92)" stroke="currentColor" /></svg>';
+  const MAXIMIZE_ICON = '<svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" /></svg>';
+  const setMaximizedIcon = (isMaximized) => {
+    maxBtn.innerHTML = isMaximized ? RESTORE_ICON : MAXIMIZE_ICON;
+  };
+
+  window.mchub.windowControls.isMaximized().then(setMaximizedIcon);
+  window.mchub.windowControls.onMaximizedChange(setMaximizedIcon);
+}
+
+// Bascule entre la vue "serveurs" (liste/détail) et la vue "paramètres" dans
+// la barre latérale — deux destinations distinctes plutôt qu'un simple lien,
+// pour matcher la convention des launchers du genre (Lunar, Modrinth...).
+function showServersView() {
+  settingsPanelEl.hidden = true;
+  navSettingsBtn.classList.remove("active");
+  navServersBtn.classList.add("active");
+  loadServers();
+}
+
+async function showSettingsView() {
+  statusEl.hidden = true;
+  listEl.hidden = true;
+  detailEl.hidden = true;
+  settingsPanelEl.hidden = false;
+  navServersBtn.classList.remove("active");
+  navSettingsBtn.classList.add("active");
+
+  const settingsStatusEl = document.getElementById("settings-status");
+  settingsStatusEl.textContent = "";
+  settingsStatusEl.classList.remove("ms-error");
+
+  const settings = await window.mchub.settings.get();
+  document.getElementById("settings-version").textContent = settings.appVersion ? `v${settings.appVersion}` : "—";
+  document.getElementById("settings-mem-min").value = settings.memoryMinGB;
+  document.getElementById("settings-mem-max").value = settings.memoryMaxGB;
+  document.getElementById("settings-game-root").textContent = settings.gameRoot;
+}
+
+function wireSidebar() {
+  navServersBtn.addEventListener("click", showServersView);
+  navSettingsBtn.addEventListener("click", showSettingsView);
+}
+
+function wireSettingsPanel() {
+  document.getElementById("settings-save").addEventListener("click", async () => {
+    const min = Number(document.getElementById("settings-mem-min").value);
+    const max = Number(document.getElementById("settings-mem-max").value);
+    const settingsStatusEl = document.getElementById("settings-status");
+
+    const updated = await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max });
+    document.getElementById("settings-mem-min").value = updated.memoryMinGB;
+    document.getElementById("settings-mem-max").value = updated.memoryMaxGB;
+    settingsStatusEl.classList.remove("ms-error");
+    settingsStatusEl.textContent = "Paramètres enregistrés.";
+  });
+
+  document.getElementById("settings-open-folder").addEventListener("click", () => {
+    window.mchub.settings.openGameFolder();
+  });
+}
+
 async function boot() {
   wireGate();
+  wireWindowControls();
+  wireSidebar();
+  wireSettingsPanel();
   gateEl.hidden = false;
   gateMessageEl.textContent = "Reprise de la session…";
 

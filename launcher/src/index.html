@@ -39,17 +39,83 @@
     overflow: hidden;
   }
 
-  header {
+  /* Barre de titre custom : la fenêtre est créée avec frame:false (voir
+     main.js) pour éviter le mélange "chrome Windows générique au-dessus
+     d'une interface custom" — la convention de tous les launchers de jeu
+     sérieux (Lunar Client, Modrinth App...) est de dessiner sa propre barre
+     avec ses propres boutons. -webkit-app-region:drag permet de déplacer la
+     fenêtre en cliquant cette zone ; les boutons doivent explicitement
+     repasser en no-drag sinon leurs clics sont interceptés par le drag. */
+  #titlebar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--border);
-    background: rgba(20, 20, 31, 0.8);
-    backdrop-filter: blur(8px);
+    height: 36px;
     flex: 0 0 auto;
+    background: rgba(15, 23, 41, 0.92);
+    border-bottom: 1px solid var(--border);
+    -webkit-app-region: drag;
+    padding-left: 12px;
   }
+  #titlebar-drag { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
+  #titlebar .logo { font-size: 13px; }
+  #titlebar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
+  .titlebar-btn {
+    width: 44px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .titlebar-btn svg { width: 10px; height: 10px; }
+  .titlebar-btn:hover { background: var(--surface-raised); color: var(--foreground); }
+  .titlebar-btn-close:hover { background: var(--danger); color: #fff; }
+
+  /* Barre latérale minimale : navigation serveurs/paramètres, convention
+     quasi universelle des launchers du genre plutôt qu'un simple header. */
+  #sidebar {
+    flex: 0 0 auto;
+    width: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 0;
+    border-right: 1px solid var(--border);
+    background: rgba(15, 23, 41, 0.5);
+  }
+  .sidebar-btn {
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    border: none;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .sidebar-btn svg { width: 20px; height: 20px; }
+  .sidebar-btn:hover { background: var(--surface-raised); color: var(--foreground); }
+  .sidebar-btn.active { background-image: var(--gradient-brand); color: var(--accent-foreground); }
+
+  .settings-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; max-width: 280px; }
+  .settings-input {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    padding: 8px 10px;
+    color: var(--foreground);
+    outline: none;
+    font-size: 14px;
+  }
+  .settings-input:focus { border-color: var(--accent); }
+  .settings-path { font-size: 12px; color: var(--muted); word-break: break-all; margin: 0 0 8px 0; }
+  .field-label { font-size: 13px; color: var(--muted); }
 
   .logo { font-weight: 700; font-size: 18px; letter-spacing: -0.02em; }
   .logo span {
@@ -59,7 +125,6 @@
     color: transparent;
   }
 
-  #ms-account { font-size: 13px; }
   button.ms-login {
     background: var(--surface-raised);
     color: var(--foreground);
@@ -74,22 +139,36 @@
   .ms-pending { color: var(--muted); }
   .ms-error { color: var(--danger); }
 
+  /* Bouton compte dans la barre latérale (sous les paramètres) : icône
+     seule comme le reste de la sidebar — la tête du skin du joueur sert
+     d'avatar plutôt que d'afficher son pseudo en texte, trop large pour une
+     barre de 56px. */
   .account-menu { position: relative; }
   .account-trigger {
-    background: var(--surface-raised);
-    color: var(--foreground);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 13px;
+    position: relative;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: none;
+    border-radius: 10px;
+    background: none;
     cursor: pointer;
+    overflow: visible;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-  .account-trigger:hover { border-color: var(--accent); }
-  .account-trigger .status-dot.online { margin-right: 8px; }
+  .account-trigger:hover { background: var(--surface-raised); }
+  .account-trigger .status-dot.online {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    border: 2px solid var(--background);
+  }
   .account-dropdown {
     position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
+    left: calc(100% + 10px);
+    bottom: 0;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -102,30 +181,33 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     z-index: 10;
   }
-  .skin-face-wrap {
+  .skin-face-wrap, .mini-skin-face-wrap {
     position: relative;
-    width: 64px;
-    height: 64px;
-    border: 1px solid var(--border);
     border-radius: 6px;
     overflow: hidden;
     background: var(--surface-raised);
   }
-  .skin-face, .skin-face-overlay {
+  .skin-face-wrap { width: 64px; height: 64px; border: 1px solid var(--border); }
+  .mini-skin-face-wrap { width: 32px; height: 32px; border-radius: 8px; }
+  .skin-face, .skin-face-overlay, .mini-skin-face, .mini-skin-face-overlay {
     position: absolute;
     inset: 0;
     background-repeat: no-repeat;
-    background-size: 512px 512px;
     image-rendering: pixelated;
   }
+  .skin-face, .skin-face-overlay { background-size: 512px 512px; }
   .skin-face { background-position: -64px -64px; }
   .skin-face-overlay { background-position: -320px -64px; }
+  .mini-skin-face, .mini-skin-face-overlay { background-size: 256px 256px; }
+  .mini-skin-face { background-position: -32px -32px; }
+  .mini-skin-face-overlay { background-position: -160px -32px; }
   .account-dropdown-name { font-size: 14px; font-weight: 600; }
   .account-dropdown-note { margin: 0; font-size: 12px; text-align: center; }
   .account-dropdown-signout { width: 100%; }
 
   main {
     flex: 1 1 auto;
+    min-width: 0;
     overflow-y: auto;
     padding: 20px;
   }
@@ -336,8 +418,28 @@
 </style>
 </head>
 <body>
+  <div id="titlebar">
+    <div id="titlebar-drag">
+      <div class="logo">Omniscient <span>Launcher</span></div>
+    </div>
+    <div id="titlebar-controls">
+      <button id="win-min" class="titlebar-btn" title="Réduire" aria-label="Réduire">
+        <svg viewBox="0 0 10 10"><rect x="0" y="4.5" width="10" height="1" fill="currentColor" /></svg>
+      </button>
+      <button id="win-max" class="titlebar-btn" title="Agrandir" aria-label="Agrandir">
+        <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" /></svg>
+      </button>
+      <button id="win-close" class="titlebar-btn titlebar-btn-close" title="Fermer" aria-label="Fermer">
+        <svg viewBox="0 0 10 10">
+          <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" />
+          <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
   <div id="gate" hidden>
-    <div class="logo">Omniscient <span>Launcher</span></div>
+    <div class="logo" style="font-size: 26px;">Omniscient <span>Launcher</span></div>
     <p class="tagline">Connecte-toi avec ton compte Microsoft pour voir les serveurs et jouer.</p>
     <button id="gate-login" class="ms-login" style="padding: 10px 20px; font-size: 14px;">Se connecter avec Microsoft</button>
     <label class="gate-remember">
@@ -347,15 +449,53 @@
     <p class="gate-message" id="gate-message"></p>
   </div>
 
-  <div id="app" hidden style="flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;">
-    <header>
-      <div class="logo">Omniscient <span>Launcher</span></div>
+  <div id="app" hidden style="flex: 1 1 auto; display: flex; min-height: 0;">
+    <nav id="sidebar">
+      <button id="nav-servers" class="sidebar-btn active" title="Serveurs" aria-label="Serveurs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+          <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+        </svg>
+      </button>
+      <button id="nav-settings" class="sidebar-btn" title="Paramètres" aria-label="Paramètres" style="margin-top: auto;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
       <div id="ms-account"></div>
-    </header>
+    </nav>
     <main>
       <div id="status">Chargement des serveurs…</div>
       <div id="list" class="grid" hidden></div>
       <div id="detail" class="detail" hidden></div>
+      <div id="settings-panel" class="detail" hidden>
+        <h2>Paramètres</h2>
+
+        <div class="stat-row" style="margin-top: 16px; max-width: 280px;">
+          <div class="stat-tile">
+            <div class="stat-label">Version</div>
+            <div class="stat-value" id="settings-version">—</div>
+          </div>
+        </div>
+
+        <div class="settings-field">
+          <label for="settings-mem-min" class="field-label">Mémoire minimale (Go)</label>
+          <input type="number" id="settings-mem-min" min="1" max="32" class="settings-input" />
+        </div>
+        <div class="settings-field">
+          <label for="settings-mem-max" class="field-label">Mémoire maximale (Go)</label>
+          <input type="number" id="settings-mem-max" min="1" max="32" class="settings-input" />
+        </div>
+        <button id="settings-save" class="join-btn">Enregistrer</button>
+        <p class="join-note" id="settings-status"></p>
+
+        <div class="settings-field" style="margin-top: 24px;">
+          <span class="field-label">Dossier du jeu</span>
+          <p class="settings-path" id="settings-game-root"></p>
+          <button id="settings-open-folder" class="ms-login">Ouvrir le dossier</button>
+        </div>
+      </div>
     </main>
   </div>
 
