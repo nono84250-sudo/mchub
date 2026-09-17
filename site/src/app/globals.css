@@ -1,20 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0b0b14;
-  --surface: #14141f;
-  --surface-raised: #1b1b29;
-  --border: #2a2a3d;
-  --foreground: #e7e6f0;
-  --muted: #9695ab;
-  --accent: #7c5cff;
-  --accent-hover: #9179ff;
-  --accent-foreground: #ffffff;
-  --accent-2: #22d3ee;
-  --danger: #ff5c7a;
-  --success: #4ade80;
+  /* Bleu nuit + turquoise, avec un vert emeraude dedie a "en ligne"/CTA de
+     jeu — meme palette que le launcher (voir launcher/src/index.html), pour
+     que le site et l'appli soient reconnaissables comme un seul produit. */
+  --background: #070c16;
+  --surface: #0f1729;
+  --surface-raised: #16213a;
+  --border: #223252;
+  --foreground: #e8edf7;
+  --muted: #8ea0bd;
+  --accent: #22d3ee;
+  --accent-hover: #5ee2f5;
+  --accent-foreground: #052029;
+  --accent-2: #2dd88a;
+  --danger: #ff6b81;
+  --success: #2dd88a;
   --gradient-brand: linear-gradient(135deg, var(--accent), var(--accent-2));
-  --glow-accent: 0 0 60px -12px rgba(124, 92, 255, 0.45);
+  --glow-accent: 0 0 60px -12px rgba(34, 211, 238, 0.45);
 }
 
 @theme inline {
@@ -32,6 +35,7 @@
   --color-success: var(--success);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-space-grotesk);
 }
 
 body {
@@ -44,7 +48,34 @@ body {
   border-color: var(--border);
 }
 
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float-block {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(3deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 @layer components {
+  h1, h2, h3, .font-heading {
+    font-family: var(--font-heading), var(--font-sans), sans-serif;
+  }
+
   /* Panneau de base partagé par les cartes, formulaires et blocs d'info —
      un seul endroit à ajuster pour changer le style de surface du site. */
   .panel {
@@ -70,20 +101,38 @@ body {
 
   .field-input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18);
+  }
+
+  .field-with-icon {
+    position: relative;
+  }
+
+  .field-with-icon svg {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+  }
+
+  .field-with-icon .field-input {
+    padding-left: 2.5rem;
   }
 
   .btn-primary {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 0.5rem;
     border-radius: 0.5rem;
     background-image: var(--gradient-brand);
     color: var(--accent-foreground);
-    font-weight: 500;
+    font-weight: 600;
     padding: 0.65rem 1.25rem;
     transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
-    box-shadow: 0 8px 24px -8px rgba(124, 92, 255, 0.55);
+    box-shadow: 0 8px 24px -8px rgba(34, 211, 238, 0.55);
   }
 
   .btn-primary:hover {
@@ -100,6 +149,7 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 0.5rem;
     border-radius: 0.5rem;
     border: 1px solid var(--border);
     color: var(--foreground);
@@ -130,10 +180,65 @@ body {
     box-shadow: var(--glow-accent);
   }
 
+  /* Motif pixelise discret + degrade — sert de fond quand un serveur n'a
+     pas de banniere, pour eviter un aplat vide tout en rappelant l'univers
+     voxel de Minecraft sans utiliser d'assets du jeu. */
   .banner-placeholder {
     background-image:
-      radial-gradient(circle at 20% 20%, rgba(124, 92, 255, 0.35), transparent 55%),
-      radial-gradient(circle at 80% 80%, rgba(34, 211, 238, 0.28), transparent 55%),
+      linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      radial-gradient(circle at 20% 15%, rgba(34, 211, 238, 0.35), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(45, 216, 138, 0.28), transparent 55%),
       var(--surface-raised);
+    background-size: 16px 16px, 16px 16px, auto, auto, auto;
+  }
+
+  .server-icon {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    background-image: var(--gradient-brand);
+    color: var(--accent-foreground);
+    font-weight: 700;
+  }
+
+  .stat-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.625rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .stat-tile .stat-label {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .stat-tile .stat-value {
+    margin-top: 0.125rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .tag-chip {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+  }
+
+  .fade-in-up {
+    animation: fade-in-up 0.6s ease both;
+  }
+
+  .float-anim {
+    animation: float-block 6s ease-in-out infinite;
   }
 }

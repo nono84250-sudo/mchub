@@ -2,7 +2,7 @@ import { ServerCard } from "@/components/ServerCard";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { listPublicServers } from "@/lib/public-servers";
 
-export const metadata = { title: "Serveurs — MCHub" };
+export const metadata = { title: "Serveurs — Omniscient" };
 
 // Régénère la page au plus toutes les 60s : aligné sur la fraîcheur du
 // ping (voir SERVER_STATUS_TTL_MS) plutôt que de rester figé en cache.

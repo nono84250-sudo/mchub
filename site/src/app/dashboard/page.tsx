@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Plus, ArrowRight } from "lucide-react";
 import { auth } from "@/auth";
 import { db } from "@/prisma/db";
 
-export const metadata = { title: "Mon espace — MCHub" };
+export const metadata = { title: "Mon espace — Omniscient" };
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -19,7 +20,8 @@ export default async function DashboardPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Mes serveurs</h1>
         <Link href="/dashboard/servers/new" className="btn-primary">
-          + Nouveau serveur
+          <Plus className="h-4 w-4" />
+          Nouveau serveur
         </Link>
       </div>
 
@@ -36,16 +38,16 @@ export default async function DashboardPage() {
                 className="glow-card flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3"
               >
                 <div className="flex items-center gap-3">
-                  <span
-                    className={`h-2 w-2 rounded-full ${server.type === "modded" ? "bg-accent" : "bg-accent-2"}`}
-                    aria-hidden="true"
-                  />
+                  <span className="server-icon h-9 w-9 text-sm">{server.name.trim().charAt(0).toUpperCase() || "?"}</span>
                   <div>
                     <p className="font-medium text-foreground">{server.name}</p>
                     <p className="text-sm text-muted">{server.type === "modded" ? "Moddé" : "Vanilla"}</p>
                   </div>
                 </div>
-                <span className="text-sm text-accent">Gérer →</span>
+                <span className="flex items-center gap-1 text-sm text-accent">
+                  Gérer
+                  <ArrowRight className="h-4 w-4" />
+                </span>
               </Link>
             </li>
           ))}

@@ -5,7 +5,7 @@ const msAuth = require("./msAuth");
 const { launchMinecraft } = require("./mcLaunch");
 const sessionStore = require("./sessionStore");
 
-// URL du site MCHub, source de vérité (voir cahier des charges, section
+// URL du site Omniscient, source de vérité (voir cahier des charges, section
 // "modèle de synchronisation"). En dur sur le localhost de dev pour l'instant
 // — deviendra configurable (token de launcher brandé, Phase 4).
 const SITE_URL = process.env.MCHUB_SITE_URL || "http://localhost:3000";
@@ -32,11 +32,11 @@ async function fetchJson(url, options = {}) {
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     if (!res.ok) {
-      throw new Error(`Réponse ${res.status} du site MCHub`);
+      throw new Error(`Réponse ${res.status} du site Omniscient`);
     }
     return await res.json();
   } catch (error) {
-    if (error.name === "AbortError") throw new Error("Le site MCHub n'a pas répondu à temps.");
+    if (error.name === "AbortError") throw new Error("Le site Omniscient n'a pas répondu à temps.");
     throw error;
   } finally {
     clearTimeout(timeout);

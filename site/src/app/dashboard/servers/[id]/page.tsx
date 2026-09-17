@@ -5,7 +5,7 @@ import { updateServer, deleteServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
 import { ServerForm } from "@/components/ServerForm";
 
-export const metadata = { title: "Modifier le serveur — MCHub" };
+export const metadata = { title: "Modifier le serveur — Omniscient" };
 
 export default async function EditServerPage({ params }: PageProps<"/dashboard/servers/[id]">) {
   const { id } = await params;

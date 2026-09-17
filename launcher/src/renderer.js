@@ -194,7 +194,7 @@ async function loadServers() {
   const result = await window.mchub.listServers();
   if (!result.ok) {
     statusEl.classList.add("error");
-    statusEl.textContent = `Impossible de contacter le site MCHub : ${result.error}`;
+    statusEl.textContent = `Impossible de contacter le site Omniscient : ${result.error}`;
     return;
   }
   renderList(result.servers);

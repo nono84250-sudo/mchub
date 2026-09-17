@@ -4,7 +4,7 @@ import { createServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
 import { ServerForm } from "@/components/ServerForm";
 
-export const metadata = { title: "Nouveau serveur — MCHub" };
+export const metadata = { title: "Nouveau serveur — Omniscient" };
 
 export default async function NewServerPage() {
   const session = await auth();

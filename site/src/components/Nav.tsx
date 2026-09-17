@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { logout } from "@/lib/actions/auth";
+import { CubeLogo } from "@/components/CubeLogo";
 
 export async function Nav() {
   const session = await auth();
 
   return (
-    <header className="border-b border-border bg-surface/80 backdrop-blur sticky top-0 z-10">
+    <header className="border-b border-border bg-surface/95 backdrop-blur-md sticky top-0 z-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-        <Link href="/" className="font-bold text-lg tracking-tight text-foreground">
-          MC<span className="text-accent">Hub</span>
+        <Link href="/" className="font-heading flex items-center gap-2 font-bold text-lg tracking-tight text-foreground">
+          <CubeLogo className="h-6 w-6" />
+          Omniscient
         </Link>
 
         <nav className="flex items-center gap-4 text-sm">

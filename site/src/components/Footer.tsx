@@ -5,7 +5,8 @@ export function Footer() {
     <footer className="border-t border-border mt-16">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted">
         <p>
-          MC<span className="text-accent">Hub</span> — la boîte à outils des serveurs Minecraft.
+          <span className="text-foreground font-medium">Omniscient</span> — la boîte à outils des serveurs
+          Minecraft.
         </p>
         <div className="flex items-center gap-5">
           <Link href="/servers" className="hover:text-foreground transition-colors">

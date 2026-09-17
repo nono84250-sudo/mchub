@@ -1,6 +1,6 @@
 import { LoginForm } from "@/components/LoginForm";
 
-export const metadata = { title: "Connexion — MCHub" };
+export const metadata = { title: "Connexion — Omniscient" };
 
 export default function LoginPage() {
   return (

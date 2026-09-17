@@ -1,15 +1,21 @@
 import Link from "next/link";
+import { Compass, Gamepad2, Boxes, ArrowRight } from "lucide-react";
+import { CubeLogo } from "@/components/CubeLogo";
 
 const FEATURES = [
   {
+    icon: Compass,
     title: "Annuaire public",
     description: "Chaque serveur a sa fiche : description, modpack, statut des joueurs en direct.",
+    span: true,
   },
   {
+    icon: Gamepad2,
     title: "Connexion Microsoft/Xbox",
     description: "Les joueurs se connectent avec leur vrai compte Minecraft, directement dans le launcher.",
   },
   {
+    icon: Boxes,
     title: "Modpacks CurseForge",
     description: "Lie ton modpack vérifié pour que les joueurs rejoignent sans configuration manuelle.",
   },
@@ -23,26 +29,39 @@ export default function Home() {
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[560px]"
         style={{
           backgroundImage:
-            "radial-gradient(60% 50% at 30% 0%, rgba(124,92,255,0.28), transparent 70%), radial-gradient(50% 40% at 80% 10%, rgba(34,211,238,0.20), transparent 70%)",
+            "radial-gradient(60% 50% at 30% 0%, rgba(34,211,238,0.24), transparent 70%), radial-gradient(50% 40% at 80% 10%, rgba(45,216,138,0.18), transparent 70%)",
         }}
       />
 
+      <CubeLogo className="float-anim pointer-events-none absolute right-[8%] top-24 h-16 w-16 opacity-70 hidden sm:block" />
+      <CubeLogo
+        className="pointer-events-none absolute left-[10%] top-56 h-10 w-10 opacity-40 hidden sm:block"
+        style={{ animationDelay: "1.5s" }}
+      />
+
       <div className="mx-auto max-w-4xl px-4 sm:px-6 py-24 sm:py-32 text-center">
-        <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted">
+        <span className="fade-in-up inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
           Accès Minecraft/Xbox approuvé — le launcher est en ligne
         </span>
 
-        <h1 className="mt-6 text-4xl sm:text-6xl font-bold tracking-tight text-foreground text-balance">
+        <h1
+          className="fade-in-up mt-6 text-4xl sm:text-6xl font-bold tracking-tight text-foreground text-balance"
+          style={{ animationDelay: "0.1s" }}
+        >
           La boîte à outils des serveurs <span className="gradient-text">Minecraft</span>
         </h1>
-        <p className="mt-5 text-lg text-muted max-w-2xl mx-auto text-balance">
+        <p
+          className="fade-in-up mt-5 text-lg text-muted max-w-2xl mx-auto text-balance"
+          style={{ animationDelay: "0.2s" }}
+        >
           Publie ton serveur, lie ton modpack vérifié par CurseForge, et laisse tes joueurs
-          te rejoindre en un clic grâce au launcher MCHub.
+          te rejoindre en un clic grâce au launcher Omniscient.
         </p>
-        <div className="mt-9 flex items-center justify-center gap-4">
+        <div className="fade-in-up mt-9 flex items-center justify-center gap-4" style={{ animationDelay: "0.3s" }}>
           <Link href="/servers" className="btn-primary">
             Découvrir les serveurs
+            <ArrowRight className="h-4 w-4" />
           </Link>
           <Link href="/signup" className="btn-secondary">
             Publier mon serveur
@@ -51,11 +70,20 @@ export default function Home() {
       </div>
 
       <div className="mx-auto max-w-5xl px-4 sm:px-6 pb-24">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {FEATURES.map((feature) => (
-            <div key={feature.title} className="panel glow-card p-5">
-              <h3 className="font-semibold text-foreground">{feature.title}</h3>
-              <p className="mt-2 text-sm text-muted">{feature.description}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {FEATURES.map((feature, i) => (
+            <div
+              key={feature.title}
+              className={`panel glow-card fade-in-up p-6 ${feature.span ? "sm:col-span-2 sm:flex sm:items-center sm:gap-6" : ""}`}
+              style={{ animationDelay: `${0.4 + i * 0.1}s` }}
+            >
+              <div className="server-icon h-10 w-10 shrink-0">
+                <feature.icon className="h-5 w-5" />
+              </div>
+              <div className="mt-4 sm:mt-0">
+                <h3 className="font-heading font-semibold text-foreground">{feature.title}</h3>
+                <p className="mt-2 text-sm text-muted">{feature.description}</p>
+              </div>
             </div>
           ))}
         </div>

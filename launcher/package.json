@@ -1,9 +1,9 @@
 {
   "name": "launcher",
-  "productName": "MCHub Launcher",
+  "productName": "Omniscient Launcher",
   "version": "0.1.0",
   "private": true,
-  "description": "Launcher Minecraft MCHub — lit les serveurs publiés sur le site MCHub et lance le jeu.",
+  "description": "Launcher Minecraft Omniscient — lit les serveurs publiés sur le site Omniscient et lance le jeu.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron ."

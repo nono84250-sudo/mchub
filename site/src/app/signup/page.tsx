@@ -1,6 +1,6 @@
 import { SignupForm } from "@/components/SignupForm";
 
-export const metadata = { title: "Créer un compte — MCHub" };
+export const metadata = { title: "Créer un compte — Omniscient" };
 
 export default function SignupPage() {
   return (
