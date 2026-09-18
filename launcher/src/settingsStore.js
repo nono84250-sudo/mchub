@@ -17,6 +17,18 @@ const DEFAULTS = {
   // securite RAM (voir main.js/game:launch) et lance direct avec la valeur
   // recommandee a chaque fois.
   alwaysUseRecommendedRam: false,
+  // Slugs des serveurs mis en favoris (barre de lancement rapide en bas de
+  // l'appli), dernier serveur reellement lance (favori ou non — affiche en
+  // "Dernier joue" s'il n'est pas deja dans les favoris), et nombre de
+  // lancements reussis par serveur (pour ne montrer que les 3 favoris les
+  // plus joues dans le menu rapide plutot que tous, voir renderer.js).
+  favoriteServers: [],
+  lastPlayedSlug: null,
+  playCounts: {},
+  // Historique des derniers serveurs reellement lances, du plus recent au
+  // plus ancien (page "Recents" de la barre laterale) — deja limite en
+  // taille par renderer.js avant d'etre enregistre.
+  recentlyPlayed: [],
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -54,6 +66,10 @@ function saveSettings(partial) {
       partial.alwaysUseRecommendedRam !== undefined
         ? !!partial.alwaysUseRecommendedRam
         : current.alwaysUseRecommendedRam,
+    favoriteServers: partial.favoriteServers !== undefined ? partial.favoriteServers : current.favoriteServers,
+    lastPlayedSlug: partial.lastPlayedSlug !== undefined ? partial.lastPlayedSlug : current.lastPlayedSlug,
+    playCounts: partial.playCounts !== undefined ? partial.playCounts : current.playCounts,
+    recentlyPlayed: partial.recentlyPlayed !== undefined ? partial.recentlyPlayed : current.recentlyPlayed,
   };
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2));
   return next;

@@ -40,9 +40,12 @@ async function launchMinecraft({ authorization, version, serverIp, onProgress, m
   // renderer via onProgress/IPC, qui les afficherait en clair à l'écran).
   launcher.on("debug", (e) => console.debug("[mcLaunch]", String(e)));
   launcher.on("data", (e) => console.debug("[mcLaunch]", String(e)));
+  // Objet structure (pas juste un texte) pour que le renderer puisse calculer
+  // un vrai pourcentage (barre de progression stylee dans la barre de
+  // lancement rapide) plutot que d'afficher uniquement du texte.
   launcher.on("progress", (e) => {
     if (e && e.type && typeof e.task === "number" && typeof e.total === "number") {
-      onProgress?.(`${e.type} : ${e.task}/${e.total}`);
+      onProgress?.({ text: `${e.type} : ${e.task}/${e.total}`, type: e.type, task: e.task, total: e.total });
     }
   });
 
@@ -67,7 +70,7 @@ async function launchMinecraft({ authorization, version, serverIp, onProgress, m
     launcher.on("close", (code) => {
       if (!started) reject(new Error(`Le jeu s'est fermé avant de démarrer (code ${code}).`));
     });
-    onProgress?.("Lancement du jeu…");
+    onProgress?.({ text: "Lancement du jeu…" });
     launcher
       .launch(opts)
       .then((proc) => {

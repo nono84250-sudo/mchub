@@ -309,6 +309,31 @@
   }
   .badge.modded { background-image: var(--gradient-brand); color: var(--accent-foreground); border: none; }
 
+  /* Etoile favori : sur la carte (coin haut-gauche de la banniere, symetrique
+     du badge Vanilla/Modde) et sur la fiche detail (a cote du titre). */
+  .favorite-btn {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(15, 23, 41, 0.8);
+    backdrop-filter: blur(4px);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .favorite-btn svg { width: 14px; height: 14px; }
+  .favorite-btn:hover { color: var(--foreground); border-color: var(--accent); }
+  .favorite-btn.active { color: var(--accent-2); border-color: var(--accent-2); }
+  .favorite-btn.active svg { fill: currentColor; }
+  .detail-favorite-btn { position: static; background: none; backdrop-filter: none; width: 22px; height: 22px; }
+
   .server-icon {
     flex: 0 0 auto;
     width: 26px;
@@ -506,6 +531,40 @@
   .status-dot.degraded { background: #f5b942; box-shadow: 0 0 6px rgba(245, 185, 66, 0.8); }
   .status-dot.offline { background: var(--danger); box-shadow: 0 0 6px rgba(255, 107, 129, 0.8); }
 
+  /* Cloche de notifications : emplacement reserve pour un futur systeme
+     controle par les admins/moderateurs depuis le site (annonces, alertes
+     de maintenance...) — pour l'instant juste le bouton et un panneau vide. */
+  .notif-menu { position: relative; -webkit-app-region: no-drag; margin-right: 8px; }
+  .notif-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--surface-raised);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .notif-trigger:hover { border-color: var(--accent); color: var(--foreground); }
+  .notif-trigger svg { width: 16px; height: 16px; }
+  .notif-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    min-width: 220px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    z-index: 20;
+    font-size: 12.5px;
+    color: var(--muted);
+    text-align: center;
+  }
+
   /* Modale generique (confirmation/avertissement RAM) : fond assombri +
      boite centree, reutilisable pour n'importe quel prompt bloquant. */
   .modal-overlay {
@@ -530,6 +589,131 @@
   .modal-box h3 { margin: 0 0 10px 0; font-size: 16px; }
   .modal-box p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+  /* Barre de lancement rapide : favoris + gros bouton Jouer, inspiree des
+     launchers du genre (Lunar Client...). La progression de telechargement/
+     lancement s'affiche ICI (plus dans la fiche serveur) — un seul endroit
+     pour suivre un lancement, qu'il vienne du bouton "Rejoindre" d'une fiche
+     ou du bouton "Jouer" rapide. */
+  #playbar {
+    flex: 0 0 auto;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-top: 1px solid var(--border);
+    background: rgba(15, 23, 41, 0.75);
+  }
+  .playbar-row { display: flex; align-items: center; width: 100%; gap: 16px; }
+
+  .playbar-favorite-menu { position: relative; flex: 1 1 auto; min-width: 0; }
+  .playbar-fav-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 280px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: var(--foreground);
+    cursor: pointer;
+  }
+  .playbar-fav-trigger:hover { border-color: var(--accent); }
+  .playbar-fav-trigger:disabled { cursor: default; opacity: 0.7; }
+  .playbar-fav-trigger:disabled:hover { border-color: var(--border); }
+  .playbar-fav-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+    font-size: 13.5px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .playbar-fav-trigger svg.chevron { flex: 0 0 auto; width: 14px; height: 14px; color: var(--muted); }
+  .playbar-fav-panel {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 0;
+    width: 280px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    z-index: 20;
+  }
+  .playbar-fav-empty { padding: 14px 10px; font-size: 12.5px; color: var(--muted); text-align: center; }
+  .playbar-fav-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .playbar-fav-row:hover { background: var(--surface-raised); }
+  .playbar-fav-row-name { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+  .playbar-fav-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .playbar-fav-row-tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--accent-2); font-weight: 700; }
+  .playbar-fav-remove { flex: 0 0 auto; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 6px; }
+  .playbar-fav-remove:hover { color: var(--danger); }
+  .playbar-fav-more {
+    justify-content: center;
+    color: var(--accent);
+    font-weight: 600;
+    border-top: 1px solid var(--border);
+    margin-top: 4px;
+    padding-top: 10px;
+  }
+
+  .playbar-play-btn {
+    flex: 0 0 auto;
+    background-image: var(--gradient-brand);
+    color: var(--accent-foreground);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 8px 24px -8px rgba(34, 211, 238, 0.55);
+    transition: filter 0.15s ease, transform 0.15s ease;
+  }
+  .playbar-play-btn:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+  .playbar-play-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+
+  #playbar-progress.playbar-row { flex-direction: column; align-items: stretch; gap: 6px; }
+  .playbar-progress-info { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+  .playbar-progress-info span:last-child { color: var(--foreground); font-weight: 600; }
+  .playbar-progress-track {
+    position: relative;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--surface-raised);
+    overflow: hidden;
+  }
+  .playbar-progress-fill {
+    position: absolute;
+    inset: 0;
+    width: 0%;
+    border-radius: 999px;
+    background-image: var(--gradient-brand);
+    background-size: 200% 100%;
+    animation: playbar-shimmer 1.4s linear infinite;
+    transition: width 0.3s ease;
+  }
+  .playbar-progress-fill.error { background-image: none; background: var(--danger); animation: none; }
+  @keyframes playbar-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
 </style>
 </head>
 <body>
@@ -545,6 +729,15 @@
       <div class="mc-status-panel" id="mc-status-panel" hidden>
         <div id="mc-status-list"></div>
       </div>
+    </div>
+    <div class="notif-menu">
+      <button class="notif-trigger" id="notif-trigger" type="button" title="Notifications" aria-label="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
+      </button>
+      <div class="notif-panel" id="notif-panel" hidden>Aucune notification pour le moment.</div>
     </div>
     <div id="titlebar-controls">
       <button id="win-min" class="titlebar-btn" title="Réduire" aria-label="Réduire">
@@ -625,6 +818,17 @@
           <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
         </svg>
       </button>
+      <button id="nav-favorites" class="sidebar-btn" title="Favoris" aria-label="Favoris">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+      </button>
+      <button id="nav-recent" class="sidebar-btn" title="Récents" aria-label="Récents">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9" />
+          <polyline points="12 7 12 12 16 14" />
+        </svg>
+      </button>
       <button id="nav-settings" class="sidebar-btn" title="Paramètres" aria-label="Paramètres" style="margin-top: auto;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3" />
@@ -633,6 +837,7 @@
       </button>
       <div id="ms-account"></div>
     </nav>
+    <div class="app-content" style="flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0;">
     <main>
       <div id="status">Chargement des serveurs…</div>
       <div id="list" class="grid" hidden></div>
@@ -675,7 +880,35 @@
         </div>
       </div>
       <div id="account-panel" class="detail" hidden></div>
+      <div id="favorites-panel" class="detail" hidden></div>
+      <div id="recent-panel" class="detail" hidden></div>
     </main>
+
+    <div id="playbar">
+    <div class="playbar-row" id="playbar-idle">
+      <div class="playbar-favorite-menu">
+        <button class="playbar-fav-trigger" id="playbar-fav-trigger" type="button" disabled>
+          <span id="playbar-fav-icon"></span>
+          <span class="playbar-fav-name" id="playbar-fav-name">Ajoute un serveur en favoris</span>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+        </button>
+        <div class="playbar-fav-panel" id="playbar-fav-panel" hidden></div>
+      </div>
+      <button class="playbar-play-btn" id="playbar-play" type="button" disabled>▶ Jouer</button>
+    </div>
+    <div class="playbar-row" id="playbar-progress" hidden>
+      <div style="flex: 1 1 auto;">
+        <div class="playbar-progress-info">
+          <span id="playbar-progress-label">Lancement…</span>
+          <span id="playbar-progress-percent"></span>
+        </div>
+        <div class="playbar-progress-track">
+          <div class="playbar-progress-fill" id="playbar-progress-fill"></div>
+        </div>
+      </div>
+    </div>
+    </div>
+    </div>
   </div>
 
   <script src="renderer.js"></script>

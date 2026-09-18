@@ -8,15 +8,25 @@ const detailEl = document.getElementById("detail");
 const msAccountEl = document.getElementById("ms-account");
 const settingsPanelEl = document.getElementById("settings-panel");
 const accountPanelEl = document.getElementById("account-panel");
+const favoritesPanelEl = document.getElementById("favorites-panel");
+const recentPanelEl = document.getElementById("recent-panel");
 const javaGateEl = document.getElementById("java-gate");
 const navServersBtn = document.getElementById("nav-servers");
+const navFavoritesBtn = document.getElementById("nav-favorites");
+const navRecentBtn = document.getElementById("nav-recent");
 const navSettingsBtn = document.getElementById("nav-settings");
+// D'ou vient la fiche detail actuellement affichee (liste "Serveurs" ou
+// page "Favoris") — pour que le bouton "Retour" ramene au bon endroit.
+let detailOrigin = "servers";
 
 let signedIn = false;
 // Profil du compte actif tel que reçu du processus principal — conservé ici
 // pour que la page "Gérer le compte" puisse afficher le skin sans un
 // nouvel aller-retour IPC.
 let currentProfile = null;
+// Favori actuellement selectionne dans la barre de lancement rapide (voir
+// refreshPlaybarFavorites/launchServer).
+let selectedFavoriteSlug = null;
 
 // Désactive/réactive le bouton de connexion — utilisé pendant une connexion
 // en cours ET quand on revient au portail après une déconnexion (sinon il
@@ -56,7 +66,57 @@ function serverInitial(name) {
   return escapeHtml((name || "?").trim().charAt(0).toUpperCase() || "?");
 }
 
-function renderList(servers) {
+// Favoris (barre de lancement rapide en bas de l'appli) : une simple liste de
+// slugs dans les paramètres — pas de nouvel IPC dédié, on réutilise
+// settings.get/set comme pour tout le reste des préférences locales.
+const STAR_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>';
+
+async function getFavoriteSlugs() {
+  const settings = await window.mchub.settings.get();
+  return settings.favoriteServers || [];
+}
+
+async function toggleFavorite(slug) {
+  const current = await getFavoriteSlugs();
+  const next = current.includes(slug) ? current.filter((s) => s !== slug) : [...current, slug];
+  await window.mchub.settings.set({ favoriteServers: next });
+  return next;
+}
+
+function favoriteBtnHtml(slug, isFav, extraClass = "") {
+  return `
+    <button class="favorite-btn${extraClass ? ` ${extraClass}` : ""}${isFav ? " active" : ""}" type="button" data-slug="${escapeHtml(slug)}" title="${isFav ? "Retirer des favoris" : "Ajouter aux favoris"}">
+      ${STAR_SVG}
+    </button>`;
+}
+
+// Carte serveur partagee entre la liste principale, "Favoris" et "Recents" —
+// meme rendu partout, seule la source de la liste de serveurs change.
+function serverCardHtml(server, isFav) {
+  return `
+    <div class="card" data-slug="${escapeHtml(server.slug)}">
+      <div class="banner">
+        ${
+          server.bannerUrl
+            ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />`
+            : `<div class="banner-scrim">${escapeHtml(server.name)}</div>`
+        }
+        ${favoriteBtnHtml(server.slug, isFav)}
+        ${typeBadge(server.type)}
+      </div>
+      <div class="card-body">
+        <div class="card-title-row">
+          <span class="server-icon">${serverInitial(server.name)}</span>
+          <h3>${escapeHtml(server.name)}</h3>
+        </div>
+        <p>${escapeHtml(server.description || "")}</p>
+        <div class="players">${playersLabel(server)}</div>
+      </div>
+    </div>`;
+}
+
+async function renderList(servers) {
   detailEl.hidden = true;
   listEl.hidden = false;
 
@@ -68,36 +128,26 @@ function renderList(servers) {
   }
 
   statusEl.hidden = true;
-  listEl.innerHTML = servers
-    .map(
-      (server) => `
-      <div class="card" data-slug="${escapeHtml(server.slug)}">
-        <div class="banner">
-          ${
-            server.bannerUrl
-              ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />`
-              : `<div class="banner-scrim">${escapeHtml(server.name)}</div>`
-          }
-          ${typeBadge(server.type)}
-        </div>
-        <div class="card-body">
-          <div class="card-title-row">
-            <span class="server-icon">${serverInitial(server.name)}</span>
-            <h3>${escapeHtml(server.name)}</h3>
-          </div>
-          <p>${escapeHtml(server.description)}</p>
-          <div class="players">${playersLabel(server)}</div>
-        </div>
-      </div>`,
-    )
-    .join("");
+  const favorites = await getFavoriteSlugs();
+  listEl.innerHTML = servers.map((server) => serverCardHtml(server, favorites.includes(server.slug))).join("");
 
   listEl.querySelectorAll(".card").forEach((card) => {
-    card.addEventListener("click", () => openDetail(card.dataset.slug));
+    card.addEventListener("click", () => {
+      detailOrigin = "servers";
+      openDetail(card.dataset.slug);
+    });
+  });
+  listEl.querySelectorAll(".favorite-btn").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await toggleFavorite(btn.dataset.slug);
+      await refreshPlaybarFavorites();
+      renderList(servers);
+    });
   });
 }
 
-function renderDetail(server) {
+async function renderDetail(server) {
   listEl.hidden = true;
   statusEl.hidden = true;
   detailEl.hidden = false;
@@ -109,16 +159,16 @@ function renderDetail(server) {
   }
 
   // signedIn est toujours vrai ici (le portail bloque l'accès sans connexion),
-  // mais on garde le garde-fou par prudence.
+  // mais on garde le garde-fou par prudence. La progression de lancement ne
+  // s'affiche plus ici — voir launchServer()/la barre de lancement rapide.
   const joinSection = signedIn
-    ? `
-      <button class="join-btn" id="join-btn">▶ Rejoindre le serveur</button>
-      <p class="join-note" id="join-status"></p>
-    `
+    ? `<button class="join-btn" id="join-btn">▶ Rejoindre le serveur</button>`
     : `
       <button class="join-btn" disabled>▶ Rejoindre le serveur</button>
       <p class="join-note">Connecte-toi avec ton compte Microsoft pour rejoindre ce serveur.</p>
     `;
+
+  const isFav = (await getFavoriteSlugs()).includes(server.slug);
 
   detailEl.innerHTML = `
     <button class="back">&larr; Retour à la liste</button>
@@ -127,7 +177,10 @@ function renderDetail(server) {
       <div class="detail-icon">${serverInitial(server.name)}</div>
     </div>
     <div class="detail-header">
-      <h2>${escapeHtml(server.name)}</h2>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h2 style="margin: 0;">${escapeHtml(server.name)}</h2>
+        ${favoriteBtnHtml(server.slug, isFav, "detail-favorite-btn")}
+      </div>
       <p class="meta">${playersLabel(server)}</p>
     </div>
     <div class="stat-row">
@@ -153,12 +206,23 @@ function renderDetail(server) {
     ${joinSection}
   `;
 
-  detailEl.querySelector(".back").addEventListener("click", loadServers);
+  detailEl.querySelector(".back").addEventListener("click", () => {
+    if (detailOrigin === "favorites") showFavoritesView();
+    else if (detailOrigin === "recent") showRecentView();
+    else loadServers();
+  });
 
   const joinBtn = document.getElementById("join-btn");
   if (joinBtn) {
     joinBtn.addEventListener("click", () => joinServer(server, joinBtn));
   }
+
+  const favBtn = detailEl.querySelector(".detail-favorite-btn");
+  favBtn.addEventListener("click", async () => {
+    await toggleFavorite(server.slug);
+    await refreshPlaybarFavorites();
+    renderDetail(server);
+  });
 }
 
 // Un serveur peut suggérer une RAM (voir ServerForm côté site) — comparée à
@@ -218,38 +282,96 @@ async function applyRecommendedRamIfNeeded(server) {
   return true;
 }
 
-async function joinServer(server, joinBtn) {
-  const joinStatus = document.getElementById("join-status");
-  const slug = server.slug;
+// Orchestration partagee du lancement, quel que soit le point d'entree
+// (bouton "Rejoindre" d'une fiche serveur ou bouton "Jouer" de la barre de
+// lancement rapide) — un seul endroit qui pilote la barre de progression du
+// bas, pour ne jamais avoir deux indicateurs de progression differents.
+let launchInProgress = false;
+
+function setPlaybarBusy(busy) {
+  document.getElementById("playbar-idle").hidden = busy;
+  document.getElementById("playbar-progress").hidden = !busy;
+}
+
+async function launchServer(server) {
+  if (launchInProgress) return null;
 
   const shouldContinue = await applyRecommendedRamIfNeeded(server);
-  if (!shouldContinue) return;
+  if (!shouldContinue) return null;
 
+  launchInProgress = true;
+  const playBtn = document.getElementById("playbar-play");
+  const label = document.getElementById("playbar-progress-label");
+  const percentEl = document.getElementById("playbar-progress-percent");
+  const fill = document.getElementById("playbar-progress-fill");
+
+  playBtn.disabled = true;
+  fill.classList.remove("error");
+  fill.style.width = "0%";
+  percentEl.textContent = "";
+  label.textContent = `Lancement de ${server.name}…`;
+  setPlaybarBusy(true);
+
+  const stopListening = window.mchub.onGameProgress((status) => {
+    if (!status || typeof status !== "object") return;
+    if (status.text) label.textContent = status.text;
+    if (typeof status.task === "number" && typeof status.total === "number" && status.total > 0) {
+      const percent = Math.min(100, Math.round((status.task / status.total) * 100));
+      fill.style.width = `${percent}%`;
+      percentEl.textContent = `${percent}%`;
+    }
+  });
+
+  const result = await window.mchub.playServer(server.slug);
+  stopListening();
+  launchInProgress = false;
+
+  if (result.ok) {
+    fill.style.width = "100%";
+    percentEl.textContent = "";
+    label.textContent = "Jeu lancé — fenêtre séparée ouverte.";
+
+    // Historique de lancement (dernier joue, compteur par serveur, liste des
+    // derniers joues) — sert au menu rapide de la barre de lancement (voir
+    // refreshPlaybarFavorites) et a la page "Recents" de la barre laterale.
+    const settings = await window.mchub.settings.get();
+    const playCounts = { ...(settings.playCounts || {}) };
+    playCounts[server.slug] = (playCounts[server.slug] || 0) + 1;
+    const recentlyPlayed = [server.slug, ...(settings.recentlyPlayed || []).filter((s) => s !== server.slug)].slice(0, 10);
+    await window.mchub.settings.set({ playCounts, lastPlayedSlug: server.slug, recentlyPlayed });
+    await refreshPlaybarFavorites();
+
+    setTimeout(() => {
+      setPlaybarBusy(false);
+      playBtn.disabled = !selectedFavoriteSlug;
+    }, 1800);
+  } else {
+    fill.classList.add("error");
+    label.textContent = result.error;
+    playBtn.disabled = !selectedFavoriteSlug;
+  }
+
+  return result;
+}
+
+async function joinServer(server, joinBtn) {
   joinBtn.disabled = true;
   joinBtn.textContent = "Lancement…";
 
-  const stopListening = window.mchub.onGameProgress((status) => {
-    if (joinStatus) joinStatus.textContent = status;
-  });
+  const result = await launchServer(server);
 
-  const result = await window.mchub.playServer(slug);
-  stopListening();
-
-  if (result.ok) {
+  if (result && result.ok) {
     joinBtn.textContent = "Jeu lancé";
-    if (joinStatus) joinStatus.textContent = "Le jeu a démarré dans une fenêtre séparée.";
     return;
   }
 
   joinBtn.disabled = false;
-  joinBtn.textContent = "Rejoindre le serveur";
-  if (joinStatus) {
-    joinStatus.textContent = result.error;
-    joinStatus.classList.add("ms-error");
-  }
+  joinBtn.textContent = "▶ Rejoindre le serveur";
 }
 
 async function openDetail(slug) {
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
   statusEl.hidden = false;
   statusEl.classList.remove("error");
   statusEl.textContent = "Chargement…";
@@ -433,6 +555,7 @@ function enterApp(profile, opts) {
   appEl.hidden = false;
   renderAccountHeader(profile, opts);
   loadServers();
+  refreshPlaybarFavorites();
 }
 
 const PENDING_APPROVAL_MESSAGE =
@@ -539,15 +662,139 @@ function wireMcStatus() {
   loadMcStatus();
 }
 
+// Cloche de notifications : juste le bouton + un panneau vide pour l'instant
+// (voir index.html) — le vrai contenu viendra d'un futur systeme controle
+// par les admins/moderateurs depuis le site.
+function wireNotifications() {
+  const trigger = document.getElementById("notif-trigger");
+  const panel = document.getElementById("notif-panel");
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    panel.hidden = !panel.hidden;
+  });
+  document.addEventListener("click", () => {
+    panel.hidden = true;
+  });
+}
+
 // Bascule entre la vue "serveurs" (liste/détail) et la vue "paramètres" dans
 // la barre latérale — deux destinations distinctes plutôt qu'un simple lien,
 // pour matcher la convention des launchers du genre (Lunar, Modrinth...).
 function showServersView() {
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
   navSettingsBtn.classList.remove("active");
+  navFavoritesBtn.classList.remove("active");
+  navRecentBtn.classList.remove("active");
   navServersBtn.classList.add("active");
   loadServers();
+}
+
+// Resout une liste de slugs en objets serveur complets (nom, description,
+// joueurs...) via la liste publique — utilise par "Favoris" et "Recents", qui
+// ne stockent localement que des slugs.
+async function resolveServersBySlug(slugs) {
+  const result = await window.mchub.listServers();
+  const allServers = result.ok ? result.servers : [];
+  return slugs.map(
+    (slug) =>
+      allServers.find((s) => s.slug === slug) || {
+        slug,
+        name: slug,
+        description: "",
+        type: "vanilla",
+        playerCount: null,
+        playerCapacity: null,
+        bannerUrl: null,
+      },
+  );
+}
+
+function wireServerGridPanel(panelEl, origin, onFavoriteToggled) {
+  panelEl.querySelectorAll(".card").forEach((card) => {
+    card.addEventListener("click", () => {
+      detailOrigin = origin;
+      openDetail(card.dataset.slug);
+    });
+  });
+  panelEl.querySelectorAll(".favorite-btn").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await toggleFavorite(btn.dataset.slug);
+      await refreshPlaybarFavorites();
+      onFavoriteToggled();
+    });
+  });
+}
+
+async function showFavoritesView() {
+  statusEl.hidden = true;
+  listEl.hidden = true;
+  detailEl.hidden = true;
+  settingsPanelEl.hidden = true;
+  accountPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
+  favoritesPanelEl.hidden = false;
+  navServersBtn.classList.remove("active");
+  navSettingsBtn.classList.remove("active");
+  navRecentBtn.classList.remove("active");
+  navFavoritesBtn.classList.add("active");
+  await renderFavoritesList();
+}
+
+async function renderFavoritesList() {
+  const favorites = await getFavoriteSlugs();
+
+  if (favorites.length === 0) {
+    favoritesPanelEl.className = "detail";
+    favoritesPanelEl.innerHTML = `
+      <h2>Favoris</h2>
+      <p class="join-note">Aucun favori pour l'instant — clique sur l'étoile d'un serveur pour l'ajouter ici.</p>
+    `;
+    return;
+  }
+
+  const favoriteServers = await resolveServersBySlug(favorites);
+  favoritesPanelEl.className = "grid";
+  favoritesPanelEl.innerHTML = favoriteServers.map((server) => serverCardHtml(server, true)).join("");
+  wireServerGridPanel(favoritesPanelEl, "favorites", renderFavoritesList);
+}
+
+async function showRecentView() {
+  statusEl.hidden = true;
+  listEl.hidden = true;
+  detailEl.hidden = true;
+  settingsPanelEl.hidden = true;
+  accountPanelEl.hidden = true;
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = false;
+  navServersBtn.classList.remove("active");
+  navSettingsBtn.classList.remove("active");
+  navFavoritesBtn.classList.remove("active");
+  navRecentBtn.classList.add("active");
+  await renderRecentList();
+}
+
+async function renderRecentList() {
+  const settings = await window.mchub.settings.get();
+  const recentSlugs = settings.recentlyPlayed || [];
+
+  if (recentSlugs.length === 0) {
+    recentPanelEl.className = "detail";
+    recentPanelEl.innerHTML = `
+      <h2>Récents</h2>
+      <p class="join-note">Aucun serveur joué pour l'instant — les derniers serveurs lancés apparaîtront ici.</p>
+    `;
+    return;
+  }
+
+  const favorites = await getFavoriteSlugs();
+  const recentServers = await resolveServersBySlug(recentSlugs);
+  recentPanelEl.className = "grid";
+  recentPanelEl.innerHTML = recentServers.map((server) => serverCardHtml(server, favorites.includes(server.slug))).join("");
+  wireServerGridPanel(recentPanelEl, "recent", renderRecentList);
 }
 
 async function showSettingsView() {
@@ -555,8 +802,12 @@ async function showSettingsView() {
   listEl.hidden = true;
   detailEl.hidden = true;
   accountPanelEl.hidden = true;
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
   settingsPanelEl.hidden = false;
   navServersBtn.classList.remove("active");
+  navFavoritesBtn.classList.remove("active");
+  navRecentBtn.classList.remove("active");
   navSettingsBtn.classList.add("active");
 
   const settingsStatusEl = document.getElementById("settings-status");
@@ -643,8 +894,12 @@ async function showAccountView() {
   listEl.hidden = true;
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
   accountPanelEl.hidden = false;
   navServersBtn.classList.remove("active");
+  navFavoritesBtn.classList.remove("active");
+  navRecentBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   await renderAccountPanel();
 }
@@ -829,8 +1084,130 @@ function wireAccountPanelActions() {
   });
 }
 
+// Barre de lancement rapide (bas de l'appli) : au plus 5 lignes — le dernier
+// serveur reellement joue s'il n'est pas deja favori (mis en avant en haut,
+// etiquette "Dernier joue"), puis les 3 favoris les plus joues (par nombre de
+// lancements reussis, pas juste l'ordre d'ajout), puis un lien "+ de favoris"
+// vers la page dediee si plus de 3 favoris existent.
+async function refreshPlaybarFavorites() {
+  const favTrigger = document.getElementById("playbar-fav-trigger");
+  const favIcon = document.getElementById("playbar-fav-icon");
+  const favName = document.getElementById("playbar-fav-name");
+  const favPanel = document.getElementById("playbar-fav-panel");
+  const playBtn = document.getElementById("playbar-play");
+
+  const settings = await window.mchub.settings.get();
+  const favorites = settings.favoriteServers || [];
+  const playCounts = settings.playCounts || {};
+  const lastPlayedSlug = settings.lastPlayedSlug || null;
+  const showLastPlayed = !!lastPlayedSlug && !favorites.includes(lastPlayedSlug);
+
+  if (favorites.length === 0 && !lastPlayedSlug) {
+    selectedFavoriteSlug = null;
+    favTrigger.disabled = true;
+    favIcon.innerHTML = "";
+    favName.textContent = "Ajoute un serveur en favoris";
+    if (!launchInProgress) playBtn.disabled = true;
+    favPanel.innerHTML = '<div class="playbar-fav-empty">Clique sur l\'étoile d\'un serveur pour l\'ajouter ici.</div>';
+    return;
+  }
+
+  const result = await window.mchub.listServers();
+  const allServers = result.ok ? result.servers : [];
+  const resolve = (slug) => allServers.find((s) => s.slug === slug) || { slug, name: slug };
+
+  const topFavorites = [...favorites].sort((a, b) => (playCounts[b] || 0) - (playCounts[a] || 0)).slice(0, 3);
+
+  const rows = [];
+  if (showLastPlayed) rows.push({ slug: lastPlayedSlug, kind: "last-played" });
+  topFavorites.forEach((slug) => rows.push({ slug, kind: "favorite" }));
+
+  const hasMoreFavorites = favorites.length > 3;
+  const availableSlugs = rows.map((r) => r.slug);
+
+  if (!selectedFavoriteSlug || !availableSlugs.includes(selectedFavoriteSlug)) {
+    selectedFavoriteSlug = availableSlugs.includes(lastPlayedSlug) ? lastPlayedSlug : rows[0]?.slug || null;
+  }
+
+  const selected = resolve(selectedFavoriteSlug);
+  favTrigger.disabled = false;
+  if (!launchInProgress) playBtn.disabled = false;
+  favIcon.innerHTML = `<span class="server-icon" style="width: 22px; height: 22px; font-size: 10px;">${serverInitial(selected.name)}</span>`;
+  favName.textContent = selected.name;
+
+  favPanel.innerHTML =
+    rows
+      .map((row) => {
+        const server = resolve(row.slug);
+        return `
+      <div class="playbar-fav-row" data-slug="${escapeHtml(row.slug)}">
+        <span class="server-icon" style="width: 24px; height: 24px; font-size: 11px;">${serverInitial(server.name)}</span>
+        <span class="playbar-fav-row-name">
+          ${row.kind === "last-played" ? '<span class="playbar-fav-row-tag">Dernier joué</span>' : ""}
+          <span class="playbar-fav-row-title">${escapeHtml(server.name)}</span>
+        </span>
+        ${
+          row.kind === "favorite"
+            ? `<button class="playbar-fav-remove" type="button" data-slug="${escapeHtml(row.slug)}" title="Retirer des favoris">✕</button>`
+            : ""
+        }
+      </div>`;
+      })
+      .join("") + (hasMoreFavorites ? `<div class="playbar-fav-row playbar-fav-more" id="playbar-fav-more">+ de favoris</div>` : "");
+
+  favPanel.querySelectorAll(".playbar-fav-row:not(.playbar-fav-more)").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest(".playbar-fav-remove")) return;
+      selectedFavoriteSlug = row.dataset.slug;
+      favPanel.hidden = true;
+      refreshPlaybarFavorites();
+    });
+  });
+  favPanel.querySelectorAll(".playbar-fav-remove").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await toggleFavorite(btn.dataset.slug);
+      await refreshPlaybarFavorites();
+      // L'etoile sur la carte/fiche correspondante ne se met a jour qu'au
+      // prochain rendu de cette vue — un detail mineur, pas la peine de
+      // garder une reference au serveur actuellement affiche juste pour ca.
+    });
+  });
+  const moreBtn = document.getElementById("playbar-fav-more");
+  if (moreBtn) {
+    moreBtn.addEventListener("click", () => {
+      favPanel.hidden = true;
+      showFavoritesView();
+    });
+  }
+}
+
+function wirePlaybar() {
+  const favTrigger = document.getElementById("playbar-fav-trigger");
+  const favPanel = document.getElementById("playbar-fav-panel");
+  const playBtn = document.getElementById("playbar-play");
+
+  favTrigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    favPanel.hidden = !favPanel.hidden;
+  });
+  document.addEventListener("click", () => {
+    favPanel.hidden = true;
+  });
+
+  playBtn.addEventListener("click", async () => {
+    if (!selectedFavoriteSlug) return;
+    const result = await window.mchub.getServer(selectedFavoriteSlug);
+    if (!result.ok) return;
+    await window.mchub.settings.set({ lastPlayedFavoriteSlug: selectedFavoriteSlug });
+    await launchServer(result.server);
+  });
+}
+
 function wireSidebar() {
   navServersBtn.addEventListener("click", showServersView);
+  navFavoritesBtn.addEventListener("click", showFavoritesView);
+  navRecentBtn.addEventListener("click", showRecentView);
   navSettingsBtn.addEventListener("click", showSettingsView);
 }
 
@@ -946,6 +1323,8 @@ async function boot() {
   wireSidebar();
   wireSettingsPanel();
   wireMcStatus();
+  wireNotifications();
+  wirePlaybar();
 
   await ensureJavaAvailable();
 
