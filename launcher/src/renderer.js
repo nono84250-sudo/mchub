@@ -8,7 +8,7 @@ const detailEl = document.getElementById("detail");
 const msAccountEl = document.getElementById("ms-account");
 const settingsPanelEl = document.getElementById("settings-panel");
 const accountPanelEl = document.getElementById("account-panel");
-const onboardingEl = document.getElementById("onboarding");
+const javaGateEl = document.getElementById("java-gate");
 const navServersBtn = document.getElementById("nav-servers");
 const navSettingsBtn = document.getElementById("nav-settings");
 
@@ -286,6 +286,59 @@ async function loadServers() {
 // puisque innerHTML le recrée à chaque appel de renderAccountHeader.
 let accountMenuOutsideClickWired = false;
 
+// Rendu du skin en entier (vue de face) pour la page "Mon compte" — chaque
+// partie du corps est une simple fenêtre sur la texture complète, comme
+// .skin-face/.mini-skin-face déjà utilisés pour la tête ailleurs dans
+// l'appli, généralisé à tout le corps via les coordonnées standard du format
+// de skin 64x64 (tête, torse, bras, jambes + calques chapeau/veste/manches/
+// pantalon). Gauche/droite à l'écran = droite/gauche du personnage (il fait
+// face au joueur, comme dans un miroir) — un détail cosmétique mineur qui ne
+// se voit que sur des skins asymétriques.
+const SKIN_PARTS = {
+  head: { x: 8, y: 8, w: 8, h: 8 },
+  headOverlay: { x: 40, y: 8, w: 8, h: 8 },
+  body: { x: 20, y: 20, w: 8, h: 12 },
+  bodyOverlay: { x: 20, y: 36, w: 8, h: 12 },
+  armL: { x: 44, y: 20, w: 4, h: 12 },
+  armLOverlay: { x: 44, y: 36, w: 4, h: 12 },
+  armR: { x: 36, y: 52, w: 4, h: 12 },
+  armROverlay: { x: 52, y: 52, w: 4, h: 12 },
+  legL: { x: 4, y: 20, w: 4, h: 12 },
+  legLOverlay: { x: 4, y: 36, w: 4, h: 12 },
+  legR: { x: 20, y: 52, w: 4, h: 12 },
+  legROverlay: { x: 4, y: 52, w: 4, h: 12 },
+};
+
+function skinPartStyle(part, scale, skinUrl) {
+  const { x, y, w, h } = SKIN_PARTS[part];
+  return `width:${w * scale}px;height:${h * scale}px;background-image:url('${escapeHtml(skinUrl)}');background-size:${64 * scale}px ${64 * scale}px;background-position:-${x * scale}px -${y * scale}px;`;
+}
+
+function skinPartHtml(part, overlayPart, scale, skinUrl) {
+  const { w, h } = SKIN_PARTS[part];
+  return `
+    <div class="skin-part-wrap" style="width:${w * scale}px;height:${h * scale}px;">
+      <div class="skin-part" style="${skinPartStyle(part, scale, skinUrl)}"></div>
+      <div class="skin-part" style="${skinPartStyle(overlayPart, scale, skinUrl)}"></div>
+    </div>`;
+}
+
+function fullSkinHtml(skinUrl, scale) {
+  return `
+    <div class="skin-body">
+      <div class="skin-body-row">${skinPartHtml("head", "headOverlay", scale, skinUrl)}</div>
+      <div class="skin-body-row">
+        ${skinPartHtml("armL", "armLOverlay", scale, skinUrl)}
+        ${skinPartHtml("body", "bodyOverlay", scale, skinUrl)}
+        ${skinPartHtml("armR", "armROverlay", scale, skinUrl)}
+      </div>
+      <div class="skin-body-row">
+        ${skinPartHtml("legL", "legLOverlay", scale, skinUrl)}
+        ${skinPartHtml("legR", "legROverlay", scale, skinUrl)}
+      </div>
+    </div>`;
+}
+
 function skinUrlFor(profile) {
   const skins = profile.skins || [];
   const url = (skins.find((s) => s.state === "ACTIVE") || skins[0])?.url || "";
@@ -520,10 +573,12 @@ async function showSettingsView() {
   await refreshJavaStatus("settings-java-status", "settings-java-install");
 }
 
-// Partagé entre l'assistant de premier démarrage et les paramètres : verifie
-// Java (voir javaManager.js — 64 bits requis pour allouer beaucoup de
-// mémoire) et affiche un bouton d'installation automatique si besoin.
-async function refreshJavaStatus(statusElId, installBtnId) {
+// Partagé entre le verrou Java obligatoire et les paramètres : verifie Java
+// (voir javaManager.js — 64 bits requis pour allouer beaucoup de mémoire) et
+// affiche un bouton d'installation automatique si besoin. `onReady` est
+// appelé dès que Java est détecté OK (tout de suite, ou juste après une
+// installation réussie) — utilisé par le verrou pour débloquer le launcher.
+async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
   const statusEl2 = document.getElementById(statusElId);
   const installBtn = document.getElementById(installBtnId);
   statusEl2.textContent = "Vérification de Java…";
@@ -532,6 +587,7 @@ async function refreshJavaStatus(statusElId, installBtnId) {
   const java = await window.mchub.java.detect();
   if (java.found && java.is64Bit) {
     statusEl2.textContent = `Java détecté${java.version ? ` (${java.version}, 64 bits)` : " (64 bits)"} ✓`;
+    if (onReady) onReady();
   } else if (java.found) {
     statusEl2.textContent = "Java 32 bits détecté — insuffisant pour allouer beaucoup de mémoire.";
     installBtn.hidden = false;
@@ -553,9 +609,29 @@ async function refreshJavaStatus(statusElId, installBtnId) {
     if (result.ok) {
       statusEl2.textContent = `Java ${result.version} installé ✓`;
       installBtn.hidden = true;
+      if (onReady) onReady();
     } else {
       statusEl2.textContent = `Échec de l'installation : ${result.error}`;
     }
+  });
+}
+
+// Verrou obligatoire : Java est requis pour lancer Minecraft (allocation de
+// RAM comprise), donc on bloque tout le launcher (avant même l'assistant RAM
+// et le portail de connexion) tant qu'il n'est pas détecté — à chaque
+// démarrage, pas seulement au premier lancement.
+async function ensureJavaAvailable() {
+  const initial = await window.mchub.java.detect();
+  if (initial.found && initial.is64Bit) return;
+
+  javaGateEl.hidden = false;
+  await new Promise((resolve) => {
+    refreshJavaStatus("java-gate-status", "java-gate-install", {
+      onReady: () => {
+        javaGateEl.hidden = true;
+        resolve();
+      },
+    });
   });
 }
 
@@ -576,12 +652,8 @@ async function showAccountView() {
 async function renderAccountPanel() {
   const skinUrl = currentProfile ? skinUrlFor(currentProfile) : "";
   const skinPreviewHtml = skinUrl
-    ? `
-      <div class="skin-face-wrap">
-        <div class="skin-face" style="background-image: url('${escapeHtml(skinUrl)}')"></div>
-        <div class="skin-face-overlay" style="background-image: url('${escapeHtml(skinUrl)}')"></div>
-      </div>`
-    : `<span class="server-icon" style="width: 72px; height: 72px; font-size: 28px;">${serverInitial(currentProfile?.name || "?")}</span>`;
+    ? fullSkinHtml(skinUrl, 7)
+    : `<span class="server-icon" style="width: 112px; height: 112px; font-size: 42px;">${serverInitial(currentProfile?.name || "?")}</span>`;
 
   accountPanelEl.innerHTML = `
     <h2>Mon compte</h2>
@@ -826,27 +898,32 @@ function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel }) {
   });
 }
 
-// Assistant de premier démarrage : affiché une seule fois (voir
-// settings.onboarded) avant même le portail de connexion, pour choisir une
-// RAM raisonnable dès le départ et vérifier Java sans attendre le premier
-// clic sur "Rejoindre".
-async function showOnboarding(settings) {
-  onboardingEl.hidden = false;
-  document.getElementById("onboarding-mem-min").value = settings.suggestedMinGB;
-  document.getElementById("onboarding-mem-max").value = settings.suggestedMaxGB;
-  document.getElementById("onboarding-ram-note").textContent =
-    `Cette machine a ${settings.totalGB} Go de RAM au total — ${settings.suggestedMinGB}/${settings.suggestedMaxGB} Go est une valeur prudente pour commencer, modifiable plus tard dans les paramètres.`;
+// Petite fenêtre (et non plus une page pleine) affichée une seule fois (voir
+// settings.onboarded) pour choisir une RAM raisonnable dès le départ — Java
+// est vérifié séparément par ensureJavaAvailable(), avant même cette étape.
+function showRamSetupModal(settings) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("ram-setup-overlay");
+    const minInput = document.getElementById("ram-setup-min");
+    const maxInput = document.getElementById("ram-setup-max");
+    const note = document.getElementById("ram-setup-note");
+    const continueBtn = document.getElementById("ram-setup-continue");
 
-  await refreshJavaStatus("onboarding-java-status", "onboarding-java-install");
-}
+    minInput.value = settings.suggestedMinGB;
+    maxInput.value = settings.suggestedMaxGB;
+    note.textContent =
+      `Cette machine a ${settings.totalGB} Go de RAM au total — ${settings.suggestedMinGB}/${settings.suggestedMaxGB} Go est une valeur prudente pour commencer.`;
+    overlay.hidden = false;
 
-function wireOnboarding() {
-  document.getElementById("onboarding-continue").addEventListener("click", async () => {
-    const min = Number(document.getElementById("onboarding-mem-min").value);
-    const max = Number(document.getElementById("onboarding-mem-max").value);
-    await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max, onboarded: true });
-    onboardingEl.hidden = true;
-    await proceedToGate();
+    const onContinue = async () => {
+      const min = Number(minInput.value);
+      const max = Number(maxInput.value);
+      await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max, onboarded: true });
+      overlay.hidden = true;
+      continueBtn.removeEventListener("click", onContinue);
+      resolve();
+    };
+    continueBtn.addEventListener("click", onContinue);
   });
 }
 
@@ -869,12 +946,12 @@ async function boot() {
   wireSidebar();
   wireSettingsPanel();
   wireMcStatus();
-  wireOnboarding();
+
+  await ensureJavaAvailable();
 
   const settings = await window.mchub.settings.get();
   if (!settings.onboarded) {
-    await showOnboarding(settings);
-    return;
+    await showRamSetupModal(settings);
   }
 
   await proceedToGate();

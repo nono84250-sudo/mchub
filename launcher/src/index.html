@@ -118,7 +118,6 @@
   .field-label { font-size: 13px; color: var(--muted); }
 
   .account-skin-row { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
-  .account-skin-row .skin-face-wrap { width: 72px; height: 72px; }
   .account-variant-row { display: flex; gap: 16px; font-size: 13px; color: var(--foreground); margin-bottom: 4px; }
   .account-variant-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   .account-list-row {
@@ -227,6 +226,16 @@
   .mini-skin-face, .mini-skin-face-overlay { background-size: 256px 256px; }
   .mini-skin-face { background-position: -32px -32px; }
   .mini-skin-face-overlay { background-position: -160px -32px; }
+
+  /* Rendu du skin en entier (face avant) : chaque partie du corps est une
+     simple "fenetre" sur la texture complete, comme .skin-face/.mini-skin-face
+     deja utilises pour la tete — juste generalise a tout le corps (bras,
+     torse, jambes) avec leurs calques de survetement (chapeau/veste/manches/
+     pantalon), via les coordonnees standard du format de skin 64x64. */
+  .skin-body { display: flex; flex-direction: column; align-items: center; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+  .skin-body-row { display: flex; }
+  .skin-part-wrap { position: relative; }
+  .skin-part { position: absolute; inset: 0; background-repeat: no-repeat; image-rendering: pixelated; }
   .account-dropdown-name { font-size: 14px; font-weight: 600; }
   .account-dropdown-note { margin: 0; font-size: 12px; text-align: center; }
   .account-dropdown-signout { width: 100%; }
@@ -405,7 +414,7 @@
   .join-btn:disabled { cursor: not-allowed; opacity: 0.6; }
   .join-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
 
-  #gate, #onboarding {
+  #gate, #java-gate {
     position: relative;
     flex: 1 1 auto;
     display: flex;
@@ -417,7 +426,7 @@
     gap: 18px;
     overflow-y: auto;
   }
-  #gate::before, #onboarding::before {
+  #gate::before, #java-gate::before {
     content: "";
     position: absolute;
     inset: 0;
@@ -426,8 +435,8 @@
       radial-gradient(40% 35% at 75% 15%, rgba(45, 216, 138, 0.16), transparent 70%);
     pointer-events: none;
   }
-  #gate > *, #onboarding > * { position: relative; }
-  #gate .logo, #onboarding .logo { font-size: 26px; }
+  #gate > *, #java-gate > * { position: relative; }
+  #gate .logo, #java-gate .logo { font-size: 26px; }
   .onboarding-box {
     text-align: left;
     width: 100%;
@@ -553,32 +562,14 @@
     </div>
   </div>
 
-  <div id="onboarding" hidden>
-    <div class="logo" style="font-size: 22px;">Bienvenue sur Omniscient <span>Launcher</span></div>
-    <p class="tagline">Deux ou trois réglages avant de commencer — modifiables plus tard dans les paramètres.</p>
+  <div id="java-gate" hidden>
+    <div class="logo" style="font-size: 22px;">Java requis</div>
+    <p class="tagline">Minecraft a besoin de Java (64 bits) pour se lancer — sans lui, le launcher ne peut pas continuer.</p>
 
     <div class="onboarding-box">
-      <h3>Mémoire allouée au jeu</h3>
-      <div class="settings-field">
-        <label for="onboarding-mem-min" class="field-label">Minimale (Go)</label>
-        <input type="number" id="onboarding-mem-min" min="1" max="32" class="settings-input" />
-      </div>
-      <div class="settings-field">
-        <label for="onboarding-mem-max" class="field-label">Maximale (Go)</label>
-        <input type="number" id="onboarding-mem-max" min="1" max="32" class="settings-input" />
-      </div>
-      <p class="join-note" id="onboarding-ram-note"></p>
+      <p class="join-note" id="java-gate-status">Vérification…</p>
+      <button id="java-gate-install" class="join-btn" type="button" hidden style="margin-top: 8px;">Installer Java automatiquement</button>
     </div>
-
-    <div class="onboarding-box">
-      <h3>Java (64 bits, requis pour jouer)</h3>
-      <p class="join-note" id="onboarding-java-status">Vérification…</p>
-      <button id="onboarding-java-install" class="ms-login" type="button" hidden>Installer Java automatiquement</button>
-    </div>
-
-    <button id="onboarding-continue" class="ms-login" style="padding: 10px 20px; font-size: 14px;" type="button">
-      Continuer
-    </button>
   </div>
 
   <div id="gate" hidden>
@@ -590,6 +581,25 @@
       Se souvenir de moi
     </label>
     <p class="gate-message" id="gate-message"></p>
+  </div>
+
+  <div class="modal-overlay" id="ram-setup-overlay" hidden>
+    <div class="modal-box">
+      <h3>Mémoire allouée au jeu</h3>
+      <p style="margin-bottom: 14px;">Choisis combien de RAM le jeu peut utiliser — modifiable plus tard dans les paramètres.</p>
+      <div class="settings-field">
+        <label for="ram-setup-min" class="field-label">Minimale (Go)</label>
+        <input type="number" id="ram-setup-min" min="1" max="32" class="settings-input" />
+      </div>
+      <div class="settings-field">
+        <label for="ram-setup-max" class="field-label">Maximale (Go)</label>
+        <input type="number" id="ram-setup-max" min="1" max="32" class="settings-input" />
+      </div>
+      <p class="join-note" id="ram-setup-note"></p>
+      <div class="modal-actions">
+        <button id="ram-setup-continue" class="join-btn" type="button">Continuer</button>
+      </div>
+    </div>
   </div>
 
   <div class="modal-overlay" id="modal-overlay" hidden>
