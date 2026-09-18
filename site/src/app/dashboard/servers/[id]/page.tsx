@@ -20,7 +20,7 @@ export default async function EditServerPage({ params }: PageProps<"/dashboard/s
   const versions = await getMinecraftVersions();
 
   return (
-    <div className="mx-auto max-w-2xl px-4 sm:px-6 py-12">
+    <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-foreground">Modifier {server.name}</h1>
         <form action={boundDelete}>

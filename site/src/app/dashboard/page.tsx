@@ -16,7 +16,7 @@ export default async function DashboardPage() {
     .all();
 
   return (
-    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-12">
+    <div>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Mes serveurs</h1>
         <Link href="/dashboard/servers/new" className="btn-primary">
