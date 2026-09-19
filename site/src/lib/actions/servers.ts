@@ -85,7 +85,7 @@ export async function createServer(_prevState: ServerActionState, formData: Form
 
   revalidatePath("/servers");
   revalidatePath("/dashboard");
-  redirect(`/dashboard/servers/${server.id}`);
+  redirect(`/manage/${server.id}`);
 }
 
 export async function updateServer(
@@ -107,7 +107,8 @@ export async function updateServer(
   revalidatePath("/servers");
   revalidatePath(`/servers/${owned.slug}`);
   revalidatePath("/dashboard");
-  revalidatePath(`/dashboard/servers/${serverId}`);
+  revalidatePath(`/manage/${serverId}`);
+  revalidatePath(`/manage/${serverId}/settings`);
   return undefined;
 }
 
@@ -137,7 +138,7 @@ export async function toggleServerPublished(serverId: string) {
   revalidatePath("/servers");
   revalidatePath(`/servers/${owned.slug}`);
   revalidatePath("/dashboard");
-  revalidatePath(`/dashboard/servers/${serverId}`);
+  revalidatePath(`/manage/${serverId}`);
 }
 
 // Cree une copie de la fiche (nouveau slug, meme configuration sauf le nom)
@@ -168,5 +169,5 @@ export async function duplicateServer(serverId: string) {
   });
 
   revalidatePath("/dashboard");
-  redirect(`/dashboard/servers/${copy.id}`);
+  redirect(`/manage/${copy.id}`);
 }

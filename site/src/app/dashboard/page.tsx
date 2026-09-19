@@ -34,7 +34,7 @@ export default async function DashboardPage() {
           {servers.map((server) => (
             <li key={server.id}>
               <Link
-                href={`/dashboard/servers/${server.id}`}
+                href={`/manage/${server.id}`}
                 className="glow-card flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3"
               >
                 <div className="flex items-center gap-3">
