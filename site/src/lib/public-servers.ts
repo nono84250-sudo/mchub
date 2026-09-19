@@ -38,6 +38,7 @@ export async function listPublicServers(): Promise<PublicServerSummary[]> {
     "playerCapacity",
     "lastPingedAt",
   )
+    .where({ published: true })
     .orderBy((s) => s.createdAt.desc())
     .all();
 
@@ -78,7 +79,7 @@ export async function getServerWithIpBySlug(slug: string): Promise<LauncherServe
     "curseforgeModpackId",
     "recommendedRamGB",
   )
-    .where({ slug })
+    .where({ slug, published: true })
     .first();
 
   if (!row) return null;
@@ -91,6 +92,28 @@ export async function getServerWithIpBySlug(slug: string): Promise<LauncherServe
     curseforgeModpackId: row.curseforgeModpackId,
     recommendedRamGB: row.recommendedRamGB,
   };
+}
+
+// Appelee depuis un composant client (voir ViewTracker) plutot que pendant
+// le rendu de la page : la fiche est revalidee au plus toutes les 60s
+// (ISR), donc incrementer ce compteur pendant le rendu sous-compterait
+// enormement les vues reelles (une seule execution par fenetre de 60s, tous
+// visiteurs confondus). Lecture-puis-ecriture (pas d'increment atomique cote
+// ORM Prisma 8) : suffisant pour un compteur indicatif, pas une donnee
+// critique — une collision concurrente ferait perdre une vue au pire.
+export async function recordServerView(slug: string): Promise<void> {
+  const row = await db.orm.public.Server.select("id", "viewCount").where({ slug }).first();
+  if (!row) return;
+  await db.orm.public.Server.where({ id: row.id }).update({ viewCount: row.viewCount + 1 });
+}
+
+// Appelee par le launcher (route /api/launcher/servers/[slug]/launch) a
+// chaque lancement reussi — meme logique lecture-puis-ecriture que
+// recordServerView, meme tolerance pour un compteur indicatif.
+export async function recordServerLaunch(slug: string): Promise<void> {
+  const row = await db.orm.public.Server.select("id", "launchCount").where({ slug }).first();
+  if (!row) return;
+  await db.orm.public.Server.where({ id: row.id }).update({ launchCount: row.launchCount + 1 });
 }
 
 export async function getPublicServerBySlug(slug: string): Promise<PublicServerDetail | null> {
@@ -110,7 +133,7 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     "lastPingedAt",
     "recommendedRamGB",
   )
-    .where({ slug })
+    .where({ slug, published: true })
     .first();
 
   if (!row) return null;

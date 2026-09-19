@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'8aba9713fc4e60caa178634af73a70e03cb187132df09e5870698b2c0fe60de0'>;
+  StorageHashBase<'9d11f93de13e02449113cde2115be57894250e24f26f2e6fb175f1740acbf27d'>;
 export type ExecutionHash =
   ExecutionHashBase<'4927fee92361149193c89d065ff169c82c3f1224924de9a318e1801c1d0488ec'>;
 export type ProfileHash =
@@ -258,6 +258,9 @@ export type FieldOutputTypes = {
       readonly playerCapacity: CodecTypes['pg/int4@1']['output'] | null;
       readonly lastPingedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
       readonly recommendedRamGB: CodecTypes['pg/int4@1']['output'] | null;
+      readonly published: CodecTypes['pg/bool@1']['output'];
+      readonly viewCount: CodecTypes['pg/int4@1']['output'];
+      readonly launchCount: CodecTypes['pg/int4@1']['output'];
       readonly ownerId: CodecTypes['pg/text@1']['output'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -290,6 +293,9 @@ export type FieldInputTypes = {
       readonly playerCapacity: CodecTypes['pg/int4@1']['input'] | null;
       readonly lastPingedAt: CodecTypes['pg/timestamptz-string@1']['input'] | null;
       readonly recommendedRamGB: CodecTypes['pg/int4@1']['input'] | null;
+      readonly published: CodecTypes['pg/bool@1']['input'];
+      readonly viewCount: CodecTypes['pg/int4@1']['input'];
+      readonly launchCount: CodecTypes['pg/int4@1']['input'];
       readonly ownerId: CodecTypes['pg/text@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
@@ -316,15 +322,18 @@ export type StorageColumnTypes = {
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly ip: CodecTypes['pg/text@1']['output'];
       readonly lastPingedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
+      readonly launchCount: CodecTypes['pg/int4@1']['output'];
       readonly minecraftVersion: CodecTypes['pg/text@1']['output'];
       readonly name: CodecTypes['pg/text@1']['output'];
       readonly ownerId: CodecTypes['pg/text@1']['output'];
       readonly playerCapacity: CodecTypes['pg/int4@1']['output'] | null;
       readonly playerCount: CodecTypes['pg/int4@1']['output'] | null;
+      readonly published: CodecTypes['pg/bool@1']['output'];
       readonly recommendedRamGB: CodecTypes['pg/int4@1']['output'] | null;
       readonly slug: CodecTypes['pg/text@1']['output'];
       readonly type: 'vanilla' | 'modded';
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
+      readonly viewCount: CodecTypes['pg/int4@1']['output'];
     };
     readonly user: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -348,15 +357,18 @@ export type StorageColumnInputTypes = {
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly ip: CodecTypes['pg/text@1']['input'];
       readonly lastPingedAt: CodecTypes['pg/timestamptz-string@1']['input'] | null;
+      readonly launchCount: CodecTypes['pg/int4@1']['input'];
       readonly minecraftVersion: CodecTypes['pg/text@1']['input'];
       readonly name: CodecTypes['pg/text@1']['input'];
       readonly ownerId: CodecTypes['pg/text@1']['input'];
       readonly playerCapacity: CodecTypes['pg/int4@1']['input'] | null;
       readonly playerCount: CodecTypes['pg/int4@1']['input'] | null;
+      readonly published: CodecTypes['pg/bool@1']['input'];
       readonly recommendedRamGB: CodecTypes['pg/int4@1']['input'] | null;
       readonly slug: CodecTypes['pg/text@1']['input'];
       readonly type: 'vanilla' | 'modded';
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
+      readonly viewCount: CodecTypes['pg/int4@1']['input'];
     };
     readonly user: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
@@ -396,6 +408,9 @@ export namespace Models {
     playerCapacity: CodecTypes['pg/int4@1']['output'] | null;
     lastPingedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
     recommendedRamGB: CodecTypes['pg/int4@1']['output'] | null;
+    published: CodecTypes['pg/bool@1']['output'];
+    viewCount: CodecTypes['pg/int4@1']['output'];
+    launchCount: CodecTypes['pg/int4@1']['output'];
     ownerId: CodecTypes['pg/text@1']['output'];
     createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
     updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -509,6 +524,33 @@ type ContractBase = Omit<
                   readonly nativeType: 'int4';
                   readonly codecId: 'pg/int4@1';
                   readonly nullable: true;
+                };
+                readonly published: {
+                  readonly nativeType: 'bool';
+                  readonly codecId: 'pg/bool@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/bool@1', true>;
+                  };
+                };
+                readonly viewCount: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
+                  };
+                };
+                readonly launchCount: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
+                  };
                 };
                 readonly ownerId: {
                   readonly nativeType: 'text';
@@ -680,6 +722,18 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
               };
+              readonly published: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
+              };
+              readonly viewCount: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly launchCount: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
               readonly ownerId: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -729,6 +783,9 @@ type ContractBase = Omit<
                 readonly playerCapacity: { readonly column: 'playerCapacity' };
                 readonly lastPingedAt: { readonly column: 'lastPingedAt' };
                 readonly recommendedRamGB: { readonly column: 'recommendedRamGB' };
+                readonly published: { readonly column: 'published' };
+                readonly viewCount: { readonly column: 'viewCount' };
+                readonly launchCount: { readonly column: 'launchCount' };
                 readonly ownerId: { readonly column: 'ownerId' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };

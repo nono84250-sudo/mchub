@@ -121,3 +121,52 @@ export async function deleteServer(serverId: string) {
   revalidatePath("/dashboard");
   redirect("/dashboard");
 }
+
+// Retire/republie la fiche de l'annuaire public et de l'API consommee par
+// le launcher (voir published dans contract.prisma) sans supprimer la
+// configuration — pratique pour une maintenance temporaire.
+export async function toggleServerPublished(serverId: string) {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const owned = await db.orm.public.Server.select("id", "slug", "published").where({ id: serverId, ownerId: session.user.id }).first();
+  if (!owned) redirect("/dashboard");
+
+  await db.orm.public.Server.where({ id: serverId }).update({ published: !owned.published });
+
+  revalidatePath("/servers");
+  revalidatePath(`/servers/${owned.slug}`);
+  revalidatePath("/dashboard");
+  revalidatePath(`/dashboard/servers/${serverId}`);
+}
+
+// Cree une copie de la fiche (nouveau slug, meme configuration sauf le nom)
+// — pratique pour publier plusieurs serveurs similaires sans tout ressaisir.
+export async function duplicateServer(serverId: string) {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const source = await db.orm.public.Server.where({ id: serverId, ownerId: session.user.id }).first();
+  if (!source) redirect("/dashboard");
+
+  const name = `${source.name} (copie)`;
+  const slug = await uniqueSlugFor(name);
+
+  const copy = await db.orm.public.Server.create({
+    slug,
+    name,
+    description: source.description,
+    bannerUrl: source.bannerUrl,
+    type: source.type,
+    minecraftVersion: source.minecraftVersion,
+    ip: source.ip,
+    curseforgeModpackId: source.curseforgeModpackId,
+    curseforgeModpackName: source.curseforgeModpackName,
+    curseforgeModpackVersion: source.curseforgeModpackVersion,
+    recommendedRamGB: source.recommendedRamGB,
+    ownerId: session.user.id,
+  });
+
+  revalidatePath("/dashboard");
+  redirect(`/dashboard/servers/${copy.id}`);
+}

@@ -45,6 +45,15 @@ model Server {
   // juste une recommandation cote proprietaire du serveur.
   recommendedRamGB Int?
 
+  // Page de gestion (dashboard proprietaire) : mettre en pause retire le
+  // serveur de l'annuaire public et empeche le launcher de le lister/le
+  // lancer, sans supprimer sa configuration. viewCount/launchCount sont de
+  // simples compteurs incrementes cote site (vue de la fiche publique) et
+  // par le launcher (lancement reussi) - pas d'historique dans le temps.
+  published   Boolean @default(true)
+  viewCount   Int     @default(0)
+  launchCount Int     @default(0)
+
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 

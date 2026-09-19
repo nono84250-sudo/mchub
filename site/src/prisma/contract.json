@@ -97,6 +97,13 @@
                   "kind": "scalar"
                 }
               },
+              "launchCount": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
               "minecraftVersion": {
                 "nullable": false,
                 "type": {
@@ -132,6 +139,13 @@
                   "kind": "scalar"
                 }
               },
+              "published": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
+                }
+              },
               "recommendedRamGB": {
                 "nullable": true,
                 "type": {
@@ -163,6 +177,13 @@
                 "nullable": false,
                 "type": {
                   "codecId": "pg/timestamptz-string@1",
+                  "kind": "scalar"
+                }
+              },
+              "viewCount": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
                   "kind": "scalar"
                 }
               }
@@ -214,6 +235,9 @@
                 "lastPingedAt": {
                   "column": "lastPingedAt"
                 },
+                "launchCount": {
+                  "column": "launchCount"
+                },
                 "minecraftVersion": {
                   "column": "minecraftVersion"
                 },
@@ -229,6 +253,9 @@
                 "playerCount": {
                   "column": "playerCount"
                 },
+                "published": {
+                  "column": "published"
+                },
                 "recommendedRamGB": {
                   "column": "recommendedRamGB"
                 },
@@ -240,6 +267,9 @@
                 },
                 "updatedAt": {
                   "column": "updatedAt"
+                },
+                "viewCount": {
+                  "column": "viewCount"
                 }
               },
               "namespaceId": "public",
@@ -400,6 +430,15 @@
                   "nativeType": "timestamptz",
                   "nullable": true
                 },
+                "launchCount": {
+                  "codecId": "pg/int4@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": 0
+                  },
+                  "nativeType": "int4",
+                  "nullable": false
+                },
                 "minecraftVersion": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -424,6 +463,15 @@
                   "codecId": "pg/int4@1",
                   "nativeType": "int4",
                   "nullable": true
+                },
+                "published": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": true
+                  },
+                  "nativeType": "bool",
+                  "nullable": false
                 },
                 "recommendedRamGB": {
                   "codecId": "pg/int4@1",
@@ -453,6 +501,15 @@
                 "updatedAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "viewCount": {
+                  "codecId": "pg/int4@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": 0
+                  },
+                  "nativeType": "int4",
                   "nullable": false
                 }
               },
@@ -565,7 +622,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "8aba9713fc4e60caa178634af73a70e03cb187132df09e5870698b2c0fe60de0"
+    "storageHash": "9d11f93de13e02449113cde2115be57894250e24f26f2e6fb175f1740acbf27d"
   },
   "execution": {
     "executionHash": "4927fee92361149193c89d065ff169c82c3f1224924de9a318e1801c1d0488ec",

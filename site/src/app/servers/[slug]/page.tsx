@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getPublicServerBySlug } from "@/lib/public-servers";
 import { ServerStatus } from "@/components/ServerStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { ViewTracker } from "@/components/ViewTracker";
 
 export async function generateMetadata({ params }: PageProps<"/servers/[slug]">) {
   const { slug } = await params;
@@ -22,6 +23,7 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 py-12">
       <AutoRefresh intervalMs={30_000} />
+      <ViewTracker slug={slug} />
       <div className="relative h-48 w-full mb-9">
         <div className="absolute inset-0 overflow-hidden rounded-xl banner-placeholder">
           {server.bannerUrl ? (

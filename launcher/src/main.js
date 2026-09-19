@@ -383,6 +383,13 @@ ipcMain.handle("game:launch", async (event, slug) => {
       javaPath: settings.javaPath || undefined,
     });
 
+    // Compteur indicatif pour la page de gestion du serveur (site) — ne
+    // doit jamais faire echouer un lancement par ailleurs reussi.
+    fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/launch`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+    }).catch((error) => console.debug("[game:launch] suivi du lancement echoue :", error));
+
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };

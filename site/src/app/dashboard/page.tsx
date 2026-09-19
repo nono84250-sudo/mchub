@@ -10,7 +10,7 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const servers = await db.orm.public.Server.select("id", "slug", "name", "type", "createdAt")
+  const servers = await db.orm.public.Server.select("id", "slug", "name", "type", "published", "createdAt")
     .where({ ownerId: session.user.id })
     .orderBy((s) => s.createdAt.desc())
     .all();
@@ -41,7 +41,10 @@ export default async function DashboardPage() {
                   <span className="server-icon h-9 w-9 text-sm">{server.name.trim().charAt(0).toUpperCase() || "?"}</span>
                   <div>
                     <p className="font-medium text-foreground">{server.name}</p>
-                    <p className="text-sm text-muted">{server.type === "modded" ? "Moddé" : "Vanilla"}</p>
+                    <p className="text-sm text-muted">
+                      {server.type === "modded" ? "Moddé" : "Vanilla"}
+                      {server.published ? "" : " · En pause"}
+                    </p>
                   </div>
                 </div>
                 <span className="flex items-center gap-1 text-sm text-accent">
