@@ -76,6 +76,13 @@
                   "kind": "scalar"
                 }
               },
+              "discordUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "id": {
                 "nullable": false,
                 "type": {
@@ -186,6 +193,13 @@
                   "codecId": "pg/int4@1",
                   "kind": "scalar"
                 }
+              },
+              "websiteUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
               }
             },
             "relations": {
@@ -225,6 +239,9 @@
                 },
                 "description": {
                   "column": "description"
+                },
+                "discordUrl": {
+                  "column": "discordUrl"
                 },
                 "id": {
                   "column": "id"
@@ -270,6 +287,9 @@
                 },
                 "viewCount": {
                   "column": "viewCount"
+                },
+                "websiteUrl": {
+                  "column": "websiteUrl"
                 }
               },
               "namespaceId": "public",
@@ -415,6 +435,11 @@
                   "nativeType": "text",
                   "nullable": false
                 },
+                "discordUrl": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "id": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -511,6 +536,11 @@
                   },
                   "nativeType": "int4",
                   "nullable": false
+                },
+                "websiteUrl": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
                 }
               },
               "foreignKeys": [
@@ -622,7 +652,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "9d11f93de13e02449113cde2115be57894250e24f26f2e6fb175f1740acbf27d"
+    "storageHash": "d6d8bf068b9272c66b7288fba8ec7eab5abef24a373bd0e0d12b60d25ad3f947"
   },
   "execution": {
     "executionHash": "4927fee92361149193c89d065ff169c82c3f1224924de9a318e1801c1d0488ec",

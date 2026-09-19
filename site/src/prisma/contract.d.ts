@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'9d11f93de13e02449113cde2115be57894250e24f26f2e6fb175f1740acbf27d'>;
+  StorageHashBase<'d6d8bf068b9272c66b7288fba8ec7eab5abef24a373bd0e0d12b60d25ad3f947'>;
 export type ExecutionHash =
   ExecutionHashBase<'4927fee92361149193c89d065ff169c82c3f1224924de9a318e1801c1d0488ec'>;
 export type ProfileHash =
@@ -261,6 +261,8 @@ export type FieldOutputTypes = {
       readonly published: CodecTypes['pg/bool@1']['output'];
       readonly viewCount: CodecTypes['pg/int4@1']['output'];
       readonly launchCount: CodecTypes['pg/int4@1']['output'];
+      readonly discordUrl: CodecTypes['pg/text@1']['output'] | null;
+      readonly websiteUrl: CodecTypes['pg/text@1']['output'] | null;
       readonly ownerId: CodecTypes['pg/text@1']['output'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -296,6 +298,8 @@ export type FieldInputTypes = {
       readonly published: CodecTypes['pg/bool@1']['input'];
       readonly viewCount: CodecTypes['pg/int4@1']['input'];
       readonly launchCount: CodecTypes['pg/int4@1']['input'];
+      readonly discordUrl: CodecTypes['pg/text@1']['input'] | null;
+      readonly websiteUrl: CodecTypes['pg/text@1']['input'] | null;
       readonly ownerId: CodecTypes['pg/text@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
@@ -319,6 +323,7 @@ export type StorageColumnTypes = {
       readonly curseforgeModpackName: CodecTypes['pg/text@1']['output'] | null;
       readonly curseforgeModpackVersion: CodecTypes['pg/text@1']['output'] | null;
       readonly description: CodecTypes['pg/text@1']['output'];
+      readonly discordUrl: CodecTypes['pg/text@1']['output'] | null;
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly ip: CodecTypes['pg/text@1']['output'];
       readonly lastPingedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
@@ -334,6 +339,7 @@ export type StorageColumnTypes = {
       readonly type: 'vanilla' | 'modded';
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly viewCount: CodecTypes['pg/int4@1']['output'];
+      readonly websiteUrl: CodecTypes['pg/text@1']['output'] | null;
     };
     readonly user: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -354,6 +360,7 @@ export type StorageColumnInputTypes = {
       readonly curseforgeModpackName: CodecTypes['pg/text@1']['input'] | null;
       readonly curseforgeModpackVersion: CodecTypes['pg/text@1']['input'] | null;
       readonly description: CodecTypes['pg/text@1']['input'];
+      readonly discordUrl: CodecTypes['pg/text@1']['input'] | null;
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly ip: CodecTypes['pg/text@1']['input'];
       readonly lastPingedAt: CodecTypes['pg/timestamptz-string@1']['input'] | null;
@@ -369,6 +376,7 @@ export type StorageColumnInputTypes = {
       readonly type: 'vanilla' | 'modded';
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly viewCount: CodecTypes['pg/int4@1']['input'];
+      readonly websiteUrl: CodecTypes['pg/text@1']['input'] | null;
     };
     readonly user: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
@@ -411,6 +419,8 @@ export namespace Models {
     published: CodecTypes['pg/bool@1']['output'];
     viewCount: CodecTypes['pg/int4@1']['output'];
     launchCount: CodecTypes['pg/int4@1']['output'];
+    discordUrl: CodecTypes['pg/text@1']['output'] | null;
+    websiteUrl: CodecTypes['pg/text@1']['output'] | null;
     ownerId: CodecTypes['pg/text@1']['output'];
     createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
     updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -551,6 +561,16 @@ type ContractBase = Omit<
                     readonly kind: 'literal';
                     readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
                   };
+                };
+                readonly discordUrl: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly websiteUrl: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
                 };
                 readonly ownerId: {
                   readonly nativeType: 'text';
@@ -734,6 +754,14 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
               };
+              readonly discordUrl: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly websiteUrl: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly ownerId: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -786,6 +814,8 @@ type ContractBase = Omit<
                 readonly published: { readonly column: 'published' };
                 readonly viewCount: { readonly column: 'viewCount' };
                 readonly launchCount: { readonly column: 'launchCount' };
+                readonly discordUrl: { readonly column: 'discordUrl' };
+                readonly websiteUrl: { readonly column: 'websiteUrl' };
                 readonly ownerId: { readonly column: 'ownerId' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };

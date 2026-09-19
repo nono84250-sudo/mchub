@@ -54,6 +54,14 @@ model Server {
   viewCount   Int     @default(0)
   launchCount Int     @default(0)
 
+  // Liens affiches sur la fiche publique, a cote de la description — un
+  // premier pas simple pour donner plus de presence au proprietaire, en
+  // attendant une vraie personnalisation de la page (voir memoire
+  // project_page_builder : page 100% editable, probablement liee a
+  // l'abonnement, pas construite ici).
+  discordUrl String?
+  websiteUrl String?
+
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
