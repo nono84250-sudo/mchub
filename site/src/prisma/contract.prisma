@@ -65,8 +65,34 @@ model Server {
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
+  events ServerEvent[]
+
   createdAt TimestamptzString @default(now())
   updatedAt temporal.updatedAtString()
 
   @@index([ownerId])
+}
+
+enum server_event_kind {
+  @@type("pg/text@1")
+  view   = "view"
+  launch = "launch"
+}
+
+// Journal horodate des vues/lancements — sert a construire les graphiques
+// de la page "Activite" (jour/semaine/mois/annee), en plus des compteurs
+// simples viewCount/launchCount sur Server (qui restent pour l'affichage
+// rapide en Vue d'ensemble). Pas de suivi du nombre de joueurs en ligne
+// dans le temps ici : ca demanderait un ping periodique en tache de fond,
+// qui n'existe pas dans ce projet (le ping actuel n'a lieu qu'a la lecture
+// d'une page) — voir la page Activite pour la note affichee a ce sujet.
+model ServerEvent {
+  id       String            @id @default(uuid())
+  serverId String
+  server   Server            @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  kind     server_event_kind
+
+  createdAt TimestamptzString @default(now())
+
+  @@index([serverId, kind, createdAt])
 }

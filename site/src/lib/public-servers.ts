@@ -105,6 +105,7 @@ export async function recordServerView(slug: string): Promise<void> {
   const row = await db.orm.public.Server.select("id", "viewCount").where({ slug }).first();
   if (!row) return;
   await db.orm.public.Server.where({ id: row.id }).update({ viewCount: row.viewCount + 1 });
+  await db.orm.public.ServerEvent.create({ serverId: row.id, kind: "view" });
 }
 
 // Appelee par le launcher (route /api/launcher/servers/[slug]/launch) a
@@ -114,6 +115,7 @@ export async function recordServerLaunch(slug: string): Promise<void> {
   const row = await db.orm.public.Server.select("id", "launchCount").where({ slug }).first();
   if (!row) return;
   await db.orm.public.Server.where({ id: row.id }).update({ launchCount: row.launchCount + 1 });
+  await db.orm.public.ServerEvent.create({ serverId: row.id, kind: "launch" });
 }
 
 export async function getPublicServerBySlug(slug: string): Promise<PublicServerDetail | null> {

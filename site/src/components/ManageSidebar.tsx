@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Settings } from "lucide-react";
+import { LayoutDashboard, BarChart3, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export function ManageSidebar({ serverId, serverName }: { serverId: string; serverName: string }) {
@@ -10,6 +10,7 @@ export function ManageSidebar({ serverId, serverName }: { serverId: string; serv
 
   const navItems: { href: string; label: string; icon: LucideIcon }[] = [
     { href: `/manage/${serverId}`, label: "Vue d'ensemble", icon: LayoutDashboard },
+    { href: `/manage/${serverId}/activity`, label: "Activité", icon: BarChart3 },
     { href: `/manage/${serverId}/settings`, label: "Paramètres", icon: Settings },
   ];
 

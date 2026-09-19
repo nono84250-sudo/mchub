@@ -34,9 +34,9 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'d6d8bf068b9272c66b7288fba8ec7eab5abef24a373bd0e0d12b60d25ad3f947'>;
+  StorageHashBase<'282ee328b7bb26ea97b0512124c9897b70ab2fe148a73136bc40d1edd435a6de'>;
 export type ExecutionHash =
-  ExecutionHashBase<'4927fee92361149193c89d065ff169c82c3f1224924de9a318e1801c1d0488ec'>;
+  ExecutionHashBase<'750b8e1bd769babd555ae192f4a55792a3b4e549f751415a1db27f4fa29b3784'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -267,6 +267,12 @@ export type FieldOutputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
     };
+    readonly ServerEvent: {
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly serverId: CodecTypes['pg/text@1']['output'];
+      readonly kind: 'view' | 'launch';
+      readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
+    };
     readonly User: {
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly email: CodecTypes['pg/text@1']['output'];
@@ -303,6 +309,12 @@ export type FieldInputTypes = {
       readonly ownerId: CodecTypes['pg/text@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
+    };
+    readonly ServerEvent: {
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly serverId: CodecTypes['pg/text@1']['input'];
+      readonly kind: 'view' | 'launch';
+      readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
     };
     readonly User: {
       readonly id: CodecTypes['pg/text@1']['input'];
@@ -341,6 +353,12 @@ export type StorageColumnTypes = {
       readonly viewCount: CodecTypes['pg/int4@1']['output'];
       readonly websiteUrl: CodecTypes['pg/text@1']['output'] | null;
     };
+    readonly serverEvent: {
+      readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly kind: 'view' | 'launch';
+      readonly serverId: CodecTypes['pg/text@1']['output'];
+    };
     readonly user: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly email: CodecTypes['pg/text@1']['output'];
@@ -377,6 +395,12 @@ export type StorageColumnInputTypes = {
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly viewCount: CodecTypes['pg/int4@1']['input'];
       readonly websiteUrl: CodecTypes['pg/text@1']['input'] | null;
+    };
+    readonly serverEvent: {
+      readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly kind: 'view' | 'launch';
+      readonly serverId: CodecTypes['pg/text@1']['input'];
     };
     readonly user: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
@@ -424,8 +448,17 @@ export namespace Models {
     ownerId: CodecTypes['pg/text@1']['output'];
     createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
     updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
+    events: public_ServerEvent[];
     owner: public_User;
-    readonly [RelationKeys]?: 'owner';
+    readonly [RelationKeys]?: 'events' | 'owner';
+  };
+  export type public_ServerEvent = {
+    id: CodecTypes['pg/text@1']['output'];
+    serverId: CodecTypes['pg/text@1']['output'];
+    kind: 'view' | 'launch';
+    createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
+    server: public_Server;
+    readonly [RelationKeys]?: 'server';
   };
 }
 
@@ -433,6 +466,7 @@ export declare const models: {
   public: {
     User: Models.public_User;
     Server: Models.public_Server;
+    ServerEvent: Models.public_ServerEvent;
   };
 };
 
@@ -614,6 +648,61 @@ type ContractBase = Omit<
                 },
               ];
             };
+            readonly serverEvent: {
+              columns: {
+                readonly id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly serverId: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly kind: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly createdAt: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-string@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                };
+              };
+              primaryKey: { readonly columns: readonly ['id'] };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'serverEvent_serverId_kind_createdAt_idx_b2e960c0';
+                  readonly prefix: 'serverEvent_serverId_kind_createdAt_idx';
+                  readonly columns: readonly ['serverId', 'kind', 'createdAt'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'serverEvent_serverId_idx_cfc44675';
+                  readonly prefix: 'serverEvent_serverId_idx';
+                  readonly columns: readonly ['serverId'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'serverEvent';
+                    readonly columns: readonly ['serverId'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'server';
+                    readonly columns: readonly ['id'];
+                  };
+                },
+              ];
+            };
             readonly user: {
               columns: {
                 readonly id: {
@@ -655,6 +744,10 @@ type ContractBase = Omit<
             };
           };
           readonly valueSet: {
+            readonly server_event_kind: {
+              readonly kind: 'valueSet';
+              readonly values: readonly ['view', 'launch'];
+            };
             readonly server_type: {
               readonly kind: 'valueSet';
               readonly values: readonly ['vanilla', 'modded'];
@@ -672,6 +765,10 @@ type ContractBase = Omit<
   readonly roots: {
     readonly user: { readonly namespace: 'public' & NamespaceId; readonly model: 'User' };
     readonly server: { readonly namespace: 'public' & NamespaceId; readonly model: 'Server' };
+    readonly serverEvent: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'ServerEvent';
+    };
   };
   readonly domain: {
     readonly namespaces: {
@@ -782,6 +879,17 @@ type ContractBase = Omit<
               };
             };
             readonly relations: {
+              readonly events: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'ServerEvent';
+                };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['serverId'];
+                };
+              };
               readonly owner: {
                 readonly to: { readonly namespace: 'public' & NamespaceId; readonly model: 'User' };
                 readonly cardinality: 'N:1';
@@ -819,6 +927,53 @@ type ContractBase = Omit<
                 readonly ownerId: { readonly column: 'ownerId' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };
+              };
+            };
+          };
+          readonly ServerEvent: {
+            readonly fields: {
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly serverId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly kind: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly createdAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-string@1';
+                };
+              };
+            };
+            readonly relations: {
+              readonly server: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Server';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: false;
+                readonly on: {
+                  readonly localFields: readonly ['serverId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
+            };
+            readonly storage: {
+              readonly table: 'serverEvent';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly id: { readonly column: 'id' };
+                readonly serverId: { readonly column: 'serverId' };
+                readonly kind: { readonly column: 'kind' };
+                readonly createdAt: { readonly column: 'createdAt' };
               };
             };
           };
@@ -890,6 +1045,13 @@ type ContractBase = Omit<
               { readonly name: 'modded'; readonly value: 'modded' },
             ];
           };
+          readonly server_event_kind: {
+            readonly codecId: 'pg/text@1';
+            readonly members: readonly [
+              { readonly name: 'view'; readonly value: 'view' },
+              { readonly name: 'launch'; readonly value: 'launch' },
+            ];
+          };
         };
       };
     };
@@ -933,6 +1095,14 @@ type ContractBase = Omit<
           };
           readonly onCreate: { readonly kind: 'generator'; readonly id: 'timestampNow' };
           readonly onUpdate: { readonly kind: 'generator'; readonly id: 'timestampNow' };
+        },
+        {
+          readonly ref: {
+            readonly namespace: 'public';
+            readonly table: 'serverEvent';
+            readonly column: 'id';
+          };
+          readonly onCreate: { readonly kind: 'generator'; readonly id: 'uuidv4' };
         },
         {
           readonly ref: {

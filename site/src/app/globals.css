@@ -163,6 +163,18 @@ body {
     background: var(--surface-raised);
   }
 
+  /* Variante destructive du bouton secondaire — memes dimensions, juste la
+     couleur qui change, pour une action comme "Supprimer" au milieu
+     d'autres boutons secondaires. */
+  .btn-secondary-danger {
+    color: var(--danger);
+  }
+
+  .btn-secondary-danger:hover {
+    border-color: var(--danger);
+    background: rgba(255, 107, 129, 0.1);
+  }
+
   .gradient-text {
     background-image: var(--gradient-brand);
     -webkit-background-clip: text;

@@ -8,6 +8,10 @@
       "model": "Server",
       "namespace": "public"
     },
+    "serverEvent": {
+      "model": "ServerEvent",
+      "namespace": "public"
+    },
     "user": {
       "model": "User",
       "namespace": "public"
@@ -17,6 +21,19 @@
     "namespaces": {
       "public": {
         "enum": {
+          "server_event_kind": {
+            "codecId": "pg/text@1",
+            "members": [
+              {
+                "name": "view",
+                "value": "view"
+              },
+              {
+                "name": "launch",
+                "value": "launch"
+              }
+            ]
+          },
           "server_type": {
             "codecId": "pg/text@1",
             "members": [
@@ -203,6 +220,21 @@
               }
             },
             "relations": {
+              "events": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "serverId"
+                  ]
+                },
+                "to": {
+                  "model": "ServerEvent",
+                  "namespace": "public"
+                }
+              },
               "owner": {
                 "cardinality": "N:1",
                 "nullable": false,
@@ -294,6 +326,80 @@
               },
               "namespaceId": "public",
               "table": "server"
+            }
+          },
+          "ServerEvent": {
+            "fields": {
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "kind": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                },
+                "valueSet": {
+                  "entityKind": "enum",
+                  "entityName": "server_event_kind",
+                  "namespaceId": "public",
+                  "plane": "domain"
+                }
+              },
+              "serverId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "server": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "serverId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Server",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "createdAt": {
+                  "column": "createdAt"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "kind": {
+                  "column": "kind"
+                },
+                "serverId": {
+                  "column": "serverId"
+                }
+              },
+              "namespaceId": "public",
+              "table": "serverEvent"
             }
           },
           "User": {
@@ -585,6 +691,92 @@
                 }
               ]
             },
+            "serverEvent": {
+              "checks": [
+                {
+                  "expression": "\"kind\" IN ('view', 'launch')",
+                  "name": "serverEvent_kind_check_6980eefc",
+                  "prefix": "serverEvent_kind_check"
+                }
+              ],
+              "columns": {
+                "createdAt": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "kind": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false,
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "server_event_kind",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "serverId": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [
+                {
+                  "onDelete": "cascade",
+                  "source": {
+                    "columns": [
+                      "serverId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "serverEvent"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "server"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "serverId"
+                  ],
+                  "name": "serverEvent_serverId_idx_cfc44675",
+                  "prefix": "serverEvent_serverId_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "serverId",
+                    "kind",
+                    "createdAt"
+                  ],
+                  "name": "serverEvent_serverId_kind_createdAt_idx_b2e960c0",
+                  "prefix": "serverEvent_serverId_kind_createdAt_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": []
+            },
             "user": {
               "columns": {
                 "createdAt": {
@@ -639,6 +831,13 @@
             }
           },
           "valueSet": {
+            "server_event_kind": {
+              "kind": "valueSet",
+              "values": [
+                "view",
+                "launch"
+              ]
+            },
             "server_type": {
               "kind": "valueSet",
               "values": [
@@ -652,10 +851,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "d6d8bf068b9272c66b7288fba8ec7eab5abef24a373bd0e0d12b60d25ad3f947"
+    "storageHash": "282ee328b7bb26ea97b0512124c9897b70ab2fe148a73136bc40d1edd435a6de"
   },
   "execution": {
-    "executionHash": "4927fee92361149193c89d065ff169c82c3f1224924de9a318e1801c1d0488ec",
+    "executionHash": "750b8e1bd769babd555ae192f4a55792a3b4e549f751415a1db27f4fa29b3784",
     "mutations": {
       "defaults": [
         {
@@ -682,6 +881,17 @@
             "column": "updatedAt",
             "namespace": "public",
             "table": "server"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "uuidv4",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "serverEvent"
           }
         },
         {
