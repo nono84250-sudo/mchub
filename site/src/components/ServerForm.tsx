@@ -178,14 +178,16 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           name="recommendedRamGB"
           type="number"
           min={1}
+          max={32}
           step={1}
           placeholder="ex : 4"
           defaultValue={values.recommendedRamGB}
           className="field-input"
         />
         <p className="text-xs text-muted">
-          Suggérée au joueur dans le launcher avant de rejoindre — jamais imposée, et le launcher
-          avertit si elle dépasse ce que sa machine peut raisonnablement fournir.
+          Suggérée au joueur dans le launcher avant de rejoindre (max 32 Go, la limite du launcher) —
+          jamais imposée, et le launcher avertit si elle dépasse ce que sa machine peut raisonnablement
+          fournir.
         </p>
       </div>
 

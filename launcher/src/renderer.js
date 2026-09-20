@@ -228,10 +228,13 @@ async function renderDetail(server) {
 // Un serveur peut suggérer une RAM (voir ServerForm côté site) — comparée à
 // la RAM totale de la machine avant de lancer, avec un vrai avertissement
 // de sécurité si la valeur demandée est irréaliste pour ce PC (voir cahier
-// des charges, "avertissement de sécurité RAM"). Renvoie true si le
-// lancement doit continuer.
+// des charges, "avertissement de sécurité RAM"). Renvoie `{ proceed,
+// memoryOverride }` : `memoryOverride` (ou null) s'applique UNIQUEMENT à ce
+// lancement (voir game:launch) — les paramètres par défaut du joueur ne
+// sont modifiés que quand il a explicitement demandé que ça devienne le
+// nouveau défaut ("toujours utiliser la RAM recommandée").
 async function applyRecommendedRamIfNeeded(server) {
-  if (!server.recommendedRamGB) return true;
+  if (!server.recommendedRamGB) return { proceed: true, memoryOverride: null };
 
   const settings = await window.mchub.settings.get();
   const recommended = server.recommendedRamGB;
@@ -249,17 +252,19 @@ async function applyRecommendedRamIfNeeded(server) {
       confirmLabel: "Continuer quand même",
       cancelLabel: "Annuler",
     });
-    if (!result.confirmed) return false;
-    await window.mchub.settings.set({ memoryMinGB: fallbackMinGB, memoryMaxGB: fallbackMaxGB });
-    return true;
+    if (!result.confirmed) return { proceed: false, memoryOverride: null };
+    // Valeur de secours pour CE lancement seulement — l'irréalisme vient du
+    // serveur, pas d'un choix durable du joueur, donc pas de persistance.
+    return { proceed: true, memoryOverride: { minGB: fallbackMinGB, maxGB: fallbackMaxGB } };
   }
 
   if (settings.alwaysUseRecommendedRam) {
-    await window.mchub.settings.set({
-      memoryMinGB: Math.max(1, Math.floor(recommended / 2)),
-      memoryMaxGB: recommended,
-    });
-    return true;
+    // Le joueur a deja choisi explicitement que ça devienne le
+    // comportement permanent : ça vaut la peine de le refléter dans les
+    // paramètres, contrairement au cas "confirmé une fois" plus bas.
+    const memoryMinGB = Math.max(1, Math.floor(recommended / 2));
+    await window.mchub.settings.set({ memoryMinGB, memoryMaxGB: recommended });
+    return { proceed: true, memoryOverride: null };
   }
 
   const result = await showModal({
@@ -270,16 +275,22 @@ async function applyRecommendedRamIfNeeded(server) {
     checkboxLabel: "Toujours lancer avec la RAM recommandée du serveur",
   });
 
-  if (result.confirmed) {
-    await window.mchub.settings.set({
-      memoryMinGB: Math.max(1, Math.floor(recommended / 2)),
-      memoryMaxGB: recommended,
-      alwaysUseRecommendedRam: result.checked,
-    });
-  } else if (result.checked) {
-    await window.mchub.settings.set({ alwaysUseRecommendedRam: true });
+  if (!result.confirmed) {
+    if (result.checked) await window.mchub.settings.set({ alwaysUseRecommendedRam: true });
+    return { proceed: true, memoryOverride: null };
   }
-  return true;
+
+  const memoryMinGB = Math.max(1, Math.floor(recommended / 2));
+  if (result.checked) {
+    // "Toujours" coché en même temps que "lancer maintenant" : devient le
+    // nouveau défaut, pas juste ce lancement.
+    await window.mchub.settings.set({ memoryMinGB, memoryMaxGB: recommended, alwaysUseRecommendedRam: true });
+    return { proceed: true, memoryOverride: null };
+  }
+  // Confirmé sans cocher "toujours" : uniquement pour ce lancement — ne
+  // touche pas aux paramètres par défaut du joueur (c'était le bug :
+  // l'ancien code persistait quand même memoryMinGB/memoryMaxGB ici).
+  return { proceed: true, memoryOverride: { minGB: memoryMinGB, maxGB: recommended } };
 }
 
 // Orchestration partagee du lancement, quel que soit le point d'entree
@@ -296,8 +307,8 @@ function setPlaybarBusy(busy) {
 async function launchServer(server) {
   if (launchInProgress) return null;
 
-  const shouldContinue = await applyRecommendedRamIfNeeded(server);
-  if (!shouldContinue) return null;
+  const { proceed, memoryOverride } = await applyRecommendedRamIfNeeded(server);
+  if (!proceed) return null;
 
   launchInProgress = true;
   const playBtn = document.getElementById("playbar-play");
@@ -322,7 +333,7 @@ async function launchServer(server) {
     }
   });
 
-  const result = await window.mchub.playServer(server.slug);
+  const result = await window.mchub.playServer(server.slug, memoryOverride);
   stopListening();
   launchInProgress = false;
 
@@ -349,6 +360,12 @@ async function launchServer(server) {
     fill.classList.add("error");
     label.textContent = result.error;
     playBtn.disabled = !selectedFavoriteSlug;
+    // Meme mecanisme que le succes (setPlaybarBusy(false) different) —
+    // sinon la barre reste bloquee sur l'erreur pour toujours, le bouton
+    // Jouer et le selecteur de favoris devenant inaccessibles (c'etait le
+    // bug : ce chemin n'appelait jamais setPlaybarBusy(false)). Delai plus
+    // long qu'en cas de succes pour laisser le temps de lire l'erreur.
+    setTimeout(() => setPlaybarBusy(false), 4000);
   }
 
   return result;
@@ -385,6 +402,26 @@ async function openDetail(slug) {
   renderDetail(result.server);
 }
 
+// Cache court partage entre la vue "Serveurs" et la barre de lancement
+// rapide (favoris/recents) : sans lui, chaque clic sur une etoile, chaque
+// lancement ou ouverture du panneau redemandait la liste complete au
+// site, y compris juste apres que loadServers() venait de la recevoir.
+let serverListCache = null;
+let serverListCacheAt = 0;
+const SERVER_LIST_CACHE_MS = 15_000;
+
+async function fetchServerList({ force = false } = {}) {
+  if (!force && serverListCache && Date.now() - serverListCacheAt < SERVER_LIST_CACHE_MS) {
+    return serverListCache;
+  }
+  const result = await window.mchub.listServers();
+  if (result.ok) {
+    serverListCache = result;
+    serverListCacheAt = Date.now();
+  }
+  return result;
+}
+
 async function loadServers() {
   statusEl.hidden = false;
   statusEl.classList.remove("error");
@@ -392,7 +429,11 @@ async function loadServers() {
   detailEl.hidden = true;
   listEl.hidden = true;
 
-  const result = await window.mchub.listServers();
+  // Toujours un aller-retour reseau ici : c'est le point d'entree explicite
+  // "l'utilisateur veut voir la liste a jour" (nav, connexion, rafraichissement
+  // silencieux) — mais il alimente au passage le cache ci-dessus pour la
+  // barre de lancement rapide.
+  const result = await fetchServerList({ force: true });
   if (!result.ok) {
     statusEl.classList.add("error");
     statusEl.textContent = `Impossible de contacter le site Omniscient : ${result.error}`;
@@ -696,7 +737,7 @@ function showServersView() {
 // joueurs...) via la liste publique — utilise par "Favoris" et "Recents", qui
 // ne stockent localement que des slugs.
 async function resolveServersBySlug(slugs) {
-  const result = await window.mchub.listServers();
+  const result = await fetchServerList();
   const allServers = result.ok ? result.servers : [];
   return slugs.map(
     (slug) =>
@@ -946,7 +987,14 @@ async function renderAccountPanel() {
 
 async function refreshAccountList() {
   const listContainer = document.getElementById("account-list");
-  const { accounts, activeId } = await window.mchub.account.list();
+  const { accounts } = await window.mchub.account.list();
+  // La session vraiment active est `currentProfile` (mis a jour a chaque
+  // connexion/bascule reussie), pas le `activeId` persiste renvoye par
+  // account.list() : les deux peuvent diverger (ex. reconnexion avec "se
+  // souvenir de moi" decoche, qui ne touche pas l'activeId sur disque),
+  // et se fier au seul id persiste desynchronisait l'etiquette "Actif" et
+  // le bouton "Oublier" de la vraie session en cours.
+  const activeId = currentProfile?.id ?? null;
 
   if (accounts.length === 0) {
     listContainer.innerHTML = '<p class="join-note">Aucun compte mémorisé — coche "Se souvenir de moi" à la connexion.</p>';
@@ -1112,7 +1160,7 @@ async function refreshPlaybarFavorites() {
     return;
   }
 
-  const result = await window.mchub.listServers();
+  const result = await fetchServerList();
   const allServers = result.ok ? result.servers : [];
   const resolve = (slug) => allServers.find((s) => s.slug === slug) || { slug, name: slug };
 
@@ -1199,7 +1247,9 @@ function wirePlaybar() {
     if (!selectedFavoriteSlug) return;
     const result = await window.mchub.getServer(selectedFavoriteSlug);
     if (!result.ok) return;
-    await window.mchub.settings.set({ lastPlayedFavoriteSlug: selectedFavoriteSlug });
+    // launchServer() enregistre deja lastPlayedSlug en cas de succes — cet
+    // appel ecrivait une cle differente (lastPlayedFavoriteSlug, jamais lue
+    // nulle part) qui n'avait donc aucun effet.
     await launchServer(result.server);
   });
 }
@@ -1347,7 +1397,7 @@ const REFRESH_INTERVAL_MS = 30_000;
 
 async function silentRefreshList() {
   if (!signedIn || listEl.hidden) return;
-  const result = await window.mchub.listServers();
+  const result = await fetchServerList({ force: true });
   if (result.ok) renderList(result.servers);
 }
 

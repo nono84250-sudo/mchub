@@ -51,28 +51,24 @@ function clampGB(value, fallback) {
   return Math.min(MAX_GB, Math.max(MIN_GB, Math.round(n)));
 }
 
+// Fusionne generiquement (`...current, ...partial`) plutot que de relister
+// chaque champ connu a la main : une whitelist figee avait deja laisse
+// passer silencieusement une ecriture vers une cle inexistante (aucune
+// erreur, juste une valeur jamais enregistree) — seuls les champs qui ont
+// vraiment besoin d'une validation/coercion sont traites a part ici.
 function saveSettings(partial) {
   const current = loadSettings();
-  let memoryMinGB = clampGB(partial.memoryMinGB ?? current.memoryMinGB, current.memoryMinGB);
-  let memoryMaxGB = clampGB(partial.memoryMaxGB ?? current.memoryMaxGB, current.memoryMaxGB);
-  if (memoryMinGB > memoryMaxGB) memoryMinGB = memoryMaxGB;
+  const next = { ...current, ...partial };
 
-  const next = {
-    memoryMinGB,
-    memoryMaxGB,
-    javaPath: partial.javaPath !== undefined ? partial.javaPath : current.javaPath,
-    onboarded: partial.onboarded !== undefined ? !!partial.onboarded : current.onboarded,
-    alwaysUseRecommendedRam:
-      partial.alwaysUseRecommendedRam !== undefined
-        ? !!partial.alwaysUseRecommendedRam
-        : current.alwaysUseRecommendedRam,
-    favoriteServers: partial.favoriteServers !== undefined ? partial.favoriteServers : current.favoriteServers,
-    lastPlayedSlug: partial.lastPlayedSlug !== undefined ? partial.lastPlayedSlug : current.lastPlayedSlug,
-    playCounts: partial.playCounts !== undefined ? partial.playCounts : current.playCounts,
-    recentlyPlayed: partial.recentlyPlayed !== undefined ? partial.recentlyPlayed : current.recentlyPlayed,
-  };
+  next.memoryMinGB = clampGB(partial.memoryMinGB ?? current.memoryMinGB, current.memoryMinGB);
+  next.memoryMaxGB = clampGB(partial.memoryMaxGB ?? current.memoryMaxGB, current.memoryMaxGB);
+  if (next.memoryMinGB > next.memoryMaxGB) next.memoryMinGB = next.memoryMaxGB;
+
+  if (partial.onboarded !== undefined) next.onboarded = !!partial.onboarded;
+  if (partial.alwaysUseRecommendedRam !== undefined) next.alwaysUseRecommendedRam = !!partial.alwaysUseRecommendedRam;
+
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2));
   return next;
 }
 
-module.exports = { loadSettings, saveSettings };
+module.exports = { loadSettings, saveSettings, clampGB };

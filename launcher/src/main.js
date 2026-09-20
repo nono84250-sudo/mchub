@@ -355,7 +355,7 @@ ipcMain.handle("status:getMinecraftStatus", async () => {
 
 let gameLaunchInProgress = false;
 
-ipcMain.handle("game:launch", async (event, slug) => {
+ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   if (!currentSession) {
     return { ok: false, error: "Connecte-toi avec ton compte Microsoft avant de rejoindre un serveur." };
   }
@@ -373,13 +373,20 @@ ipcMain.handle("game:launch", async (event, slug) => {
     });
     const server = data.server;
     const settings = settingsStore.loadSettings();
+    // `memoryOverride` sert un lancement "juste cette fois" avec la RAM
+    // recommandee du serveur (voir applyRecommendedRamIfNeeded cote
+    // renderer) — jamais ecrit dans settings.json, seulement utilise pour
+    // CE lancement, toujours borne par la meme limite de securite que les
+    // reglages persistants.
+    const memoryMinGB = memoryOverride ? settingsStore.clampGB(memoryOverride.minGB, settings.memoryMinGB) : settings.memoryMinGB;
+    const memoryMaxGB = memoryOverride ? settingsStore.clampGB(memoryOverride.maxGB, settings.memoryMaxGB) : settings.memoryMaxGB;
 
     await launchMinecraft({
       authorization: currentSession.authorization,
       version: server.minecraftVersion,
       serverIp: server.ip,
       onProgress: (status) => event.sender.send("game:progress", status),
-      memory: { min: `${settings.memoryMinGB}G`, max: `${settings.memoryMaxGB}G` },
+      memory: { min: `${memoryMinGB}G`, max: `${memoryMaxGB}G` },
       javaPath: settings.javaPath || undefined,
     });
 

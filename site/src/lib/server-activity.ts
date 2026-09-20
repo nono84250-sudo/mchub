@@ -52,12 +52,22 @@ function buildEmptyBuckets(since: Date, bucket: Bucket): Map<string, ActivityPoi
   return buckets;
 }
 
+// "Un an avant" une date : si le jour n'existe pas dans le mois cible
+// (29 fevrier -> annee precedente non bissextile), revient au dernier jour
+// valide du mois plutot que de deraper silencieusement sur le mois
+// suivant (`new Date(anneeNonBissextile, 1, 29)` deviendrait le 1er mars).
+function oneYearBefore(date: Date): Date {
+  const result = new Date(date.getFullYear() - 1, date.getMonth(), date.getDate());
+  if (result.getMonth() !== date.getMonth()) result.setDate(0);
+  return result;
+}
+
 function rangeConfig(range: ActivityRange): { since: Date; bucket: Bucket } {
   const now = new Date();
   if (range === "day") return { since: new Date(now.getTime() - 24 * 60 * 60 * 1000), bucket: "hour" };
   if (range === "week") return { since: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), bucket: "day" };
   if (range === "month") return { since: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), bucket: "day" };
-  return { since: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()), bucket: "month" };
+  return { since: oneYearBefore(now), bucket: "month" };
 }
 
 // Buckets construits en JS plutot qu'avec un GROUP BY sur date tronquee

@@ -47,6 +47,14 @@ async function fetchLatestJreInfo() {
   };
 }
 
+// Echappe une apostrophe pour l'inserer dans une chaine PowerShell entre
+// guillemets simples (une apostrophe s'y note en la doublant) — sans ça,
+// un chemin Windows contenant une apostrophe (dossier utilisateur
+// "O'Brien", par ex.) casse la commande.
+function escapePowerShellSingleQuoted(value) {
+  return value.replace(/'/g, "''");
+}
+
 function extractZip(zipPath, destDir) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(destDir, { recursive: true });
@@ -56,7 +64,7 @@ function extractZip(zipPath, destDir) {
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${destDir}' -Force`,
+      `Expand-Archive -LiteralPath '${escapePowerShellSingleQuoted(zipPath)}' -DestinationPath '${escapePowerShellSingleQuoted(destDir)}' -Force`,
     ]);
     proc.on("error", reject);
     proc.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`Extraction échouée (code ${code}).`))));

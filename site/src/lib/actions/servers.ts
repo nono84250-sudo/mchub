@@ -40,8 +40,12 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   if (type === "modded" && !curseforgeModpackId) {
     return { error: "Un serveur moddé doit indiquer l'identifiant de son modpack CurseForge." };
   }
-  if (recommendedRamRaw && (!Number.isInteger(recommendedRamGB) || recommendedRamGB! < 1)) {
-    return { error: "La RAM recommandée doit être un nombre entier de Go (1 ou plus)." };
+  // Plafonnee a 32 Go : au-dela, le launcher clampe silencieusement la
+  // valeur reelle utilisee (voir settingsStore.js/MAX_GB cote launcher),
+  // ce qui ferait promettre au joueur une RAM que le jeu ne recevrait
+  // jamais vraiment.
+  if (recommendedRamRaw && (!Number.isInteger(recommendedRamGB) || recommendedRamGB! < 1 || recommendedRamGB! > 32)) {
+    return { error: "La RAM recommandée doit être un nombre entier de Go, entre 1 et 32." };
   }
 
   return {
@@ -66,6 +70,17 @@ async function uniqueSlugFor(name: string): Promise<string> {
     slug = `${base}-${attempt++}`;
   }
   return slug;
+}
+
+// Point unique pour la verification de propriete d'un serveur — chacune des
+// actions ci-dessous la reimplementait independamment (meme requete
+// copiee-collee 5 fois), un risque concret si l'une des copies venait a
+// oublier le filtre `ownerId` (acces/mutation d'un serveur d'un autre
+// utilisateur). Ne decide pas de la reaction a un serveur introuvable :
+// chaque appelant garde son propre comportement (retour d'erreur de
+// formulaire ici, redirection ailleurs).
+async function getOwnedServer(serverId: string, userId: string) {
+  return db.orm.public.Server.where({ id: serverId, ownerId: userId }).first();
 }
 
 export async function createServer(_prevState: ServerActionState, formData: FormData): Promise<ServerActionState> {
@@ -96,7 +111,7 @@ export async function updateServer(
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const owned = await db.orm.public.Server.where({ id: serverId, ownerId: session.user.id }).first();
+  const owned = await getOwnedServer(serverId, session.user.id);
   if (!owned) return { error: "Ce serveur n'existe pas ou ne t'appartient pas." };
 
   const parsed = readForm(formData);
@@ -116,7 +131,10 @@ export async function deleteServer(serverId: string) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  await db.orm.public.Server.where({ id: serverId, ownerId: session.user.id }).delete();
+  const owned = await getOwnedServer(serverId, session.user.id);
+  if (!owned) redirect("/dashboard");
+
+  await db.orm.public.Server.where({ id: serverId }).delete();
 
   revalidatePath("/servers");
   revalidatePath("/dashboard");
@@ -130,7 +148,7 @@ export async function toggleServerPublished(serverId: string) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const owned = await db.orm.public.Server.select("id", "slug", "published").where({ id: serverId, ownerId: session.user.id }).first();
+  const owned = await getOwnedServer(serverId, session.user.id);
   if (!owned) redirect("/dashboard");
 
   await db.orm.public.Server.where({ id: serverId }).update({ published: !owned.published });
@@ -147,7 +165,7 @@ export async function duplicateServer(serverId: string) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const source = await db.orm.public.Server.where({ id: serverId, ownerId: session.user.id }).first();
+  const source = await getOwnedServer(serverId, session.user.id);
   if (!source) redirect("/dashboard");
 
   const name = `${source.name} (copie)`;
@@ -165,6 +183,10 @@ export async function duplicateServer(serverId: string) {
     curseforgeModpackName: source.curseforgeModpackName,
     curseforgeModpackVersion: source.curseforgeModpackVersion,
     recommendedRamGB: source.recommendedRamGB,
+    // Une fiche mise en pause reste en pause dans sa copie — sans ça, un
+    // serveur intentionnellement masque republiait automatiquement sa
+    // copie (le defaut du schema est `true`).
+    published: source.published,
     ownerId: session.user.id,
   });
 
