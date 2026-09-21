@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/auth";
-import { CubeLogo } from "@/components/CubeLogo";
+import { LogoMark } from "@/components/LogoMark";
 import { MobileNav } from "@/components/MobileNav";
 import { AccountMenu } from "@/components/AccountMenu";
 
@@ -10,8 +10,8 @@ export async function Nav() {
   return (
     <header className="relative border-b border-border bg-surface/95 backdrop-blur-md sticky top-0 z-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-        <Link href="/" className="font-heading flex items-center gap-2 font-bold text-lg tracking-tight text-foreground">
-          <CubeLogo className="h-6 w-6" />
+        <Link href="/" className="font-heading flex items-center gap-2.5 font-semibold text-lg tracking-tight text-foreground">
+          <LogoMark className="h-4 w-4" />
           Omniscient
         </Link>
 
