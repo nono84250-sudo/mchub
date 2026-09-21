@@ -1,14 +1,12 @@
+import { AuthShell } from "@/components/AuthShell";
 import { LoginForm } from "@/components/LoginForm";
 
 export const metadata = { title: "Connexion — Omniscient" };
 
 export default function LoginPage() {
   return (
-    <div className="mx-auto max-w-sm px-4 py-16 sm:py-24">
-      <div className="panel p-6 sm:p-8">
-        <h1 className="text-2xl font-bold text-foreground mb-6">Connexion</h1>
-        <LoginForm />
-      </div>
-    </div>
+    <AuthShell active="login">
+      <LoginForm />
+    </AuthShell>
   );
 }

@@ -27,10 +27,8 @@ export function ServerCard({ slug, name, description, bannerUrl, iconUrl, type, 
           <img src={bannerUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
         ) : null}
         <span
-          className={`absolute top-2 right-2 z-[1] rounded-full px-2 py-0.5 text-xs font-medium backdrop-blur ${
-            type === "modded"
-              ? "bg-[image:var(--gradient-brand)] text-accent-foreground"
-              : "bg-surface-raised/80 text-muted border border-border"
+          className={`absolute top-2 right-2 z-[1] rounded-md px-2 py-0.5 text-xs font-medium backdrop-blur ${
+            type === "modded" ? "tag-chip-accent" : "tag-chip-outline"
           }`}
         >
           {type === "modded" ? "Moddé" : "Vanilla"}

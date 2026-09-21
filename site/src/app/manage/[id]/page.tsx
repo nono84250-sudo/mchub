@@ -20,7 +20,7 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
 
   return (
     <div className="max-w-2xl">
-      <h1 className="mb-6 text-2xl font-bold text-foreground">{server.name}</h1>
+      <h1 className="mb-6 text-2xl font-bold text-foreground">Vue d&apos;ensemble</h1>
 
       <ManageActions
         slug={server.slug}

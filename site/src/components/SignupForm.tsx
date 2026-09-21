@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState } from "react";
-import Link from "next/link";
 import { User, Mail, Lock } from "lucide-react";
 import { signup } from "@/lib/actions/auth";
 
@@ -54,13 +53,6 @@ export function SignupForm() {
       <button type="submit" disabled={pending} className="btn-primary">
         {pending ? "Création..." : "Créer mon compte"}
       </button>
-
-      <p className="text-sm text-muted text-center">
-        Déjà un compte ?{" "}
-        <Link href="/login" className="text-accent hover:underline">
-          Se connecter
-        </Link>
-      </p>
     </form>
   );
 }

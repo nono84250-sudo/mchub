@@ -43,6 +43,13 @@ export function ManageAvatarMenu({ name, email }: { name: string; email: string 
           >
             Retourner au site principal
           </Link>
+          <Link
+            href="/account"
+            className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-raised"
+            onClick={() => setOpen(false)}
+          >
+            Profil
+          </Link>
           <form action={logout}>
             <button type="submit" className="w-full rounded-md px-3 py-2 text-left text-sm text-danger hover:bg-surface-raised">
               Se déconnecter

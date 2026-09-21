@@ -43,6 +43,13 @@ export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
               >
                 Mon espace
               </Link>
+              <Link
+                href="/account"
+                onClick={() => setOpen(false)}
+                className="rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-raised hover:text-foreground"
+              >
+                Profil
+              </Link>
               <form action={logout}>
                 <button
                   type="submit"
@@ -61,11 +68,7 @@ export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
               >
                 Connexion
               </Link>
-              <Link
-                href="/signup"
-                onClick={() => setOpen(false)}
-                className="rounded-md bg-accent px-3 py-2 text-center text-sm font-medium text-accent-foreground hover:bg-accent-hover"
-              >
+              <Link href="/signup" onClick={() => setOpen(false)} className="btn-primary text-sm">
                 Créer un compte
               </Link>
             </>

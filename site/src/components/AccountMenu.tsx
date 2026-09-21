@@ -42,6 +42,13 @@ export function AccountMenu() {
           >
             Dashboard
           </Link>
+          <Link
+            href="/account"
+            className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-raised"
+            onClick={() => setOpen(false)}
+          >
+            Profil
+          </Link>
           <form action={logout}>
             <button
               type="submit"

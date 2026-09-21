@@ -29,10 +29,7 @@ export async function Nav() {
               <Link href="/login" className="text-muted hover:text-foreground transition-colors">
                 Connexion
               </Link>
-              <Link
-                href="/signup"
-                className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-foreground hover:bg-accent-hover transition-colors"
-              >
+              <Link href="/signup" className="btn-primary text-sm">
                 Créer un compte
               </Link>
             </>

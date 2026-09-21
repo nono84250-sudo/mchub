@@ -1,23 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  /* Bleu nuit + turquoise, avec un vert emeraude dedie a "en ligne"/CTA de
-     jeu — meme palette que le launcher (voir launcher/src/index.html), pour
-     que le site et l'appli soient reconnaissables comme un seul produit. */
-  --background: #070c16;
-  --surface: #0f1729;
-  --surface-raised: #16213a;
-  --border: #223252;
-  --foreground: #e8edf7;
-  --muted: #8ea0bd;
-  --accent: #22d3ee;
-  --accent-hover: #5ee2f5;
-  --accent-foreground: #052029;
-  --accent-2: #2dd88a;
-  --danger: #ff6b81;
-  --success: #2dd88a;
-  --gradient-brand: linear-gradient(135deg, var(--accent), var(--accent-2));
-  --glow-accent: 0 0 60px -12px rgba(34, 211, 238, 0.45);
+  /* Systeme de design "Nocturne" (fourni par le client) : fond bleu-gris
+     quasi neutre, un seul accent blurple utilise comme trait/lueur plutot
+     que comme aplat. Memes noms de variables qu'avant pour ne pas avoir a
+     toucher chaque composant — seules les valeurs changent. */
+  --background: #161826;
+  --surface: #232532;
+  --surface-raised: color-mix(in srgb, var(--foreground) 6%, var(--surface));
+  --border: color-mix(in srgb, var(--foreground) 16%, transparent);
+  --foreground: #e9e9ed;
+  --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
+  --accent: #9184d9;
+  --accent-hover: #b5abfc;
+  --accent-2: #a7a1db;
+  /* Fond/texte des pastilles pleines (avatar, badge "Moddé") — teinte sombre
+     de l'accent avec un texte clair dessus, jamais l'accent lui-meme en
+     aplat (voir readme du design system : "never flood large areas"). */
+  --accent-fill: #423a6a;
+  --accent-foreground: #f5f4ff;
+  --danger: #e08a8a;
+  --success: #5fd3a0;
+  /* Elevation : un trait + une ombre sombre plutot qu'une lueur colorée. */
+  --glow-accent: 0 0 0 1px var(--accent), 0 10px 24px -10px rgba(0, 0, 0, 0.6);
 }
 
 @theme inline {
@@ -33,9 +38,8 @@
   --color-accent-2: var(--accent-2);
   --color-danger: var(--danger);
   --color-success: var(--success);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-space-grotesk);
+  --font-sans: var(--font-inter);
+  --font-heading: var(--font-inter);
 }
 
 body {
@@ -74,6 +78,21 @@ body {
 @layer components {
   h1, h2, h3, .font-heading {
     font-family: var(--font-heading), var(--font-sans), sans-serif;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+  }
+
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
   }
 
   /* Panneau de base partagé par les cartes, formulaires et blocs d'info —
@@ -81,27 +100,31 @@ body {
   .panel {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 1rem;
+    border-radius: 0.875rem;
   }
 
   .field-label {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     color: var(--muted);
   }
 
   .field-input {
     border-radius: 0.5rem;
     border: 1px solid var(--border);
-    background: var(--surface-raised);
-    padding: 0.6rem 0.85rem;
+    background: var(--surface);
+    padding: 0.55rem 0.85rem;
     color: var(--foreground);
     outline: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
 
-  .field-input:focus {
+  .field-input:hover {
+    border-color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  }
+
+  .field-input:focus-visible {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18);
+    outline-offset: 0;
   }
 
   .field-with-icon {
@@ -121,46 +144,54 @@ body {
     padding-left: 2.5rem;
   }
 
-  .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    border-radius: 0.5rem;
-    background-image: var(--gradient-brand);
-    color: var(--accent-foreground);
-    font-weight: 600;
-    padding: 0.65rem 1.25rem;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
-    box-shadow: 0 8px 24px -8px rgba(34, 211, 238, 0.55);
-  }
-
-  .btn-primary:hover {
-    filter: brightness(1.08);
-    transform: translateY(-1px);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    transform: none;
-  }
-
+  /* Boutons — le systeme "Nocturne" veut des actions en contour, jamais en
+     aplat : meme l'action principale reste transparente avec juste un trait
+     et un texte couleur accent, la distinction se fait par la couleur du
+     trait (accent vs neutre vs danger), pas par un remplissage. */
+  .btn-primary,
   .btn-secondary {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
     border-radius: 0.5rem;
-    border: 1px solid var(--border);
-    color: var(--foreground);
+    background: transparent;
     font-weight: 500;
-    padding: 0.65rem 1.25rem;
+    font-size: 0.875rem;
+    padding: 0.55rem 1.1rem;
+    border: 1px solid transparent;
     transition: border-color 0.15s ease, background-color 0.15s ease;
   }
 
-  .btn-secondary:hover {
+  .btn-primary {
+    color: var(--accent);
     border-color: var(--accent);
-    background: var(--surface-raised);
+  }
+
+  .btn-primary:hover {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .btn-primary:active {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    border-color: var(--border);
+    color: var(--foreground);
+  }
+
+  .btn-secondary:hover {
+    background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  }
+
+  .btn-secondary:active {
+    background: color-mix(in srgb, var(--foreground) 14%, transparent);
   }
 
   /* Variante destructive du bouton secondaire — memes dimensions, juste la
@@ -168,18 +199,16 @@ body {
      d'autres boutons secondaires. */
   .btn-secondary-danger {
     color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 45%, transparent);
   }
 
   .btn-secondary-danger:hover {
     border-color: var(--danger);
-    background: rgba(255, 107, 129, 0.1);
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
   }
 
   .gradient-text {
-    background-image: var(--gradient-brand);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: var(--accent);
   }
 
   .glow-card {
@@ -192,17 +221,15 @@ body {
     box-shadow: var(--glow-accent);
   }
 
-  /* Motif pixelise discret + degrade — sert de fond quand un serveur n'a
-     pas de banniere, pour eviter un aplat vide tout en rappelant l'univers
-     voxel de Minecraft sans utiliser d'assets du jeu. */
+  /* Motif de diagonales — sert de fond quand un serveur n'a pas de banniere,
+     signature du systeme "Nocturne" (repeating-linear-gradient 45deg) a la
+     place du degrade + grille utilise avant. */
   .banner-placeholder {
-    background-image:
-      linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-      radial-gradient(circle at 20% 15%, rgba(34, 211, 238, 0.35), transparent 55%),
-      radial-gradient(circle at 85% 85%, rgba(45, 216, 138, 0.28), transparent 55%),
-      var(--surface-raised);
-    background-size: 16px 16px, 16px 16px, auto, auto, auto;
+    background-image: repeating-linear-gradient(
+      45deg,
+      var(--surface) 0 8px,
+      var(--surface-raised) 8px 16px
+    );
   }
 
   .server-icon {
@@ -211,15 +238,15 @@ body {
     align-items: center;
     justify-content: center;
     border-radius: 0.5rem;
-    background-image: var(--gradient-brand);
+    background: var(--accent-fill);
     color: var(--accent-foreground);
-    font-weight: 700;
+    font-weight: 600;
   }
 
   .stat-tile {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 0.625rem;
+    border-radius: 0.5rem;
     padding: 0.5rem 0.75rem;
   }
 
@@ -237,13 +264,44 @@ body {
     color: var(--foreground);
   }
 
+  /* Petites etiquettes (type de serveur, statut de publication...). Deux
+     variantes : pleine (fond teinte, ex. "Moddé") et contour (ex. "Vanilla"),
+     jamais l'accent en aplat direct. */
   .tag-chip {
+    display: inline-flex;
+    align-items: center;
     font-size: 0.75rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    border-radius: 0.375rem;
     background: var(--surface-raised);
     border: 1px solid var(--border);
     color: var(--foreground);
+  }
+
+  .tag-chip-accent {
+    background: var(--accent-fill);
+    border-color: transparent;
+    color: var(--accent-foreground);
+  }
+
+  .tag-chip-outline {
+    background: transparent;
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Trait qui s'estompe a ses deux bouts plutot que de s'arreter net —
+     signature du systeme "Nocturne", utilisee sous les barres de nav/onglets
+     de la console de gestion. */
+  .divider-fade {
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--border) 48px,
+      var(--border) calc(100% - 48px),
+      transparent
+    );
   }
 
   .fade-in-up {
