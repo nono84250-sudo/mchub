@@ -100,6 +100,13 @@
                   "kind": "scalar"
                 }
               },
+              "iconUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "id": {
                 "nullable": false,
                 "type": {
@@ -274,6 +281,9 @@
                 },
                 "discordUrl": {
                   "column": "discordUrl"
+                },
+                "iconUrl": {
+                  "column": "iconUrl"
                 },
                 "id": {
                   "column": "id"
@@ -542,6 +552,11 @@
                   "nullable": false
                 },
                 "discordUrl": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "iconUrl": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
                   "nullable": true
@@ -851,7 +866,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "282ee328b7bb26ea97b0512124c9897b70ab2fe148a73136bc40d1edd435a6de"
+    "storageHash": "e37ac9eab7cbf496098499ee4f3e4d46d3f390fca38788319ea9db2a152a08a3"
   },
   "execution": {
     "executionHash": "750b8e1bd769babd555ae192f4a55792a3b4e549f751415a1db27f4fa29b3784",

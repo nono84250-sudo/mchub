@@ -17,9 +17,9 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Mes serveurs</h1>
-        <Link href="/dashboard/servers/new" className="btn-primary">
+        <Link href="/dashboard/servers/new" className="btn-primary justify-center sm:self-auto">
           <Plus className="h-4 w-4" />
           Nouveau serveur
         </Link>

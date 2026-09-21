@@ -26,6 +26,7 @@ model Server {
   name        String
   description String
   bannerUrl   String?
+  iconUrl     String?
   type        server_type @default(vanilla)
 
   minecraftVersion String

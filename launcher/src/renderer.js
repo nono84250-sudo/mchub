@@ -66,6 +66,14 @@ function serverInitial(name) {
   return escapeHtml((name || "?").trim().charAt(0).toUpperCase() || "?");
 }
 
+// Contenu d'un ".server-icon"/".detail-icon" pour un serveur (jamais pour un
+// compte Microsoft — ceux-la gardent leur pastille-initiale) : l'image
+// configuree par le proprietaire si presente, sinon la pastille-initiale
+// existante.
+function serverIconInner(server) {
+  return server.iconUrl ? `<img src="${escapeHtml(server.iconUrl)}" alt="" />` : serverInitial(server.name);
+}
+
 // Favoris (barre de lancement rapide en bas de l'appli) : une simple liste de
 // slugs dans les paramètres — pas de nouvel IPC dédié, on réutilise
 // settings.get/set comme pour tout le reste des préférences locales.
@@ -97,17 +105,13 @@ function serverCardHtml(server, isFav) {
   return `
     <div class="card" data-slug="${escapeHtml(server.slug)}">
       <div class="banner">
-        ${
-          server.bannerUrl
-            ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />`
-            : `<div class="banner-scrim">${escapeHtml(server.name)}</div>`
-        }
+        ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
         ${favoriteBtnHtml(server.slug, isFav)}
         ${typeBadge(server.type)}
       </div>
       <div class="card-body">
         <div class="card-title-row">
-          <span class="server-icon">${serverInitial(server.name)}</span>
+          <span class="server-icon">${serverIconInner(server)}</span>
           <h3>${escapeHtml(server.name)}</h3>
         </div>
         <p>${escapeHtml(server.description || "")}</p>
@@ -174,7 +178,7 @@ async function renderDetail(server) {
     <button class="back">&larr; Retour à la liste</button>
     <div class="detail-banner">
       ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
-      <div class="detail-icon">${serverInitial(server.name)}</div>
+      <div class="detail-icon">${serverIconInner(server)}</div>
     </div>
     <div class="detail-header">
       <div style="display: flex; align-items: center; gap: 10px;">
@@ -1180,7 +1184,7 @@ async function refreshPlaybarFavorites() {
   const selected = resolve(selectedFavoriteSlug);
   favTrigger.disabled = false;
   if (!launchInProgress) playBtn.disabled = false;
-  favIcon.innerHTML = `<span class="server-icon" style="width: 22px; height: 22px; font-size: 10px;">${serverInitial(selected.name)}</span>`;
+  favIcon.innerHTML = `<span class="server-icon" style="width: 22px; height: 22px; font-size: 10px;">${serverIconInner(selected)}</span>`;
   favName.textContent = selected.name;
 
   favPanel.innerHTML =
@@ -1189,7 +1193,7 @@ async function refreshPlaybarFavorites() {
         const server = resolve(row.slug);
         return `
       <div class="playbar-fav-row" data-slug="${escapeHtml(row.slug)}">
-        <span class="server-icon" style="width: 24px; height: 24px; font-size: 11px;">${serverInitial(server.name)}</span>
+        <span class="server-icon" style="width: 24px; height: 24px; font-size: 11px;">${serverIconInner(server)}</span>
         <span class="playbar-fav-row-name">
           ${row.kind === "last-played" ? '<span class="playbar-fav-row-tag">Dernier joué</span>' : ""}
           <span class="playbar-fav-row-title">${escapeHtml(server.name)}</span>

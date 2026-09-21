@@ -8,6 +8,7 @@ type ServerFormValues = {
   name: string;
   description: string;
   bannerUrl: string;
+  iconUrl: string;
   type: "vanilla" | "modded";
   minecraftVersion: string;
   ip: string;
@@ -21,6 +22,7 @@ const EMPTY_VALUES: ServerFormValues = {
   name: "",
   description: "",
   bannerUrl: "",
+  iconUrl: "",
   type: "vanilla",
   minecraftVersion: "",
   ip: "",
@@ -83,6 +85,27 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           placeholder="https://..."
           className="field-input"
         />
+        <p className="text-xs text-muted">
+          Image affichée en fond sur la fiche publique et l&apos;annuaire — idéalement large (16:9).
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="iconUrl" className="field-label">
+          URL de l&apos;icône (optionnel)
+        </label>
+        <input
+          id="iconUrl"
+          name="iconUrl"
+          type="url"
+          defaultValue={values.iconUrl}
+          placeholder="https://..."
+          className="field-input"
+        />
+        <p className="text-xs text-muted">
+          Petit logo carré affiché à côté du nom du serveur — sans image, une pastille avec l&apos;initiale du
+          nom est utilisée à la place.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1.5">

@@ -29,14 +29,15 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
           {server.bannerUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={server.bannerUrl} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full items-center justify-center text-2xl font-heading font-semibold text-foreground/70">
-              {server.name}
-            </div>
-          )}
+          ) : null}
         </div>
-        <span className="server-icon absolute -bottom-6 left-5 h-14 w-14 border-4 border-background text-2xl">
-          {server.name.trim().charAt(0).toUpperCase() || "?"}
+        <span className="server-icon absolute -bottom-6 left-5 h-14 w-14 overflow-hidden border-4 border-background text-2xl">
+          {server.iconUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={server.iconUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            server.name.trim().charAt(0).toUpperCase() || "?"
+          )}
         </span>
       </div>
 

@@ -36,8 +36,8 @@ export function ManageActions({
   }
 
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-3">
-      <span className="tag-chip">{published ? "Publié" : "En pause"}</span>
+    <div className="mb-6 flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+      <span className="tag-chip self-start">{published ? "Publié" : "En pause"}</span>
 
       <button
         type="button"

@@ -13,9 +13,19 @@ export type PublicServerSummary = {
   name: string;
   description: string;
   bannerUrl: string | null;
+  iconUrl: string | null;
   type: "vanilla" | "modded";
   playerCount: number | null;
   playerCapacity: number | null;
+  createdAt: string;
+  viewCount: number;
+};
+
+export type ServerListSort = "recent" | "popular" | "az";
+
+export type ListPublicServersOptions = {
+  q?: string;
+  sort?: ServerListSort;
 };
 
 export type PublicServerDetail = PublicServerSummary & {
@@ -25,34 +35,58 @@ export type PublicServerDetail = PublicServerSummary & {
   recommendedRamGB: number | null;
 };
 
-export async function listPublicServers(): Promise<PublicServerSummary[]> {
+// Filtre et tri faits en JS plutot que dans la requete : a l'echelle d'un
+// annuaire perso (quelques dizaines de serveurs), c'est largement suffisant
+// et evite d'apprendre la syntaxe "contains" du lane ORM Prisma 8 pour un
+// gain de performance qui ne se verrait pas ici (meme raisonnement que le
+// bucketing de la page Activite, voir server-activity.ts).
+export async function listPublicServers(options: ListPublicServersOptions = {}): Promise<PublicServerSummary[]> {
+  const { q, sort = "recent" } = options;
+
   const rows = await db.orm.public.Server.select(
     "id",
     "slug",
     "name",
     "description",
     "bannerUrl",
+    "iconUrl",
     "type",
     "ip",
     "playerCount",
     "playerCapacity",
     "lastPingedAt",
+    "createdAt",
+    "viewCount",
   )
     .where({ published: true })
     .orderBy((s) => s.createdAt.desc())
     .all();
 
+  const needle = q?.trim().toLowerCase();
+  const filtered = needle
+    ? rows.filter((row) => row.name.toLowerCase().includes(needle) || row.description.toLowerCase().includes(needle))
+    : rows;
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === "popular") return b.viewCount - a.viewCount;
+    if (sort === "az") return a.name.localeCompare(b.name);
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+
   return Promise.all(
-    rows.map(async (row) => {
+    sorted.map(async (row) => {
       const status = await getServerStatus(row.id, row.ip, row);
       return {
         slug: row.slug,
         name: row.name,
         description: row.description,
         bannerUrl: row.bannerUrl,
+        iconUrl: row.iconUrl,
         type: row.type,
         playerCount: status.playerCount,
         playerCapacity: status.playerCapacity,
+        createdAt: row.createdAt,
+        viewCount: row.viewCount,
       };
     }),
   );
@@ -125,6 +159,7 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     "name",
     "description",
     "bannerUrl",
+    "iconUrl",
     "type",
     "minecraftVersion",
     "ip",
@@ -134,6 +169,8 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     "playerCapacity",
     "lastPingedAt",
     "recommendedRamGB",
+    "createdAt",
+    "viewCount",
   )
     .where({ slug, published: true })
     .first();
@@ -147,6 +184,7 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     name: row.name,
     description: row.description,
     bannerUrl: row.bannerUrl,
+    iconUrl: row.iconUrl,
     type: row.type,
     minecraftVersion: row.minecraftVersion,
     curseforgeModpackName: row.curseforgeModpackName,
@@ -154,5 +192,7 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     playerCount: status.playerCount,
     playerCapacity: status.playerCapacity,
     recommendedRamGB: row.recommendedRamGB,
+    createdAt: row.createdAt,
+    viewCount: row.viewCount,
   };
 }

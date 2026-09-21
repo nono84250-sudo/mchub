@@ -74,13 +74,13 @@ export default function Home() {
           {FEATURES.map((feature, i) => (
             <div
               key={feature.title}
-              className={`panel glow-card fade-in-up p-6 ${feature.span ? "sm:col-span-2 sm:flex sm:items-center sm:gap-6" : ""}`}
+              className={`panel glow-card fade-in-up flex items-center gap-4 p-6 ${feature.span ? "sm:col-span-2" : ""}`}
               style={{ animationDelay: `${0.4 + i * 0.1}s` }}
             >
               <div className="server-icon h-10 w-10 shrink-0">
                 <feature.icon className="h-5 w-5" />
               </div>
-              <div className="mt-4 sm:mt-0">
+              <div>
                 <h3 className="font-heading font-semibold text-foreground">{feature.title}</h3>
                 <p className="mt-2 text-sm text-muted">{feature.description}</p>
               </div>
