@@ -80,6 +80,18 @@
   #titlebar-drag { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
   #titlebar .logo { font-size: 13px; }
   #titlebar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
+
+  /* Ecran de demarrage : statut Minecraft, notifications et boutons de
+     fenetre n'ont aucun sens tant que rien n'est encore charge — masques le
+     temps du bootstrap, le titre reprend toute la largeur et se centre. */
+  body.bootstrapping .mc-status-menu,
+  body.bootstrapping .notif-menu,
+  body.bootstrapping #titlebar-controls {
+    display: none;
+  }
+  body.bootstrapping #titlebar-drag {
+    justify-content: center;
+  }
   .titlebar-btn {
     width: 44px;
     height: 100%;
@@ -882,7 +894,7 @@
   @keyframes boot-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 </style>
 </head>
-<body>
+<body class="bootstrapping">
   <div id="titlebar">
     <div id="titlebar-drag">
       <div class="logo"><span class="logo-mark"></span>Omniscient <span>Launcher</span></div>

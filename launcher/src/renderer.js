@@ -1159,6 +1159,7 @@ async function ensureJavaAvailable() {
   // l'afficher plutot que de la laisser cramped dedans.
   await window.mchub.windowControls.expandFromBootstrap();
   bootstrapEl.hidden = true;
+  document.body.classList.remove("bootstrapping");
   javaGateEl.hidden = false;
   await new Promise((resolve) => {
     refreshJavaStatus("java-gate-status", "java-gate-install", {
@@ -1665,6 +1666,8 @@ async function boot() {
     bootstrapProgressEl.style.width = "100%";
     await new Promise((resolve) => setTimeout(resolve, MIN_BOOTSTRAP_DISPLAY_MS - elapsedMs));
   }
+
+  document.body.classList.remove("bootstrapping");
 
   if (!settings.onboarded) {
     bootstrapEl.hidden = true;
