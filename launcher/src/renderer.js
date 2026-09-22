@@ -1317,11 +1317,14 @@ async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
   installBtn.hidden = true;
 
   const java = await window.mchub.java.detect();
-  if (java.found && java.is64Bit) {
+  if (java.found && java.is64Bit && java.meetsMinimum) {
     statusEl2.textContent = java.version ? t("java.detectedWithVersion", { version: java.version }) : t("java.detectedNoVersion");
     if (onReady) onReady();
-  } else if (java.found) {
+  } else if (java.found && !java.is64Bit) {
     statusEl2.textContent = t("java.is32Bit");
+    installBtn.hidden = false;
+  } else if (java.found) {
+    statusEl2.textContent = t("java.tooOld", { version: java.version || "?" });
     installBtn.hidden = false;
   } else {
     statusEl2.textContent = t("java.notFound");
@@ -1354,7 +1357,7 @@ async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
 // démarrage, pas seulement au premier lancement.
 async function ensureJavaAvailable() {
   const initial = await window.mchub.java.detect();
-  if (initial.found && initial.is64Bit) return;
+  if (initial.found && initial.is64Bit && initial.meetsMinimum) return;
 
   // Java manquant : cet ecran peut impliquer une vraie attente (telechargement
   // + installation), donc on sort de la petite fenetre du bootstrap avant de

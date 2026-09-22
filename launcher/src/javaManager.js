@@ -14,6 +14,25 @@ const RUNTIME_DIR = path.join(app.getPath("userData"), "runtime", "java");
 const ADOPTIUM_API_URL =
   "https://api.adoptium.net/v3/assets/latest/21/hotspot?image_type=jre&os=windows&architecture=x64&vendor=eclipse";
 
+// Minecraft 1.20.5+ exige Java 21 — ce launcher standardise sur Java 21
+// comme minimum pour toutes les versions vanilla qu'il lance (c'est aussi
+// ce que downloadAndInstallJava() telecharge ci-dessous). Un Java plus
+// ancien deja present sur la machine (tres courant : beaucoup de PC ont un
+// vieux Java 8 installe pour d'autres logiciels) passait jusqu'ici le test
+// "found + 64 bits" sans jamais etre verifie sur sa version reelle, donc
+// minecraft-launcher-core l'utilisait quand meme et le jeu plantait au
+// demarrage (JVM trop ancienne pour lire les .class du jeu, code 1).
+const MIN_JAVA_MAJOR = 21;
+
+// "1.8.0_471" (ancien schema, Java <= 8 : le vrai major est le 2e nombre)
+// vs "21.0.3" ou "21" (Java 9+, le major est le 1er nombre).
+function parseJavaMajorVersion(versionString) {
+  if (!versionString) return null;
+  const parts = versionString.split(".");
+  const major = parts[0] === "1" && parts.length > 1 ? Number(parts[1]) : Number(parts[0]);
+  return Number.isFinite(major) ? major : null;
+}
+
 function detectJava(javaPath) {
   return new Promise((resolve) => {
     const proc = spawn(javaPath || "java", ["-version"]);
@@ -24,10 +43,14 @@ function detectJava(javaPath) {
     proc.on("exit", () => {
       if (!output) return resolve({ found: false });
       const versionMatch = output.match(/version "([\d._]+)"/);
+      const version = versionMatch ? versionMatch[1] : null;
+      const majorVersion = parseJavaMajorVersion(version);
       resolve({
         found: true,
-        version: versionMatch ? versionMatch[1] : null,
+        version,
+        majorVersion,
         is64Bit: /64-Bit/i.test(output),
+        meetsMinimum: majorVersion !== null && majorVersion >= MIN_JAVA_MAJOR,
       });
     });
   });
