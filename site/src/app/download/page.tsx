@@ -35,12 +35,14 @@ async function detectPlatform(): Promise<PlatformId> {
 // cache : il se resout en direct cote GitHub a chaque clic, donc reste
 // toujours exact meme si ce texte-ci est momentanement en retard. Revalidate
 // court (5 min, pas l'heure par defaut) pour que ce retard ne dure jamais
-// longtemps apres une nouvelle publication.
+// longtemps apres une nouvelle publication — le tag permet en plus de forcer
+// un rafraichissement immediat juste apres une publication (invalidate_by_tags
+// cote Vercel) sans attendre ces 5 minutes.
 async function getLatestRelease(): Promise<{ version: string; sizeMB: number } | null> {
   try {
     const res = await fetch("https://api.github.com/repos/nono84250-sudo/omniscient-launcher/releases/latest", {
       headers: { Accept: "application/vnd.github+json" },
-      next: { revalidate: 300 },
+      next: { revalidate: 300, tags: ["launcher-latest-release"] },
     });
     if (!res.ok) return null;
     const data = await res.json();
