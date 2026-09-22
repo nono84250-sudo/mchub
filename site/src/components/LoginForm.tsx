@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Mail, Lock } from "lucide-react";
+import { EnvelopeSimple, Lock } from "@phosphor-icons/react";
 import { login } from "@/lib/actions/auth";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -16,7 +16,7 @@ export function LoginForm() {
           {t("auth.email")}
         </label>
         <div className="field-with-icon">
-          <Mail className="h-4 w-4" />
+          <EnvelopeSimple className="h-4 w-4" />
           <input id="email" name="email" type="email" required autoComplete="email" className="field-input w-full" />
         </div>
       </div>

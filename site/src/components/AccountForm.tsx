@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { User, Mail, Lock } from "lucide-react";
+import { User, EnvelopeSimple, Lock } from "@phosphor-icons/react";
 import { updateProfile } from "@/lib/actions/account";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -26,7 +26,7 @@ export function AccountForm({ name, email }: { name: string; email: string }) {
           {t("account.email")}
         </label>
         <div className="field-with-icon">
-          <Mail className="h-4 w-4" />
+          <EnvelopeSimple className="h-4 w-4" />
           <input id="email" name="email" type="email" required defaultValue={email} className="field-input w-full" />
         </div>
       </div>

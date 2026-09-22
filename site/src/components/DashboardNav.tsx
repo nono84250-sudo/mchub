@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, Bell, Newspaper } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { SquaresFour, Bell, Newspaper } from "@phosphor-icons/react";
+import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 
 export function DashboardNav() {
   const pathname = usePathname();
   const { t } = useI18n();
 
-  const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
-    { href: "/dashboard", label: t("dashboard.navServers"), icon: LayoutGrid },
+  const NAV_ITEMS: { href: string; label: string; icon: PhosphorIcon }[] = [
+    { href: "/dashboard", label: t("dashboard.navServers"), icon: SquaresFour },
     { href: "/dashboard/notifications", label: t("dashboard.navNotifications"), icon: Bell },
     { href: "/dashboard/news", label: t("dashboard.navNews"), icon: Newspaper },
   ];

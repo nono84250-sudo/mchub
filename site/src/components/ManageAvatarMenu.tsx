@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { ChevronDown } from "lucide-react";
+import { CaretDown } from "@phosphor-icons/react";
 import { logout } from "@/lib/actions/auth";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -33,7 +33,7 @@ export function ManageAvatarMenu({ name, email }: { name: string; email: string 
       >
         <span className="server-icon h-8 w-8 text-sm">{initial}</span>
         <span className="max-w-[140px] truncate">{name || email}</span>
-        <ChevronDown className="h-4 w-4 text-muted" />
+        <CaretDown className="h-4 w-4 text-muted" />
       </button>
 
       {open ? (

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { List, X } from "@phosphor-icons/react";
 import { logout } from "@/lib/actions/auth";
 import { useI18n } from "@/i18n/I18nProvider";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -24,7 +24,7 @@ export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
         aria-expanded={open}
         className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-foreground"
       >
-        {open ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+        {open ? <X className="h-4 w-4" /> : <List className="h-4 w-4" />}
       </button>
 
       {open ? (

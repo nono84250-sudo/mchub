@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { Languages } from "lucide-react";
+import { Translate } from "@phosphor-icons/react";
 import { setLocale } from "@/lib/actions/locale";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { Locale } from "@/i18n/locales";
@@ -19,7 +19,7 @@ export function LanguageSwitcher() {
 
   return (
     <div className="flex items-center gap-1 text-sm text-muted" aria-label={t("language.label")}>
-      <Languages className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+      <Translate className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
       <button
         type="button"
         onClick={() => switchTo("fr")}

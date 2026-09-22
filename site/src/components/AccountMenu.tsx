@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { ChevronDown } from "lucide-react";
+import { CaretDown } from "@phosphor-icons/react";
 import { logout } from "@/lib/actions/auth";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -32,7 +32,7 @@ export function AccountMenu() {
         className="flex items-center gap-1 text-muted hover:text-foreground transition-colors"
       >
         {t("nav.mySpace")}
-        <ChevronDown className="h-4 w-4" />
+        <CaretDown className="h-4 w-4" />
       </button>
 
       {open ? (

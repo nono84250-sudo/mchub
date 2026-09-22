@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/prisma/db";
 import { logout } from "@/lib/actions/auth";
 import { AccountForm } from "@/components/AccountForm";
-import { LogOut } from "lucide-react";
+import { SignOut } from "@phosphor-icons/react/ssr";
 import { getT } from "@/i18n/getDictionary";
 
 export const metadata = { title: "Profil — Omniscient" };
@@ -36,7 +36,7 @@ export default async function AccountPage() {
 
       <form action={logout}>
         <button type="submit" className="flex items-center gap-2 text-sm text-muted hover:text-foreground">
-          <LogOut className="h-4 w-4" />
+          <SignOut className="h-4 w-4" />
           {dict.account.logout}
         </button>
       </form>

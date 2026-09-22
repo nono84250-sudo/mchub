@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus, ArrowRight } from "lucide-react";
+import { Plus, ArrowRight } from "@phosphor-icons/react/ssr";
 import { auth } from "@/auth";
 import { db } from "@/prisma/db";
 import { getT } from "@/i18n/getDictionary";

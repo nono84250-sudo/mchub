@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Globe, Puzzle, ArrowRight, ArrowLeft, Info } from "lucide-react";
+import { Globe, PuzzlePiece, ArrowRight, ArrowLeft, Info } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -107,7 +107,7 @@ export function NewServerWizard({ action, versions }: Props) {
               style={type === "modded" ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: "var(--accent)" } : { color: "var(--muted)" }}
             >
               <input type="radio" name="type" value="modded" checked={type === "modded"} onChange={() => setType("modded")} className="sr-only" />
-              <Puzzle className="h-4 w-4" /> {t("serverForm.modded")}
+              <PuzzlePiece className="h-4 w-4" /> {t("serverForm.modded")}
             </label>
           </div>
         </div>

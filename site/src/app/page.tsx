@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Compass, Gamepad2, Boxes, ArrowRight } from "lucide-react";
+import { Compass, GameController, Package, ArrowRight } from "@phosphor-icons/react/ssr";
 import { CubeLogo } from "@/components/CubeLogo";
 import { getT } from "@/i18n/getDictionary";
 
@@ -14,12 +14,12 @@ export default async function Home() {
       span: true,
     },
     {
-      icon: Gamepad2,
+      icon: GameController,
       title: dict.home.featureMsTitle,
       description: dict.home.featureMsBody,
     },
     {
-      icon: Boxes,
+      icon: Package,
       title: dict.home.featureModpackTitle,
       description: dict.home.featureModpackBody,
     },

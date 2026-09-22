@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Pause, Play, Copy, Trash2, ExternalLink } from "lucide-react";
+import { Pause, Play, Copy, Trash, ArrowSquareOut } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 
 // Boutons d'action de "Vue d'ensemble" — avec confirmation avant toute
@@ -58,7 +58,7 @@ export function ManageActions({
 
         {published ? (
           <Link href={`/servers/${slug}`} className="btn-secondary text-sm">
-            <ExternalLink className="h-4 w-4" />
+            <ArrowSquareOut className="h-4 w-4" />
             {t("manage.viewPublicPage")}
           </Link>
         ) : null}
@@ -88,7 +88,7 @@ export function ManageActions({
           onClick={() => run("delete", t("manage.confirmDelete"), onDelete)}
           className="btn-secondary btn-secondary-danger text-sm flex-shrink-0"
         >
-          <Trash2 className="h-4 w-4" />
+          <Trash className="h-4 w-4" />
           {pending === "delete" ? "..." : t("manage.delete")}
         </button>
       </div>

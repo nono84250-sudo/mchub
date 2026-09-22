@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { MagnifyingGlass } from "@phosphor-icons/react/ssr";
 import { ServerCard } from "@/components/ServerCard";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { listPublicServers, type ServerListSort } from "@/lib/public-servers";
@@ -37,7 +37,7 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <form action="/servers" method="GET" className="flex w-full gap-2 sm:max-w-sm">
           <div className="field-with-icon min-w-0 flex-1">
-            <Search className="h-4 w-4" />
+            <MagnifyingGlass className="h-4 w-4" />
             <input
               type="search"
               name="q"

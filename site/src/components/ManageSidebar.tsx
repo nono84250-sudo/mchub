@@ -2,18 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BarChart3, Settings } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Layout, ChartBar, Gear } from "@phosphor-icons/react";
+import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 
 export function ManageSidebar({ serverId, serverName }: { serverId: string; serverName: string }) {
   const pathname = usePathname();
   const { t } = useI18n();
 
-  const navItems: { href: string; label: string; icon: LucideIcon }[] = [
-    { href: `/manage/${serverId}`, label: t("manage.navOverview"), icon: LayoutDashboard },
-    { href: `/manage/${serverId}/activity`, label: t("manage.navActivity"), icon: BarChart3 },
-    { href: `/manage/${serverId}/settings`, label: t("manage.navSettings"), icon: Settings },
+  const navItems: { href: string; label: string; icon: PhosphorIcon }[] = [
+    { href: `/manage/${serverId}`, label: t("manage.navOverview"), icon: Layout },
+    { href: `/manage/${serverId}/activity`, label: t("manage.navActivity"), icon: ChartBar },
+    { href: `/manage/${serverId}/settings`, label: t("manage.navSettings"), icon: Gear },
   ];
 
   return (
