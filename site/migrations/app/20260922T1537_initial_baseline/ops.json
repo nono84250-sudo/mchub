@@ -1,0 +1,455 @@
+[
+  {
+    "id": "table.serverEvent",
+    "label": "Create table \"serverEvent\"",
+    "summary": "Creates table \"serverEvent\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "serverEvent"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"serverEvent\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"serverEvent\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"serverEvent\"",
+        "sql": "CREATE TABLE \"public\".\"serverEvent\" (\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"id\" text NOT NULL,\n  \"kind\" text NOT NULL,\n  \"serverId\" text NOT NULL,\n  PRIMARY KEY (\"id\"),\n  CONSTRAINT \"serverEvent_kind_check_6980eefc\" CHECK (\"kind\" IN ('view', 'launch'))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"serverEvent\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"serverEvent\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.discordUrl",
+    "label": "Add column \"discordUrl\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "discordUrl",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"discordUrl\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "discordUrl"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"discordUrl\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"discordUrl\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"discordUrl\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "discordUrl"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.iconUrl",
+    "label": "Add column \"iconUrl\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "iconUrl",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"iconUrl\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "iconUrl"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"iconUrl\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"iconUrl\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"iconUrl\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "iconUrl"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.launchCount",
+    "label": "Add column \"launchCount\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "launchCount",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"launchCount\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "launchCount"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"launchCount\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"launchCount\" int4 DEFAULT 0 NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"launchCount\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "launchCount"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.published",
+    "label": "Add column \"published\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "published",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"published\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "published"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"published\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"published\" bool DEFAULT true NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"published\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "published"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.recommendedRamGB",
+    "label": "Add column \"recommendedRamGB\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "recommendedRamGB",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"recommendedRamGB\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "recommendedRamGB"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"recommendedRamGB\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"recommendedRamGB\" int4"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"recommendedRamGB\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "recommendedRamGB"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.viewCount",
+    "label": "Add column \"viewCount\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "viewCount",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"viewCount\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "viewCount"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"viewCount\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"viewCount\" int4 DEFAULT 0 NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"viewCount\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "viewCount"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.websiteUrl",
+    "label": "Add column \"websiteUrl\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "websiteUrl",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"websiteUrl\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "websiteUrl"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"websiteUrl\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"websiteUrl\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"websiteUrl\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "websiteUrl"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.serverEvent.serverEvent_serverId_idx_cfc44675",
+    "label": "Create index \"serverEvent_serverId_idx_cfc44675\" on \"serverEvent\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "serverEvent_serverId_idx_cfc44675",
+        "table": "serverEvent"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"serverEvent_serverId_idx_cfc44675\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"serverEvent_serverId_idx_cfc44675\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"serverEvent_serverId_idx_cfc44675\"",
+        "sql": "CREATE INDEX \"serverEvent_serverId_idx_cfc44675\" ON \"public\".\"serverEvent\" (\"serverId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"serverEvent_serverId_idx_cfc44675\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"serverEvent_serverId_idx_cfc44675\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.serverEvent.serverEvent_serverId_kind_createdAt_idx_b2e960c0",
+    "label": "Create index \"serverEvent_serverId_kind_createdAt_idx_b2e960c0\" on \"serverEvent\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "serverEvent_serverId_kind_createdAt_idx_b2e960c0",
+        "table": "serverEvent"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"serverEvent_serverId_kind_createdAt_idx_b2e960c0\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"serverEvent_serverId_kind_createdAt_idx_b2e960c0\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"serverEvent_serverId_kind_createdAt_idx_b2e960c0\"",
+        "sql": "CREATE INDEX \"serverEvent_serverId_kind_createdAt_idx_b2e960c0\" ON \"public\".\"serverEvent\" (\"serverId\", \"kind\", \"createdAt\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"serverEvent_serverId_kind_createdAt_idx_b2e960c0\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"serverEvent_serverId_kind_createdAt_idx_b2e960c0\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.serverEvent.serverEvent_serverId_fkey",
+    "label": "Add foreign key \"serverEvent_serverId_fkey\" on \"serverEvent\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "serverEvent_serverId_fkey",
+        "table": "serverEvent"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"serverEvent_serverId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "serverEvent_serverId_fkey",
+          "public",
+          "\"public\".\"serverEvent\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"serverEvent_serverId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"serverEvent\"\nADD CONSTRAINT \"serverEvent_serverId_fkey\"\nFOREIGN KEY (\"serverId\")\nREFERENCES \"public\".\"server\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"serverEvent_serverId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "serverEvent_serverId_fkey",
+          "public",
+          "\"public\".\"serverEvent\""
+        ]
+      }
+    ]
+  }
+]
