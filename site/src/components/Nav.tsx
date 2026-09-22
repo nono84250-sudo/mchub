@@ -13,18 +13,25 @@ export async function Nav() {
   return (
     <header className="relative border-b border-border bg-surface/95 backdrop-blur-md sticky top-0 z-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-        <Link href="/" className="font-heading flex items-center gap-2.5 font-semibold text-lg tracking-tight text-foreground">
-          <LogoMark className="h-4 w-4" />
-          Omniscient
-        </Link>
+        <div className="flex items-center gap-6">
+          <Link href="/" className="font-heading flex items-center gap-2.5 font-semibold text-lg tracking-tight text-foreground">
+            <LogoMark className="h-4 w-4" />
+            Omniscient
+          </Link>
+
+          {/* Liens de nav principaux, colles au logo — les prochains viendront
+              s'ajouter ici, de gauche a droite. */}
+          <nav className="hidden sm:flex items-center gap-4 text-sm">
+            <Link href="/servers" className="text-muted hover:text-foreground transition-colors">
+              {dict.nav.servers}
+            </Link>
+          </nav>
+        </div>
 
         <MobileNav loggedIn={!!session?.user} />
 
-        <nav className="hidden sm:flex items-center gap-4 text-sm">
-          <Link href="/servers" className="text-muted hover:text-foreground transition-colors">
-            {dict.nav.servers}
-          </Link>
-
+        {/* Elements utilitaires, toujours a droite. */}
+        <div className="hidden sm:flex items-center gap-4 text-sm">
           <LanguageSwitcher />
 
           {session?.user ? (
@@ -34,7 +41,7 @@ export async function Nav() {
               {dict.nav.login}
             </Link>
           )}
-        </nav>
+        </div>
       </div>
     </header>
   );
