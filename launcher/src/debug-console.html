@@ -15,7 +15,10 @@
     --border: color-mix(in srgb, var(--foreground) 16%, transparent);
     --foreground: #e9e9ed;
     --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
-    --muted2: color-mix(in srgb, var(--foreground) 35%, transparent);
+    /* 50% (pas 35%) : a 35%, --muted2 sur ce fond sombre ne passe qu'a
+       ~2.87:1 (sous le seuil WCAG AA de 4.5:1, utilise pour les timestamps
+       de logs et les compteurs de filtres) — 50% ramene ca a ~4.5:1. */
+    --muted2: color-mix(in srgb, var(--foreground) 50%, transparent);
     --accent: #9184d9;
     --accent-hover: color-mix(in srgb, var(--accent) 70%, white);
     --accent-fill: color-mix(in srgb, var(--accent) 45%, black);
@@ -30,8 +33,10 @@
     --surface-raised: color-mix(in srgb, var(--foreground) 4%, var(--surface));
     --border: color-mix(in srgb, var(--foreground) 14%, transparent);
     --foreground: #1a1b23;
-    --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
-    --muted2: color-mix(in srgb, var(--foreground) 38%, transparent);
+    /* Memes seuils WCAG AA recalcules qu'index.html/dark ci-dessus (fond
+       clair : ~5.1:1 a 65%, ~4.64:1 a 62%, contre ~3.75:1/~2.32:1 avant). */
+    --muted: color-mix(in srgb, var(--foreground) 65%, transparent);
+    --muted2: color-mix(in srgb, var(--foreground) 62%, transparent);
     --danger: #c0453f;
     --warn: #9a6a1f;
     --success: #2f9e6e;
@@ -156,6 +161,7 @@
 
   <script src="i18n.js"></script>
   <script src="theme.js"></script>
+  <script src="windowControls.js"></script>
   <script src="debug-console.js"></script>
 </body>
 </html>

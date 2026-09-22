@@ -35,7 +35,7 @@ export default async function DashboardPage() {
             <li key={server.id}>
               <Link
                 href={`/manage/${server.id}`}
-                className="glow-card flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3"
+                className="panel glow-card flex items-center justify-between px-4 py-3"
               >
                 <div className="flex items-center gap-3">
                   <span className="server-icon h-9 w-9 text-sm">{server.name.trim().charAt(0).toUpperCase() || "?"}</span>

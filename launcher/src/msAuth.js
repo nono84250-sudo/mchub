@@ -76,6 +76,7 @@ function openLoginWindow(authUrl) {
         partition: "persist:mchub-microsoft-account",
         nodeIntegration: false,
         contextIsolation: true,
+        sandbox: true,
       },
     });
 
@@ -210,8 +211,7 @@ async function getMinecraftProfile(minecraftAccessToken) {
 }
 
 // Format attendu par minecraft-launcher-core (voir mcLaunch.js) — construit
-// nous-memes puisque MCLC ne gere pas l'auth Microsoft lui-meme. Utilise
-// aussi par le "mode test" (main.js) pour rester dans le meme format.
+// nous-memes puisque MCLC ne gere pas l'auth Microsoft lui-meme.
 function buildAuthorization({ accessToken, uuid, name, xuid, clientId }) {
   return {
     access_token: accessToken,
@@ -277,4 +277,4 @@ async function refreshSession(refreshToken) {
   }
 }
 
-module.exports = { signIn, refreshSession, buildAuthorization, PendingApprovalError };
+module.exports = { signIn, refreshSession, PendingApprovalError };

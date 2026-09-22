@@ -1,4 +1,5 @@
 import { getT } from "@/i18n/getDictionary";
+import { t } from "@/i18n/t";
 
 type ServerStatusProps = {
   playerCount: number | null;
@@ -18,8 +19,8 @@ export async function ServerStatus({ playerCount, playerCapacity }: ServerStatus
       {online ? (
         <span>
           {playerCount === 1
-            ? dict.servers.onlinePlayers.replace("{count}", String(playerCount))
-            : dict.servers.onlinePlayersPlural.replace("{count}", String(playerCount))}
+            ? t(dict, "servers.onlinePlayers", { count: playerCount })
+            : t(dict, "servers.onlinePlayersPlural", { count: playerCount })}
           {playerCapacity !== null ? ` / ${playerCapacity}` : ""}
         </span>
       ) : (

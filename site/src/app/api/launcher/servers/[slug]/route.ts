@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerWithIpBySlug } from "@/lib/public-servers";
+import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
 
 // Route reservee au launcher (jamais au site public) : c'est la SEULE
 // route qui renvoie l'IP d'un serveur. Protegee par un secret partage
@@ -8,10 +9,7 @@ import { getServerWithIpBySlug } from "@/lib/public-servers";
 // separement). Voir cahier des charges : deterrent, pas garantie absolue
 // (un joueur qui a deja rejoint connait ensuite l'IP).
 export async function GET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]">) {
-  const authHeader = request.headers.get("authorization");
-  const expected = `Bearer ${process.env.LAUNCHER_API_KEY}`;
-
-  if (!process.env.LAUNCHER_API_KEY || authHeader !== expected) {
+  if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 

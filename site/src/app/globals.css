@@ -12,12 +12,17 @@
   --foreground: #e9e9ed;
   --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
   --accent: #9184d9;
-  --accent-hover: #b5abfc;
-  --accent-2: #a7a1db;
+  /* Formules color-mix (pas de hex fige) pour rester identiques a celles du
+     launcher (voir launcher/src/index.html) qui, elles, DOIVENT etre des
+     formules puisque son accent est configurable par l'utilisateur — deux
+     valeurs figees a la main avaient fini par diverger legerement des
+     formules reelles. */
+  --accent-hover: color-mix(in srgb, var(--accent) 70%, white);
+  --accent-2: color-mix(in srgb, var(--accent) 85%, white);
   /* Fond/texte des pastilles pleines (avatar, badge "Moddé") — teinte sombre
      de l'accent avec un texte clair dessus, jamais l'accent lui-meme en
      aplat (voir readme du design system : "never flood large areas"). */
-  --accent-fill: #423a6a;
+  --accent-fill: color-mix(in srgb, var(--accent) 45%, black);
   --accent-foreground: #f5f4ff;
   --danger: #e08a8a;
   --success: #5fd3a0;

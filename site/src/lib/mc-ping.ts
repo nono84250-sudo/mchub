@@ -1,4 +1,6 @@
 import { Socket } from "node:net";
+import { lookup } from "node:dns/promises";
+import { isPrivateOrReservedAddress } from "@/lib/ssrfGuard";
 
 // Implémentation directe du protocole "Server List Ping" de Minecraft
 // (handshake -> status request -> status response en JSON). Ne dépend
@@ -18,7 +20,7 @@ const DEFAULT_PORT = 25565;
 // statut, le serveur répond quel que soit ce nombre.
 const HANDSHAKE_PROTOCOL_VERSION = 767;
 
-export function parseServerAddress(address: string): { host: string; port: number } {
+function parseServerAddress(address: string): { host: string; port: number } {
   const trimmed = address.trim();
   const lastColon = trimmed.lastIndexOf(":");
   if (lastColon === -1) {
@@ -115,8 +117,21 @@ function tryParseStatusResponse(buffer: Buffer): MinecraftServerStatus | null {
  * Ne lève jamais : retourne `null` si le serveur est hors ligne, injoignable,
  * ou ne répond pas dans le délai imparti.
  */
-export function pingMinecraftServer(address: string): Promise<MinecraftServerStatus | null> {
+export async function pingMinecraftServer(address: string): Promise<MinecraftServerStatus | null> {
   const { host, port } = parseServerAddress(address);
+
+  // Resout et verifie l'adresse REELLE avant toute connexion — jamais le nom
+  // d'hote tel quel, pour attraper aussi bien une IP privee saisie
+  // directement qu'un nom de domaine qui y pointe (voir ssrfGuard.ts).
+  // Refait a chaque appel (donc a chaque ping periodique), pas seulement a
+  // l'enregistrement du serveur, pour resister au DNS rebinding.
+  let resolvedAddress: string;
+  try {
+    resolvedAddress = (await lookup(host)).address;
+  } catch {
+    return null;
+  }
+  if (isPrivateOrReservedAddress(resolvedAddress)) return null;
 
   return new Promise((resolve) => {
     const socket = new Socket();
@@ -135,7 +150,7 @@ export function pingMinecraftServer(address: string): Promise<MinecraftServerSta
     socket.on("timeout", () => finish(null));
     socket.on("error", () => finish(null));
 
-    socket.connect(port, host, () => {
+    socket.connect(port, resolvedAddress, () => {
       socket.write(buildHandshakePacket(host, port));
       socket.write(buildStatusRequestPacket());
     });

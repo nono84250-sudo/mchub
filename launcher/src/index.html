@@ -40,7 +40,10 @@
     --surface-raised: color-mix(in srgb, var(--foreground) 4%, var(--surface));
     --border: color-mix(in srgb, var(--foreground) 14%, transparent);
     --foreground: #1a1b23;
-    --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
+    /* 65% (pas 55% comme en sombre) : a 55%, --muted sur ce fond clair ne
+       passe qu'a ~3.75:1 (sous le seuil WCAG AA de 4.5:1) — 65% ramene ca a
+       ~5.1:1. */
+    --muted: color-mix(in srgb, var(--foreground) 65%, transparent);
     --danger: #c0453f;
     --success: #2f9e6e;
   }
@@ -186,8 +189,14 @@
     transform: rotate(45deg);
   }
 
-  button.ms-login {
-    background: var(--surface-raised);
+  /* Bouton secondaire generique — contour uniquement, jamais de fond plein
+     (meme convention "Nocturne" que le site, voir globals.css : les actions
+     se distinguent par la couleur du trait, pas par un remplissage).
+     Renomme depuis "ms-login" (a l'origine specifique au bouton Microsoft,
+     puis reutilise tel quel pour toutes les autres actions secondaires du
+     launcher — nom desormais correct pour son usage reel). */
+  button.btn-secondary {
+    background: transparent;
     color: var(--foreground);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -195,8 +204,8 @@
     font-size: 13px;
     cursor: pointer;
   }
-  button.ms-login:hover { border-color: var(--accent); }
-  button.ms-login:disabled { color: var(--muted); cursor: default; }
+  button.btn-secondary:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  button.btn-secondary:disabled { color: var(--muted); cursor: default; }
   .ms-pending { color: var(--muted); }
   .ms-error { color: var(--danger); }
 
@@ -535,10 +544,18 @@
     font-family: inherit;
   }
   .lang-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
-  .lang-list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 8px; font-size: 13.5px; }
+  /* button plutot que div : focusable et activable au clavier (Tab + Entree/
+     Espace) sans JS supplementaire — une simple div cliquable etait invisible
+     au clavier. */
+  .lang-list-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 12px; border-radius: 8px; font-size: 13.5px;
+    width: 100%; background: none; border: none; color: inherit; font-family: inherit; text-align: left; cursor: pointer;
+  }
+  .lang-list-row:not(:disabled):hover { background: color-mix(in srgb, var(--foreground) 6%, transparent); }
   .lang-list-row.active { background: var(--surface-raised); }
-  .lang-list-row.disabled { color: var(--muted); opacity: 0.6; }
-  .lang-list-row.disabled .lang-soon { font-size: 11px; }
+  .lang-list-row:disabled { color: var(--muted); opacity: 0.6; cursor: default; }
+  .lang-list-row:disabled .lang-soon { font-size: 11px; }
   .detail button.back {
     background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 0 16px 0;
   }
@@ -931,7 +948,7 @@
     <div class="mc-status-menu">
       <button class="mc-status-trigger" id="mc-status-trigger" type="button">
         <span class="status-dot" id="mc-status-dot"></span>
-        Minecraft Status
+        <span data-i18n="titlebar.mcStatus">Minecraft Status</span>
       </button>
       <div class="mc-status-panel" id="mc-status-panel" hidden>
         <div id="mc-status-list"></div>
@@ -991,7 +1008,7 @@
   <div id="gate" hidden>
     <div class="logo" style="font-size: 26px;"><span class="logo-mark" style="width: 20px; height: 20px;"></span>Omniscient <span>Launcher</span></div>
     <p class="tagline" data-i18n="gate.tagline">Connecte-toi avec ton compte Microsoft pour voir les serveurs et jouer.</p>
-    <button id="gate-login" class="ms-login" style="padding: 10px 20px; font-size: 14px;" data-i18n="gate.loginBtn">Se connecter avec Microsoft</button>
+    <button id="gate-login" class="btn-secondary" style="padding: 10px 20px; font-size: 14px;" data-i18n="gate.loginBtn">Se connecter avec Microsoft</button>
     <label class="gate-remember">
       <input type="checkbox" id="gate-remember" checked />
       <span data-i18n="gate.remember">Se souvenir de moi</span>
@@ -1027,7 +1044,7 @@
         <span id="modal-checkbox-label"></span>
       </label>
       <div class="modal-actions">
-        <button id="modal-cancel" class="ms-login" type="button" hidden></button>
+        <button id="modal-cancel" class="btn-secondary" type="button" hidden></button>
         <button id="modal-confirm" class="join-btn" type="button"></button>
       </div>
     </div>
@@ -1120,6 +1137,7 @@
 
   <script src="i18n.js"></script>
   <script src="theme.js"></script>
+  <script src="windowControls.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -93,4 +93,4 @@ async function getSystemInfo(settings) {
   };
 }
 
-module.exports = { getCacheSizeBytes, repairGameFiles, clearCache, getSystemInfo, dirSize };
+module.exports = { getCacheSizeBytes, repairGameFiles, clearCache, getSystemInfo };

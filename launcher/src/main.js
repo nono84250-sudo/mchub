@@ -114,7 +114,9 @@ function createWindow() {
   // Sans barre de titre native (frame: false), l'etat maximise/restaure
   // n'est visible nulle part ailleurs : le renderer doit le connaitre pour
   // afficher la bonne icone sur son propre bouton.
-  const sendMaximizedState = () => win.webContents.send("window:maximized-changed", win.isMaximized());
+  const sendMaximizedState = () => {
+    if (!win.isDestroyed()) win.webContents.send("window:maximized-changed", win.isMaximized());
+  };
   win.on("maximize", sendMaximizedState);
   win.on("unmaximize", sendMaximizedState);
 
@@ -151,7 +153,9 @@ function createConsoleWindow() {
     },
   });
 
-  const sendMaximizedState = () => consoleWindow.webContents.send("window:maximized-changed", consoleWindow.isMaximized());
+  const sendMaximizedState = () => {
+    if (!consoleWindow.isDestroyed()) consoleWindow.webContents.send("window:maximized-changed", consoleWindow.isMaximized());
+  };
   consoleWindow.on("maximize", sendMaximizedState);
   consoleWindow.on("unmaximize", sendMaximizedState);
 
@@ -237,6 +241,7 @@ function checkForUpdates() {
 ipcMain.handle("update:check", () => checkForUpdates());
 
 ipcMain.handle("logs:getAll", () => logStore.getAll());
+ipcMain.handle("logs:clear", () => logStore.clear());
 ipcMain.handle("logs:openConsole", () => {
   createConsoleWindow();
 });

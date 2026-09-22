@@ -65,8 +65,4 @@ function clearActiveAccount() {
   return next;
 }
 
-function clearAllAccounts() {
-  if (fs.existsSync(ACCOUNTS_FILE)) fs.unlinkSync(ACCOUNTS_FILE);
-}
-
-module.exports = { loadAccounts, rememberAccount, forgetAccount, clearActiveAccount, clearAllAccounts };
+module.exports = { loadAccounts, rememberAccount, forgetAccount, clearActiveAccount };

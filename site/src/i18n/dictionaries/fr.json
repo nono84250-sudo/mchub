@@ -76,7 +76,14 @@
     "paused": "En pause",
     "navServers": "Serveurs",
     "navNotifications": "Notifications",
-    "navNews": "Actualités"
+    "navNews": "Actualités",
+    "newsTitle": "Actualités",
+    "newsEmpty": "Aucune actualité pour le moment — les annonces du site apparaîtront ici.",
+    "notificationsTitle": "Notifications",
+    "notificationsEmpty": "Aucune notification pour le moment.",
+    "categoryAnnouncements": "Annonces",
+    "categoryServers": "Serveurs",
+    "categoryAccount": "Compte"
   },
   "servers": {
     "title": "Annuaire des serveurs",
@@ -137,6 +144,7 @@
     "confirmToggleOn": "Republier ce serveur ?",
     "confirmDuplicate": "Dupliquer ce serveur ? Une copie sera créée avec sa propre fiche.",
     "confirmDelete": "Supprimer définitivement ce serveur ? Cette action est irréversible.",
+    "actionFailed": "Une erreur est survenue — réessaie dans un instant.",
     "deleteTitle": "Supprimer ce serveur",
     "deleteBody": "Définitif — retire la fiche de partout.",
     "delete": "Supprimer",

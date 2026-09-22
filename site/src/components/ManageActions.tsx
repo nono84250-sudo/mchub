@@ -27,13 +27,24 @@ export function ManageActions({
   const router = useRouter();
   const { t } = useI18n();
   const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function run(key: string, message: string, action: () => Promise<void>) {
     if (!window.confirm(message)) return;
     setPending(key);
+    setError(null);
     try {
       await action();
       router.refresh();
+    } catch (err) {
+      // redirect() (deleteServer notamment) fonctionne en lançant une
+      // exception spéciale reconnue par Next.js via son digest — jamais une
+      // vraie erreur à afficher, à laisser remonter pour que la navigation
+      // ait bien lieu.
+      if (err && typeof err === "object" && "digest" in err && typeof err.digest === "string" && err.digest.startsWith("NEXT_REDIRECT")) {
+        throw err;
+      }
+      setError(t("manage.actionFailed"));
     } finally {
       setPending(null);
     }
@@ -41,6 +52,7 @@ export function ManageActions({
 
   return (
     <div className="mb-6 flex flex-col gap-4">
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
         <span className="tag-chip tag-chip-accent self-start">{published ? t("manage.published") : t("manage.paused")}</span>
 

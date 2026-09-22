@@ -614,8 +614,8 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
         }
         <div class="account-dropdown-name">${escapeHtml(profile.name)}</div>
         ${rememberFailed ? `<p class="ms-error account-dropdown-note">${t("account.sessionNotRemembered")}</p>` : ""}
-        <button id="manage-account" class="ms-login account-dropdown-signout" type="button">${t("account.manageAccount")}</button>
-        <button id="sign-out" class="ms-login account-dropdown-signout" type="button">${t("account.signOut")}</button>
+        <button id="manage-account" class="btn-secondary account-dropdown-signout" type="button">${t("account.manageAccount")}</button>
+        <button id="sign-out" class="btn-secondary account-dropdown-signout" type="button">${t("account.signOut")}</button>
       </div>
     </div>
   `;
@@ -692,26 +692,9 @@ function wireGate() {
   });
 }
 
-// Barre de titre custom (fenêtre sans cadre natif, voir main.js) : les
-// boutons appellent l'IPC exposé par preload.js plutôt que des raccourcis
-// natifs, puisqu'il n'y a plus de barre système pour les fournir.
-function wireWindowControls() {
-  document.getElementById("win-min").addEventListener("click", () => window.mchub.windowControls.minimize());
-  document.getElementById("win-close").addEventListener("click", () => window.mchub.windowControls.close());
-
-  const maxBtn = document.getElementById("win-max");
-  maxBtn.addEventListener("click", () => window.mchub.windowControls.toggleMaximize());
-
-  const RESTORE_ICON =
-    '<svg viewBox="0 0 10 10"><rect x="2" y="0.5" width="7" height="7" fill="none" stroke="currentColor" /><rect x="0.5" y="2.5" width="7" height="7" fill="rgba(15,23,41,0.92)" stroke="currentColor" /></svg>';
-  const MAXIMIZE_ICON = '<svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" /></svg>';
-  const setMaximizedIcon = (isMaximized) => {
-    maxBtn.innerHTML = isMaximized ? RESTORE_ICON : MAXIMIZE_ICON;
-  };
-
-  window.mchub.windowControls.isMaximized().then(setMaximizedIcon);
-  window.mchub.windowControls.onMaximizedChange(setMaximizedIcon);
-}
+// Barre de titre custom : voir windowControls.js (module partage avec
+// debug-console.js, sur le modele de theme.js/i18n.js).
+const wireWindowControls = window.windowControls.wireWindowControls;
 
 // Statut des services Minecraft/Microsoft dont ce launcher depend
 // reellement (voir minecraftStatus.js — Mojang n'a plus d'API de statut
@@ -754,6 +737,19 @@ async function loadMcStatus() {
   renderMcStatus(services);
 }
 
+// Ferme un panneau deroulant a l'appui sur Echap et rend le focus a son
+// bouton declencheur — sans ca, un utilisateur au clavier qui ouvre un
+// panneau (mc-status/notifications) ne pouvait le refermer qu'en cliquant
+// ailleurs a la souris.
+function wireDismissOnEscape(panel, trigger) {
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !panel.hidden) {
+      panel.hidden = true;
+      trigger.focus();
+    }
+  });
+}
+
 function wireMcStatus() {
   mcStatusTrigger.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -764,6 +760,7 @@ function wireMcStatus() {
   document.addEventListener("click", () => {
     mcStatusPanel.hidden = true;
   });
+  wireDismissOnEscape(mcStatusPanel, mcStatusTrigger);
   // Vérifié dès le démarrage (avant même la connexion) pour que le point
   // ait une vraie couleur sans attendre un clic.
   loadMcStatus();
@@ -782,6 +779,7 @@ function wireNotifications() {
   document.addEventListener("click", () => {
     panel.hidden = true;
   });
+  wireDismissOnEscape(panel, trigger);
 }
 
 // Bascule entre la vue "serveurs" (liste/détail) et la vue "paramètres" dans
@@ -951,7 +949,7 @@ function renderDebugTab(contentEl, settings) {
           <span class="settings-row-label">${t("debug.consoleLabel")}</span>
           <p class="settings-row-desc">${t("debug.consoleDesc")}</p>
         </span>
-        <button id="settings-open-console" class="ms-login" type="button">${t("debug.openConsole")}</button>
+        <button id="settings-open-console" class="btn-secondary" type="button">${t("debug.openConsole")}</button>
       </div>
       <p class="settings-row-desc" style="margin-top: -10px;">${t("debug.shortcutHint", { shortcut: "Ctrl+Shift+D" })}</p>
       <div class="settings-divider"></div>
@@ -990,8 +988,8 @@ function renderDebugTab(contentEl, settings) {
         <div class="settings-row-label">${t("debug.logFiles")}</div>
         <p class="settings-path" style="margin-top: 6px;" id="settings-logs-path"></p>
         <div style="display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
-          <button id="settings-open-logs" class="ms-login" type="button">${t("debug.openLogsFolder")}</button>
-          <button id="settings-copy-log" class="ms-login" type="button">${t("debug.copyLatestLog")}</button>
+          <button id="settings-open-logs" class="btn-secondary" type="button">${t("debug.openLogsFolder")}</button>
+          <button id="settings-copy-log" class="btn-secondary" type="button">${t("debug.copyLatestLog")}</button>
         </div>
         <p class="join-note" id="settings-logs-status" style="margin-top: 6px;"></p>
       </div>
@@ -1001,7 +999,7 @@ function renderDebugTab(contentEl, settings) {
           <span class="settings-row-label">${t("debug.diagnosticReport")}</span>
           <p class="settings-row-desc">${t("debug.diagnosticReportDesc")}</p>
         </span>
-        <button id="settings-export-report" class="ms-login" type="button">${t("debug.exportReport")}</button>
+        <button id="settings-export-report" class="btn-secondary" type="button">${t("debug.exportReport")}</button>
       </div>
       <p class="join-note" id="settings-report-status"></p>
     </section>
@@ -1011,7 +1009,7 @@ function renderDebugTab(contentEl, settings) {
       <div class="system-info-grid" id="settings-system-info">
         <span class="label">${t("common.checking")}</span><span class="value"></span>
       </div>
-      <div><button id="settings-copy-sysinfo" class="ms-login" type="button" hidden>${t("debug.copyToClipboard")}</button></div>
+      <div><button id="settings-copy-sysinfo" class="btn-secondary" type="button" hidden>${t("debug.copyToClipboard")}</button></div>
     </section>
 
     <section class="settings-section">
@@ -1021,7 +1019,7 @@ function renderDebugTab(contentEl, settings) {
           <span class="settings-row-label">${t("debug.repairFiles")}</span>
           <p class="settings-row-desc">${t("debug.repairFilesDesc")}</p>
         </span>
-        <button id="settings-repair" class="ms-login" type="button">${t("debug.repair")}</button>
+        <button id="settings-repair" class="btn-secondary" type="button">${t("debug.repair")}</button>
       </div>
       <div class="settings-divider"></div>
       <div class="settings-row">
@@ -1106,7 +1104,9 @@ function renderDebugTab(contentEl, settings) {
   });
 
   const formatCacheSize = (bytes) =>
-    bytes > 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} Go` : `${(bytes / (1024 * 1024)).toFixed(0)} Mo`;
+    bytes > 1024 ** 3
+      ? `${(bytes / 1024 ** 3).toFixed(2)} ${t("debug.unitGB")}`
+      : `${(bytes / (1024 * 1024)).toFixed(0)} ${t("debug.unitMB")}`;
 
   window.mchub.diagnostics.getCacheSizeBytes().then((bytes) => {
     document.getElementById("settings-cache-size-desc").textContent = t("debug.clearCacheDesc", { size: formatCacheSize(bytes) });
@@ -1155,10 +1155,10 @@ function renderAppearanceTab(contentEl, settings) {
         <div class="settings-row-label">${t("appearance.accentColor")}</div>
         <p class="settings-row-desc">${t("appearance.accentColorDesc")}</p>
         <div class="accent-swatches">
-          ${window.themeControls.ACCENT_PRESETS.map(
-            (color) =>
-              `<button type="button" class="accent-swatch${settings.accentColor === color ? " active" : ""}" data-accent-value="${color}" style="background:${color};"></button>`,
-          ).join("")}
+          ${window.themeControls.ACCENT_PRESETS.map((color, i) => {
+            const names = [t("appearance.accentPurple"), t("appearance.accentBlue"), t("appearance.accentGreen"), t("appearance.accentOrange"), t("appearance.accentPink")];
+            return `<button type="button" class="accent-swatch${settings.accentColor === color ? " active" : ""}" data-accent-value="${color}" style="background:${color};" aria-label="${names[i] || color}"></button>`;
+          }).join("")}
         </div>
       </div>
       <div class="settings-divider"></div>
@@ -1209,10 +1209,10 @@ function renderLanguageTab(contentEl, settings) {
           ${Object.entries(locales)
             .map(
               ([code, info]) => `
-            <div class="lang-list-row${code === settings.locale ? " active" : ""}${info.enabled ? "" : " disabled"}" ${info.enabled ? `data-locale="${code}" style="cursor: pointer;"` : ""}>
+            <button type="button" class="lang-list-row${code === settings.locale ? " active" : ""}" ${info.enabled ? `data-locale="${code}"` : "disabled"}>
               <span>${info.label}</span>
               ${code === settings.locale ? ICON_CHECK : ""}
-            </div>`,
+            </button>`,
             )
             .join("")}
         </div>
@@ -1280,13 +1280,13 @@ function renderMiscTab(contentEl, settings) {
       <div>
         <div class="settings-row-label">${t("settings.javaLabel")}</div>
         <p class="join-note" id="settings-java-status" style="margin-top: 6px;">${t("common.checking")}</p>
-        <button id="settings-java-install" class="ms-login" type="button" hidden style="margin-top: 8px;">${t("java.installAuto")}</button>
+        <button id="settings-java-install" class="btn-secondary" type="button" hidden style="margin-top: 8px;">${t("java.installAuto")}</button>
       </div>
       <div class="settings-divider"></div>
       <div>
         <div class="settings-row-label">${t("settings.gameFolder")}</div>
         <p class="settings-path" style="margin-top: 6px;">${escapeHtml(settings.gameRoot)}</p>
-        <button id="settings-open-folder" class="ms-login" type="button" style="margin-top: 6px;">${t("settings.openFolder")}</button>
+        <button id="settings-open-folder" class="btn-secondary" type="button" style="margin-top: 6px;">${t("settings.openFolder")}</button>
       </div>
       <div class="settings-divider"></div>
       <div class="settings-row">
@@ -1420,14 +1420,14 @@ async function renderAccountPanel() {
     </div>
     <div style="display: flex; gap: 8px; margin-top: 10px;">
       <button id="skin-upload-btn" class="join-btn" type="button">${t("account.changeSkinBtn")}</button>
-      <button id="skin-reset-btn" class="ms-login" type="button">${t("account.resetBtn")}</button>
+      <button id="skin-reset-btn" class="btn-secondary" type="button">${t("account.resetBtn")}</button>
     </div>
     <p class="join-note" id="account-skin-status"></p>
 
     <h2 style="margin-top: 32px;">${t("account.rememberedAccounts")}</h2>
     <div id="account-list" style="margin-top: 12px;"></div>
     <p class="join-note" id="account-list-status"></p>
-    <button id="account-add-btn" class="ms-login" type="button">${t("account.addAccountBtn")}</button>
+    <button id="account-add-btn" class="btn-secondary" type="button">${t("account.addAccountBtn")}</button>
   `;
 
   wireAccountPanelActions();
@@ -1460,8 +1460,8 @@ async function refreshAccountList() {
           ${a.id === activeId ? `<span class="account-active-tag">${t("account.active")}</span>` : ""}
         </span>
         <span class="account-list-row-actions">
-          ${a.id === activeId ? "" : `<button class="ms-login account-switch-btn" type="button" data-id="${escapeHtml(a.id)}">${t("account.switchBtn")}</button>`}
-          <button class="ms-login account-remove-btn" type="button" data-id="${escapeHtml(a.id)}">${t("account.forgetBtn")}</button>
+          ${a.id === activeId ? "" : `<button class="btn-secondary account-switch-btn" type="button" data-id="${escapeHtml(a.id)}">${t("account.switchBtn")}</button>`}
+          <button class="btn-secondary account-remove-btn" type="button" data-id="${escapeHtml(a.id)}">${t("account.forgetBtn")}</button>
         </span>
       </div>`,
     )

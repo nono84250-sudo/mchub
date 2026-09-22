@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld("mchub", {
   },
   logs: {
     getAll: () => ipcRenderer.invoke("logs:getAll"),
+    clear: () => ipcRenderer.invoke("logs:clear"),
     openConsole: () => ipcRenderer.invoke("logs:openConsole"),
     openLogsFolder: () => ipcRenderer.invoke("logs:openLogsFolder"),
     copyLatest: () => ipcRenderer.invoke("logs:copyLatest"),

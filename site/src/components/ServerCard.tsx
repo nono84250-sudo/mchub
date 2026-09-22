@@ -22,7 +22,7 @@ export async function ServerCard({ slug, name, description, bannerUrl, iconUrl, 
   return (
     <Link
       href={`/servers/${slug}`}
-      className="glow-card group flex overflow-hidden rounded-xl border border-border bg-surface"
+      className="panel glow-card group flex overflow-hidden"
     >
       <div className="relative h-auto w-32 flex-shrink-0 banner-placeholder sm:w-48">
         {bannerUrl ? (

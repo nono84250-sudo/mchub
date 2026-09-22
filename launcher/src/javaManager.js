@@ -111,7 +111,11 @@ async function downloadAndInstallJava(onProgress) {
   const info = await fetchLatestJreInfo();
   onProgress?.(`Téléchargement de Java ${info.version}…`);
 
-  const tmpZip = path.join(app.getPath("temp"), info.name);
+  // path.basename() par prudence : info.name vient de la reponse JSON de
+  // l'API Adoptium, jamais interpolee dans un chemin sans passer par ce
+  // garde-fou (defense en profondeur si ce nom contenait un jour des
+  // sequences "../").
+  const tmpZip = path.join(app.getPath("temp"), path.basename(info.name));
   const res = await fetch(info.url);
   if (!res.ok || !res.body) throw new Error(`Téléchargement échoué (${res.status}).`);
 
@@ -138,8 +142,13 @@ async function downloadAndInstallJava(onProgress) {
 
   onProgress?.("Extraction de Java…");
   fs.rmSync(RUNTIME_DIR, { recursive: true, force: true });
-  await extractZip(tmpZip, RUNTIME_DIR);
-  fs.unlinkSync(tmpZip);
+  try {
+    await extractZip(tmpZip, RUNTIME_DIR);
+  } finally {
+    // Nettoye le zip temporaire meme si l'extraction echoue (auparavant
+    // seul le chemin "checksum invalide" le supprimait).
+    fs.rmSync(tmpZip, { force: true });
+  }
 
   const javaPath = findExtractedJavaExe(RUNTIME_DIR);
   if (!javaPath) throw new Error("Java a été téléchargé mais est introuvable après extraction.");

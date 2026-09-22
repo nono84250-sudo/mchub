@@ -4,6 +4,7 @@ import { ServerCard } from "@/components/ServerCard";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { listPublicServers, type ServerListSort } from "@/lib/public-servers";
 import { getT } from "@/i18n/getDictionary";
+import { t } from "@/i18n/t";
 
 export const metadata = { title: "Serveurs — Omniscient" };
 
@@ -31,7 +32,7 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
       <AutoRefresh intervalMs={30_000} />
       <h1 className="text-3xl font-bold tracking-tight text-foreground">{dict.servers.title}</h1>
       <p className="mt-1 text-muted">
-        {(servers.length === 1 ? dict.servers.count : dict.servers.countPlural).replace("{count}", String(servers.length))}
+        {t(dict, servers.length === 1 ? "servers.count" : "servers.countPlural", { count: servers.length })}
       </p>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -67,7 +68,7 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
 
       {servers.length === 0 ? (
         <div className="panel mt-8 p-8 text-center text-muted">
-          {q ? dict.servers.emptyQuery.replace("{query}", q) : dict.servers.emptyNoQuery}
+          {q ? t(dict, "servers.emptyQuery", { query: q }) : dict.servers.emptyNoQuery}
         </div>
       ) : (
         <div className="mt-8 grid grid-cols-1 gap-3">

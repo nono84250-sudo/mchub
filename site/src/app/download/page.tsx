@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { WindowsLogo, AppleLogo, LinuxLogo, ShieldCheck, ArrowRight } from "@phosphor-icons/react/ssr";
 import { getT } from "@/i18n/getDictionary";
+import { t } from "@/i18n/t";
 
 export const metadata = { title: "Télécharger — Omniscient" };
 
@@ -104,23 +105,20 @@ export default async function DownloadPage() {
           {primary.href ? (
             <Link href={primary.href} className="btn-primary text-base px-6 py-3">
               <primary.icon className="h-5 w-5" />
-              {dict.download.ctaDownloadFor.replace("{os}", primary.label)}
+              {t(dict, "download.ctaDownloadFor", { os: primary.label })}
             </Link>
           ) : (
             <span className="btn-primary text-base px-6 py-3 opacity-45 cursor-not-allowed" aria-disabled="true">
               <primary.icon className="h-5 w-5" />
-              {dict.download.ctaComingSoonFor.replace("{os}", primary.label)}
+              {t(dict, "download.ctaComingSoonFor", { os: primary.label })}
             </span>
           )}
 
           {primary.href ? (
             <p className="text-xs text-muted">
               {release
-                ? dict.download.versionSizeDetected
-                    .replace("{version}", release.version)
-                    .replace("{size}", String(release.sizeMB))
-                    .replace("{os}", primary.label)
-                : dict.download.detected.replace("{os}", primary.label)}
+                ? t(dict, "download.versionSizeDetected", { version: release.version, size: release.sizeMB, os: primary.label })
+                : t(dict, "download.detected", { os: primary.label })}
             </p>
           ) : (
             <Link

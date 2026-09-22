@@ -76,7 +76,14 @@
     "paused": "Paused",
     "navServers": "Servers",
     "navNotifications": "Notifications",
-    "navNews": "News"
+    "navNews": "News",
+    "newsTitle": "News",
+    "newsEmpty": "No news for now — site announcements will show up here.",
+    "notificationsTitle": "Notifications",
+    "notificationsEmpty": "No notifications for now.",
+    "categoryAnnouncements": "Announcements",
+    "categoryServers": "Servers",
+    "categoryAccount": "Account"
   },
   "servers": {
     "title": "Server directory",
@@ -137,6 +144,7 @@
     "confirmToggleOn": "Republish this server?",
     "confirmDuplicate": "Duplicate this server? A copy will be created with its own listing.",
     "confirmDelete": "Permanently delete this server? This action cannot be undone.",
+    "actionFailed": "Something went wrong — try again in a moment.",
     "deleteTitle": "Delete this server",
     "deleteBody": "Permanent — removes the listing everywhere.",
     "delete": "Delete",
