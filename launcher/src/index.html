@@ -704,6 +704,39 @@
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
   }
+
+  /* Ecran de demarrage (maquette "Nocturne") : couvre la zone de contenu
+     pendant les verifications reelles qui precedent l'affichage du portail
+     (Java, reprise de session) — jamais un faux "checking for updates",
+     puisqu'aucune verification de mise a jour n'existe dans ce launcher. */
+  #bootstrap {
+    position: relative; flex: 1 1 auto; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 22px; padding: 32px; overflow: hidden;
+  }
+  #bootstrap::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(55% 55% at 50% 35%, var(--accent-fill), transparent 70%);
+    opacity: 0.7;
+  }
+  .bootstrap-spinner { position: relative; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; }
+  .bootstrap-spinner .track { position: absolute; inset: 0; border-radius: 50%; border: 2.5px solid var(--border); }
+  .bootstrap-spinner .arc {
+    position: absolute; inset: 0; border-radius: 50%; border: 2.5px solid transparent;
+    border-top-color: var(--accent); animation: boot-spin 0.9s linear infinite;
+  }
+  .bootstrap-brand { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  #bootstrap-status { font-size: 12.5px; color: var(--muted); animation: boot-pulse 1.6s ease-in-out infinite; }
+  .bootstrap-progress-track {
+    position: relative; width: 220px; height: 4px; border-radius: 999px; overflow: hidden;
+    background: var(--surface); border: 1px solid var(--border);
+  }
+  #bootstrap-progress {
+    position: absolute; inset: 0; width: 15%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent-hover), var(--accent)); transition: width 0.4s ease;
+  }
+  #bootstrap-version { position: relative; font-size: 11px; color: var(--muted); letter-spacing: 0.02em; }
+  @keyframes boot-spin { to { transform: rotate(360deg); } }
+  @keyframes boot-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 </style>
 </head>
 <body>
@@ -743,6 +776,22 @@
         </svg>
       </button>
     </div>
+  </div>
+
+  <div id="bootstrap">
+    <div class="bootstrap-spinner">
+      <span class="track"></span>
+      <span class="arc"></span>
+      <span class="logo-mark"></span>
+    </div>
+    <div class="bootstrap-brand">
+      <span class="logo" style="font-size: 16px;">Omniscient <span>Launcher</span></span>
+      <span id="bootstrap-status">Démarrage…</span>
+    </div>
+    <div class="bootstrap-progress-track">
+      <div id="bootstrap-progress"></div>
+    </div>
+    <span id="bootstrap-version"></span>
   </div>
 
   <div id="java-gate" hidden>

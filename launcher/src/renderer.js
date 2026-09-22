@@ -11,6 +11,10 @@ const accountPanelEl = document.getElementById("account-panel");
 const favoritesPanelEl = document.getElementById("favorites-panel");
 const recentPanelEl = document.getElementById("recent-panel");
 const javaGateEl = document.getElementById("java-gate");
+const bootstrapEl = document.getElementById("bootstrap");
+const bootstrapStatusEl = document.getElementById("bootstrap-status");
+const bootstrapProgressEl = document.getElementById("bootstrap-progress");
+const bootstrapVersionEl = document.getElementById("bootstrap-version");
 const navServersBtn = document.getElementById("nav-servers");
 const navFavoritesBtn = document.getElementById("nav-favorites");
 const navRecentBtn = document.getElementById("nav-recent");
@@ -920,6 +924,7 @@ async function ensureJavaAvailable() {
   const initial = await window.mchub.java.detect();
   if (initial.found && initial.is64Bit) return;
 
+  bootstrapEl.hidden = true;
   javaGateEl.hidden = false;
   await new Promise((resolve) => {
     refreshJavaStatus("java-gate-status", "java-gate-install", {
@@ -1380,13 +1385,27 @@ async function boot() {
   wireNotifications();
   wirePlaybar();
 
+  // Ecran de demarrage : ne couvre que les verifications reelles qui
+  // precedent la premiere UI interactive (Java, reprise de session) — pas
+  // de fausse etape ("checking for updates") pour une fonctionnalite qui
+  // n'existe pas. Si Java manque, ensureJavaAvailable() masque cet ecran
+  // lui-meme pour laisser place a son propre ecran de blocage.
+  const settings = await window.mchub.settings.get();
+  bootstrapVersionEl.textContent = settings.appVersion ? `v${settings.appVersion}` : "";
+  bootstrapStatusEl.textContent = "Vérification de Java…";
+  bootstrapProgressEl.style.width = "45%";
+
   await ensureJavaAvailable();
 
-  const settings = await window.mchub.settings.get();
+  bootstrapStatusEl.textContent = "Reprise de la session…";
+  bootstrapProgressEl.style.width = "85%";
+
   if (!settings.onboarded) {
+    bootstrapEl.hidden = true;
     await showRamSetupModal(settings);
   }
 
+  bootstrapEl.hidden = true;
   await proceedToGate();
 }
 
