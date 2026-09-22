@@ -30,7 +30,7 @@
     "featureModpackBody": "Lie ton modpack vérifié pour que les joueurs rejoignent sans configuration manuelle."
   },
   "download": {
-    "title": "Télécharge le launcher",
+    "title": "Télécharge le Launcher",
     "titleAccent": "Omniscient",
     "subtitle": "Connecte-toi avec ton compte Microsoft/Xbox, parcours les serveurs et rejoins un modpack en un clic. Disponible sur Windows, macOS et Linux.",
     "ctaDownloadFor": "Télécharger pour {os}",
