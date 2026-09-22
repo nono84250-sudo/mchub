@@ -31,11 +31,16 @@ async function detectPlatform(): Promise<PlatformId> {
 // ici — sinon ce texte se decale du binaire reellement servi a chaque nouvelle
 // publication). Echoue silencieusement (API GitHub indisponible, pas encore
 // de release) : la ligne "detecte : {os}" s'affiche seule dans ce cas.
+// Le LIEN de telechargement (LAUNCHER_DOWNLOAD_URL) n'est lui jamais mis en
+// cache : il se resout en direct cote GitHub a chaque clic, donc reste
+// toujours exact meme si ce texte-ci est momentanement en retard. Revalidate
+// court (5 min, pas l'heure par defaut) pour que ce retard ne dure jamais
+// longtemps apres une nouvelle publication.
 async function getLatestRelease(): Promise<{ version: string; sizeMB: number } | null> {
   try {
     const res = await fetch("https://api.github.com/repos/nono84250-sudo/omniscient-launcher/releases/latest", {
       headers: { Accept: "application/vnd.github+json" },
-      next: { revalidate: 3600 },
+      next: { revalidate: 300 },
     });
     if (!res.ok) return null;
     const data = await res.json();
