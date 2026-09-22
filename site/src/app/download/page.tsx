@@ -6,9 +6,11 @@ import { getT } from "@/i18n/getDictionary";
 export const metadata = { title: "Télécharger — Omniscient" };
 
 // Releases publiques du launcher (repo séparé, public, sans le code source —
-// voir project_launcher_installer). Reste correct même avant la première
-// publication : GitHub redirige /releases/latest vers un 404 propre.
-const LAUNCHER_RELEASES_URL = "https://github.com/nono84250-sudo/omniscient-launcher/releases/latest";
+// voir project_launcher_installer). Le nom de l'installeur (nsisWeb.artifactName
+// dans launcher/package.json) est volontairement sans numéro de version pour
+// que ce lien direct reste valable à chaque nouvelle publication.
+const LAUNCHER_DOWNLOAD_URL =
+  "https://github.com/nono84250-sudo/omniscient-launcher/releases/latest/download/Omniscient.Launcher.Setup.exe";
 const LAUNCHER_RELEASES_LIST_URL = "https://github.com/nono84250-sudo/omniscient-launcher/releases";
 
 type PlatformId = "windows" | "macos" | "linux";
@@ -34,7 +36,7 @@ export default async function DownloadPage() {
       label: dict.download.osWindows,
       requirement: dict.download.windowsRequirement,
       downloadLabel: dict.download.downloadExe,
-      href: LAUNCHER_RELEASES_URL,
+      href: LAUNCHER_DOWNLOAD_URL,
     },
     {
       id: "macos" as const,
