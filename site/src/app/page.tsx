@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { Compass, GameController, Package, ArrowRight } from "@phosphor-icons/react/ssr";
-import { CubeLogo } from "@/components/CubeLogo";
+import { Compass, GameController, Cube, ArrowRight } from "@phosphor-icons/react/ssr";
 import { getT } from "@/i18n/getDictionary";
 
 export default async function Home() {
@@ -19,7 +18,7 @@ export default async function Home() {
       description: dict.home.featureMsBody,
     },
     {
-      icon: Package,
+      icon: Cube,
       title: dict.home.featureModpackTitle,
       description: dict.home.featureModpackBody,
     },
@@ -32,14 +31,8 @@ export default async function Home() {
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[560px]"
         style={{
           backgroundImage:
-            "radial-gradient(60% 50% at 30% 0%, rgba(34,211,238,0.24), transparent 70%), radial-gradient(50% 40% at 80% 10%, rgba(45,216,138,0.18), transparent 70%)",
+            "radial-gradient(50% 45% at 30% 0%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%), radial-gradient(45% 40% at 80% 10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%)",
         }}
-      />
-
-      <CubeLogo className="float-anim pointer-events-none absolute right-[8%] top-24 h-16 w-16 opacity-70 hidden sm:block" />
-      <CubeLogo
-        className="pointer-events-none absolute left-[10%] top-56 h-10 w-10 opacity-40 hidden sm:block"
-        style={{ animationDelay: "1.5s" }}
       />
 
       <div className="mx-auto max-w-4xl px-4 sm:px-6 py-24 sm:py-32 text-center">
