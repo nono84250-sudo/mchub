@@ -1590,6 +1590,8 @@ async function proceedToGate() {
 }
 
 async function boot() {
+  const bootstrapShownAt = Date.now();
+
   // Langue/theme appliques avant tout le reste : le reste de boot() (et tout
   // le rendu dynamique via t()) doit deja voir la bonne langue/le bon theme.
   // Flash bref du francais/theme sombre par defaut inevitable ici (le
@@ -1652,6 +1654,17 @@ async function boot() {
   // l'appli — sans effet si ensureJavaAvailable() l'a deja fait juste avant
   // (setSize/setResizable/setMinimumSize sont idempotents cote main.js).
   await window.mchub.windowControls.expandFromBootstrap();
+
+  // Plancher d'affichage : Java deja detecte + mise a jour deja a jour font
+  // filer cet ecran en quelques centaines de ms, trop vite pour etre vu —
+  // on force au moins 5s au total depuis son apparition (n'a aucun effet si
+  // ensureJavaAvailable() a deja pris plus de temps, ex. installation de Java).
+  const MIN_BOOTSTRAP_DISPLAY_MS = 5000;
+  const elapsedMs = Date.now() - bootstrapShownAt;
+  if (elapsedMs < MIN_BOOTSTRAP_DISPLAY_MS) {
+    bootstrapProgressEl.style.width = "100%";
+    await new Promise((resolve) => setTimeout(resolve, MIN_BOOTSTRAP_DISPLAY_MS - elapsedMs));
+  }
 
   if (!settings.onboarded) {
     bootstrapEl.hidden = true;
