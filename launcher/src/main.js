@@ -2,6 +2,27 @@ require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".en
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
+const fs = require("node:fs");
+
+// Dossier de donnees renomme en ".omniscient-launcher" (convention "dotfile")
+// plutot que "Omniscient Launcher" (le defaut d'Electron, derive de
+// productName) — doit etre fixe ICI, avant tout require() local : mcLaunch,
+// sessionStore, settingsStore et javaManager calculent chacun leur chemin
+// via app.getPath("userData") des le chargement du module. Renomme l'ancien
+// dossier s'il existe encore, pour ne pas perdre les comptes/reglages deja
+// enregistres localement pendant les tests.
+const defaultUserDataPath = app.getPath("userData");
+const dottedUserDataPath = path.join(path.dirname(defaultUserDataPath), ".omniscient-launcher");
+if (!fs.existsSync(dottedUserDataPath) && fs.existsSync(defaultUserDataPath)) {
+  try {
+    fs.renameSync(defaultUserDataPath, dottedUserDataPath);
+  } catch {
+    // Renommage impossible (dossier verrouille, volumes differents...) — le
+    // launcher redemarre avec un dossier vide plutot que de planter ici.
+  }
+}
+app.setPath("userData", dottedUserDataPath);
+
 const msAuth = require("./msAuth");
 const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
 const sessionStore = require("./sessionStore");
