@@ -4,6 +4,10 @@ const gateLoginBtn = document.getElementById("gate-login");
 const appEl = document.getElementById("app");
 const statusEl = document.getElementById("status");
 const listEl = document.getElementById("list");
+const listToolbarEl = document.getElementById("list-toolbar");
+const listSearchInputEl = document.getElementById("list-search-input");
+const sortRecentBtn = document.getElementById("sort-recent");
+const sortPlayersBtn = document.getElementById("sort-players");
 const detailEl = document.getElementById("detail");
 const msAccountEl = document.getElementById("ms-account");
 const settingsPanelEl = document.getElementById("settings-panel");
@@ -103,30 +107,79 @@ function favoriteBtnHtml(slug, isFav, extraClass = "") {
     </button>`;
 }
 
-// Carte serveur partagee entre la liste principale, "Favoris" et "Recents" —
+// Ligne serveur partagee entre la liste principale, "Favoris" et "Recents" —
 // meme rendu partout, seule la source de la liste de serveurs change.
-function serverCardHtml(server, isFav) {
+function serverRowHtml(server, isFav) {
   return `
-    <div class="card" data-slug="${escapeHtml(server.slug)}">
-      <div class="banner">
-        ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
-        ${favoriteBtnHtml(server.slug, isFav)}
-        ${typeBadge(server.type)}
-      </div>
-      <div class="card-body">
-        <div class="card-title-row">
-          <span class="server-icon">${serverIconInner(server)}</span>
+    <div class="row" data-slug="${escapeHtml(server.slug)}">
+      <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverIconInner(server)}</span>
+      <div class="row-body">
+        <div class="row-title-line">
           <h3>${escapeHtml(server.name)}</h3>
+          ${typeBadge(server.type)}
         </div>
         <p>${escapeHtml(server.description || "")}</p>
-        <div class="players">${playersLabel(server)}</div>
       </div>
+      <div class="players">${playersLabel(server)}</div>
+      ${favoriteBtnHtml(server.slug, isFav)}
     </div>`;
+}
+
+// Liste principale "Serveurs" uniquement : recherche + tri cote client sur
+// la liste deja recuperee (pas de nouvel appel reseau par frappe/clic). Les
+// vues "Favoris"/"Recents" continuent d'appeler renderRowsInto() directement
+// sans passer par cet etat de filtre.
+let allServers = [];
+let listSearchQuery = "";
+let listSortMode = "recent";
+
+function applySearchAndSort(servers) {
+  const query = listSearchQuery.trim().toLowerCase();
+  const filtered = query ? servers.filter((s) => s.name.toLowerCase().includes(query)) : servers.slice();
+  if (listSortMode === "players") {
+    filtered.sort((a, b) => (b.playerCount ?? -1) - (a.playerCount ?? -1));
+  }
+  return filtered;
+}
+
+async function renderRowsInto(container, servers, origin, onFavoriteToggled) {
+  const favorites = await getFavoriteSlugs();
+  container.innerHTML = servers.map((server) => serverRowHtml(server, favorites.includes(server.slug))).join("");
+
+  container.querySelectorAll(".row").forEach((row) => {
+    row.addEventListener("click", () => {
+      detailOrigin = origin;
+      openDetail(row.dataset.slug);
+    });
+  });
+  container.querySelectorAll(".favorite-btn").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await toggleFavorite(btn.dataset.slug);
+      await refreshPlaybarFavorites();
+      onFavoriteToggled();
+    });
+  });
+}
+
+function renderFilteredList() {
+  const filtered = applySearchAndSort(allServers);
+  if (filtered.length === 0 && listSearchQuery.trim()) {
+    listEl.innerHTML = "";
+    statusEl.hidden = false;
+    statusEl.classList.remove("error");
+    statusEl.textContent = "Aucun serveur ne correspond à cette recherche.";
+    return;
+  }
+  statusEl.hidden = true;
+  renderRowsInto(listEl, filtered, "servers", renderFilteredList);
 }
 
 async function renderList(servers) {
   detailEl.hidden = true;
   listEl.hidden = false;
+  listToolbarEl.hidden = servers.length === 0;
+  allServers = servers;
 
   if (servers.length === 0) {
     listEl.innerHTML = "";
@@ -136,24 +189,21 @@ async function renderList(servers) {
   }
 
   statusEl.hidden = true;
-  const favorites = await getFavoriteSlugs();
-  listEl.innerHTML = servers.map((server) => serverCardHtml(server, favorites.includes(server.slug))).join("");
-
-  listEl.querySelectorAll(".card").forEach((card) => {
-    card.addEventListener("click", () => {
-      detailOrigin = "servers";
-      openDetail(card.dataset.slug);
-    });
-  });
-  listEl.querySelectorAll(".favorite-btn").forEach((btn) => {
-    btn.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      await toggleFavorite(btn.dataset.slug);
-      await refreshPlaybarFavorites();
-      renderList(servers);
-    });
-  });
+  renderFilteredList();
 }
+
+listSearchInputEl.addEventListener("input", () => {
+  listSearchQuery = listSearchInputEl.value;
+  renderFilteredList();
+});
+[sortRecentBtn, sortPlayersBtn].forEach((btn) => {
+  btn.addEventListener("click", () => {
+    listSortMode = btn.dataset.sort;
+    sortRecentBtn.classList.toggle("active", listSortMode === "recent");
+    sortPlayersBtn.classList.toggle("active", listSortMode === "players");
+    renderFilteredList();
+  });
+});
 
 async function renderDetail(server) {
   listEl.hidden = true;
@@ -761,23 +811,6 @@ async function resolveServersBySlug(slugs) {
   );
 }
 
-function wireServerGridPanel(panelEl, origin, onFavoriteToggled) {
-  panelEl.querySelectorAll(".card").forEach((card) => {
-    card.addEventListener("click", () => {
-      detailOrigin = origin;
-      openDetail(card.dataset.slug);
-    });
-  });
-  panelEl.querySelectorAll(".favorite-btn").forEach((btn) => {
-    btn.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      await toggleFavorite(btn.dataset.slug);
-      await refreshPlaybarFavorites();
-      onFavoriteToggled();
-    });
-  });
-}
-
 async function showFavoritesView() {
   statusEl.hidden = true;
   listEl.hidden = true;
@@ -806,9 +839,8 @@ async function renderFavoritesList() {
   }
 
   const favoriteServers = await resolveServersBySlug(favorites);
-  favoritesPanelEl.className = "grid";
-  favoritesPanelEl.innerHTML = favoriteServers.map((server) => serverCardHtml(server, true)).join("");
-  wireServerGridPanel(favoritesPanelEl, "favorites", renderFavoritesList);
+  favoritesPanelEl.className = "server-list";
+  await renderRowsInto(favoritesPanelEl, favoriteServers, "favorites", renderFavoritesList);
 }
 
 async function showRecentView() {
@@ -839,11 +871,9 @@ async function renderRecentList() {
     return;
   }
 
-  const favorites = await getFavoriteSlugs();
   const recentServers = await resolveServersBySlug(recentSlugs);
-  recentPanelEl.className = "grid";
-  recentPanelEl.innerHTML = recentServers.map((server) => serverCardHtml(server, favorites.includes(server.slug))).join("");
-  wireServerGridPanel(recentPanelEl, "recent", renderRecentList);
+  recentPanelEl.className = "server-list";
+  await renderRowsInto(recentPanelEl, recentServers, "recent", renderRecentList);
 }
 
 async function showSettingsView() {

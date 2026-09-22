@@ -256,67 +256,88 @@
   #status { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
   #status.error { color: var(--danger); }
 
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 14px;
+  /* Barre de recherche + tris au-dessus de la liste des serveurs (maquette
+     "02 Server list") — filtrage/tri cote client, la liste complete est deja
+     recuperee via loadServers(). */
+  .list-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .list-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0 10px;
+    height: 34px;
+    flex: 1 1 auto;
+    min-width: 160px;
+    max-width: 280px;
+    color: var(--muted);
   }
+  .list-search svg { width: 14px; height: 14px; flex: 0 0 auto; }
+  .list-search input {
+    border: 0;
+    background: transparent;
+    color: var(--foreground);
+    font-size: 13.5px;
+    outline: none;
+    width: 100%;
+    height: 100%;
+    font-family: inherit;
+  }
+  .sort-chip {
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: transparent;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .sort-chip.active { border-color: var(--accent); color: var(--accent); }
 
-  .card {
+  .server-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .row {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 12px;
-    overflow: hidden;
     cursor: pointer;
     display: flex;
-    flex-direction: column;
-    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 14px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
-  .card:hover {
+  .row:hover {
     border-color: var(--accent);
-    transform: translateY(-3px);
-    box-shadow: 0 0 0 1px var(--accent), 0 10px 24px -10px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 8px 24px -14px rgba(145, 132, 217, 0.4);
   }
-
-  .banner {
-    height: 110px;
-    background-image: repeating-linear-gradient(45deg, var(--surface) 0 8px, var(--surface-raised) 8px 16px);
-    display: flex;
-    align-items: flex-end;
-    position: relative;
-  }
-  .banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 
   .badge {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: 2;
-    font-size: 11px;
+    font-size: 10.5px;
     padding: 2px 8px;
     border-radius: 999px;
-    background: rgba(15, 23, 41, 0.8);
-    backdrop-filter: blur(4px);
     border: 1px solid var(--border);
     color: var(--muted);
+    white-space: nowrap;
+    flex: 0 0 auto;
   }
   .badge.modded { background: var(--accent-fill); color: var(--accent-foreground); border: none; }
 
-  /* Etoile favori : sur la carte (coin haut-gauche de la banniere, symetrique
-     du badge Vanilla/Modde) et sur la fiche detail (a cote du titre). */
+  /* Etoile favori : dans la liste (fin de ligne) et sur la fiche detail
+     (a cote du titre) — meme bouton, juste sans halo de superposition
+     puisqu'il n'y a plus de banniere derriere. */
   .favorite-btn {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 2;
-    width: 26px;
-    height: 26px;
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: rgba(15, 23, 41, 0.8);
-    backdrop-filter: blur(4px);
+    background: transparent;
     border: 1px solid var(--border);
     color: var(--muted);
     cursor: pointer;
@@ -325,7 +346,7 @@
   .favorite-btn:hover { color: var(--foreground); border-color: var(--accent); }
   .favorite-btn.active { color: var(--accent-2); border-color: var(--accent-2); }
   .favorite-btn.active svg { fill: currentColor; }
-  .detail-favorite-btn { position: static; background: none; backdrop-filter: none; width: 22px; height: 22px; }
+  .detail-favorite-btn { width: 22px; height: 22px; }
 
   .server-icon {
     flex: 0 0 auto;
@@ -343,17 +364,18 @@
   }
   .server-icon img, .detail-icon img { width: 100%; height: 100%; object-fit: cover; }
 
-  .card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
-  .card-title-row { display: flex; align-items: center; gap: 8px; }
-  .card-body h3 { margin: 0; font-size: 15px; }
-  .card-body p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; max-height: 2.8em; overflow: hidden; }
+  .row-body { flex: 1 1 auto; min-width: 0; }
+  .row-title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .row-title-line h3 { margin: 0; font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-body p { margin: 2px 0 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .players {
-    margin-top: auto;
+    flex: 0 0 auto;
     font-size: 12.5px;
     font-weight: 600;
     color: var(--foreground);
     display: flex;
     align-items: center;
+    white-space: nowrap;
   }
   .status-dot {
     display: inline-block; width: 6px; height: 6px; border-radius: 50%;
@@ -879,7 +901,15 @@
     <div class="app-content" style="flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0;">
     <main>
       <div id="status">Chargement des serveurs…</div>
-      <div id="list" class="grid" hidden></div>
+      <div id="list-toolbar" class="list-toolbar" hidden>
+        <div class="list-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <input type="search" id="list-search-input" placeholder="Rechercher un serveur…" />
+        </div>
+        <button type="button" class="sort-chip active" id="sort-recent" data-sort="recent">Plus récents</button>
+        <button type="button" class="sort-chip" id="sort-players" data-sort="players">Plus de joueurs</button>
+      </div>
+      <div id="list" class="server-list" hidden></div>
       <div id="detail" class="detail" hidden></div>
       <div id="settings-panel" class="detail" hidden>
         <h2>Paramètres</h2>
