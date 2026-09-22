@@ -1,6 +1,7 @@
 {
   "nav": {
     "servers": "Serveurs",
+    "download": "Télécharger",
     "mySpace": "Mon espace",
     "dashboard": "Dashboard",
     "profile": "Profil",
@@ -27,6 +28,28 @@
     "featureMsBody": "Les joueurs se connectent avec leur vrai compte Minecraft, directement dans le launcher.",
     "featureModpackTitle": "Modpacks CurseForge",
     "featureModpackBody": "Lie ton modpack vérifié pour que les joueurs rejoignent sans configuration manuelle."
+  },
+  "download": {
+    "title": "Télécharge le launcher",
+    "titleAccent": "Omniscient",
+    "subtitle": "Connecte-toi avec ton compte Microsoft/Xbox, parcours les serveurs et rejoins un modpack en un clic. Disponible sur Windows, macOS et Linux.",
+    "ctaDownloadFor": "Télécharger pour {os}",
+    "ctaComingSoonFor": "Bientôt disponible sur {os}",
+    "ctaDownloadWindowsInstead": "Télécharger pour Windows à la place",
+    "detected": "détecté : {os}",
+    "osWindows": "Windows",
+    "osMac": "macOS",
+    "osLinux": "Linux",
+    "windowsRequirement": "Windows 10 et plus, 64 bits.",
+    "macRequirement": "macOS 12 et plus, Apple Silicon et Intel.",
+    "linuxRequirement": "AppImage, fonctionne sur la plupart des distributions.",
+    "downloadExe": "Télécharger le .exe",
+    "downloadDmg": "Télécharger le .dmg",
+    "downloadAppImage": "Télécharger l'AppImage",
+    "comingSoon": "Bientôt disponible",
+    "checksumsTitle": "Anciennes versions et empreintes",
+    "checksumsBody": "Besoin d'une version précise ou envie de vérifier ton téléchargement ?",
+    "releaseNotes": "Notes de version"
   },
   "auth": {
     "tabLogin": "Connexion",

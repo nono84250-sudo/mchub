@@ -36,6 +36,13 @@ export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
           >
             {t("nav.servers")}
           </Link>
+          <Link
+            href="/download"
+            onClick={() => setOpen(false)}
+            className="rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-raised hover:text-foreground"
+          >
+            {t("nav.download")}
+          </Link>
 
           {loggedIn ? (
             <>

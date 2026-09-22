@@ -1,6 +1,7 @@
 {
   "nav": {
     "servers": "Servers",
+    "download": "Download",
     "mySpace": "My space",
     "dashboard": "Dashboard",
     "profile": "Profile",
@@ -27,6 +28,28 @@
     "featureMsBody": "Players sign in with their real Minecraft account, right inside the launcher.",
     "featureModpackTitle": "CurseForge modpacks",
     "featureModpackBody": "Link your verified modpack so players join with no manual setup."
+  },
+  "download": {
+    "title": "Get the",
+    "titleAccent": "Omniscient launcher",
+    "subtitle": "Sign in with your Microsoft/Xbox account, browse servers, and join a modpack in one click. Available on Windows, macOS and Linux.",
+    "ctaDownloadFor": "Download for {os}",
+    "ctaComingSoonFor": "Coming soon on {os}",
+    "ctaDownloadWindowsInstead": "Download for Windows instead",
+    "detected": "detected: {os}",
+    "osWindows": "Windows",
+    "osMac": "macOS",
+    "osLinux": "Linux",
+    "windowsRequirement": "Windows 10 and later, 64-bit.",
+    "macRequirement": "macOS 12 and later, Apple Silicon & Intel.",
+    "linuxRequirement": "AppImage, works on most distros.",
+    "downloadExe": "Download .exe",
+    "downloadDmg": "Download .dmg",
+    "downloadAppImage": "Download AppImage",
+    "comingSoon": "Coming soon",
+    "checksumsTitle": "Older versions & checksums",
+    "checksumsBody": "Need a specific build or want to verify your download?",
+    "releaseNotes": "Release notes"
   },
   "auth": {
     "tabLogin": "Log in",

@@ -25,6 +25,9 @@ export async function Nav() {
             <Link href="/servers" className="text-muted hover:text-foreground transition-colors">
               {dict.nav.servers}
             </Link>
+            <Link href="/download" className="text-muted hover:text-foreground transition-colors">
+              {dict.nav.download}
+            </Link>
           </nav>
         </div>
 
