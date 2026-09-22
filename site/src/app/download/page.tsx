@@ -7,10 +7,14 @@ export const metadata = { title: "Télécharger — Omniscient" };
 
 // Releases publiques du launcher (repo séparé, public, sans le code source —
 // voir project_launcher_installer). Le nom de l'installeur (nsisWeb.artifactName
-// dans launcher/package.json) est volontairement sans numéro de version pour
-// que ce lien direct reste valable à chaque nouvelle publication.
-const LAUNCHER_DOWNLOAD_URL =
-  "https://github.com/nono84250-sudo/omniscient-launcher/releases/latest/download/Omniscient.Launcher.Setup.exe";
+// dans launcher/package.json) est volontairement sans espace ET sans numéro de
+// version : sans espace parce que GitHub (points) et le latest.yml
+// d'electron-builder (tirets) le sanitisaient chacun différemment, cassant
+// silencieusement la mise à jour automatique (électron-updater cherchait un
+// fichier qui n'existait pas) ; sans version pour que ce lien direct reste
+// valable à chaque nouvelle publication.
+const LAUNCHER_ASSET_NAME = "OmniscientLauncherSetup.exe";
+const LAUNCHER_DOWNLOAD_URL = `https://github.com/nono84250-sudo/omniscient-launcher/releases/latest/download/${LAUNCHER_ASSET_NAME}`;
 const LAUNCHER_RELEASES_LIST_URL = "https://github.com/nono84250-sudo/omniscient-launcher/releases";
 
 type PlatformId = "windows" | "macos" | "linux";
@@ -35,7 +39,7 @@ async function getLatestRelease(): Promise<{ version: string; sizeMB: number } |
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const asset = data.assets?.find((a: { name: string }) => a.name === "Omniscient.Launcher.Setup.exe");
+    const asset = data.assets?.find((a: { name: string }) => a.name === LAUNCHER_ASSET_NAME);
     const version = typeof data.tag_name === "string" ? data.tag_name.replace(/^v/, "") : null;
     if (!asset || !version) return null;
     return { version, sizeMB: Math.round(asset.size / (1024 * 1024)) };

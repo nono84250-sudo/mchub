@@ -1,7 +1,7 @@
 {
   "name": "launcher",
   "productName": "Omniscient Launcher",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Launcher Minecraft Omniscient — lit les serveurs publiés sur le site Omniscient et lance le jeu.",
   "main": "src/main.js",
@@ -43,7 +43,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "${productName} Setup.${ext}"
+      "artifactName": "OmniscientLauncherSetup.${ext}"
     }
   }
 }
