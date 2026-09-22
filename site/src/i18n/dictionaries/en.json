@@ -181,6 +181,18 @@
     "reviewType": "Type",
     "reviewVersion": "Version",
     "reviewAddress": "Address",
-    "reviewRam": "Recommended RAM"
+    "reviewRam": "Recommended RAM",
+    "modpackSearchLabel": "CurseForge modpack",
+    "modpackSearchPlaceholder": "Search a modpack on CurseForge…",
+    "modpackSearching": "Searching…",
+    "modpackNoResults": "No modpack found for this search.",
+    "modpackVerified": "verified",
+    "modpackChange": "Change",
+    "modpackEnterManually": "Enter manually instead",
+    "modpackUseSearch": "Back to search",
+    "modpackSearchUnavailable": "CurseForge search is unavailable right now — enter the modpack details manually.",
+    "modpackIdLabel": "Modpack ID",
+    "modpackNameLabel": "Modpack name",
+    "modpackVersionLabel": "Modpack version"
   }
 }
