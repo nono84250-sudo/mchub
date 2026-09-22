@@ -68,12 +68,22 @@ async function fetchJson(url, options = {}) {
   }
 }
 
+// Taille "petite fenetre au lancement" de la maquette (00 - Bootstrap) :
+// 420px de large, hauteur calee sur notre propre titlebar (36px, contre
+// 32px dans la maquette) + la zone de contenu du splash (340px). Fenetre
+// non redimensionnable tant qu'on est sur cet ecran — elle n'a jamais
+// besoin de l'etre, et un utilisateur qui l'agrandirait casserait la mise
+// en page pensee pour du contenu centre a taille fixe.
+const BOOTSTRAP_SIZE = { width: 420, height: 376 };
+const APP_SIZE = { width: 1100, height: 720 };
+const APP_MIN_SIZE = { width: 720, height: 480 };
+
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1100,
-    height: 720,
-    minWidth: 720,
-    minHeight: 480,
+    width: BOOTSTRAP_SIZE.width,
+    height: BOOTSTRAP_SIZE.height,
+    resizable: false,
+    center: true,
     backgroundColor: "#070c16",
     frame: false,
     icon: path.join(__dirname, "..", "build", "icon.png"),
@@ -318,6 +328,19 @@ ipcMain.handle("window:close", (event) => {
 
 ipcMain.handle("window:isMaximized", (event) => {
   return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+});
+
+// Appele une seule fois par le renderer (voir boot() dans renderer.js) des
+// que le splash de demarrage a fini son travail reel (Java + reprise de
+// session) — fait passer la fenetre de la petite taille fixe du bootstrap a
+// la taille normale, redimensionnable, de l'appli.
+ipcMain.handle("window:expandFromBootstrap", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  win.setResizable(true);
+  win.setMinimumSize(APP_MIN_SIZE.width, APP_MIN_SIZE.height);
+  win.setSize(APP_SIZE.width, APP_SIZE.height);
+  win.center();
 });
 
 // Suggestion simple et prudente : la moitie de la RAM systeme, plafonnee a

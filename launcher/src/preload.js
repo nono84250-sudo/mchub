@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("mchub", {
     toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
     close: () => ipcRenderer.invoke("window:close"),
     isMaximized: () => ipcRenderer.invoke("window:isMaximized"),
+    expandFromBootstrap: () => ipcRenderer.invoke("window:expandFromBootstrap"),
     onMaximizedChange: (callback) => {
       const listener = (_event, isMaximized) => callback(isMaximized);
       ipcRenderer.on("window:maximized-changed", listener);

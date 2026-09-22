@@ -1154,6 +1154,10 @@ async function ensureJavaAvailable() {
   const initial = await window.mchub.java.detect();
   if (initial.found && initial.is64Bit) return;
 
+  // Java manquant : cet ecran peut impliquer une vraie attente (telechargement
+  // + installation), donc on sort de la petite fenetre du bootstrap avant de
+  // l'afficher plutot que de la laisser cramped dedans.
+  await window.mchub.windowControls.expandFromBootstrap();
   bootstrapEl.hidden = true;
   javaGateEl.hidden = false;
   await new Promise((resolve) => {
@@ -1620,6 +1624,11 @@ async function boot() {
 
   bootstrapStatusEl.textContent = t("bootstrap.resumingSession");
   bootstrapProgressEl.style.width = "85%";
+
+  // Sortie de la petite fenetre de demarrage vers la taille normale de
+  // l'appli — sans effet si ensureJavaAvailable() l'a deja fait juste avant
+  // (setSize/setResizable/setMinimumSize sont idempotents cote main.js).
+  await window.mchub.windowControls.expandFromBootstrap();
 
   if (!settings.onboarded) {
     bootstrapEl.hidden = true;
