@@ -1,9 +1,12 @@
+import { getT } from "@/i18n/getDictionary";
+
 type ServerStatusProps = {
   playerCount: number | null;
   playerCapacity: number | null;
 };
 
-export function ServerStatus({ playerCount, playerCapacity }: ServerStatusProps) {
+export async function ServerStatus({ playerCount, playerCapacity }: ServerStatusProps) {
+  const { dict } = await getT();
   const online = playerCount !== null;
 
   return (
@@ -14,11 +17,13 @@ export function ServerStatus({ playerCount, playerCapacity }: ServerStatusProps)
       />
       {online ? (
         <span>
-          {playerCount} joueur{playerCount === 1 ? "" : "s"} en ligne
+          {playerCount === 1
+            ? dict.servers.onlinePlayers.replace("{count}", String(playerCount))
+            : dict.servers.onlinePlayersPlural.replace("{count}", String(playerCount))}
           {playerCapacity !== null ? ` / ${playerCapacity}` : ""}
         </span>
       ) : (
-        <span>Statut inconnu</span>
+        <span>{dict.servers.unknownStatus}</span>
       )}
     </div>
   );

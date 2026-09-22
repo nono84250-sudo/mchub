@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { logout } from "@/lib/actions/auth";
+import { useI18n } from "@/i18n/I18nProvider";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 // Repli mobile de la nav globale (voir Nav.tsx) — sous ~640px, "Serveurs /
 // Mon espace / Se déconnecter" n'ont plus la place de tenir sur une ligne à
@@ -11,13 +13,14 @@ import { logout } from "@/lib/actions/auth";
 // mêmes liens en liste verticale.
 export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
   const [open, setOpen] = useState(false);
+  const { t } = useI18n();
 
   return (
     <div className="sm:hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
+        aria-label={open ? t("nav.closeMenu") : t("nav.openMenu")}
         aria-expanded={open}
         className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-foreground"
       >
@@ -31,7 +34,7 @@ export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
             onClick={() => setOpen(false)}
             className="rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-raised hover:text-foreground"
           >
-            Serveurs
+            {t("nav.servers")}
           </Link>
 
           {loggedIn ? (
@@ -41,38 +44,33 @@ export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
                 onClick={() => setOpen(false)}
                 className="rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-raised hover:text-foreground"
               >
-                Mon espace
+                {t("nav.mySpace")}
               </Link>
               <Link
                 href="/account"
                 onClick={() => setOpen(false)}
                 className="rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-raised hover:text-foreground"
               >
-                Profil
+                {t("nav.profile")}
               </Link>
               <form action={logout}>
                 <button
                   type="submit"
                   className="w-full rounded-md px-3 py-2 text-left text-sm text-muted hover:bg-surface-raised hover:text-foreground"
                 >
-                  Se déconnecter
+                  {t("nav.logout")}
                 </button>
               </form>
             </>
           ) : (
-            <>
-              <Link
-                href="/login"
-                onClick={() => setOpen(false)}
-                className="rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-raised hover:text-foreground"
-              >
-                Connexion
-              </Link>
-              <Link href="/signup" onClick={() => setOpen(false)} className="btn-primary text-sm">
-                Créer un compte
-              </Link>
-            </>
+            <Link href="/login" onClick={() => setOpen(false)} className="btn-primary text-sm">
+              {t("nav.login")}
+            </Link>
           )}
+
+          <div className="border-t border-border mt-2 pt-2 px-3">
+            <LanguageSwitcher />
+          </div>
         </div>
       ) : null}
     </div>

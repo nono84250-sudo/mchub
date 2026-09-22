@@ -3,9 +3,12 @@ import { auth } from "@/auth";
 import { LogoMark } from "@/components/LogoMark";
 import { MobileNav } from "@/components/MobileNav";
 import { AccountMenu } from "@/components/AccountMenu";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { getT } from "@/i18n/getDictionary";
 
 export async function Nav() {
   const session = await auth();
+  const { dict } = await getT();
 
   return (
     <header className="relative border-b border-border bg-surface/95 backdrop-blur-md sticky top-0 z-20">
@@ -19,20 +22,17 @@ export async function Nav() {
 
         <nav className="hidden sm:flex items-center gap-4 text-sm">
           <Link href="/servers" className="text-muted hover:text-foreground transition-colors">
-            Serveurs
+            {dict.nav.servers}
           </Link>
+
+          <LanguageSwitcher />
 
           {session?.user ? (
             <AccountMenu />
           ) : (
-            <>
-              <Link href="/login" className="text-muted hover:text-foreground transition-colors">
-                Connexion
-              </Link>
-              <Link href="/signup" className="btn-primary text-sm">
-                Créer un compte
-              </Link>
-            </>
+            <Link href="/login" className="btn-primary text-sm">
+              {dict.nav.login}
+            </Link>
           )}
         </nav>
       </div>

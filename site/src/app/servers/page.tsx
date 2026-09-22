@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { ServerCard } from "@/components/ServerCard";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { listPublicServers, type ServerListSort } from "@/lib/public-servers";
+import { getT } from "@/i18n/getDictionary";
 
 export const metadata = { title: "Serveurs — Omniscient" };
 
@@ -10,16 +11,17 @@ export const metadata = { title: "Serveurs — Omniscient" };
 // ping (voir SERVER_STATUS_TTL_MS) plutôt que de rester figé en cache.
 export const revalidate = 60;
 
-const SORTS: { value: ServerListSort; label: string }[] = [
-  { value: "recent", label: "Plus récents" },
-  { value: "popular", label: "Plus visités" },
-  { value: "az", label: "A → Z" },
-];
-
 export default async function ServersPage({ searchParams }: PageProps<"/servers">) {
   const query = await searchParams;
   const q = typeof query.q === "string" ? query.q : "";
   const sortParam = typeof query.sort === "string" ? query.sort : "recent";
+  const { dict } = await getT();
+
+  const SORTS: { value: ServerListSort; label: string }[] = [
+    { value: "recent", label: dict.servers.sortRecent },
+    { value: "popular", label: dict.servers.sortPopular },
+    { value: "az", label: dict.servers.sortAz },
+  ];
   const sort: ServerListSort = SORTS.some((s) => s.value === sortParam) ? (sortParam as ServerListSort) : "recent";
 
   const servers = await listPublicServers({ q, sort });
@@ -27,9 +29,9 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-12">
       <AutoRefresh intervalMs={30_000} />
-      <h1 className="text-3xl font-bold tracking-tight text-foreground">Annuaire des serveurs</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-foreground">{dict.servers.title}</h1>
       <p className="mt-1 text-muted">
-        {servers.length} serveur{servers.length === 1 ? "" : "s"} référencé{servers.length === 1 ? "" : "s"}.
+        {(servers.length === 1 ? dict.servers.count : dict.servers.countPlural).replace("{count}", String(servers.length))}
       </p>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -40,13 +42,13 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
               type="search"
               name="q"
               defaultValue={q}
-              placeholder="Rechercher un serveur..."
+              placeholder={dict.servers.searchPlaceholder}
               className="field-input w-full"
             />
           </div>
           <input type="hidden" name="sort" value={sort} />
           <button type="submit" className="btn-secondary text-sm flex-shrink-0">
-            Rechercher
+            {dict.servers.search}
           </button>
         </form>
 
@@ -65,9 +67,7 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
 
       {servers.length === 0 ? (
         <div className="panel mt-8 p-8 text-center text-muted">
-          {q
-            ? `Aucun serveur ne correspond à « ${q} ».`
-            : "Aucun serveur pour le moment — sois le premier à en publier un."}
+          {q ? dict.servers.emptyQuery.replace("{query}", q) : dict.servers.emptyNoQuery}
         </div>
       ) : (
         <div className="mt-8 grid grid-cols-1 gap-3">

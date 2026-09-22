@@ -1,27 +1,30 @@
 import Link from "next/link";
 import { Compass, Gamepad2, Boxes, ArrowRight } from "lucide-react";
 import { CubeLogo } from "@/components/CubeLogo";
+import { getT } from "@/i18n/getDictionary";
 
-const FEATURES = [
-  {
-    icon: Compass,
-    title: "Annuaire public",
-    description: "Chaque serveur a sa fiche : description, modpack, statut des joueurs en direct.",
-    span: true,
-  },
-  {
-    icon: Gamepad2,
-    title: "Connexion Microsoft/Xbox",
-    description: "Les joueurs se connectent avec leur vrai compte Minecraft, directement dans le launcher.",
-  },
-  {
-    icon: Boxes,
-    title: "Modpacks CurseForge",
-    description: "Lie ton modpack vérifié pour que les joueurs rejoignent sans configuration manuelle.",
-  },
-];
+export default async function Home() {
+  const { dict } = await getT();
 
-export default function Home() {
+  const FEATURES = [
+    {
+      icon: Compass,
+      title: dict.home.featureDirectoryTitle,
+      description: dict.home.featureDirectoryBody,
+      span: true,
+    },
+    {
+      icon: Gamepad2,
+      title: dict.home.featureMsTitle,
+      description: dict.home.featureMsBody,
+    },
+    {
+      icon: Boxes,
+      title: dict.home.featureModpackTitle,
+      description: dict.home.featureModpackBody,
+    },
+  ];
+
   return (
     <div className="relative overflow-hidden">
       <div
@@ -42,29 +45,28 @@ export default function Home() {
       <div className="mx-auto max-w-4xl px-4 sm:px-6 py-24 sm:py-32 text-center">
         <span className="fade-in-up inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
-          Accès Minecraft/Xbox approuvé — le launcher est en ligne
+          {dict.home.badge}
         </span>
 
         <h1
           className="fade-in-up mt-6 text-4xl sm:text-6xl font-bold tracking-tight text-foreground text-balance"
           style={{ animationDelay: "0.1s" }}
         >
-          La boîte à outils des serveurs <span className="gradient-text">Minecraft</span>
+          {dict.home.titlePrefix} <span className="gradient-text">{dict.home.titleAccent}</span>
         </h1>
         <p
           className="fade-in-up mt-5 text-lg text-muted max-w-2xl mx-auto text-balance"
           style={{ animationDelay: "0.2s" }}
         >
-          Publie ton serveur, lie ton modpack vérifié par CurseForge, et laisse tes joueurs
-          te rejoindre en un clic grâce au launcher Omniscient.
+          {dict.home.subtitle}
         </p>
         <div className="fade-in-up mt-9 flex items-center justify-center gap-4" style={{ animationDelay: "0.3s" }}>
           <Link href="/servers" className="btn-primary">
-            Découvrir les serveurs
+            {dict.home.ctaDiscover}
             <ArrowRight className="h-4 w-4" />
           </Link>
           <Link href="/signup" className="btn-secondary">
-            Publier mon serveur
+            {dict.home.ctaPublish}
           </Link>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ServerStatus } from "@/components/ServerStatus";
+import { getT } from "@/i18n/getDictionary";
 
 type ServerCardProps = {
   slug: string;
@@ -15,7 +16,9 @@ type ServerCardProps = {
 // Carte horizontale (image a gauche, contenu a droite) — plus lisible en
 // liste qu'une grille de cartes verticales, et laisse assez de place au
 // texte pour ne pas tronquer la description trop tot.
-export function ServerCard({ slug, name, description, bannerUrl, iconUrl, type, playerCount, playerCapacity }: ServerCardProps) {
+export async function ServerCard({ slug, name, description, bannerUrl, iconUrl, type, playerCount, playerCapacity }: ServerCardProps) {
+  const { dict } = await getT();
+
   return (
     <Link
       href={`/servers/${slug}`}
@@ -31,7 +34,7 @@ export function ServerCard({ slug, name, description, bannerUrl, iconUrl, type, 
             type === "modded" ? "tag-chip-accent" : "tag-chip-outline"
           }`}
         >
-          {type === "modded" ? "Moddé" : "Vanilla"}
+          {type === "modded" ? dict.servers.modded : dict.servers.vanilla}
         </span>
       </div>
       <div className="flex flex-1 min-w-0 flex-col gap-2 p-4">

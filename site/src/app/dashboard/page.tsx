@@ -3,12 +3,14 @@ import { redirect } from "next/navigation";
 import { Plus, ArrowRight } from "lucide-react";
 import { auth } from "@/auth";
 import { db } from "@/prisma/db";
+import { getT } from "@/i18n/getDictionary";
 
 export const metadata = { title: "Mon espace — Omniscient" };
 
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+  const { dict } = await getT();
 
   const servers = await db.orm.public.Server.select("id", "slug", "name", "type", "published", "createdAt")
     .where({ ownerId: session.user.id })
@@ -18,17 +20,15 @@ export default async function DashboardPage() {
   return (
     <div>
       <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Mes serveurs</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{dict.dashboard.myServers}</h1>
         <Link href="/dashboard/servers/new" className="btn-primary justify-center sm:self-auto">
           <Plus className="h-4 w-4" />
-          Nouveau serveur
+          {dict.dashboard.newServer}
         </Link>
       </div>
 
       {servers.length === 0 ? (
-        <div className="panel mt-8 p-8 text-center text-muted">
-          Tu n&apos;as pas encore de serveur. Crée ta première fiche pour apparaître dans l&apos;annuaire.
-        </div>
+        <div className="panel mt-8 p-8 text-center text-muted">{dict.dashboard.empty}</div>
       ) : (
         <ul className="mt-8 flex flex-col gap-3">
           {servers.map((server) => (
@@ -42,13 +42,13 @@ export default async function DashboardPage() {
                   <div>
                     <p className="font-medium text-foreground">{server.name}</p>
                     <p className="text-sm text-muted">
-                      {server.type === "modded" ? "Moddé" : "Vanilla"}
-                      {server.published ? "" : " · En pause"}
+                      {server.type === "modded" ? dict.dashboard.modded : dict.dashboard.vanilla}
+                      {server.published ? "" : ` · ${dict.dashboard.paused}`}
                     </p>
                   </div>
                 </div>
                 <span className="flex items-center gap-1 text-sm text-accent">
-                  Gérer
+                  {dict.dashboard.manage}
                   <ArrowRight className="h-4 w-4" />
                 </span>
               </Link>

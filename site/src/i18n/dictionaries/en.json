@@ -1,0 +1,97 @@
+{
+  "nav": {
+    "servers": "Servers",
+    "mySpace": "My space",
+    "dashboard": "Dashboard",
+    "profile": "Profile",
+    "logout": "Sign out",
+    "login": "Sign in",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
+  },
+  "footer": {
+    "tagline": "the Minecraft server toolkit.",
+    "servers": "Servers",
+    "publish": "Publish a server"
+  },
+  "home": {
+    "badge": "Minecraft/Xbox access approved — the launcher is online",
+    "titlePrefix": "The toolkit for Minecraft",
+    "titleAccent": "servers",
+    "subtitle": "Publish your server, link your CurseForge-verified modpack, and let your players join in one click with the Omniscient launcher.",
+    "ctaDiscover": "Discover servers",
+    "ctaPublish": "Publish my server",
+    "featureDirectoryTitle": "Public directory",
+    "featureDirectoryBody": "Every server has its own page: description, modpack, live player status.",
+    "featureMsTitle": "Microsoft/Xbox sign-in",
+    "featureMsBody": "Players sign in with their real Minecraft account, right inside the launcher.",
+    "featureModpackTitle": "CurseForge modpacks",
+    "featureModpackBody": "Link your verified modpack so players join with no manual setup."
+  },
+  "auth": {
+    "tabLogin": "Log in",
+    "tabSignup": "Sign up",
+    "heroTitle": "Publish once. Play everywhere it matters.",
+    "heroBody": "Owners publish their modpacks and vanilla worlds; players discover and launch them straight from the launcher.",
+    "email": "Email",
+    "password": "Password",
+    "name": "Name",
+    "passwordMin": "8 characters minimum.",
+    "loginSubmit": "Log in",
+    "loginPending": "Signing in...",
+    "signupSubmit": "Create my account",
+    "signupPending": "Creating..."
+  },
+  "dashboard": {
+    "myServers": "My servers",
+    "newServer": "New server",
+    "empty": "You don't have a server yet. Create your first listing to appear in the directory.",
+    "manage": "Manage",
+    "vanilla": "Vanilla",
+    "modded": "Modded",
+    "paused": "Paused",
+    "navServers": "Servers",
+    "navNotifications": "Notifications",
+    "navNews": "News"
+  },
+  "servers": {
+    "title": "Server directory",
+    "count": "{count} server listed.",
+    "countPlural": "{count} servers listed.",
+    "searchPlaceholder": "Search a server...",
+    "search": "Search",
+    "sortRecent": "Most recent",
+    "sortPopular": "Most visited",
+    "sortAz": "A → Z",
+    "emptyNoQuery": "No server yet — be the first to publish one.",
+    "emptyQuery": "No server matches « {query} ».",
+    "vanilla": "Vanilla",
+    "modded": "Modded",
+    "onlinePlayers": "{count} player online",
+    "onlinePlayersPlural": "{count} players online",
+    "unknownStatus": "Status unknown"
+  },
+  "serverDetail": {
+    "version": "Version",
+    "type": "Type",
+    "recommendedRam": "Recommended RAM",
+    "ramUnit": "GB",
+    "joinNote": "To join this server, open it from the Omniscient launcher — the connection address isn't shown here."
+  },
+  "account": {
+    "title": "Account",
+    "name": "Name",
+    "email": "Email",
+    "newPassword": "New password",
+    "newPasswordPlaceholder": "Leave blank to keep current",
+    "save": "Save",
+    "saving": "Saving...",
+    "saved": "Changes saved.",
+    "logout": "Sign out"
+  },
+  "language": {
+    "label": "Language",
+    "fr": "Français",
+    "en": "English"
+  }
+}

@@ -3,6 +3,7 @@ import { getPublicServerBySlug } from "@/lib/public-servers";
 import { ServerStatus } from "@/components/ServerStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { ViewTracker } from "@/components/ViewTracker";
+import { getT } from "@/i18n/getDictionary";
 
 export async function generateMetadata({ params }: PageProps<"/servers/[slug]">) {
   const { slug } = await params;
@@ -19,6 +20,7 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
 
   const server = await getPublicServerBySlug(slug);
   if (!server) notFound();
+  const { dict } = await getT();
 
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 py-12">
@@ -50,17 +52,19 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
 
       <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="stat-tile">
-          <div className="stat-label">Version</div>
+          <div className="stat-label">{dict.serverDetail.version}</div>
           <div className="stat-value">Minecraft {server.minecraftVersion}</div>
         </div>
         <div className="stat-tile">
-          <div className="stat-label">Type</div>
-          <div className="stat-value">{server.type === "modded" ? "Moddé" : "Vanilla"}</div>
+          <div className="stat-label">{dict.serverDetail.type}</div>
+          <div className="stat-value">{server.type === "modded" ? dict.servers.modded : dict.servers.vanilla}</div>
         </div>
         {server.recommendedRamGB ? (
           <div className="stat-tile">
-            <div className="stat-label">RAM recommandée</div>
-            <div className="stat-value">{server.recommendedRamGB} Go</div>
+            <div className="stat-label">{dict.serverDetail.recommendedRam}</div>
+            <div className="stat-value">
+              {server.recommendedRamGB} {dict.serverDetail.ramUnit}
+            </div>
           </div>
         ) : null}
       </div>
@@ -77,8 +81,7 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
       <p className="mt-6 text-foreground whitespace-pre-wrap">{server.description}</p>
 
       <div className="mt-8 rounded-lg border border-dashed border-border p-4 text-sm text-muted">
-        Pour rejoindre ce serveur, ouvre-le depuis le launcher Omniscient — l&apos;adresse de connexion
-        n&apos;est pas affichée ici.
+        {dict.serverDetail.joinNote}
       </div>
     </div>
   );

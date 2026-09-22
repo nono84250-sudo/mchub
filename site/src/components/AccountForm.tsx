@@ -3,15 +3,17 @@
 import { useActionState } from "react";
 import { User, Mail, Lock } from "lucide-react";
 import { updateProfile } from "@/lib/actions/account";
+import { useI18n } from "@/i18n/I18nProvider";
 
 export function AccountForm({ name, email }: { name: string; email: string }) {
   const [state, formAction, pending] = useActionState(updateProfile, undefined);
+  const { t } = useI18n();
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
         <label htmlFor="name" className="field-label">
-          Nom
+          {t("account.name")}
         </label>
         <div className="field-with-icon">
           <User className="h-4 w-4" />
@@ -21,7 +23,7 @@ export function AccountForm({ name, email }: { name: string; email: string }) {
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="email" className="field-label">
-          Email
+          {t("account.email")}
         </label>
         <div className="field-with-icon">
           <Mail className="h-4 w-4" />
@@ -33,7 +35,7 @@ export function AccountForm({ name, email }: { name: string; email: string }) {
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="newPassword" className="field-label">
-          Nouveau mot de passe
+          {t("account.newPassword")}
         </label>
         <div className="field-with-icon">
           <Lock className="h-4 w-4" />
@@ -43,18 +45,18 @@ export function AccountForm({ name, email }: { name: string; email: string }) {
             type="password"
             minLength={8}
             autoComplete="new-password"
-            placeholder="Laisser vide pour ne pas changer"
+            placeholder={t("account.newPasswordPlaceholder")}
             className="field-input w-full"
           />
         </div>
       </div>
 
       {state && "error" in state ? <p className="text-sm text-danger">{state.error}</p> : null}
-      {state && "success" in state ? <p className="text-sm text-success">Modifications enregistrées.</p> : null}
+      {state && "success" in state ? <p className="text-sm text-success">{t("account.saved")}</p> : null}
 
       <div className="flex items-center justify-between">
         <button type="submit" disabled={pending} className="btn-primary">
-          {pending ? "Enregistrement..." : "Enregistrer"}
+          {pending ? t("account.saving") : t("account.save")}
         </button>
       </div>
     </form>

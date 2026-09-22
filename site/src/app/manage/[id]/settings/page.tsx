@@ -24,6 +24,15 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
 
       <div className="panel p-6 sm:p-8">
         <ServerForm
+          // Remonte le formulaire a chaque sauvegarde reussie (updatedAt
+          // change) : le select de version/le type gardent un etat React
+          // local initialise une seule fois au montage (voir ServerForm),
+          // qui ne se resynchronise jamais tout seul avec des props mises a
+          // jour — sans ce remount, la valeur choisie juste avant semblait
+          // "revenir" a l'ancienne apres l'enregistrement (visuel seulement,
+          // la base est deja a jour) jusqu'a un rechargement complet de la
+          // page.
+          key={server.updatedAt}
           action={boundUpdate}
           submitLabel="Enregistrer les modifications"
           versions={versions}

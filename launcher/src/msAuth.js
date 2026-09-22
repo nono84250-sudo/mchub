@@ -84,7 +84,11 @@ function openLoginWindow(authUrl) {
       if (settled) return;
       settled = true;
       win.removeAllListeners("closed");
-      win.close();
+      // Quand finish() est appele DEPUIS le handler "closed" (fenetre deja
+      // fermee par l'utilisateur), la fenetre est deja detruite a ce stade —
+      // rappeler win.close() dessus levait "Object has been destroyed" et
+      // plantait le process principal.
+      if (!win.isDestroyed()) win.close();
       fn(value);
     };
 

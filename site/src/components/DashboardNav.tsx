@@ -4,15 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutGrid, Bell, Newspaper } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-
-const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: "/dashboard", label: "Serveurs", icon: LayoutGrid },
-  { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
-  { href: "/dashboard/news", label: "Actualités", icon: Newspaper },
-];
+import { useI18n } from "@/i18n/I18nProvider";
 
 export function DashboardNav() {
   const pathname = usePathname();
+  const { t } = useI18n();
+
+  const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
+    { href: "/dashboard", label: t("dashboard.navServers"), icon: LayoutGrid },
+    { href: "/dashboard/notifications", label: t("dashboard.navNotifications"), icon: Bell },
+    { href: "/dashboard/news", label: t("dashboard.navNews"), icon: Newspaper },
+  ];
 
   return (
     <nav className="flex w-12 flex-shrink-0 flex-col items-center gap-1 sm:w-48 sm:items-stretch">

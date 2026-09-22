@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { getT } from "@/i18n/getDictionary";
 
 // Mise en page a deux panneaux partagee par /login et /signup (maquette
 // "Nocturne" ecran 01) : un panneau hero a gauche, le formulaire a droite
 // avec un bascule Connexion/Creer un compte au-dessus. Les deux pages
 // restent des routes/actions distinctes — seule l'habillage est partage.
-export function AuthShell({ active, children }: { active: "login" | "signup"; children: React.ReactNode }) {
+export async function AuthShell({ active, children }: { active: "login" | "signup"; children: React.ReactNode }) {
+  const { dict } = await getT();
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] min-h-[calc(100vh-64px)]">
       <div
@@ -19,11 +22,8 @@ export function AuthShell({ active, children }: { active: "login" | "signup"; ch
           }}
         />
         <div className="relative z-10 max-w-md flex flex-col gap-3 mt-auto">
-          <h2 className="text-3xl font-heading text-foreground">Publie une fois. Joue partout où ça compte.</h2>
-          <p className="text-sm text-muted">
-            Les propriétaires publient leurs modpacks et mondes vanilla ; les joueurs les découvrent et les lancent
-            directement depuis le launcher.
-          </p>
+          <h2 className="text-3xl font-heading text-foreground">{dict.auth.heroTitle}</h2>
+          <p className="text-sm text-muted">{dict.auth.heroBody}</p>
         </div>
       </div>
 
@@ -39,7 +39,7 @@ export function AuthShell({ active, children }: { active: "login" | "signup"; ch
                   : { color: "var(--muted)" }
               }
             >
-              Connexion
+              {dict.auth.tabLogin}
             </Link>
             <Link
               href="/signup"
@@ -50,7 +50,7 @@ export function AuthShell({ active, children }: { active: "login" | "signup"; ch
                   : { color: "var(--muted)" }
               }
             >
-              Créer un compte
+              {dict.auth.tabSignup}
             </Link>
           </div>
 

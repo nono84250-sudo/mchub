@@ -3,15 +3,17 @@
 import { useActionState } from "react";
 import { User, Mail, Lock } from "lucide-react";
 import { signup } from "@/lib/actions/auth";
+import { useI18n } from "@/i18n/I18nProvider";
 
 export function SignupForm() {
   const [state, formAction, pending] = useActionState(signup, undefined);
+  const { t } = useI18n();
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <label htmlFor="name" className="field-label">
-          Nom
+          {t("auth.name")}
         </label>
         <div className="field-with-icon">
           <User className="h-4 w-4" />
@@ -21,7 +23,7 @@ export function SignupForm() {
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="email" className="field-label">
-          Email
+          {t("auth.email")}
         </label>
         <div className="field-with-icon">
           <Mail className="h-4 w-4" />
@@ -31,7 +33,7 @@ export function SignupForm() {
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="password" className="field-label">
-          Mot de passe
+          {t("auth.password")}
         </label>
         <div className="field-with-icon">
           <Lock className="h-4 w-4" />
@@ -45,13 +47,13 @@ export function SignupForm() {
             className="field-input w-full"
           />
         </div>
-        <p className="text-xs text-muted">8 caractères minimum.</p>
+        <p className="text-xs text-muted">{t("auth.passwordMin")}</p>
       </div>
 
       {state?.error ? <p className="text-sm text-danger">{state.error}</p> : null}
 
       <button type="submit" disabled={pending} className="btn-primary">
-        {pending ? "Création..." : "Créer mon compte"}
+        {pending ? t("auth.signupPending") : t("auth.signupSubmit")}
       </button>
     </form>
   );

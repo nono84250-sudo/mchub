@@ -1,0 +1,97 @@
+{
+  "nav": {
+    "servers": "Serveurs",
+    "mySpace": "Mon espace",
+    "dashboard": "Dashboard",
+    "profile": "Profil",
+    "logout": "Se déconnecter",
+    "login": "Se connecter",
+    "openMenu": "Ouvrir le menu",
+    "closeMenu": "Fermer le menu"
+  },
+  "footer": {
+    "tagline": "la boîte à outils des serveurs Minecraft.",
+    "servers": "Serveurs",
+    "publish": "Publier un serveur"
+  },
+  "home": {
+    "badge": "Accès Minecraft/Xbox approuvé — le launcher est en ligne",
+    "titlePrefix": "La boîte à outils des serveurs",
+    "titleAccent": "Minecraft",
+    "subtitle": "Publie ton serveur, lie ton modpack vérifié par CurseForge, et laisse tes joueurs te rejoindre en un clic grâce au launcher Omniscient.",
+    "ctaDiscover": "Découvrir les serveurs",
+    "ctaPublish": "Publier mon serveur",
+    "featureDirectoryTitle": "Annuaire public",
+    "featureDirectoryBody": "Chaque serveur a sa fiche : description, modpack, statut des joueurs en direct.",
+    "featureMsTitle": "Connexion Microsoft/Xbox",
+    "featureMsBody": "Les joueurs se connectent avec leur vrai compte Minecraft, directement dans le launcher.",
+    "featureModpackTitle": "Modpacks CurseForge",
+    "featureModpackBody": "Lie ton modpack vérifié pour que les joueurs rejoignent sans configuration manuelle."
+  },
+  "auth": {
+    "tabLogin": "Connexion",
+    "tabSignup": "Créer un compte",
+    "heroTitle": "Publie une fois. Joue partout où ça compte.",
+    "heroBody": "Les propriétaires publient leurs modpacks et mondes vanilla ; les joueurs les découvrent et les lancent directement depuis le launcher.",
+    "email": "Email",
+    "password": "Mot de passe",
+    "name": "Nom",
+    "passwordMin": "8 caractères minimum.",
+    "loginSubmit": "Se connecter",
+    "loginPending": "Connexion...",
+    "signupSubmit": "Créer mon compte",
+    "signupPending": "Création..."
+  },
+  "dashboard": {
+    "myServers": "Mes serveurs",
+    "newServer": "Nouveau serveur",
+    "empty": "Tu n'as pas encore de serveur. Crée ta première fiche pour apparaître dans l'annuaire.",
+    "manage": "Gérer",
+    "vanilla": "Vanilla",
+    "modded": "Modded",
+    "paused": "En pause",
+    "navServers": "Serveurs",
+    "navNotifications": "Notifications",
+    "navNews": "Actualités"
+  },
+  "servers": {
+    "title": "Annuaire des serveurs",
+    "count": "{count} serveur référencé.",
+    "countPlural": "{count} serveurs référencés.",
+    "searchPlaceholder": "Rechercher un serveur...",
+    "search": "Rechercher",
+    "sortRecent": "Plus récents",
+    "sortPopular": "Plus visités",
+    "sortAz": "A → Z",
+    "emptyNoQuery": "Aucun serveur pour le moment — sois le premier à en publier un.",
+    "emptyQuery": "Aucun serveur ne correspond à « {query} ».",
+    "vanilla": "Vanilla",
+    "modded": "Moddé",
+    "onlinePlayers": "{count} joueur en ligne",
+    "onlinePlayersPlural": "{count} joueurs en ligne",
+    "unknownStatus": "Statut inconnu"
+  },
+  "serverDetail": {
+    "version": "Version",
+    "type": "Type",
+    "recommendedRam": "RAM recommandée",
+    "ramUnit": "Go",
+    "joinNote": "Pour rejoindre ce serveur, ouvre-le depuis le launcher Omniscient — l'adresse de connexion n'est pas affichée ici."
+  },
+  "account": {
+    "title": "Compte",
+    "name": "Nom",
+    "email": "Email",
+    "newPassword": "Nouveau mot de passe",
+    "newPasswordPlaceholder": "Laisser vide pour ne pas changer",
+    "save": "Enregistrer",
+    "saving": "Enregistrement...",
+    "saved": "Modifications enregistrées.",
+    "logout": "Se déconnecter"
+  },
+  "language": {
+    "label": "Langue",
+    "fr": "Français",
+    "en": "English"
+  }
+}
