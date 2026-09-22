@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { createServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
-import { ServerForm } from "@/components/ServerForm";
+import { NewServerWizard } from "@/components/NewServerWizard";
 
 export const metadata = { title: "Nouveau serveur — Omniscient" };
 
@@ -14,9 +14,8 @@ export default async function NewServerPage() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-foreground mb-6">Publier un nouveau serveur</h1>
-      <div className="panel p-6 sm:p-8">
-        <ServerForm action={createServer} submitLabel="Publier le serveur" versions={versions} />
+      <div className="panel p-6 sm:p-10">
+        <NewServerWizard action={createServer} versions={versions} />
       </div>
     </div>
   );
