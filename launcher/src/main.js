@@ -31,15 +31,28 @@ const { checkMinecraftStatus } = require("./minecraftStatus");
 const javaManager = require("./javaManager");
 const { autoUpdater } = require("electron-updater");
 
+// Repli sur src/env.generated.js (voir scripts/generate-env.js) : une fois
+// packagee, l'appli n'a plus de fichier .env du tout (jamais inclus dans le
+// paquet distribue — cf. commentaire sur LAUNCHER_API_KEY ci-dessous), donc
+// process.env.* est toujours vide a ce stade pour un vrai utilisateur. En
+// dev (`electron .`), .env existe et process.env.* est deja rempli par le
+// require("dotenv").config() plus haut, donc ce fichier genere n'est ni
+// necessaire ni present — d'ou le try/catch.
+let generatedEnv = {};
+try {
+  generatedEnv = require("./env.generated.js");
+} catch {
+  // Pas encore genere (avant le tout premier `npm run dist`) — normal en dev.
+}
+
 // URL du site Omniscient, source de vérité (voir cahier des charges, section
-// "modèle de synchronisation"). En dur sur le localhost de dev pour l'instant
-// — deviendra configurable (token de launcher brandé, Phase 4).
-const SITE_URL = process.env.MCHUB_SITE_URL || "http://localhost:3000";
+// "modèle de synchronisation").
+const SITE_URL = process.env.MCHUB_SITE_URL || generatedEnv.MCHUB_SITE_URL || "http://localhost:3000";
 // Secret partage avec la route /api/launcher/servers/[slug] du site : c'est
-// la SEULE route qui renvoie l'IP d'un serveur, jamais l'API publique. Vient
-// du fichier .env (non versionné) — jamais de valeur par défaut en dur ici,
-// une ancienne clé a fuité dans le dépôt public pour cette raison exacte.
-const LAUNCHER_API_KEY = process.env.LAUNCHER_API_KEY;
+// la SEULE route qui renvoie l'IP d'un serveur, jamais l'API publique. Jamais
+// de valeur par défaut en dur ici, une ancienne clé a fuité dans le dépôt
+// public pour cette raison exacte.
+const LAUNCHER_API_KEY = process.env.LAUNCHER_API_KEY || generatedEnv.LAUNCHER_API_KEY;
 const REQUEST_TIMEOUT_MS = 8000;
 
 // Session du joueur connecté (compte Microsoft/Minecraft), en mémoire.
