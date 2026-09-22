@@ -8,7 +8,10 @@
   :root {
     /* Systeme de design "Nocturne" (fourni par le client, meme palette que
        le site) : fond bleu-gris quasi neutre, accent blurple utilise en
-       trait/lueur plutot qu'en aplat. */
+       trait/lueur plutot qu'en aplat. --accent est le seul token pose
+       directement par le JS (voir theme.js/Parametres > Apparence) — tout le
+       reste de la rampe en derive via color-mix() pour que les 5 couleurs
+       d'accent du selecteur n'aient pas besoin de 5 jeux de tokens complets. */
     --background: #161826;
     --surface: #232532;
     --surface-raised: color-mix(in srgb, var(--foreground) 6%, var(--surface));
@@ -16,15 +19,30 @@
     --foreground: #e9e9ed;
     --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
     --accent: #9184d9;
-    --accent-hover: #b5abfc;
-    --accent-2: #a7a1db;
+    --accent-hover: color-mix(in srgb, var(--accent) 70%, white);
+    --accent-2: color-mix(in srgb, var(--accent) 85%, white);
     /* Fond/texte des pastilles pleines (avatar, badge "Moddé", icône active
        de la sidebar) — teinte sombre de l'accent avec texte clair dessus,
        jamais l'accent lui-même en aplat. */
-    --accent-fill: #423a6a;
+    --accent-fill: color-mix(in srgb, var(--accent) 45%, black);
     --accent-foreground: #f5f4ff;
     --danger: #e08a8a;
     --success: #5fd3a0;
+  }
+
+  /* Theme clair : meme structure de tokens, valeurs inversees. Applique via
+     [data-theme] sur <html> (voir theme.js) plutot qu'uniquement
+     prefers-color-scheme, pour que "Systeme"/"Sombre"/"Clair" soient tous les
+     trois des choix explicites et testables independamment du reglage OS. */
+  :root[data-theme="light"] {
+    --background: #f3f3f6;
+    --surface: #ffffff;
+    --surface-raised: color-mix(in srgb, var(--foreground) 4%, var(--surface));
+    --border: color-mix(in srgb, var(--foreground) 14%, transparent);
+    --foreground: #1a1b23;
+    --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
+    --danger: #c0453f;
+    --success: #2f9e6e;
   }
 
   * { box-sizing: border-box; }
@@ -54,7 +72,7 @@
     align-items: center;
     height: 36px;
     flex: 0 0 auto;
-    background: rgba(15, 23, 41, 0.92);
+    background: color-mix(in srgb, black 8%, var(--background));
     border-bottom: 1px solid var(--border);
     -webkit-app-region: drag;
     padding-left: 12px;
@@ -88,7 +106,7 @@
     gap: 8px;
     padding: 14px 0;
     border-right: 1px solid var(--border);
-    background: rgba(15, 23, 41, 0.5);
+    background: color-mix(in srgb, black 4%, var(--background));
   }
   .sidebar-btn {
     width: 38px;
@@ -315,6 +333,13 @@
     box-shadow: 0 8px 24px -14px rgba(145, 132, 217, 0.4);
   }
 
+  /* Liste compacte (Parametres > Apparence) : lignes plus basses, description
+     masquee, pour voir plus de serveurs a la fois sans changer la structure. */
+  body.compact-list .server-list { gap: 4px; }
+  body.compact-list .row { padding: 6px 12px; gap: 10px; }
+  body.compact-list .row .server-icon { width: 28px !important; height: 28px !important; font-size: 11px !important; }
+  body.compact-list .row-body p { display: none; }
+
   .badge {
     font-size: 10.5px;
     padding: 2px 8px;
@@ -384,6 +409,102 @@
   .status-dot.online { background: var(--success); box-shadow: 0 0 6px rgba(95, 211, 160, 0.8); }
 
   .detail { max-width: 640px; }
+
+  /* Panneau "Parametres" en onglets (maquette "04 Settings") : nav laterale
+     interne + contenu, un seul panneau qui re-rend son contenu par onglet
+     plutot que 4 pages separees — pas de max-width herite de .detail ici. */
+  #settings-panel.detail { max-width: none; }
+  .settings-layout { display: flex; align-items: flex-start; gap: 0; margin-top: -8px; }
+  .settings-nav {
+    width: 160px;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-right: 20px;
+    border-right: 1px solid var(--border);
+  }
+  .settings-nav-btn {
+    text-align: left;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 14px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .settings-nav-btn:hover { color: var(--foreground); }
+  .settings-nav-btn.active { background: var(--surface-raised); color: var(--foreground); }
+  .settings-content { flex: 1 1 auto; min-width: 0; max-width: 480px; padding-left: 28px; display: flex; flex-direction: column; gap: 20px; }
+  .settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .settings-divider { height: 1px; background: var(--border); margin: 2px 0; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .settings-row-label { font-size: 13px; color: var(--foreground); font-weight: 500; }
+  .settings-row-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .theme-options { display: flex; gap: 10px; margin-top: 4px; }
+  .theme-option {
+    flex: 1;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: var(--muted);
+    background: none;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .theme-option svg { width: 20px; height: 20px; }
+  .theme-option.active { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+
+  .accent-swatches { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+  .accent-swatch {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+  .accent-swatch.active { box-shadow: 0 0 0 2px var(--background), 0 0 0 3.5px var(--foreground); }
+
+  .ram-bar-track { height: 6px; border-radius: 999px; background: var(--surface-raised); border: 1px solid var(--border); overflow: hidden; margin-top: 6px; }
+  .ram-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent-hover), var(--accent)); }
+
+  .lang-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0 12px;
+    height: 40px;
+    max-width: 280px;
+    margin-top: 4px;
+    color: var(--foreground);
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .lang-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .lang-list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 8px; font-size: 13.5px; }
+  .lang-list-row.active { background: var(--surface-raised); }
+  .lang-list-row.disabled { color: var(--muted); opacity: 0.6; }
+  .lang-list-row.disabled .lang-soon { font-size: 11px; }
   .detail button.back {
     background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 0 16px 0;
   }
@@ -615,7 +736,7 @@
     align-items: center;
     padding: 0 16px;
     border-top: 1px solid var(--border);
-    background: rgba(15, 23, 41, 0.75);
+    background: color-mix(in srgb, black 6%, var(--background));
   }
   .playbar-row { display: flex; align-items: center; width: 100%; gap: 16px; }
 
@@ -776,22 +897,22 @@
       </div>
     </div>
     <div class="notif-menu">
-      <button class="notif-trigger" id="notif-trigger" type="button" title="Notifications" aria-label="Notifications">
+      <button class="notif-trigger" id="notif-trigger" type="button" data-i18n-title="titlebar.notifications">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
       </button>
-      <div class="notif-panel" id="notif-panel" hidden>Aucune notification pour le moment.</div>
+      <div class="notif-panel" id="notif-panel" hidden data-i18n="titlebar.noNotifications">Aucune notification pour le moment.</div>
     </div>
     <div id="titlebar-controls">
-      <button id="win-min" class="titlebar-btn" title="Réduire" aria-label="Réduire">
+      <button id="win-min" class="titlebar-btn" data-i18n-title="titlebar.minimize">
         <svg viewBox="0 0 10 10"><rect x="0" y="4.5" width="10" height="1" fill="currentColor" /></svg>
       </button>
-      <button id="win-max" class="titlebar-btn" title="Agrandir" aria-label="Agrandir">
+      <button id="win-max" class="titlebar-btn" data-i18n-title="titlebar.maximize">
         <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" /></svg>
       </button>
-      <button id="win-close" class="titlebar-btn titlebar-btn-close" title="Fermer" aria-label="Fermer">
+      <button id="win-close" class="titlebar-btn titlebar-btn-close" data-i18n-title="titlebar.close">
         <svg viewBox="0 0 10 10">
           <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" />
           <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" />
@@ -808,7 +929,7 @@
     </div>
     <div class="bootstrap-brand">
       <span class="logo" style="font-size: 16px;">Omniscient <span>Launcher</span></span>
-      <span id="bootstrap-status">Démarrage…</span>
+      <span id="bootstrap-status" data-i18n="bootstrap.starting">Démarrage…</span>
     </div>
     <div class="bootstrap-progress-track">
       <div id="bootstrap-progress"></div>
@@ -817,41 +938,41 @@
   </div>
 
   <div id="java-gate" hidden>
-    <div class="logo" style="font-size: 22px;">Java requis</div>
-    <p class="tagline">Minecraft a besoin de Java (64 bits) pour se lancer — sans lui, le launcher ne peut pas continuer.</p>
+    <div class="logo" style="font-size: 22px;" data-i18n="javaGate.title">Java requis</div>
+    <p class="tagline" data-i18n="javaGate.tagline">Minecraft a besoin de Java (64 bits) pour se lancer — sans lui, le launcher ne peut pas continuer.</p>
 
     <div class="onboarding-box">
-      <p class="join-note" id="java-gate-status">Vérification…</p>
-      <button id="java-gate-install" class="join-btn" type="button" hidden style="margin-top: 8px;">Installer Java automatiquement</button>
+      <p class="join-note" id="java-gate-status" data-i18n="common.checking">Vérification…</p>
+      <button id="java-gate-install" class="join-btn" type="button" hidden style="margin-top: 8px;" data-i18n="java.installAuto">Installer Java automatiquement</button>
     </div>
   </div>
 
   <div id="gate" hidden>
     <div class="logo" style="font-size: 26px;"><span class="logo-mark" style="width: 20px; height: 20px;"></span>Omniscient <span>Launcher</span></div>
-    <p class="tagline">Connecte-toi avec ton compte Microsoft pour voir les serveurs et jouer.</p>
-    <button id="gate-login" class="ms-login" style="padding: 10px 20px; font-size: 14px;">Se connecter avec Microsoft</button>
+    <p class="tagline" data-i18n="gate.tagline">Connecte-toi avec ton compte Microsoft pour voir les serveurs et jouer.</p>
+    <button id="gate-login" class="ms-login" style="padding: 10px 20px; font-size: 14px;" data-i18n="gate.loginBtn">Se connecter avec Microsoft</button>
     <label class="gate-remember">
       <input type="checkbox" id="gate-remember" checked />
-      Se souvenir de moi
+      <span data-i18n="gate.remember">Se souvenir de moi</span>
     </label>
     <p class="gate-message" id="gate-message"></p>
   </div>
 
   <div class="modal-overlay" id="ram-setup-overlay" hidden>
     <div class="modal-box">
-      <h3>Mémoire allouée au jeu</h3>
-      <p style="margin-bottom: 14px;">Choisis combien de RAM le jeu peut utiliser — modifiable plus tard dans les paramètres.</p>
+      <h3 data-i18n="ramSetup.title">Mémoire allouée au jeu</h3>
+      <p style="margin-bottom: 14px;" data-i18n="ramSetup.body">Choisis combien de RAM le jeu peut utiliser — modifiable plus tard dans les paramètres.</p>
       <div class="settings-field">
-        <label for="ram-setup-min" class="field-label">Minimale (Go)</label>
+        <label for="ram-setup-min" class="field-label" data-i18n="ramSetup.minLabel">Minimale (Go)</label>
         <input type="number" id="ram-setup-min" min="1" max="32" class="settings-input" />
       </div>
       <div class="settings-field">
-        <label for="ram-setup-max" class="field-label">Maximale (Go)</label>
+        <label for="ram-setup-max" class="field-label" data-i18n="ramSetup.maxLabel">Maximale (Go)</label>
         <input type="number" id="ram-setup-max" min="1" max="32" class="settings-input" />
       </div>
       <p class="join-note" id="ram-setup-note"></p>
       <div class="modal-actions">
-        <button id="ram-setup-continue" class="join-btn" type="button">Continuer</button>
+        <button id="ram-setup-continue" class="join-btn" type="button" data-i18n="ramSetup.continueBtn">Continuer</button>
       </div>
     </div>
   </div>
@@ -873,24 +994,24 @@
 
   <div id="app" hidden style="flex: 1 1 auto; display: flex; min-height: 0;">
     <nav id="sidebar">
-      <button id="nav-servers" class="sidebar-btn active" title="Serveurs" aria-label="Serveurs">
+      <button id="nav-servers" class="sidebar-btn active" data-i18n-title="nav.servers">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
           <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
         </svg>
       </button>
-      <button id="nav-favorites" class="sidebar-btn" title="Favoris" aria-label="Favoris">
+      <button id="nav-favorites" class="sidebar-btn" data-i18n-title="nav.favorites">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
       </button>
-      <button id="nav-recent" class="sidebar-btn" title="Récents" aria-label="Récents">
+      <button id="nav-recent" class="sidebar-btn" data-i18n-title="nav.recent">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9" />
           <polyline points="12 7 12 12 16 14" />
         </svg>
       </button>
-      <button id="nav-settings" class="sidebar-btn" title="Paramètres" aria-label="Paramètres" style="margin-top: auto;">
+      <button id="nav-settings" class="sidebar-btn" data-i18n-title="nav.settings" style="margin-top: auto;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -900,52 +1021,27 @@
     </nav>
     <div class="app-content" style="flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0;">
     <main>
-      <div id="status">Chargement des serveurs…</div>
+      <div id="status" data-i18n="serverList.loading">Chargement des serveurs…</div>
       <div id="list-toolbar" class="list-toolbar" hidden>
         <div class="list-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input type="search" id="list-search-input" placeholder="Rechercher un serveur…" />
+          <input type="search" id="list-search-input" data-i18n-placeholder="serverList.searchPlaceholder" placeholder="Rechercher un serveur…" />
         </div>
-        <button type="button" class="sort-chip active" id="sort-recent" data-sort="recent">Plus récents</button>
-        <button type="button" class="sort-chip" id="sort-players" data-sort="players">Plus de joueurs</button>
+        <button type="button" class="sort-chip active" id="sort-recent" data-sort="recent" data-i18n="serverList.sortRecent">Plus récents</button>
+        <button type="button" class="sort-chip" id="sort-players" data-sort="players" data-i18n="serverList.sortPlayers">Plus de joueurs</button>
       </div>
       <div id="list" class="server-list" hidden></div>
       <div id="detail" class="detail" hidden></div>
       <div id="settings-panel" class="detail" hidden>
-        <h2>Paramètres</h2>
-
-        <div class="stat-row" style="margin-top: 16px; max-width: 280px;">
-          <div class="stat-tile">
-            <div class="stat-label">Version</div>
-            <div class="stat-value" id="settings-version">—</div>
-          </div>
-        </div>
-
-        <div class="settings-field">
-          <label for="settings-mem-min" class="field-label">Mémoire minimale (Go)</label>
-          <input type="number" id="settings-mem-min" min="1" max="32" class="settings-input" />
-        </div>
-        <div class="settings-field">
-          <label for="settings-mem-max" class="field-label">Mémoire maximale (Go)</label>
-          <input type="number" id="settings-mem-max" min="1" max="32" class="settings-input" />
-        </div>
-        <label class="gate-remember" style="margin-bottom: 8px;">
-          <input type="checkbox" id="settings-always-recommended" />
-          Toujours lancer avec la RAM recommandée du serveur
-        </label>
-        <button id="settings-save" class="join-btn">Enregistrer</button>
-        <p class="join-note" id="settings-status"></p>
-
-        <div class="settings-field" style="margin-top: 24px;">
-          <span class="field-label">Java (64 bits, requis pour jouer)</span>
-          <p class="join-note" id="settings-java-status">Vérification…</p>
-          <button id="settings-java-install" class="ms-login" hidden>Installer Java automatiquement</button>
-        </div>
-
-        <div class="settings-field" style="margin-top: 8px;">
-          <span class="field-label">Dossier du jeu</span>
-          <p class="settings-path" id="settings-game-root"></p>
-          <button id="settings-open-folder" class="ms-login">Ouvrir le dossier</button>
+        <h2 data-i18n="settings.title">Paramètres</h2>
+        <div class="settings-layout" style="margin-top: 16px;">
+          <nav class="settings-nav">
+            <button type="button" class="settings-nav-btn active" data-tab="appearance" data-i18n="settings.tabAppearance">Apparence</button>
+            <button type="button" class="settings-nav-btn" data-tab="language" data-i18n="settings.tabLanguage">Langue</button>
+            <button type="button" class="settings-nav-btn" data-tab="memory" data-i18n="settings.tabMemory">Mémoire</button>
+            <button type="button" class="settings-nav-btn" data-tab="misc" data-i18n="settings.tabMisc">Divers</button>
+          </nav>
+          <div class="settings-content" id="settings-content"></div>
         </div>
       </div>
       <div id="account-panel" class="detail" hidden></div>
@@ -958,12 +1054,12 @@
       <div class="playbar-favorite-menu">
         <button class="playbar-fav-trigger" id="playbar-fav-trigger" type="button" disabled>
           <span id="playbar-fav-icon"></span>
-          <span class="playbar-fav-name" id="playbar-fav-name">Ajoute un serveur en favoris</span>
+          <span class="playbar-fav-name" id="playbar-fav-name" data-i18n="playbar.addFavoritePrompt">Ajoute un serveur en favoris</span>
           <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
         </button>
         <div class="playbar-fav-panel" id="playbar-fav-panel" hidden></div>
       </div>
-      <button class="playbar-play-btn" id="playbar-play" type="button" disabled>▶ Jouer</button>
+      <button class="playbar-play-btn" id="playbar-play" type="button" disabled data-i18n="playbar.play">▶ Jouer</button>
     </div>
     <div class="playbar-row" id="playbar-progress" hidden>
       <div style="flex: 1 1 auto;">
@@ -980,6 +1076,8 @@
     </div>
   </div>
 
+  <script src="i18n.js"></script>
+  <script src="theme.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

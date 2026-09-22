@@ -29,6 +29,13 @@ const DEFAULTS = {
   // plus ancien (page "Recents" de la barre laterale) — deja limite en
   // taille par renderer.js avant d'etre enregistre.
   recentlyPlayed: [],
+  // Langue de l'UI (voir i18n.js) — seuls "fr"/"en" ont une vraie traduction
+  // pour l'instant. Theme/accent (voir globals du launcher) : "system" suit
+  // prefers-color-scheme, sinon "dark"/"light" force l'un ou l'autre.
+  locale: "fr",
+  theme: "dark",
+  accentColor: "#9184d9",
+  compactServerList: false,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -66,6 +73,9 @@ function saveSettings(partial) {
 
   if (partial.onboarded !== undefined) next.onboarded = !!partial.onboarded;
   if (partial.alwaysUseRecommendedRam !== undefined) next.alwaysUseRecommendedRam = !!partial.alwaysUseRecommendedRam;
+  if (partial.locale !== undefined) next.locale = ["fr", "en"].includes(partial.locale) ? partial.locale : current.locale;
+  if (partial.theme !== undefined) next.theme = ["system", "dark", "light"].includes(partial.theme) ? partial.theme : current.theme;
+  if (partial.compactServerList !== undefined) next.compactServerList = !!partial.compactServerList;
 
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2));
   return next;

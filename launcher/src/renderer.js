@@ -1,3 +1,5 @@
+const t = window.i18n.t;
+
 const gateEl = document.getElementById("gate");
 const gateMessageEl = document.getElementById("gate-message");
 const gateLoginBtn = document.getElementById("gate-login");
@@ -45,18 +47,18 @@ function setGateBusy(busy) {
 
 function typeBadge(type) {
   return type === "modded"
-    ? '<span class="badge modded">Moddé</span>'
-    : '<span class="badge">Vanilla</span>';
+    ? `<span class="badge modded">${t("serverCard.modded")}</span>`
+    : `<span class="badge">${t("serverCard.vanilla")}</span>`;
 }
 
 function playersText(server) {
   if (server.playerCount === null || server.playerCount === undefined) {
-    return "Statut inconnu";
+    return t("serverCard.statusUnknown");
   }
   const capacity = server.playerCapacity !== null && server.playerCapacity !== undefined
     ? ` / ${server.playerCapacity}`
     : "";
-  return `${server.playerCount} joueur${server.playerCount === 1 ? "" : "s"} en ligne${capacity}`;
+  return t("serverCard.playersOnline", { count: server.playerCount, capacity });
 }
 
 function playersLabel(server) {
@@ -102,7 +104,7 @@ async function toggleFavorite(slug) {
 
 function favoriteBtnHtml(slug, isFav, extraClass = "") {
   return `
-    <button class="favorite-btn${extraClass ? ` ${extraClass}` : ""}${isFav ? " active" : ""}" type="button" data-slug="${escapeHtml(slug)}" title="${isFav ? "Retirer des favoris" : "Ajouter aux favoris"}">
+    <button class="favorite-btn${extraClass ? ` ${extraClass}` : ""}${isFav ? " active" : ""}" type="button" data-slug="${escapeHtml(slug)}" title="${isFav ? t("common.removeFavorite") : t("common.addFavorite")}">
       ${STAR_SVG}
     </button>`;
 }
@@ -168,7 +170,7 @@ function renderFilteredList() {
     listEl.innerHTML = "";
     statusEl.hidden = false;
     statusEl.classList.remove("error");
-    statusEl.textContent = "Aucun serveur ne correspond à cette recherche.";
+    statusEl.textContent = t("serverList.noResults");
     return;
   }
   statusEl.hidden = true;
@@ -184,7 +186,7 @@ async function renderList(servers) {
   if (servers.length === 0) {
     listEl.innerHTML = "";
     statusEl.hidden = false;
-    statusEl.textContent = "Aucun serveur publié pour le moment.";
+    statusEl.textContent = t("serverList.empty");
     return;
   }
 
@@ -210,7 +212,7 @@ async function renderDetail(server) {
   statusEl.hidden = true;
   detailEl.hidden = false;
 
-  const tags = [`<span class="tag-chip">${server.type === "modded" ? "Moddé" : "Vanilla"}</span>`];
+  const tags = [`<span class="tag-chip">${server.type === "modded" ? t("serverCard.modded") : t("serverCard.vanilla")}</span>`];
   if (server.type === "modded" && server.curseforgeModpackName) {
     const version = server.curseforgeModpackVersion ? ` — ${escapeHtml(server.curseforgeModpackVersion)}` : "";
     tags.push(`<span class="tag-chip">${escapeHtml(server.curseforgeModpackName)}${version}</span>`);
@@ -220,16 +222,16 @@ async function renderDetail(server) {
   // mais on garde le garde-fou par prudence. La progression de lancement ne
   // s'affiche plus ici — voir launchServer()/la barre de lancement rapide.
   const joinSection = signedIn
-    ? `<button class="join-btn" id="join-btn">▶ Rejoindre le serveur</button>`
+    ? `<button class="join-btn" id="join-btn">${t("serverDetail.joinBtn")}</button>`
     : `
-      <button class="join-btn" disabled>▶ Rejoindre le serveur</button>
-      <p class="join-note">Connecte-toi avec ton compte Microsoft pour rejoindre ce serveur.</p>
+      <button class="join-btn" disabled>${t("serverDetail.joinBtn")}</button>
+      <p class="join-note">${t("serverDetail.joinNote")}</p>
     `;
 
   const isFav = (await getFavoriteSlugs()).includes(server.slug);
 
   detailEl.innerHTML = `
-    <button class="back">&larr; Retour à la liste</button>
+    <button class="back">${t("serverDetail.back")}</button>
     <div class="detail-banner">
       ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
       <div class="detail-icon">${serverIconInner(server)}</div>
@@ -243,18 +245,18 @@ async function renderDetail(server) {
     </div>
     <div class="stat-row">
       <div class="stat-tile">
-        <div class="stat-label">Version</div>
+        <div class="stat-label">${t("serverDetail.version")}</div>
         <div class="stat-value">${escapeHtml(server.minecraftVersion)}</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-label">Joueurs</div>
+        <div class="stat-label">${t("serverDetail.players")}</div>
         <div class="stat-value">${escapeHtml(playersText(server))}</div>
       </div>
       ${
         server.recommendedRamGB
           ? `<div class="stat-tile">
-              <div class="stat-label">RAM recommandée</div>
-              <div class="stat-value">${server.recommendedRamGB} Go</div>
+              <div class="stat-label">${t("serverDetail.recommendedRam")}</div>
+              <div class="stat-value">${server.recommendedRamGB} ${t("serverDetail.ramUnit")}</div>
             </div>`
           : ""
       }
@@ -305,10 +307,10 @@ async function applyRecommendedRamIfNeeded(server) {
     const fallbackMaxGB = Math.max(1, Math.floor(settings.totalGB / 2));
     const fallbackMinGB = Math.max(1, Math.floor(fallbackMaxGB / 2));
     const result = await showModal({
-      title: "RAM recommandée trop élevée pour cette machine",
-      body: `Ce serveur recommande ${recommended} Go de RAM, mais cette machine n'a que ${settings.totalGB} Go au total. Le jeu va démarrer avec ${fallbackMaxGB} Go à la place (la moitié de la RAM totale) — au-delà, attends-toi à des latences, des bugs ou des plantages.`,
-      confirmLabel: "Continuer quand même",
-      cancelLabel: "Annuler",
+      title: t("modal.ramTooHighTitle"),
+      body: t("modal.ramTooHighBody", { recommended, total: settings.totalGB, fallback: fallbackMaxGB }),
+      confirmLabel: t("modal.continueAnyway"),
+      cancelLabel: t("common.cancel"),
     });
     if (!result.confirmed) return { proceed: false, memoryOverride: null };
     // Valeur de secours pour CE lancement seulement — l'irréalisme vient du
@@ -326,11 +328,11 @@ async function applyRecommendedRamIfNeeded(server) {
   }
 
   const result = await showModal({
-    title: "RAM recommandée pour ce serveur",
-    body: `Ce serveur recommande ${recommended} Go de RAM. Lancer le jeu avec cette valeur ?`,
-    confirmLabel: `Lancer avec ${recommended} Go`,
-    cancelLabel: "Garder mes paramètres actuels",
-    checkboxLabel: "Toujours lancer avec la RAM recommandée du serveur",
+    title: t("modal.ramRecommendedTitle"),
+    body: t("modal.ramRecommendedBody", { recommended }),
+    confirmLabel: t("modal.launchWith", { recommended }),
+    cancelLabel: t("modal.keepCurrentSettings"),
+    checkboxLabel: t("settings.alwaysRecommended"),
   });
 
   if (!result.confirmed) {
@@ -378,7 +380,7 @@ async function launchServer(server) {
   fill.classList.remove("error");
   fill.style.width = "0%";
   percentEl.textContent = "";
-  label.textContent = `Lancement de ${server.name}…`;
+  label.textContent = t("playbar.launchingServer", { name: server.name });
   setPlaybarBusy(true);
 
   const stopListening = window.mchub.onGameProgress((status) => {
@@ -398,7 +400,7 @@ async function launchServer(server) {
   if (result.ok) {
     fill.style.width = "100%";
     percentEl.textContent = "";
-    label.textContent = "Jeu lancé — fenêtre séparée ouverte.";
+    label.textContent = t("playbar.launched");
 
     // Historique de lancement (dernier joue, compteur par serveur, liste des
     // derniers joues) — sert au menu rapide de la barre de lancement (voir
@@ -431,17 +433,17 @@ async function launchServer(server) {
 
 async function joinServer(server, joinBtn) {
   joinBtn.disabled = true;
-  joinBtn.textContent = "Lancement…";
+  joinBtn.textContent = t("serverDetail.joinBtnLaunching");
 
   const result = await launchServer(server);
 
   if (result && result.ok) {
-    joinBtn.textContent = "Jeu lancé";
+    joinBtn.textContent = t("serverDetail.joinBtnLaunched");
     return;
   }
 
   joinBtn.disabled = false;
-  joinBtn.textContent = "▶ Rejoindre le serveur";
+  joinBtn.textContent = t("serverDetail.joinBtn");
 }
 
 async function openDetail(slug) {
@@ -449,12 +451,12 @@ async function openDetail(slug) {
   recentPanelEl.hidden = true;
   statusEl.hidden = false;
   statusEl.classList.remove("error");
-  statusEl.textContent = "Chargement…";
+  statusEl.textContent = t("serverList.loadingDetail");
 
   const result = await window.mchub.getServer(slug);
   if (!result.ok) {
     statusEl.classList.add("error");
-    statusEl.textContent = `Impossible de charger ce serveur : ${result.error}`;
+    statusEl.textContent = t("serverList.errorDetailPrefix", { error: result.error });
     return;
   }
   renderDetail(result.server);
@@ -483,7 +485,7 @@ async function fetchServerList({ force = false } = {}) {
 async function loadServers() {
   statusEl.hidden = false;
   statusEl.classList.remove("error");
-  statusEl.textContent = "Chargement des serveurs…";
+  statusEl.textContent = t("serverList.loading");
   detailEl.hidden = true;
   listEl.hidden = true;
 
@@ -494,7 +496,7 @@ async function loadServers() {
   const result = await fetchServerList({ force: true });
   if (!result.ok) {
     statusEl.classList.add("error");
-    statusEl.textContent = `Impossible de contacter le site Omniscient : ${result.error}`;
+    statusEl.textContent = t("serverList.errorPrefix", { error: result.error });
     return;
   }
   renderList(result.servers);
@@ -604,9 +606,9 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
             : ""
         }
         <div class="account-dropdown-name">${escapeHtml(profile.name)}</div>
-        ${rememberFailed ? '<p class="ms-error account-dropdown-note">Session non mémorisée</p>' : ""}
-        <button id="manage-account" class="ms-login account-dropdown-signout" type="button">Gérer le compte</button>
-        <button id="sign-out" class="ms-login account-dropdown-signout" type="button">Se déconnecter</button>
+        ${rememberFailed ? `<p class="ms-error account-dropdown-note">${t("account.sessionNotRemembered")}</p>` : ""}
+        <button id="manage-account" class="ms-login account-dropdown-signout" type="button">${t("account.manageAccount")}</button>
+        <button id="sign-out" class="ms-login account-dropdown-signout" type="button">${t("account.signOut")}</button>
       </div>
     </div>
   `;
@@ -657,14 +659,11 @@ function enterApp(profile, opts) {
   refreshPlaybarFavorites();
 }
 
-const PENDING_APPROVAL_MESSAGE =
-  "Connexion Microsoft OK — en attente de validation par Microsoft pour l'accès Minecraft.";
-
 function wireGate() {
   gateLoginBtn.addEventListener("click", async () => {
     const remember = document.getElementById("gate-remember").checked;
     setGateBusy(true);
-    gateMessageEl.textContent = "Connexion en cours…";
+    gateMessageEl.textContent = t("gate.connecting");
     gateMessageEl.classList.remove("ms-error");
 
     const result = await window.mchub.signIn(remember);
@@ -677,7 +676,7 @@ function wireGate() {
     setGateBusy(false);
 
     if (result.pendingApproval) {
-      gateMessageEl.textContent = PENDING_APPROVAL_MESSAGE;
+      gateMessageEl.textContent = t("gate.pendingApproval");
       return;
     }
 
@@ -718,7 +717,9 @@ const mcStatusList = document.getElementById("mc-status-list");
 
 const MC_STATUS_RANK = { ok: 0, degraded: 1, offline: 2 };
 const MC_STATUS_CLASS = { ok: "online", degraded: "degraded", offline: "offline" };
-const MC_STATUS_LABEL = { ok: "OK", degraded: "Dégradé", offline: "Hors ligne" };
+function mcStatusLabel(state) {
+  return t(`mcStatus.${state}`);
+}
 
 function renderMcStatus(services) {
   const worst = services.reduce(
@@ -734,14 +735,14 @@ function renderMcStatus(services) {
         <span class="mc-status-row-label">
           <span class="status-dot ${MC_STATUS_CLASS[s.state]}"></span>${escapeHtml(s.name)}
         </span>
-        <span class="mc-status-row-latency">${s.latencyMs !== null ? `${s.latencyMs} ms` : MC_STATUS_LABEL[s.state]}</span>
+        <span class="mc-status-row-latency">${s.latencyMs !== null ? `${s.latencyMs} ms` : mcStatusLabel(s.state)}</span>
       </div>`,
     )
     .join("");
 }
 
 async function loadMcStatus() {
-  mcStatusList.innerHTML = '<div class="mc-status-row">Vérification…</div>';
+  mcStatusList.innerHTML = `<div class="mc-status-row">${t("common.checking")}</div>`;
   const services = await window.mchub.getMinecraftStatus();
   renderMcStatus(services);
 }
@@ -832,8 +833,8 @@ async function renderFavoritesList() {
   if (favorites.length === 0) {
     favoritesPanelEl.className = "detail";
     favoritesPanelEl.innerHTML = `
-      <h2>Favoris</h2>
-      <p class="join-note">Aucun favori pour l'instant — clique sur l'étoile d'un serveur pour l'ajouter ici.</p>
+      <h2>${t("nav.favorites")}</h2>
+      <p class="join-note">${t("favorites.empty")}</p>
     `;
     return;
   }
@@ -865,8 +866,8 @@ async function renderRecentList() {
   if (recentSlugs.length === 0) {
     recentPanelEl.className = "detail";
     recentPanelEl.innerHTML = `
-      <h2>Récents</h2>
-      <p class="join-note">Aucun serveur joué pour l'instant — les derniers serveurs lancés apparaîtront ici.</p>
+      <h2>${t("nav.recent")}</h2>
+      <p class="join-note">${t("recent.empty")}</p>
     `;
     return;
   }
@@ -875,6 +876,21 @@ async function renderRecentList() {
   recentPanelEl.className = "server-list";
   await renderRowsInto(recentPanelEl, recentServers, "recent", renderRecentList);
 }
+
+const ICON_DESKTOP =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+const ICON_MOON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const ICON_SUN =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+const ICON_CHECK =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;color:var(--accent);flex-shrink:0;"><polyline points="20 6 9 17 4 12" /></svg>';
+
+// Panneau "Parametres" en 4 onglets (maquette "04 Settings") : un seul
+// panneau qui re-rend #settings-content selon l'onglet actif, plutot que 4
+// pages separees — plus proche de la structure existante (une seule vue
+// "settings" dans la sidebar) que de la maquette au pied de la lettre.
+let activeSettingsTab = "appearance";
 
 async function showSettingsView() {
   statusEl.hidden = true;
@@ -888,19 +904,203 @@ async function showSettingsView() {
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navSettingsBtn.classList.add("active");
+  await renderSettingsTab(activeSettingsTab);
+}
 
-  const settingsStatusEl = document.getElementById("settings-status");
-  settingsStatusEl.textContent = "";
-  settingsStatusEl.classList.remove("ms-error");
+function wireSettingsNav() {
+  settingsPanelEl.querySelectorAll(".settings-nav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      activeSettingsTab = btn.dataset.tab;
+      settingsPanelEl.querySelectorAll(".settings-nav-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      renderSettingsTab(activeSettingsTab);
+    });
+  });
+}
 
+async function renderSettingsTab(tab) {
+  const contentEl = document.getElementById("settings-content");
   const settings = await window.mchub.settings.get();
-  document.getElementById("settings-version").textContent = settings.appVersion ? `v${settings.appVersion}` : "—";
-  document.getElementById("settings-mem-min").value = settings.memoryMinGB;
-  document.getElementById("settings-mem-max").value = settings.memoryMaxGB;
-  document.getElementById("settings-always-recommended").checked = settings.alwaysUseRecommendedRam;
-  document.getElementById("settings-game-root").textContent = settings.gameRoot;
+  if (tab === "language") return renderLanguageTab(contentEl, settings);
+  if (tab === "memory") return renderMemoryTab(contentEl, settings);
+  if (tab === "misc") return renderMiscTab(contentEl, settings);
+  return renderAppearanceTab(contentEl, settings);
+}
 
-  await refreshJavaStatus("settings-java-status", "settings-java-install");
+function renderAppearanceTab(contentEl, settings) {
+  const themes = [
+    { value: "system", icon: ICON_DESKTOP, label: t("appearance.themeSystem") },
+    { value: "dark", icon: ICON_MOON, label: t("appearance.themeDark") },
+    { value: "light", icon: ICON_SUN, label: t("appearance.themeLight") },
+  ];
+  contentEl.innerHTML = `
+    <section class="settings-section">
+      <div>
+        <div class="settings-row-label">${t("appearance.theme")}</div>
+        <p class="settings-row-desc">${t("appearance.themeDesc")}</p>
+        <div class="theme-options">
+          ${themes
+            .map(
+              (th) => `
+            <button type="button" class="theme-option${settings.theme === th.value ? " active" : ""}" data-theme-value="${th.value}">
+              ${th.icon}<span>${th.label}</span>
+            </button>`,
+            )
+            .join("")}
+        </div>
+      </div>
+      <div class="settings-divider"></div>
+      <div>
+        <div class="settings-row-label">${t("appearance.accentColor")}</div>
+        <p class="settings-row-desc">${t("appearance.accentColorDesc")}</p>
+        <div class="accent-swatches">
+          ${window.themeControls.ACCENT_PRESETS.map(
+            (color) =>
+              `<button type="button" class="accent-swatch${settings.accentColor === color ? " active" : ""}" data-accent-value="${color}" style="background:${color};"></button>`,
+          ).join("")}
+        </div>
+      </div>
+      <div class="settings-divider"></div>
+      <label class="settings-row" style="cursor: pointer;">
+        <span>
+          <span class="settings-row-label">${t("appearance.compactList")}</span>
+          <p class="settings-row-desc">${t("appearance.compactListDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-compact-list" ${settings.compactServerList ? "checked" : ""} />
+      </label>
+    </section>
+  `;
+
+  contentEl.querySelectorAll(".theme-option").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const updated = await window.mchub.settings.set({ theme: btn.dataset.themeValue });
+      window.themeControls.applyTheme(updated);
+      renderAppearanceTab(contentEl, updated);
+    });
+  });
+  contentEl.querySelectorAll(".accent-swatch").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const updated = await window.mchub.settings.set({ accentColor: btn.dataset.accentValue });
+      window.themeControls.applyTheme(updated);
+      renderAppearanceTab(contentEl, updated);
+    });
+  });
+  document.getElementById("settings-compact-list").addEventListener("change", async (event) => {
+    await window.mchub.settings.set({ compactServerList: event.target.checked });
+    document.body.classList.toggle("compact-list", event.target.checked);
+  });
+}
+
+function renderLanguageTab(contentEl, settings) {
+  const locales = window.i18n.LOCALES;
+  const currentLabel = locales[settings.locale]?.label || locales.fr.label;
+  contentEl.innerHTML = `
+    <section class="settings-section">
+      <div>
+        <div class="settings-row-label">${t("language.launcherLanguage")}</div>
+        <p class="settings-row-desc">${t("language.restartNote")}</p>
+        <div class="lang-picker">${currentLabel}</div>
+      </div>
+      <div class="settings-divider"></div>
+      <div>
+        <div class="settings-row-label">${t("language.available")}</div>
+        <div class="lang-list">
+          ${Object.entries(locales)
+            .map(
+              ([code, info]) => `
+            <div class="lang-list-row${code === settings.locale ? " active" : ""}${info.enabled ? "" : " disabled"}" ${info.enabled ? `data-locale="${code}" style="cursor: pointer;"` : ""}>
+              <span>${info.label}</span>
+              ${code === settings.locale ? ICON_CHECK : ""}
+            </div>`,
+            )
+            .join("")}
+        </div>
+      </div>
+      <p class="join-note" id="settings-lang-status"></p>
+    </section>
+  `;
+
+  contentEl.querySelectorAll(".lang-list-row[data-locale]").forEach((row) => {
+    row.addEventListener("click", async () => {
+      const locale = row.dataset.locale;
+      if (locale === settings.locale) return;
+      await window.mchub.settings.set({ locale });
+      document.getElementById("settings-lang-status").textContent = t("language.restartNeeded");
+      renderLanguageTab(contentEl, { ...settings, locale });
+    });
+  });
+}
+
+function renderMemoryTab(contentEl, settings) {
+  const usedPercent = Math.min(100, Math.round((settings.memoryMaxGB / settings.totalGB) * 100));
+  contentEl.innerHTML = `
+    <section class="settings-section">
+      <div>
+        <div class="settings-row-label">${t("settings.ramAllocation")}</div>
+        <p class="settings-row-desc">${t("settings.ramAllocationDesc")}</p>
+        <div style="display: flex; gap: 14px; margin-top: 8px;">
+          <div class="settings-field" style="margin-bottom: 0;">
+            <label class="field-label">${t("settings.memoryMin")}</label>
+            <input type="number" id="settings-mem-min" min="1" max="32" class="settings-input" value="${settings.memoryMinGB}" />
+          </div>
+          <div class="settings-field" style="margin-bottom: 0;">
+            <label class="field-label">${t("settings.memoryMax")}</label>
+            <input type="number" id="settings-mem-max" min="1" max="32" class="settings-input" value="${settings.memoryMaxGB}" />
+          </div>
+        </div>
+        <div class="ram-bar-track"><div class="ram-bar-fill" style="width: ${usedPercent}%;"></div></div>
+        <p class="join-note" style="margin-top: 6px;">${t("settings.ramAvailable", { used: settings.memoryMaxGB, total: settings.totalGB })}</p>
+      </div>
+      <div class="settings-divider"></div>
+      <label class="settings-row" style="cursor: pointer;">
+        <span class="settings-row-label">${t("settings.alwaysRecommended")}</span>
+        <input type="checkbox" id="settings-always-recommended" ${settings.alwaysUseRecommendedRam ? "checked" : ""} />
+      </label>
+    </section>
+    <button id="settings-save-memory" class="join-btn" type="button" style="align-self: flex-start;">${t("settings.saveChanges")}</button>
+    <p class="join-note" id="settings-status"></p>
+  `;
+
+  document.getElementById("settings-save-memory").addEventListener("click", async () => {
+    const min = Number(document.getElementById("settings-mem-min").value);
+    const max = Number(document.getElementById("settings-mem-max").value);
+    const alwaysUseRecommendedRam = document.getElementById("settings-always-recommended").checked;
+    const settingsStatusEl = document.getElementById("settings-status");
+    const updated = await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max, alwaysUseRecommendedRam });
+    settingsStatusEl.classList.remove("ms-error");
+    settingsStatusEl.textContent = t("settings.saved");
+    renderMemoryTab(contentEl, { ...settings, ...updated });
+  });
+}
+
+function renderMiscTab(contentEl, settings) {
+  contentEl.innerHTML = `
+    <section class="settings-section">
+      <div>
+        <div class="settings-row-label">${t("settings.javaLabel")}</div>
+        <p class="join-note" id="settings-java-status" style="margin-top: 6px;">${t("common.checking")}</p>
+        <button id="settings-java-install" class="ms-login" type="button" hidden style="margin-top: 8px;">${t("java.installAuto")}</button>
+      </div>
+      <div class="settings-divider"></div>
+      <div>
+        <div class="settings-row-label">${t("settings.gameFolder")}</div>
+        <p class="settings-path" style="margin-top: 6px;">${escapeHtml(settings.gameRoot)}</p>
+        <button id="settings-open-folder" class="ms-login" type="button" style="margin-top: 6px;">${t("settings.openFolder")}</button>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-row">
+        <span>
+          <span class="settings-row-label">${t("settings.launcherVersion")}</span>
+          <p class="settings-row-desc">${t("settings.upToDate")}</p>
+        </span>
+        <span class="join-note">${settings.appVersion ? `v${settings.appVersion}` : "—"}</span>
+      </div>
+    </section>
+  `;
+
+  document.getElementById("settings-open-folder").addEventListener("click", () => {
+    window.mchub.settings.openGameFolder();
+  });
+  refreshJavaStatus("settings-java-status", "settings-java-install");
 }
 
 // Partagé entre le verrou Java obligatoire et les paramètres : verifie Java
@@ -911,18 +1111,18 @@ async function showSettingsView() {
 async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
   const statusEl2 = document.getElementById(statusElId);
   const installBtn = document.getElementById(installBtnId);
-  statusEl2.textContent = "Vérification de Java…";
+  statusEl2.textContent = t("common.checking");
   installBtn.hidden = true;
 
   const java = await window.mchub.java.detect();
   if (java.found && java.is64Bit) {
-    statusEl2.textContent = `Java détecté${java.version ? ` (${java.version}, 64 bits)` : " (64 bits)"} ✓`;
+    statusEl2.textContent = java.version ? t("java.detectedWithVersion", { version: java.version }) : t("java.detectedNoVersion");
     if (onReady) onReady();
   } else if (java.found) {
-    statusEl2.textContent = "Java 32 bits détecté — insuffisant pour allouer beaucoup de mémoire.";
+    statusEl2.textContent = t("java.is32Bit");
     installBtn.hidden = false;
   } else {
-    statusEl2.textContent = "Java introuvable — nécessaire pour lancer Minecraft.";
+    statusEl2.textContent = t("java.notFound");
     installBtn.hidden = false;
   }
 
@@ -937,11 +1137,11 @@ async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
     stopListening();
     installBtn.disabled = false;
     if (result.ok) {
-      statusEl2.textContent = `Java ${result.version} installé ✓`;
+      statusEl2.textContent = t("java.installed", { version: result.version });
       installBtn.hidden = true;
       if (onReady) onReady();
     } else {
-      statusEl2.textContent = `Échec de l'installation : ${result.error}`;
+      statusEl2.textContent = t("java.installFailed", { error: result.error });
     }
   });
 }
@@ -991,33 +1191,33 @@ async function renderAccountPanel() {
     : `<span class="server-icon" style="width: 112px; height: 112px; font-size: 42px;">${serverInitial(currentProfile?.name || "?")}</span>`;
 
   accountPanelEl.innerHTML = `
-    <h2>Mon compte</h2>
+    <h2>${t("account.myAccount")}</h2>
     <div class="account-skin-row">
       ${skinPreviewHtml}
       <div>
         <div class="account-dropdown-name">${escapeHtml(currentProfile?.name || "")}</div>
-        <p class="join-note" style="margin: 4px 0 0;">Skin actuel</p>
+        <p class="join-note" style="margin: 4px 0 0;">${t("account.currentSkin")}</p>
       </div>
     </div>
 
     <div class="settings-field">
-      <span class="field-label">Changer de skin (PNG, 64×64)</span>
+      <span class="field-label">${t("account.changeSkinLabel")}</span>
       <input type="file" accept="image/png" id="skin-file-input" class="settings-input" />
     </div>
     <div class="account-variant-row">
-      <label><input type="radio" name="skin-variant" value="classic" checked /> Classic (Steve)</label>
-      <label><input type="radio" name="skin-variant" value="slim" /> Slim (Alex)</label>
+      <label><input type="radio" name="skin-variant" value="classic" checked /> ${t("account.classic")}</label>
+      <label><input type="radio" name="skin-variant" value="slim" /> ${t("account.slim")}</label>
     </div>
     <div style="display: flex; gap: 8px; margin-top: 10px;">
-      <button id="skin-upload-btn" class="join-btn" type="button">Changer de skin</button>
-      <button id="skin-reset-btn" class="ms-login" type="button">Réinitialiser</button>
+      <button id="skin-upload-btn" class="join-btn" type="button">${t("account.changeSkinBtn")}</button>
+      <button id="skin-reset-btn" class="ms-login" type="button">${t("account.resetBtn")}</button>
     </div>
     <p class="join-note" id="account-skin-status"></p>
 
-    <h2 style="margin-top: 32px;">Comptes mémorisés</h2>
+    <h2 style="margin-top: 32px;">${t("account.rememberedAccounts")}</h2>
     <div id="account-list" style="margin-top: 12px;"></div>
     <p class="join-note" id="account-list-status"></p>
-    <button id="account-add-btn" class="ms-login" type="button">+ Ajouter un compte</button>
+    <button id="account-add-btn" class="ms-login" type="button">${t("account.addAccountBtn")}</button>
   `;
 
   wireAccountPanelActions();
@@ -1036,7 +1236,7 @@ async function refreshAccountList() {
   const activeId = currentProfile?.id ?? null;
 
   if (accounts.length === 0) {
-    listContainer.innerHTML = '<p class="join-note">Aucun compte mémorisé — coche "Se souvenir de moi" à la connexion.</p>';
+    listContainer.innerHTML = `<p class="join-note">${t("account.noAccounts")}</p>`;
     return;
   }
 
@@ -1047,11 +1247,11 @@ async function refreshAccountList() {
         <span class="account-list-row-name">
           <span class="server-icon" style="width: 26px; height: 26px; font-size: 11px;">${serverInitial(a.name)}</span>
           ${escapeHtml(a.name)}
-          ${a.id === activeId ? '<span class="account-active-tag">Actif</span>' : ""}
+          ${a.id === activeId ? `<span class="account-active-tag">${t("account.active")}</span>` : ""}
         </span>
         <span class="account-list-row-actions">
-          ${a.id === activeId ? "" : `<button class="ms-login account-switch-btn" type="button" data-id="${escapeHtml(a.id)}">Basculer</button>`}
-          <button class="ms-login account-remove-btn" type="button" data-id="${escapeHtml(a.id)}">Oublier</button>
+          ${a.id === activeId ? "" : `<button class="ms-login account-switch-btn" type="button" data-id="${escapeHtml(a.id)}">${t("account.switchBtn")}</button>`}
+          <button class="ms-login account-remove-btn" type="button" data-id="${escapeHtml(a.id)}">${t("account.forgetBtn")}</button>
         </span>
       </div>`,
     )
@@ -1063,7 +1263,7 @@ async function refreshAccountList() {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.id;
       btn.disabled = true;
-      btn.textContent = "Bascule…";
+      btn.textContent = t("account.switching");
       listStatusEl.textContent = "";
       listStatusEl.classList.remove("ms-error");
 
@@ -1074,8 +1274,8 @@ async function refreshAccountList() {
         return;
       }
       btn.disabled = false;
-      btn.textContent = "Basculer";
-      listStatusEl.textContent = result.pendingApproval ? PENDING_APPROVAL_MESSAGE : result.error;
+      btn.textContent = t("account.switchBtn");
+      listStatusEl.textContent = result.pendingApproval ? t("gate.pendingApproval") : result.error;
       listStatusEl.classList.add("ms-error");
     });
   });
@@ -1109,13 +1309,13 @@ function wireAccountPanelActions() {
   uploadBtn.addEventListener("click", async () => {
     const file = fileInput.files[0];
     if (!file) {
-      skinStatusEl.textContent = "Choisis d'abord un fichier PNG.";
+      skinStatusEl.textContent = t("account.chooseFileFirst");
       skinStatusEl.classList.add("ms-error");
       return;
     }
     const variant = document.querySelector('input[name="skin-variant"]:checked')?.value || "classic";
     uploadBtn.disabled = true;
-    uploadBtn.textContent = "Envoi…";
+    uploadBtn.textContent = t("account.sendingSkin");
     skinStatusEl.textContent = "";
     skinStatusEl.classList.remove("ms-error");
 
@@ -1125,11 +1325,11 @@ function wireAccountPanelActions() {
     if (result.ok) {
       renderAccountHeader(result.profile, {});
       await renderAccountPanel();
-      document.getElementById("account-skin-status").textContent = "Skin mis à jour.";
+      document.getElementById("account-skin-status").textContent = t("account.skinUpdated");
       return;
     }
     uploadBtn.disabled = false;
-    uploadBtn.textContent = "Changer de skin";
+    uploadBtn.textContent = t("account.changeSkinBtn");
     skinStatusEl.textContent = result.error;
     skinStatusEl.classList.add("ms-error");
   });
@@ -1140,7 +1340,7 @@ function wireAccountPanelActions() {
     if (result.ok) {
       renderAccountHeader(result.profile, {});
       await renderAccountPanel();
-      document.getElementById("account-skin-status").textContent = "Skin réinitialisé.";
+      document.getElementById("account-skin-status").textContent = t("account.skinReset");
       return;
     }
     resetBtn.disabled = false;
@@ -1152,7 +1352,7 @@ function wireAccountPanelActions() {
     const addBtn = document.getElementById("account-add-btn");
     const listStatusEl = document.getElementById("account-list-status");
     addBtn.disabled = true;
-    addBtn.textContent = "Connexion…";
+    addBtn.textContent = t("account.addingAccount");
     listStatusEl.textContent = "";
     listStatusEl.classList.remove("ms-error");
 
@@ -1165,8 +1365,8 @@ function wireAccountPanelActions() {
       return;
     }
     addBtn.disabled = false;
-    addBtn.textContent = "+ Ajouter un compte";
-    listStatusEl.textContent = result.pendingApproval ? PENDING_APPROVAL_MESSAGE : result.error;
+    addBtn.textContent = t("account.addAccountBtn");
+    listStatusEl.textContent = result.pendingApproval ? t("gate.pendingApproval") : result.error;
     listStatusEl.classList.add("ms-error");
   });
 }
@@ -1193,9 +1393,9 @@ async function refreshPlaybarFavorites() {
     selectedFavoriteSlug = null;
     favTrigger.disabled = true;
     favIcon.innerHTML = "";
-    favName.textContent = "Ajoute un serveur en favoris";
+    favName.textContent = t("playbar.addFavoritePrompt");
     if (!launchInProgress) playBtn.disabled = true;
-    favPanel.innerHTML = '<div class="playbar-fav-empty">Clique sur l\'étoile d\'un serveur pour l\'ajouter ici.</div>';
+    favPanel.innerHTML = `<div class="playbar-fav-empty">${t("playbar.emptyHint")}</div>`;
     return;
   }
 
@@ -1230,17 +1430,17 @@ async function refreshPlaybarFavorites() {
       <div class="playbar-fav-row" data-slug="${escapeHtml(row.slug)}">
         <span class="server-icon" style="width: 24px; height: 24px; font-size: 11px;">${serverIconInner(server)}</span>
         <span class="playbar-fav-row-name">
-          ${row.kind === "last-played" ? '<span class="playbar-fav-row-tag">Dernier joué</span>' : ""}
+          ${row.kind === "last-played" ? `<span class="playbar-fav-row-tag">${t("playbar.lastPlayed")}</span>` : ""}
           <span class="playbar-fav-row-title">${escapeHtml(server.name)}</span>
         </span>
         ${
           row.kind === "favorite"
-            ? `<button class="playbar-fav-remove" type="button" data-slug="${escapeHtml(row.slug)}" title="Retirer des favoris">✕</button>`
+            ? `<button class="playbar-fav-remove" type="button" data-slug="${escapeHtml(row.slug)}" title="${t("common.removeFavorite")}">✕</button>`
             : ""
         }
       </div>`;
       })
-      .join("") + (hasMoreFavorites ? `<div class="playbar-fav-row playbar-fav-more" id="playbar-fav-more">+ de favoris</div>` : "");
+      .join("") + (hasMoreFavorites ? `<div class="playbar-fav-row playbar-fav-more" id="playbar-fav-more">${t("playbar.moreFavorites")}</div>` : "");
 
   favPanel.querySelectorAll(".playbar-fav-row:not(.playbar-fav-more)").forEach((row) => {
     row.addEventListener("click", (event) => {
@@ -1300,26 +1500,6 @@ function wireSidebar() {
   navSettingsBtn.addEventListener("click", showSettingsView);
 }
 
-function wireSettingsPanel() {
-  document.getElementById("settings-save").addEventListener("click", async () => {
-    const min = Number(document.getElementById("settings-mem-min").value);
-    const max = Number(document.getElementById("settings-mem-max").value);
-    const alwaysUseRecommendedRam = document.getElementById("settings-always-recommended").checked;
-    const settingsStatusEl = document.getElementById("settings-status");
-
-    const updated = await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max, alwaysUseRecommendedRam });
-    document.getElementById("settings-mem-min").value = updated.memoryMinGB;
-    document.getElementById("settings-mem-max").value = updated.memoryMaxGB;
-    document.getElementById("settings-always-recommended").checked = updated.alwaysUseRecommendedRam;
-    settingsStatusEl.classList.remove("ms-error");
-    settingsStatusEl.textContent = "Paramètres enregistrés.";
-  });
-
-  document.getElementById("settings-open-folder").addEventListener("click", () => {
-    window.mchub.settings.openGameFolder();
-  });
-}
-
 // Modale générique (confirmation / avertissement) — utilisée par
 // l'avertissement de sécurité RAM, réutilisable pour n'importe quel prompt
 // bloquant futur. Résout avec { confirmed, checked } plutôt que de bloquer
@@ -1377,8 +1557,7 @@ function showRamSetupModal(settings) {
 
     minInput.value = settings.suggestedMinGB;
     maxInput.value = settings.suggestedMaxGB;
-    note.textContent =
-      `Cette machine a ${settings.totalGB} Go de RAM au total — ${settings.suggestedMinGB}/${settings.suggestedMaxGB} Go est une valeur prudente pour commencer.`;
+    note.textContent = t("ramSetup.note", { total: settings.totalGB, min: settings.suggestedMinGB, max: settings.suggestedMaxGB });
     overlay.hidden = false;
 
     const onContinue = async () => {
@@ -1395,7 +1574,7 @@ function showRamSetupModal(settings) {
 
 async function proceedToGate() {
   gateEl.hidden = false;
-  gateMessageEl.textContent = "Reprise de la session…";
+  gateMessageEl.textContent = t("bootstrap.resumingSession");
 
   const restored = await window.mchub.tryRestoreSession();
   if (restored.ok) {
@@ -1403,14 +1582,27 @@ async function proceedToGate() {
     return;
   }
 
-  gateMessageEl.textContent = restored.pendingApproval ? PENDING_APPROVAL_MESSAGE : "";
+  gateMessageEl.textContent = restored.pendingApproval ? t("gate.pendingApproval") : "";
 }
 
 async function boot() {
+  // Langue/theme appliques avant tout le reste : le reste de boot() (et tout
+  // le rendu dynamique via t()) doit deja voir la bonne langue/le bon theme.
+  // Flash bref du francais/theme sombre par defaut inevitable ici (le
+  // premier paint HTML/CSS a lieu avant que ce script async ne s'execute) —
+  // pas de lecture synchrone des settings depuis le renderer.
+  const settings = await window.mchub.settings.get();
+  window.i18n.setLocale(settings.locale);
+  window.i18n.applyStaticI18n(document);
+  window.themeControls.applyTheme(settings);
+  window.themeControls.watchSystemTheme(() => window.mchub.settings.get());
+  document.body.classList.toggle("compact-list", !!settings.compactServerList);
+  document.documentElement.lang = settings.locale;
+
   wireGate();
   wireWindowControls();
   wireSidebar();
-  wireSettingsPanel();
+  wireSettingsNav();
   wireMcStatus();
   wireNotifications();
   wirePlaybar();
@@ -1420,14 +1612,13 @@ async function boot() {
   // de fausse etape ("checking for updates") pour une fonctionnalite qui
   // n'existe pas. Si Java manque, ensureJavaAvailable() masque cet ecran
   // lui-meme pour laisser place a son propre ecran de blocage.
-  const settings = await window.mchub.settings.get();
   bootstrapVersionEl.textContent = settings.appVersion ? `v${settings.appVersion}` : "";
-  bootstrapStatusEl.textContent = "Vérification de Java…";
+  bootstrapStatusEl.textContent = t("bootstrap.checkingJava");
   bootstrapProgressEl.style.width = "45%";
 
   await ensureJavaAvailable();
 
-  bootstrapStatusEl.textContent = "Reprise de la session…";
+  bootstrapStatusEl.textContent = t("bootstrap.resumingSession");
   bootstrapProgressEl.style.width = "85%";
 
   if (!settings.onboarded) {
