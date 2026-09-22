@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Pause, Play, Copy, Trash2, ExternalLink } from "lucide-react";
+import { useI18n } from "@/i18n/I18nProvider";
 
 // Boutons d'action de "Vue d'ensemble" — avec confirmation avant toute
 // action destructive/impactante (l'utilisateur a signale que le formulaire
@@ -24,6 +25,7 @@ export function ManageActions({
   onDelete: () => Promise<void>;
 }) {
   const router = useRouter();
+  const { t } = useI18n();
   const [pending, setPending] = useState<string | null>(null);
 
   async function run(key: string, message: string, action: () => Promise<void>) {
@@ -40,41 +42,35 @@ export function ManageActions({
   return (
     <div className="mb-6 flex flex-col gap-4">
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-        <span className="tag-chip tag-chip-accent self-start">{published ? "Publié" : "En pause"}</span>
+        <span className="tag-chip tag-chip-accent self-start">{published ? t("manage.published") : t("manage.paused")}</span>
 
         <button
           type="button"
           disabled={pending !== null}
           onClick={() =>
-            run(
-              "toggle",
-              published
-                ? "Mettre ce serveur en pause ? Il disparaîtra de l'annuaire public, de sa fiche et du launcher jusqu'à ce que tu le republies."
-                : "Republier ce serveur ?",
-              onTogglePublished,
-            )
+            run("toggle", published ? t("manage.confirmToggleOff") : t("manage.confirmToggleOn"), onTogglePublished)
           }
           className="btn-secondary text-sm"
         >
           {published ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          {pending === "toggle" ? "..." : published ? "Mettre en pause" : "Republier"}
+          {pending === "toggle" ? "..." : published ? t("manage.pause") : t("manage.republish")}
         </button>
 
         {published ? (
           <Link href={`/servers/${slug}`} className="btn-secondary text-sm">
             <ExternalLink className="h-4 w-4" />
-            Voir la fiche publique
+            {t("manage.viewPublicPage")}
           </Link>
         ) : null}
 
         <button
           type="button"
           disabled={pending !== null}
-          onClick={() => run("duplicate", "Dupliquer ce serveur ? Une copie sera créée avec sa propre fiche.", onDuplicate)}
+          onClick={() => run("duplicate", t("manage.confirmDuplicate"), onDuplicate)}
           className="btn-secondary text-sm"
         >
           <Copy className="h-4 w-4" />
-          {pending === "duplicate" ? "..." : "Dupliquer"}
+          {pending === "duplicate" ? "..." : t("manage.duplicate")}
         </button>
       </div>
 
@@ -83,17 +79,17 @@ export function ManageActions({
         style={{ border: "1px solid color-mix(in srgb, var(--danger) 35%, transparent)" }}
       >
         <div>
-          <p className="text-sm font-medium text-foreground">Supprimer ce serveur</p>
-          <p className="text-xs text-muted">Définitif — retire la fiche de partout.</p>
+          <p className="text-sm font-medium text-foreground">{t("manage.deleteTitle")}</p>
+          <p className="text-xs text-muted">{t("manage.deleteBody")}</p>
         </div>
         <button
           type="button"
           disabled={pending !== null}
-          onClick={() => run("delete", "Supprimer définitivement ce serveur ? Cette action est irréversible.", onDelete)}
+          onClick={() => run("delete", t("manage.confirmDelete"), onDelete)}
           className="btn-secondary btn-secondary-danger text-sm flex-shrink-0"
         >
           <Trash2 className="h-4 w-4" />
-          {pending === "delete" ? "..." : "Supprimer"}
+          {pending === "delete" ? "..." : t("manage.delete")}
         </button>
       </div>
     </div>

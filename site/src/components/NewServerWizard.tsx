@@ -3,17 +3,12 @@
 import { useActionState, useState } from "react";
 import { Globe, Puzzle, ArrowRight, ArrowLeft, Info } from "lucide-react";
 import type { ServerActionState } from "@/lib/actions/servers";
+import { useI18n } from "@/i18n/I18nProvider";
 
 type Props = {
   action: (prevState: ServerActionState, formData: FormData) => ServerActionState | Promise<ServerActionState>;
   versions: string[];
 };
-
-const STEPS = [
-  { label: "Infos" },
-  { label: "Connexion" },
-  { label: "Vérification" },
-];
 
 // Assistant en 3 etapes pour la publication (maquette "Nocturne" — la
 // console de gestion garde le formulaire simple existant pour l'edition,
@@ -22,6 +17,12 @@ const STEPS = [
 // masques en CSS) pour que leurs valeurs fassent partie de la soumission
 // finale, plutot que de dupliquer un state parallele pour chaque champ.
 export function NewServerWizard({ action, versions }: Props) {
+  const { t, locale } = useI18n();
+  const STEPS = [
+    { label: t("wizard.stepBasics") },
+    { label: t("wizard.stepConnection") },
+    { label: t("wizard.stepReview") },
+  ];
   const [state, formAction, pending] = useActionState(action, undefined);
   const [step, setStep] = useState(0);
   const [type, setType] = useState<"vanilla" | "modded">("vanilla");
@@ -58,55 +59,55 @@ export function NewServerWizard({ action, versions }: Props) {
       {/* Etape 1 — Infos */}
       <div className={step === 0 ? "flex flex-col gap-5" : "hidden"}>
         <div>
-          <h2 className="text-xl font-heading text-foreground mb-1">Dis-nous en plus sur ton serveur</h2>
-          <p className="text-sm text-muted">Ces infos apparaissent sur ta fiche publique et dans le launcher.</p>
+          <h2 className="text-xl font-heading text-foreground mb-1">{t("wizard.basicsTitle")}</h2>
+          <p className="text-sm text-muted">{t("wizard.basicsSubtitle")}</p>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="name" className="field-label">Nom du serveur</label>
+          <label htmlFor="name" className="field-label">{t("serverForm.name")}</label>
           <input
             id="name" name="name" type="text" required
             value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="ex : Frostpeak SMP" className="field-input"
+            placeholder={t("serverForm.namePlaceholder")} className="field-input"
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="description" className="field-label">Description</label>
+          <label htmlFor="description" className="field-label">{t("serverForm.description")}</label>
           <textarea
             id="description" name="description" required rows={3}
             value={description} onChange={(e) => setDescription(e.target.value)}
-            placeholder="Qu'est-ce qui rend ce monde intéressant ?" className="field-input"
+            placeholder={t("serverForm.descriptionPlaceholder")} className="field-input"
           />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="bannerUrl" className="field-label">URL de la bannière (optionnel)</label>
+            <label htmlFor="bannerUrl" className="field-label">{t("serverForm.bannerUrl")}</label>
             <input id="bannerUrl" name="bannerUrl" type="url" placeholder="https://..." className="field-input" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="iconUrl" className="field-label">URL de l&apos;icône (optionnel)</label>
+            <label htmlFor="iconUrl" className="field-label">{t("serverForm.iconUrl")}</label>
             <input id="iconUrl" name="iconUrl" type="url" placeholder="https://..." className="field-input" />
           </div>
         </div>
 
         <div className="flex flex-col gap-2">
-          <span className="field-label">Type de serveur</span>
+          <span className="field-label">{t("serverForm.type")}</span>
           <div className="inline-flex border border-border rounded-md overflow-hidden w-fit">
             <label
               className="flex cursor-pointer items-center gap-1.5 px-3.5 py-2 text-sm"
               style={type === "vanilla" ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: "var(--accent)" } : { color: "var(--muted)" }}
             >
               <input type="radio" name="type" value="vanilla" checked={type === "vanilla"} onChange={() => setType("vanilla")} className="sr-only" />
-              <Globe className="h-4 w-4" /> Vanilla
+              <Globe className="h-4 w-4" /> {t("serverForm.vanilla")}
             </label>
             <label
               className="flex cursor-pointer items-center gap-1.5 border-l border-border px-3.5 py-2 text-sm"
               style={type === "modded" ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: "var(--accent)" } : { color: "var(--muted)" }}
             >
               <input type="radio" name="type" value="modded" checked={type === "modded"} onChange={() => setType("modded")} className="sr-only" />
-              <Puzzle className="h-4 w-4" /> Moddé (CurseForge)
+              <Puzzle className="h-4 w-4" /> {t("serverForm.modded")}
             </label>
           </div>
         </div>
@@ -114,7 +115,7 @@ export function NewServerWizard({ action, versions }: Props) {
         {type === "modded" ? (
           <div className="flex flex-col gap-4 rounded-lg p-4" style={{ border: "1px solid var(--accent)" }}>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="curseforgeModpackId" className="field-label">Identifiant du modpack CurseForge</label>
+              <label htmlFor="curseforgeModpackId" className="field-label">{t("serverForm.modpackId")}</label>
               <input
                 id="curseforgeModpackId" name="curseforgeModpackId" type="text" required={type === "modded"}
                 value={curseforgeModpackId} onChange={(e) => setCurseforgeModpackId(e.target.value)}
@@ -122,16 +123,16 @@ export function NewServerWizard({ action, versions }: Props) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="curseforgeModpackName" className="field-label">Nom du modpack</label>
+              <label htmlFor="curseforgeModpackName" className="field-label">{t("serverForm.modpackName")}</label>
               <input id="curseforgeModpackName" name="curseforgeModpackName" type="text" className="field-input" />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="curseforgeModpackVersion" className="field-label">Version du modpack</label>
+              <label htmlFor="curseforgeModpackVersion" className="field-label">{t("serverForm.modpackVersion")}</label>
               <input id="curseforgeModpackVersion" name="curseforgeModpackVersion" type="text" className="field-input" />
             </div>
             <p className="flex items-center gap-1.5 text-xs text-muted">
               <Info className="h-3.5 w-3.5 flex-shrink-0" />
-              Les joueurs téléchargent ce modpack automatiquement au premier lancement.
+              {t("serverForm.modpackNote")}
             </p>
           </div>
         ) : null}
@@ -142,7 +143,7 @@ export function NewServerWizard({ action, versions }: Props) {
             disabled={!name || !description || (type === "modded" && !curseforgeModpackId)}
             className="btn-primary"
           >
-            Continuer <ArrowRight className="h-4 w-4" />
+            {t("wizard.continue")} <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -150,26 +151,26 @@ export function NewServerWizard({ action, versions }: Props) {
       {/* Etape 2 — Connexion */}
       <div className={step === 1 ? "flex flex-col gap-5" : "hidden"}>
         <div>
-          <h2 className="text-xl font-heading text-foreground mb-1">Comment les joueurs se connectent</h2>
-          <p className="text-sm text-muted">L&apos;adresse n&apos;est jamais affichée publiquement — seul le launcher la reçoit.</p>
+          <h2 className="text-xl font-heading text-foreground mb-1">{t("wizard.connectionTitle")}</h2>
+          <p className="text-sm text-muted">{t("wizard.connectionSubtitle")}</p>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="ip" className="field-label">Adresse de connexion (IP)</label>
+          <label htmlFor="ip" className="field-label">{t("serverForm.ip")}</label>
           <input
             id="ip" name="ip" type="text" required
             value={ip} onChange={(e) => setIp(e.target.value)}
-            placeholder="play.monserveur.fr:25565" className="field-input"
+            placeholder={t("serverForm.ipPlaceholder")} className="field-input"
           />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="minecraftVersion" className="field-label">Version de Minecraft</label>
+            <label htmlFor="minecraftVersion" className="field-label">{t("serverForm.version")}</label>
             <input
               id="minecraftVersion" name="minecraftVersion" type="text" list="mc-versions" required
               value={minecraftVersion} onChange={(e) => setMinecraftVersion(e.target.value)}
-              placeholder="ex : 1.21.4" className="field-input"
+              placeholder={t("serverForm.versionPlaceholder")} className="field-input"
             />
             <datalist id="mc-versions">
               {versions.map((v) => (
@@ -178,21 +179,21 @@ export function NewServerWizard({ action, versions }: Props) {
             </datalist>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="recommendedRamGB" className="field-label">RAM recommandée (Go, optionnel)</label>
+            <label htmlFor="recommendedRamGB" className="field-label">{t("serverForm.ram")}</label>
             <input
               id="recommendedRamGB" name="recommendedRamGB" type="number" min={1} max={32} step={1}
               value={recommendedRamGB} onChange={(e) => setRecommendedRamGB(e.target.value)}
-              placeholder="ex : 4" className="field-input"
+              placeholder={t("serverForm.ramPlaceholder")} className="field-input"
             />
           </div>
         </div>
 
         <div className="mt-2 flex justify-between">
           <button type="button" onClick={back} className="btn-secondary">
-            <ArrowLeft className="h-4 w-4" /> Retour
+            <ArrowLeft className="h-4 w-4" /> {t("wizard.back")}
           </button>
           <button type="button" onClick={next} disabled={!ip || !minecraftVersion} className="btn-primary">
-            Continuer <ArrowRight className="h-4 w-4" />
+            {t("wizard.continue")} <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -200,31 +201,31 @@ export function NewServerWizard({ action, versions }: Props) {
       {/* Etape 3 — Verification */}
       <div className={step === 2 ? "flex flex-col gap-5" : "hidden"}>
         <div>
-          <h2 className="text-xl font-heading text-foreground mb-1">Vérifie avant de publier</h2>
-          <p className="text-sm text-muted">Tu pourras tout modifier plus tard depuis la console de gestion.</p>
+          <h2 className="text-xl font-heading text-foreground mb-1">{t("wizard.reviewTitle")}</h2>
+          <p className="text-sm text-muted">{t("wizard.reviewSubtitle")}</p>
         </div>
 
         <div className="panel divide-y divide-border">
           <div className="flex justify-between px-4 py-3 text-sm">
-            <span className="text-muted">Nom</span>
+            <span className="text-muted">{t("wizard.reviewName")}</span>
             <span className="font-medium text-foreground">{name || "—"}</span>
           </div>
           <div className="flex justify-between px-4 py-3 text-sm">
-            <span className="text-muted">Type</span>
-            <span className="font-medium text-foreground">{type === "modded" ? "Moddé" : "Vanilla"}</span>
+            <span className="text-muted">{t("wizard.reviewType")}</span>
+            <span className="font-medium text-foreground">{type === "modded" ? t("serverForm.modded") : t("serverForm.vanilla")}</span>
           </div>
           <div className="flex justify-between px-4 py-3 text-sm">
-            <span className="text-muted">Version</span>
+            <span className="text-muted">{t("wizard.reviewVersion")}</span>
             <span className="font-medium text-foreground">{minecraftVersion || "—"}</span>
           </div>
           <div className="flex justify-between px-4 py-3 text-sm">
-            <span className="text-muted">Adresse</span>
+            <span className="text-muted">{t("wizard.reviewAddress")}</span>
             <span className="font-medium text-foreground">{ip || "—"}</span>
           </div>
           {recommendedRamGB ? (
             <div className="flex justify-between px-4 py-3 text-sm">
-              <span className="text-muted">RAM recommandée</span>
-              <span className="font-medium text-foreground">{recommendedRamGB} Go</span>
+              <span className="text-muted">{t("wizard.reviewRam")}</span>
+              <span className="font-medium text-foreground">{recommendedRamGB} {locale === "fr" ? "Go" : "GB"}</span>
             </div>
           ) : null}
         </div>
@@ -233,10 +234,10 @@ export function NewServerWizard({ action, versions }: Props) {
 
         <div className="mt-2 flex justify-between">
           <button type="button" onClick={back} className="btn-secondary">
-            <ArrowLeft className="h-4 w-4" /> Retour
+            <ArrowLeft className="h-4 w-4" /> {t("wizard.back")}
           </button>
           <button type="submit" disabled={pending} className="btn-primary">
-            {pending ? "Publication..." : "Publier le serveur"}
+            {pending ? t("wizard.publishing") : t("wizard.publish")}
           </button>
         </div>
       </div>

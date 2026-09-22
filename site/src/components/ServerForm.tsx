@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import type { ServerActionState } from "@/lib/actions/servers";
 import { OTHER_VERSION_VALUE } from "@/lib/minecraft-versions";
+import { useI18n } from "@/i18n/I18nProvider";
 
 type ServerFormValues = {
   name: string;
@@ -40,6 +41,7 @@ type ServerFormProps = {
 };
 
 export function ServerForm({ action, defaultValues, submitLabel, versions }: ServerFormProps) {
+  const { t } = useI18n();
   const values = { ...EMPTY_VALUES, ...defaultValues };
   const [state, formAction, pending] = useActionState(action, undefined);
   const [type, setType] = useState<"vanilla" | "modded">(values.type);
@@ -54,14 +56,22 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
     <form action={formAction} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
         <label htmlFor="name" className="field-label">
-          Nom du serveur
+          {t("serverForm.name")}
         </label>
-        <input id="name" name="name" type="text" required defaultValue={values.name} className="field-input" />
+        <input
+          id="name"
+          name="name"
+          type="text"
+          required
+          defaultValue={values.name}
+          placeholder={t("serverForm.namePlaceholder")}
+          className="field-input"
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="description" className="field-label">
-          Description
+          {t("serverForm.description")}
         </label>
         <textarea
           id="description"
@@ -69,13 +79,14 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           required
           rows={4}
           defaultValue={values.description}
+          placeholder={t("serverForm.descriptionPlaceholder")}
           className="field-input"
         />
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="bannerUrl" className="field-label">
-          URL de la bannière (optionnel)
+          {t("serverForm.bannerUrl")}
         </label>
         <input
           id="bannerUrl"
@@ -85,14 +96,12 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           placeholder="https://..."
           className="field-input"
         />
-        <p className="text-xs text-muted">
-          Image affichée en fond sur la fiche publique et l&apos;annuaire — idéalement large (16:9).
-        </p>
+        <p className="text-xs text-muted">{t("serverForm.bannerHelp")}</p>
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="iconUrl" className="field-label">
-          URL de l&apos;icône (optionnel)
+          {t("serverForm.iconUrl")}
         </label>
         <input
           id="iconUrl"
@@ -102,14 +111,11 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           placeholder="https://..."
           className="field-input"
         />
-        <p className="text-xs text-muted">
-          Petit logo carré affiché à côté du nom du serveur — sans image, une pastille avec l&apos;initiale du
-          nom est utilisée à la place.
-        </p>
+        <p className="text-xs text-muted">{t("serverForm.iconHelp")}</p>
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="field-label">Type de serveur</span>
+        <span className="field-label">{t("serverForm.type")}</span>
         <div className="flex gap-4">
           <label className="flex items-center gap-2 text-sm text-foreground">
             <input
@@ -119,7 +125,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
               checked={type === "vanilla"}
               onChange={() => setType("vanilla")}
             />
-            Vanilla
+            {t("serverForm.vanilla")}
           </label>
           <label className="flex items-center gap-2 text-sm text-foreground">
             <input
@@ -129,14 +135,14 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
               checked={type === "modded"}
               onChange={() => setType("modded")}
             />
-            Moddé (modpack CurseForge)
+            {t("serverForm.modded")}
           </label>
         </div>
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="minecraftVersionSelect" className="field-label">
-          Version de Minecraft
+          {t("serverForm.version")}
         </label>
         <select
           id="minecraftVersionSelect"
@@ -146,14 +152,14 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           className="field-input"
         >
           <option value="" disabled>
-            Choisir une version...
+            {t("serverForm.chooseVersion")}
           </option>
           {versions.map((version) => (
             <option key={version} value={version}>
               {version}
             </option>
           ))}
-          <option value={OTHER_VERSION_VALUE}>Autre (saisir manuellement)</option>
+          <option value={OTHER_VERSION_VALUE}>{t("serverForm.otherVersion")}</option>
         </select>
 
         {versionChoice === OTHER_VERSION_VALUE ? (
@@ -161,7 +167,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
             name="minecraftVersion"
             type="text"
             required
-            placeholder="ex : 1.21.5"
+            placeholder={t("serverForm.otherVersionPlaceholder")}
             value={customVersion}
             onChange={(event) => setCustomVersion(event.target.value)}
             className="field-input"
@@ -169,32 +175,28 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
         ) : (
           <input type="hidden" name="minecraftVersion" value={versionChoice} />
         )}
-        <p className="text-xs text-muted">
-          Version pas dans la liste ? Choisis « Autre » pour la saisir toi-même.
-        </p>
+        <p className="text-xs text-muted">{t("serverForm.versionHelp")}</p>
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="ip" className="field-label">
-          Adresse de connexion (IP)
+          {t("serverForm.ip")}
         </label>
         <input
           id="ip"
           name="ip"
           type="text"
           required
-          placeholder="play.monserveur.fr:25565"
+          placeholder={t("serverForm.ipPlaceholder")}
           defaultValue={values.ip}
           className="field-input"
         />
-        <p className="text-xs text-muted">
-          Jamais affichée publiquement sur le site — uniquement transmise par le launcher.
-        </p>
+        <p className="text-xs text-muted">{t("serverForm.ipHelp")}</p>
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="recommendedRamGB" className="field-label">
-          RAM recommandée (Go, optionnel)
+          {t("serverForm.ram")}
         </label>
         <input
           id="recommendedRamGB"
@@ -203,23 +205,19 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           min={1}
           max={32}
           step={1}
-          placeholder="ex : 4"
+          placeholder={t("serverForm.ramPlaceholder")}
           defaultValue={values.recommendedRamGB}
           className="field-input"
         />
-        <p className="text-xs text-muted">
-          Suggérée au joueur dans le launcher avant de rejoindre (max 32 Go, la limite du launcher) —
-          jamais imposée, et le launcher avertit si elle dépasse ce que sa machine peut raisonnablement
-          fournir.
-        </p>
+        <p className="text-xs text-muted">{t("serverForm.ramHelp")}</p>
       </div>
 
       {type === "modded" ? (
         <div className="panel flex flex-col gap-4 p-4">
-          <p className="text-sm font-medium text-foreground">Modpack CurseForge</p>
+          <p className="text-sm font-medium text-foreground">{t("serverForm.modpackSection")}</p>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="curseforgeModpackId" className="field-label">
-              Identifiant du modpack
+              {t("serverForm.modpackId")}
             </label>
             <input
               id="curseforgeModpackId"
@@ -232,7 +230,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="curseforgeModpackName" className="field-label">
-              Nom du modpack
+              {t("serverForm.modpackName")}
             </label>
             <input
               id="curseforgeModpackName"
@@ -244,7 +242,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="curseforgeModpackVersion" className="field-label">
-              Version du modpack
+              {t("serverForm.modpackVersion")}
             </label>
             <input
               id="curseforgeModpackVersion"
@@ -260,7 +258,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
       {state?.error ? <p className="text-sm text-danger">{state.error}</p> : null}
 
       <button type="submit" disabled={pending} className="btn-primary self-start">
-        {pending ? "Enregistrement..." : submitLabel}
+        {pending ? t("manage.saving") : submitLabel}
       </button>
     </form>
   );

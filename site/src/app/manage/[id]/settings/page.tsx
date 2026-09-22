@@ -4,6 +4,7 @@ import { db } from "@/prisma/db";
 import { updateServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
 import { ServerForm } from "@/components/ServerForm";
+import { getT } from "@/i18n/getDictionary";
 
 export const metadata = { title: "Paramètres — Omniscient" };
 
@@ -14,13 +15,14 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
 
   const server = await db.orm.public.Server.where({ id, ownerId: session.user.id }).first();
   if (!server) notFound();
+  const { dict } = await getT();
 
   const boundUpdate = updateServer.bind(null, server.id);
   const versions = await getMinecraftVersions();
 
   return (
     <div className="max-w-2xl">
-      <h1 className="mb-6 text-2xl font-bold text-foreground">Paramètres</h1>
+      <h1 className="mb-6 text-2xl font-bold text-foreground">{dict.manage.settingsTitle}</h1>
 
       <div className="panel p-6 sm:p-8">
         <ServerForm
@@ -34,7 +36,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
           // page.
           key={server.updatedAt}
           action={boundUpdate}
-          submitLabel="Enregistrer les modifications"
+          submitLabel={dict.manage.saveChanges}
           versions={versions}
           defaultValues={{
             name: server.name,

@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/prisma/db";
 import { deleteServer, toggleServerPublished, duplicateServer } from "@/lib/actions/servers";
 import { ManageActions } from "@/components/ManageActions";
+import { getT } from "@/i18n/getDictionary";
 
 export const metadata = { title: "Vue d'ensemble — Omniscient" };
 
@@ -13,6 +14,7 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
 
   const server = await db.orm.public.Server.where({ id, ownerId: session.user.id }).first();
   if (!server) notFound();
+  const { dict } = await getT();
 
   const boundDelete = deleteServer.bind(null, server.id);
   const boundTogglePublished = toggleServerPublished.bind(null, server.id);
@@ -20,7 +22,7 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
 
   return (
     <div className="max-w-2xl">
-      <h1 className="mb-6 text-2xl font-bold text-foreground">Vue d&apos;ensemble</h1>
+      <h1 className="mb-6 text-2xl font-bold text-foreground">{dict.manage.overviewTitle}</h1>
 
       <ManageActions
         slug={server.slug}
@@ -32,11 +34,11 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
 
       <div className="grid grid-cols-2 gap-3">
         <div className="stat-tile">
-          <div className="stat-label">Vues de la fiche</div>
+          <div className="stat-label">{dict.manage.viewsStat}</div>
           <div className="stat-value">{server.viewCount}</div>
         </div>
         <div className="stat-tile">
-          <div className="stat-label">Lancements via le launcher</div>
+          <div className="stat-label">{dict.manage.launchesStat}</div>
           <div className="stat-value">{server.launchCount}</div>
         </div>
       </div>

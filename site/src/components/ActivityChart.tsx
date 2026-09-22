@@ -3,7 +3,15 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import type { ActivityPoint } from "@/lib/server-activity";
 
-export function ActivityChart({ data }: { data: ActivityPoint[] }) {
+export function ActivityChart({
+  data,
+  viewsLabel,
+  launchesLabel,
+}: {
+  data: ActivityPoint[];
+  viewsLabel: string;
+  launchesLabel: string;
+}) {
   return (
     <div className="h-80 w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -16,8 +24,8 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
             labelStyle={{ color: "var(--foreground)" }}
           />
           <Legend />
-          <Line type="monotone" dataKey="views" name="Vues" stroke="var(--accent)" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="launches" name="Lancements" stroke="var(--accent-2)" strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="views" name={viewsLabel} stroke="var(--accent)" strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="launches" name={launchesLabel} stroke="var(--accent-2)" strokeWidth={2} dot={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
