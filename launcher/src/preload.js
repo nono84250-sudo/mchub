@@ -54,4 +54,13 @@ contextBridge.exposeInMainWorld("mchub", {
     ipcRenderer.on("java:installProgress", listener);
     return () => ipcRenderer.removeListener("java:installProgress", listener);
   },
+  logs: {
+    getAll: () => ipcRenderer.invoke("logs:getAll"),
+    openConsole: () => ipcRenderer.invoke("logs:openConsole"),
+    onEntry: (callback) => {
+      const listener = (_event, entry) => callback(entry);
+      ipcRenderer.on("logs:entry", listener);
+      return () => ipcRenderer.removeListener("logs:entry", listener);
+    },
+  },
 });

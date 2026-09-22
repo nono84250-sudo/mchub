@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:;" />
+<title>Debug console — Omniscient Launcher</title>
+<style>
+  /* Jetons/reset repris de index.html (voir son commentaire) — dupliques ici
+     car cette fenetre est chargee independamment, sans feuille de style
+     partagee entre les deux pages du launcher. */
+  :root {
+    --background: #161826;
+    --surface: #232532;
+    --surface-raised: color-mix(in srgb, var(--foreground) 6%, var(--surface));
+    --border: color-mix(in srgb, var(--foreground) 16%, transparent);
+    --foreground: #e9e9ed;
+    --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
+    --muted2: color-mix(in srgb, var(--foreground) 35%, transparent);
+    --accent: #9184d9;
+    --accent-hover: color-mix(in srgb, var(--accent) 70%, white);
+    --accent-fill: color-mix(in srgb, var(--accent) 45%, black);
+    --accent-foreground: #f5f4ff;
+    --danger: #e08a8a;
+    --warn: #e0c28a;
+    --success: #5fd3a0;
+  }
+  :root[data-theme="light"] {
+    --background: #f3f3f6;
+    --surface: #ffffff;
+    --surface-raised: color-mix(in srgb, var(--foreground) 4%, var(--surface));
+    --border: color-mix(in srgb, var(--foreground) 14%, transparent);
+    --foreground: #1a1b23;
+    --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
+    --muted2: color-mix(in srgb, var(--foreground) 38%, transparent);
+    --danger: #c0453f;
+    --warn: #9a6a1f;
+    --success: #2f9e6e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #titlebar {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    flex: 0 0 auto;
+    background: color-mix(in srgb, black 8%, var(--background));
+    border-bottom: 1px solid var(--border);
+    -webkit-app-region: drag;
+    padding-left: 14px;
+  }
+  #titlebar .logo { font-size: 13px; font-weight: 600; }
+  #titlebar-controls { display: flex; height: 100%; margin-left: auto; -webkit-app-region: no-drag; }
+  .titlebar-btn {
+    width: 44px; height: 100%; display: flex; align-items: center; justify-content: center;
+    background: none; border: none; color: var(--muted); cursor: pointer;
+  }
+  .titlebar-btn svg { width: 10px; height: 10px; }
+  .titlebar-btn:hover { background: var(--surface-raised); color: var(--foreground); }
+  .titlebar-btn-close:hover { background: var(--danger); color: #fff; }
+
+  #toolbar {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap; flex: 0 0 auto;
+  }
+  .filter-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+    border-radius: 8px; font-size: 12px; white-space: nowrap; cursor: pointer;
+    border: 1px solid var(--border); color: var(--muted); background: none;
+  }
+  .filter-chip.active { border-color: var(--accent); color: var(--accent); }
+  .filter-chip .count { color: var(--muted2); }
+  .filter-chip.active .count { color: var(--accent); }
+  .toolbar-sep { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
+  #console-search {
+    flex: 1 1 160px; min-width: 120px; max-width: 260px; margin-left: auto;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; color: var(--foreground); font-size: 12.5px; outline: none;
+  }
+  #console-search:focus { border-color: var(--accent); }
+  .icon-btn {
+    width: 30px; height: 30px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--foreground); }
+  .icon-btn.active { border-color: var(--accent); color: var(--accent); }
+  .icon-btn svg { width: 14px; height: 14px; }
+
+  #console-body {
+    flex: 1 1 auto; overflow: auto; padding: 8px 14px;
+    font: 12px/1.55 ui-monospace, Consolas, Menlo, monospace;
+    background: color-mix(in srgb, var(--background) 70%, black);
+  }
+  .log-row {
+    display: grid; grid-template-columns: 76px 46px 74px minmax(0, 1fr);
+    gap: 12px; padding: 2px 0;
+  }
+  .log-time { color: var(--muted2); }
+  .log-source { color: var(--muted); }
+  .log-msg { white-space: pre-wrap; word-break: break-word; color: var(--foreground); }
+  .log-row.level-error .log-level { color: var(--danger); }
+  .log-row.level-error .log-msg { color: var(--danger); }
+  .log-row.level-warn .log-level { color: var(--warn); }
+  .log-row.level-info .log-level { color: var(--accent-hover); }
+  .log-row.level-debug .log-level { color: var(--muted2); }
+  #console-empty { color: var(--muted); padding: 24px 4px; font-family: "Segoe UI", Arial, sans-serif; }
+</style>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="logo" data-i18n="debugConsole.title">Debug console · Omniscient Launcher</span>
+    <div id="titlebar-controls">
+      <button id="win-min" class="titlebar-btn" data-i18n-title="titlebar.minimize">
+        <svg viewBox="0 0 10 10"><rect x="0" y="4.5" width="10" height="1" fill="currentColor" /></svg>
+      </button>
+      <button id="win-max" class="titlebar-btn" data-i18n-title="titlebar.maximize">
+        <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" /></svg>
+      </button>
+      <button id="win-close" class="titlebar-btn titlebar-btn-close" data-i18n-title="titlebar.close">
+        <svg viewBox="0 0 10 10">
+          <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" />
+          <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="toolbar">
+    <button type="button" class="filter-chip active" data-source="all" data-i18n="debugConsole.all">All</button>
+    <button type="button" class="filter-chip" data-source="launcher" data-i18n="debugConsole.launcher">Launcher</button>
+    <button type="button" class="filter-chip" data-source="game" data-i18n="debugConsole.game">Game</button>
+    <span class="toolbar-sep"></span>
+    <button type="button" class="filter-chip" data-level="error"><span data-i18n="debugConsole.errors">Errors</span> <span class="count" id="count-error">0</span></button>
+    <button type="button" class="filter-chip" data-level="warn"><span data-i18n="debugConsole.warnings">Warnings</span> <span class="count" id="count-warn">0</span></button>
+    <input type="text" id="console-search" data-i18n-placeholder="debugConsole.filterPlaceholder" placeholder="Filter output…" />
+    <button type="button" class="icon-btn" id="console-pause" data-i18n-title="debugConsole.pause">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+    </button>
+    <button type="button" class="icon-btn" id="console-clear" data-i18n-title="debugConsole.clear">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+    </button>
+    <button type="button" class="icon-btn" id="console-copy" data-i18n-title="debugConsole.copy">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+    </button>
+  </div>
+
+  <div id="console-body"></div>
+
+  <script src="i18n.js"></script>
+  <script src="theme.js"></script>
+  <script src="debug-console.js"></script>
+</body>
+</html>

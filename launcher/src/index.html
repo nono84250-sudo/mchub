@@ -520,12 +520,19 @@
   .detail button.back {
     background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 0 16px 0;
   }
+  /* .detail-icon chevauche volontairement le bas de la banniere (comme un
+     avatar sur une bannière de profil) — il doit rester en dehors du
+     conteneur overflow:hidden de la banniere (sinon la moitie qui deborde
+     est rognee), donc en frere du bandeau plutot qu'a l'interieur. */
+  .detail-hero {
+    position: relative;
+    margin-bottom: 36px;
+  }
   .detail-banner {
     position: relative;
     height: 150px;
     border-radius: 12px;
     overflow: hidden;
-    margin-bottom: 36px;
     background-image: repeating-linear-gradient(45deg, var(--surface) 0 8px, var(--surface-raised) 8px 16px);
   }
   .detail-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -1052,6 +1059,7 @@
             <button type="button" class="settings-nav-btn" data-tab="language" data-i18n="settings.tabLanguage">Langue</button>
             <button type="button" class="settings-nav-btn" data-tab="memory" data-i18n="settings.tabMemory">Mémoire</button>
             <button type="button" class="settings-nav-btn" data-tab="misc" data-i18n="settings.tabMisc">Divers</button>
+            <button type="button" class="settings-nav-btn" data-tab="debug" data-i18n="settings.tabDebug">Débogage</button>
           </nav>
           <div class="settings-content" id="settings-content"></div>
         </div>

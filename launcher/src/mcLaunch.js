@@ -2,6 +2,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { app } = require("electron");
 const { Client } = require("minecraft-launcher-core");
+const logStore = require("./logStore");
 
 // Repertoire de jeu local : Java, Minecraft (vanilla) et ses assets sont
 // telecharges ici au premier lancement, puis reutilises. Le launcher ne gere
@@ -34,12 +35,16 @@ async function launchMinecraft({ authorization, version, serverIp, onProgress, m
 
   const launcher = new Client();
 
-  // "debug"/"data" incluent la ligne de commande Java complète, qui contient
-  // le jeton d'accès Minecraft en clair (--accessToken ...) — on les garde
-  // seulement dans la console du processus principal (jamais transmis au
-  // renderer via onProgress/IPC, qui les afficherait en clair à l'écran).
-  launcher.on("debug", (e) => console.debug("[mcLaunch]", String(e)));
-  launcher.on("data", (e) => console.debug("[mcLaunch]", String(e)));
+  // "debug"/"data" peuvent inclure la ligne de commande Java complète, qui
+  // contient le jeton d'accès Minecraft en clair (--accessToken ...) — jamais
+  // transmis tel quel : logStore.pushLog() les passe par redact() avant de
+  // les rendre visibles dans la console de debug (voir logStore.js). "debug"
+  // couvre la préparation du lancement (téléchargements, vérifications) côté
+  // launcher ; "data" est la sortie réelle du processus Minecraft une fois
+  // démarré — d'où le tag "game" plutôt que "launcher" pour les deux, ce que
+  // l'utilisateur voit dans la console correspond à "les logs de Minecraft".
+  launcher.on("debug", (e) => logStore.pushLog({ level: "debug", source: "game", message: String(e) }));
+  launcher.on("data", (e) => logStore.pushLog({ level: "info", source: "game", message: String(e) }));
   // Objet structure (pas juste un texte) pour que le renderer puisse calculer
   // un vrai pourcentage (barre de progression stylee dans la barre de
   // lancement rapide) plutot que d'afficher uniquement du texte.
@@ -68,9 +73,11 @@ async function launchMinecraft({ authorization, version, serverIp, onProgress, m
   return new Promise((resolve, reject) => {
     let started = false;
     launcher.on("close", (code) => {
+      logStore.pushLog({ source: "game", message: `Processus du jeu fermé (code ${code}).` });
       if (!started) reject(new Error(`Le jeu s'est fermé avant de démarrer (code ${code}).`));
     });
     onProgress?.({ text: "Lancement du jeu…" });
+    logStore.pushLog({ source: "game", message: `Lancement de Minecraft ${version}${serverIp ? ` → ${serverIp}` : ""}…` });
     launcher
       .launch(opts)
       .then((proc) => {
@@ -79,13 +86,18 @@ async function launchMinecraft({ authorization, version, serverIp, onProgress, m
           // (echec reseau pendant le telechargement, manifeste corrompu...)
           // et resout avec `null` au lieu de rejeter — sans ce controle on
           // annoncerait un lancement reussi alors que rien n'a demarre.
+          logStore.pushLog({ level: "error", source: "game", message: "Le lancement du jeu a échoué (proc null)." });
           reject(new Error("Le lancement du jeu a échoué (voir les journaux pour le détail)."));
           return;
         }
         started = true;
+        logStore.pushLog({ source: "game", message: `Jeu démarré (PID ${proc.pid}).` });
         resolve(proc);
       })
-      .catch(reject);
+      .catch((error) => {
+        logStore.pushLog({ level: "error", source: "game", message: `Échec du lancement : ${error?.message || error}` });
+        reject(error);
+      });
   });
 }
 

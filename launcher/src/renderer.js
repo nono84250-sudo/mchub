@@ -232,8 +232,10 @@ async function renderDetail(server) {
 
   detailEl.innerHTML = `
     <button class="back">${t("serverDetail.back")}</button>
-    <div class="detail-banner">
-      ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
+    <div class="detail-hero">
+      <div class="detail-banner">
+        ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
+      </div>
       <div class="detail-icon">${serverIconInner(server)}</div>
     </div>
     <div class="detail-header">
@@ -923,7 +925,31 @@ async function renderSettingsTab(tab) {
   if (tab === "language") return renderLanguageTab(contentEl, settings);
   if (tab === "memory") return renderMemoryTab(contentEl, settings);
   if (tab === "misc") return renderMiscTab(contentEl, settings);
+  if (tab === "debug") return renderDebugTab(contentEl, settings);
   return renderAppearanceTab(contentEl, settings);
+}
+
+// Ne couvre que ce qui a ete explicitement demande (voir la maquette V3,
+// "04e Settings - Debug") : ouvrir la console de logs launcher+jeu. Les
+// autres sections de cette page dans la maquette (infos systeme, rapport de
+// diagnostic, reparation/reset) restent a construire plus tard si besoin.
+function renderDebugTab(contentEl, settings) {
+  contentEl.innerHTML = `
+    <section class="settings-section">
+      <div class="settings-row">
+        <span>
+          <span class="settings-row-label">${t("debug.consoleLabel")}</span>
+          <p class="settings-row-desc">${t("debug.consoleDesc")}</p>
+        </span>
+        <button id="settings-open-console" class="ms-login" type="button">${t("debug.openConsole")}</button>
+      </div>
+      <p class="settings-row-desc" style="margin-top: -6px;">${t("debug.shortcutHint", { shortcut: "Ctrl+Shift+D" })}</p>
+    </section>
+  `;
+
+  document.getElementById("settings-open-console").addEventListener("click", () => {
+    window.mchub.logs.openConsole();
+  });
 }
 
 function renderAppearanceTab(contentEl, settings) {

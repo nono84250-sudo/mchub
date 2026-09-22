@@ -1,8 +1,9 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
+const logStore = require("./logStore");
 
 // Dossier de donnees renomme en ".omniscient-launcher" (convention "dotfile")
 // plutot que "Omniscient Launcher" (le defaut d'Electron, derive de
@@ -120,6 +121,51 @@ function createWindow() {
   wireAutoUpdater(win);
 }
 
+// Console de debug (maquette "04f · Debug console — separate window") :
+// fenetre unique reutilisee (focus au lieu d'en recreer une deuxieme) tant
+// qu'elle reste ouverte, alimentee par logStore (voir logStore.js) via l'IPC
+// "logs:entry". Ctrl+Shift+D et Parametres > Debug y menent tous les deux.
+let consoleWindow = null;
+
+function createConsoleWindow() {
+  if (consoleWindow && !consoleWindow.isDestroyed()) {
+    consoleWindow.show();
+    consoleWindow.focus();
+    return consoleWindow;
+  }
+
+  consoleWindow = new BrowserWindow({
+    width: 860,
+    height: 560,
+    minWidth: 560,
+    minHeight: 360,
+    backgroundColor: "#161826",
+    frame: false,
+    icon: path.join(__dirname, "..", "build", "icon.png"),
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  const sendMaximizedState = () => consoleWindow.webContents.send("window:maximized-changed", consoleWindow.isMaximized());
+  consoleWindow.on("maximize", sendMaximizedState);
+  consoleWindow.on("unmaximize", sendMaximizedState);
+
+  const stopForwarding = logStore.onLog((entry) => {
+    if (!consoleWindow.isDestroyed()) consoleWindow.webContents.send("logs:entry", entry);
+  });
+  consoleWindow.on("closed", () => {
+    stopForwarding();
+    consoleWindow = null;
+  });
+
+  consoleWindow.loadFile(path.join(__dirname, "debug-console.html"));
+  return consoleWindow;
+}
+
 // Mise a jour automatique (voir Deploiement Vercel.md) : le .exe distribue
 // publiquement ne contient que ce launcher a une version donnee — les
 // nouvelles fonctionnalites arrivent en telechargeant une nouvelle version
@@ -139,7 +185,10 @@ function wireAutoUpdater(win) {
   };
 
   autoUpdater.on("checking-for-update", () => send({ phase: "checking" }));
-  autoUpdater.on("update-available", (info) => send({ phase: "downloading", version: info.version, percent: 0 }));
+  autoUpdater.on("update-available", (info) => {
+    logStore.pushLog({ source: "launcher", message: `Mise à jour disponible : v${info.version}` });
+    send({ phase: "downloading", version: info.version, percent: 0 });
+  });
   autoUpdater.on("download-progress", (progress) => send({ phase: "downloading", percent: Math.round(progress.percent) }));
 
   autoUpdater.on("update-not-available", () => {
@@ -148,11 +197,13 @@ function wireAutoUpdater(win) {
     updateCheckResolve = null;
   });
   autoUpdater.on("error", (error) => {
+    logStore.pushLog({ level: "error", source: "launcher", message: `Vérification de mise à jour échouée : ${error?.message || error}` });
     send({ phase: "error", message: error?.message || String(error) });
     updateCheckResolve?.();
     updateCheckResolve = null;
   });
   autoUpdater.on("update-downloaded", () => {
+    logStore.pushLog({ source: "launcher", message: "Mise à jour téléchargée, installation au redémarrage." });
     send({ phase: "ready-to-install" });
     updateCheckResolve?.();
     updateCheckResolve = null;
@@ -178,6 +229,11 @@ function checkForUpdates() {
 }
 
 ipcMain.handle("update:check", () => checkForUpdates());
+
+ipcMain.handle("logs:getAll", () => logStore.getAll());
+ipcMain.handle("logs:openConsole", () => {
+  createConsoleWindow();
+});
 
 // Toutes les requêtes réseau vers le site passent par le processus principal
 // (jamais par le renderer) : évite le CORS et garde le renderer sans accès
@@ -485,6 +541,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   }
   gameLaunchInProgress = true;
 
+  logStore.pushLog({ source: "launcher", message: `Demande de lancement pour "${slug}"` });
   try {
     const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
       headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` },
@@ -517,7 +574,9 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
 
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+    const message = error instanceof Error ? error.message : "Erreur inconnue";
+    logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement de "${slug}" : ${message}` });
+    return { ok: false, error: message };
   } finally {
     gameLaunchInProgress = false;
   }
@@ -534,7 +593,13 @@ app.whenReady().then(() => {
     app.exit(1);
     return;
   }
+  logStore.pushLog({ source: "launcher", message: `Démarrage d'Omniscient Launcher ${app.getVersion()}` });
   createWindow();
+  globalShortcut.register("CommandOrControl+Shift+D", () => createConsoleWindow());
+});
+
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on("window-all-closed", () => {
