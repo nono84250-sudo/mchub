@@ -414,6 +414,11 @@ async function launchServer(server) {
     await window.mchub.settings.set({ playCounts, lastPlayedSlug: server.slug, recentlyPlayed });
     await refreshPlaybarFavorites();
 
+    // Parametres > Debogage (voir renderDebugTab) — deux reglages qui
+    // n'ont d'effet qu'au moment ou une partie demarre reellement.
+    if (settings.openConsoleOnLaunch) window.mchub.logs.openConsole();
+    if (settings.keepLauncherOpenWhilePlaying === false) window.mchub.windowControls.minimize();
+
     setTimeout(() => {
       setPlaybarBusy(false);
       playBtn.disabled = !selectedFavoriteSlug;
@@ -929,13 +934,18 @@ async function renderSettingsTab(tab) {
   return renderAppearanceTab(contentEl, settings);
 }
 
-// Ne couvre que ce qui a ete explicitement demande (voir la maquette V3,
-// "04e Settings - Debug") : ouvrir la console de logs launcher+jeu. Les
-// autres sections de cette page dans la maquette (infos systeme, rapport de
-// diagnostic, reparation/reset) restent a construire plus tard si besoin.
+// Maquette V3, "04e Settings - Debug". Simplifications assumees par rapport
+// a la maquette (pas de modpacks/CurseForge dans ce launcher pour l'instant,
+// voir mcLaunch.js) : "Reparer"/"Vider le cache" portent sur les sous-dossiers
+// de GAME_ROOT geres par minecraft-launcher-core plutot que sur un cache de
+// modpack qui n'existe pas encore ; "Exporter le rapport" produit un fichier
+// texte (infos systeme + fin du log du jour) plutot qu'une archive zip.
 function renderDebugTab(contentEl, settings) {
+  const LOG_LEVELS = ["error", "warn", "info", "debug"];
+
   contentEl.innerHTML = `
     <section class="settings-section">
+      <h3 class="settings-row-desc" style="text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 0;">${t("debug.consoleSection")}</h3>
       <div class="settings-row">
         <span>
           <span class="settings-row-label">${t("debug.consoleLabel")}</span>
@@ -943,12 +953,178 @@ function renderDebugTab(contentEl, settings) {
         </span>
         <button id="settings-open-console" class="ms-login" type="button">${t("debug.openConsole")}</button>
       </div>
-      <p class="settings-row-desc" style="margin-top: -6px;">${t("debug.shortcutHint", { shortcut: "Ctrl+Shift+D" })}</p>
+      <p class="settings-row-desc" style="margin-top: -10px;">${t("debug.shortcutHint", { shortcut: "Ctrl+Shift+D" })}</p>
+      <div class="settings-divider"></div>
+      <div class="settings-row">
+        <span>
+          <span class="settings-row-label">${t("debug.logLevel")}</span>
+          <p class="settings-row-desc">${t("debug.logLevelDesc")}</p>
+        </span>
+        <div class="segmented" id="settings-log-level">
+          ${LOG_LEVELS.map(
+            (level) =>
+              `<button type="button" class="segmented-btn${settings.logLevel === level ? " active" : ""}" data-level="${level}">${t(`debug.logLevel${level[0].toUpperCase()}${level.slice(1)}`)}</button>`,
+          ).join("")}
+        </div>
+      </div>
+      <div class="settings-divider"></div>
+      <label class="settings-row" style="cursor: pointer;">
+        <span>
+          <span class="settings-row-label">${t("debug.openOnLaunch")}</span>
+          <p class="settings-row-desc">${t("debug.openOnLaunchDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-open-on-launch" ${settings.openConsoleOnLaunch ? "checked" : ""} />
+      </label>
+      <label class="settings-row" style="cursor: pointer;">
+        <span>
+          <span class="settings-row-label">${t("debug.keepOpen")}</span>
+          <p class="settings-row-desc">${t("debug.keepOpenDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-keep-open" ${settings.keepLauncherOpenWhilePlaying ? "checked" : ""} />
+      </label>
+    </section>
+
+    <section class="settings-section">
+      <h3 class="settings-row-desc" style="text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 0;">${t("debug.logsSection")}</h3>
+      <div>
+        <div class="settings-row-label">${t("debug.logFiles")}</div>
+        <p class="settings-path" style="margin-top: 6px;" id="settings-logs-path"></p>
+        <div style="display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
+          <button id="settings-open-logs" class="ms-login" type="button">${t("debug.openLogsFolder")}</button>
+          <button id="settings-copy-log" class="ms-login" type="button">${t("debug.copyLatestLog")}</button>
+        </div>
+        <p class="join-note" id="settings-logs-status" style="margin-top: 6px;"></p>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-row">
+        <span>
+          <span class="settings-row-label">${t("debug.diagnosticReport")}</span>
+          <p class="settings-row-desc">${t("debug.diagnosticReportDesc")}</p>
+        </span>
+        <button id="settings-export-report" class="ms-login" type="button">${t("debug.exportReport")}</button>
+      </div>
+      <p class="join-note" id="settings-report-status"></p>
+    </section>
+
+    <section class="settings-section">
+      <h3 class="settings-row-desc" style="text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 0;">${t("debug.systemSection")}</h3>
+      <div class="system-info-grid" id="settings-system-info">
+        <span class="label">${t("common.checking")}</span><span class="value"></span>
+      </div>
+      <div><button id="settings-copy-sysinfo" class="ms-login" type="button" hidden>${t("debug.copyToClipboard")}</button></div>
+    </section>
+
+    <section class="settings-section">
+      <h3 class="settings-row-desc" style="text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 0;">${t("debug.resetSection")}</h3>
+      <div class="settings-row">
+        <span>
+          <span class="settings-row-label">${t("debug.repairFiles")}</span>
+          <p class="settings-row-desc">${t("debug.repairFilesDesc")}</p>
+        </span>
+        <button id="settings-repair" class="ms-login" type="button">${t("debug.repair")}</button>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-row">
+        <span>
+          <span class="settings-row-label">${t("debug.clearCache")}</span>
+          <p class="settings-row-desc" id="settings-cache-size-desc">${t("debug.clearCacheDesc", { size: "…" })}</p>
+        </span>
+        <button id="settings-clear-cache" class="btn-danger" type="button">${t("debug.clearCache")}</button>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-row">
+        <span>
+          <span class="settings-row-label">${t("debug.resetSettings")}</span>
+          <p class="settings-row-desc">${t("debug.resetSettingsDesc")}</p>
+        </span>
+        <button id="settings-reset" class="btn-danger" type="button">${t("debug.reset")}</button>
+      </div>
+      <p class="join-note" id="settings-reset-status"></p>
     </section>
   `;
 
   document.getElementById("settings-open-console").addEventListener("click", () => {
     window.mchub.logs.openConsole();
+  });
+
+  contentEl.querySelectorAll("#settings-log-level .segmented-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await window.mchub.settings.set({ logLevel: btn.dataset.level });
+      contentEl.querySelectorAll("#settings-log-level .segmented-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    });
+  });
+
+  document.getElementById("settings-open-on-launch").addEventListener("change", (event) => {
+    window.mchub.settings.set({ openConsoleOnLaunch: event.target.checked });
+  });
+  document.getElementById("settings-keep-open").addEventListener("change", (event) => {
+    window.mchub.settings.set({ keepLauncherOpenWhilePlaying: event.target.checked });
+  });
+
+  document.getElementById("settings-open-logs").addEventListener("click", () => window.mchub.logs.openLogsFolder());
+  document.getElementById("settings-copy-log").addEventListener("click", async () => {
+    const content = await window.mchub.logs.copyLatest();
+    try {
+      await navigator.clipboard.writeText(content);
+      document.getElementById("settings-logs-status").textContent = t("debug.copied");
+    } catch {
+      // Presse-papiers indisponible — pas bloquant pour une simple commodite.
+    }
+  });
+  document.getElementById("settings-logs-path").textContent = settings.logsDir;
+
+  document.getElementById("settings-export-report").addEventListener("click", async () => {
+    const result = await window.mchub.diagnostics.exportReport();
+    document.getElementById("settings-report-status").textContent = result.ok ? t("debug.reportExported") : "";
+  });
+
+  const sysInfoEl = document.getElementById("settings-system-info");
+  window.mchub.diagnostics.getSystemInfo().then((info) => {
+    const rows = [
+      [t("settings.launcherVersion"), `v${info.launcherVersion}`],
+      ["Electron", info.electronVersion],
+      ["OS", info.os],
+      ["Java", info.java || t("debug.javaNotDetected")],
+      [t("settings.ramAllocation"), info.memory],
+      ["GPU", info.gpu || t("debug.gpuUnknown")],
+    ];
+    sysInfoEl.innerHTML = rows.map(([label, value]) => `<span class="label">${label}</span><span class="value">${escapeHtml(value)}</span>`).join("");
+    const copyBtn = document.getElementById("settings-copy-sysinfo");
+    copyBtn.hidden = false;
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(rows.map(([label, value]) => `${label}: ${value}`).join("\n"));
+      } catch {
+        // Presse-papiers indisponible — pas bloquant.
+      }
+    });
+  });
+
+  document.getElementById("settings-repair").addEventListener("click", async () => {
+    await window.mchub.diagnostics.repair();
+    document.getElementById("settings-reset-status").textContent = t("debug.repaired");
+  });
+
+  const formatCacheSize = (bytes) =>
+    bytes > 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} Go` : `${(bytes / (1024 * 1024)).toFixed(0)} Mo`;
+
+  window.mchub.diagnostics.getCacheSizeBytes().then((bytes) => {
+    document.getElementById("settings-cache-size-desc").textContent = t("debug.clearCacheDesc", { size: formatCacheSize(bytes) });
+  });
+  document.getElementById("settings-clear-cache").addEventListener("click", async () => {
+    if (!window.confirm(t("debug.clearCacheConfirm"))) return;
+    await window.mchub.diagnostics.clearCache();
+    document.getElementById("settings-reset-status").textContent = t("debug.cacheCleared");
+    document.getElementById("settings-cache-size-desc").textContent = t("debug.clearCacheDesc", { size: formatCacheSize(0) });
+  });
+
+  document.getElementById("settings-reset").addEventListener("click", async () => {
+    if (!window.confirm(t("debug.resetConfirm"))) return;
+    const updated = await window.mchub.settings.reset();
+    window.themeControls.applyTheme(updated);
+    document.body.classList.toggle("compact-list", !!updated.compactServerList);
+    renderDebugTab(contentEl, { ...settings, ...updated });
+    document.getElementById("settings-reset-status").textContent = t("debug.resetDone");
   });
 }
 
@@ -1617,8 +1793,6 @@ async function proceedToGate() {
 }
 
 async function boot() {
-  const bootstrapShownAt = Date.now();
-
   // Langue/theme appliques avant tout le reste : le reste de boot() (et tout
   // le rendu dynamique via t()) doit deja voir la bonne langue/le bon theme.
   // Flash bref du francais/theme sombre par defaut inevitable ici (le
@@ -1681,17 +1855,6 @@ async function boot() {
   // l'appli — sans effet si ensureJavaAvailable() l'a deja fait juste avant
   // (setSize/setResizable/setMinimumSize sont idempotents cote main.js).
   await window.mchub.windowControls.expandFromBootstrap();
-
-  // Plancher d'affichage : Java deja detecte + mise a jour deja a jour font
-  // filer cet ecran en quelques centaines de ms, trop vite pour etre vu —
-  // on force au moins 5s au total depuis son apparition (n'a aucun effet si
-  // ensureJavaAvailable() a deja pris plus de temps, ex. installation de Java).
-  const MIN_BOOTSTRAP_DISPLAY_MS = 5000;
-  const elapsedMs = Date.now() - bootstrapShownAt;
-  if (elapsedMs < MIN_BOOTSTRAP_DISPLAY_MS) {
-    bootstrapProgressEl.style.width = "100%";
-    await new Promise((resolve) => setTimeout(resolve, MIN_BOOTSTRAP_DISPLAY_MS - elapsedMs));
-  }
 
   document.body.classList.remove("bootstrapping");
 

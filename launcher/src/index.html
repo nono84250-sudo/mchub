@@ -464,6 +464,28 @@
   .settings-row-label { font-size: 13px; color: var(--foreground); font-weight: 500; }
   .settings-row-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
+  .segmented { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--surface-raised); border: 1px solid var(--border); flex-shrink: 0; }
+  .segmented-btn {
+    padding: 5px 11px; border-radius: 6px; font-size: 12.5px; white-space: nowrap;
+    border: none; background: none; color: var(--muted); cursor: pointer; font-family: inherit;
+  }
+  .segmented-btn.active { background: var(--accent-fill); color: var(--accent-foreground); }
+
+  button.btn-danger {
+    border: 1px solid color-mix(in srgb, var(--danger) 55%, transparent);
+    color: var(--danger);
+    background: transparent;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.btn-danger:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+
+  .system-info-grid { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 8px 16px; font-size: 12.5px; font-family: ui-monospace, Consolas, Menlo, monospace; }
+  .system-info-grid .label { color: var(--muted); }
+  .system-info-grid .value { color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   .theme-options { display: flex; gap: 10px; margin-top: 4px; }
   .theme-option {
     flex: 1;

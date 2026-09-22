@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("mchub", {
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
     set: (partial) => ipcRenderer.invoke("settings:set", partial),
+    reset: () => ipcRenderer.invoke("settings:reset"),
     openGameFolder: () => ipcRenderer.invoke("settings:openGameFolder"),
   },
   getMinecraftStatus: () => ipcRenderer.invoke("status:getMinecraftStatus"),
@@ -57,10 +58,19 @@ contextBridge.exposeInMainWorld("mchub", {
   logs: {
     getAll: () => ipcRenderer.invoke("logs:getAll"),
     openConsole: () => ipcRenderer.invoke("logs:openConsole"),
+    openLogsFolder: () => ipcRenderer.invoke("logs:openLogsFolder"),
+    copyLatest: () => ipcRenderer.invoke("logs:copyLatest"),
     onEntry: (callback) => {
       const listener = (_event, entry) => callback(entry);
       ipcRenderer.on("logs:entry", listener);
       return () => ipcRenderer.removeListener("logs:entry", listener);
     },
+  },
+  diagnostics: {
+    getSystemInfo: () => ipcRenderer.invoke("diagnostics:getSystemInfo"),
+    getCacheSizeBytes: () => ipcRenderer.invoke("diagnostics:getCacheSizeBytes"),
+    repair: () => ipcRenderer.invoke("diagnostics:repair"),
+    clearCache: () => ipcRenderer.invoke("diagnostics:clearCache"),
+    exportReport: () => ipcRenderer.invoke("diagnostics:exportReport"),
   },
 });

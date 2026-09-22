@@ -36,6 +36,12 @@ const DEFAULTS = {
   theme: "dark",
   accentColor: "#9184d9",
   compactServerList: false,
+  // Parametres > Debogage (voir logStore.js/renderer.js) — logLevel ne
+  // filtre que ce qui est ecrit dans le fichier de log, jamais la console
+  // de debug en direct.
+  logLevel: "info",
+  openConsoleOnLaunch: false,
+  keepLauncherOpenWhilePlaying: true,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -76,9 +82,22 @@ function saveSettings(partial) {
   if (partial.locale !== undefined) next.locale = ["fr", "en"].includes(partial.locale) ? partial.locale : current.locale;
   if (partial.theme !== undefined) next.theme = ["system", "dark", "light"].includes(partial.theme) ? partial.theme : current.theme;
   if (partial.compactServerList !== undefined) next.compactServerList = !!partial.compactServerList;
+  if (partial.logLevel !== undefined) next.logLevel = ["error", "warn", "info", "debug"].includes(partial.logLevel) ? partial.logLevel : current.logLevel;
+  if (partial.openConsoleOnLaunch !== undefined) next.openConsoleOnLaunch = !!partial.openConsoleOnLaunch;
+  if (partial.keepLauncherOpenWhilePlaying !== undefined) next.keepLauncherOpenWhilePlaying = !!partial.keepLauncherOpenWhilePlaying;
 
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2));
   return next;
 }
 
-module.exports = { loadSettings, saveSettings, clampGB };
+// "Reinitialiser les parametres" (Parametres > Debogage) — remet TOUT
+// settings.json a DEFAULTS (favoris/recents inclus, la maquette ne les
+// distingue pas des autres reglages). Le compte connecte (sessionStore.js)
+// et les fichiers du jeu (GAME_ROOT) sont des fichiers separes, jamais
+// touches ici.
+function resetSettings() {
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(DEFAULTS, null, 2));
+  return { ...DEFAULTS };
+}
+
+module.exports = { loadSettings, saveSettings, resetSettings, clampGB };

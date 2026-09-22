@@ -30,6 +30,7 @@ const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
 const { checkMinecraftStatus } = require("./minecraftStatus");
 const javaManager = require("./javaManager");
+const diagnostics = require("./diagnostics");
 const { autoUpdater } = require("electron-updater");
 
 // Repli sur src/env.generated.js (voir scripts/generate-env.js) : une fois
@@ -208,8 +209,13 @@ function wireAutoUpdater(win) {
     updateCheckResolve?.();
     updateCheckResolve = null;
     // Laisse le temps au message de s'afficher avant que l'appli ne
-    // redemarre pour appliquer la mise a jour telechargee.
-    setTimeout(() => autoUpdater.quitAndInstall(), 1200);
+    // redemarre pour appliquer la mise a jour telechargee. quitAndInstall()
+    // sans argument lance l'installateur assiste (oneClick:false) EN CLAIR,
+    // avec son propre assistant visible — isSilent=true passe /S a NSIS pour
+    // qu'il s'installe sans aucune fenetre, isForceRunAfter=true relance
+    // l'appli toute seule ensuite : le bootstrap reste le seul ecran visible
+    // pendant toute la mise a jour, jamais un installateur Windows a part.
+    setTimeout(() => autoUpdater.quitAndInstall(true, true), 1200);
   });
 }
 
@@ -233,6 +239,57 @@ ipcMain.handle("update:check", () => checkForUpdates());
 ipcMain.handle("logs:getAll", () => logStore.getAll());
 ipcMain.handle("logs:openConsole", () => {
   createConsoleWindow();
+});
+ipcMain.handle("logs:openLogsFolder", () => shell.openPath(logStore.logsDir()));
+ipcMain.handle("logs:copyLatest", () => {
+  try {
+    return fs.readFileSync(logStore.todayLogPath(), "utf8");
+  } catch {
+    return "";
+  }
+});
+// Rapport texte simple (pas de zip — voir le choix de scope dans le commit) :
+// infos systeme + fin du fichier de log du jour, dans un seul fichier revele
+// dans l'explorateur pour etre joint facilement a un message de support.
+ipcMain.handle("diagnostics:exportReport", async () => {
+  const settings = settingsStore.loadSettings();
+  const info = await diagnostics.getSystemInfo({ ...settings, gameRoot: GAME_ROOT, appVersion: app.getVersion() });
+  let recentLog = "";
+  try {
+    recentLog = fs.readFileSync(logStore.todayLogPath(), "utf8").split("\n").slice(-200).join("\n");
+  } catch {
+    recentLog = "(aucun fichier de log pour aujourd'hui)";
+  }
+  const lines = [
+    `Rapport de diagnostic — Omniscient Launcher ${info.launcherVersion}`,
+    `Généré le ${new Date().toISOString()}`,
+    "",
+    `Electron    : ${info.electronVersion}`,
+    `OS          : ${info.os}`,
+    `Java        : ${info.java || "non détecté"}`,
+    `Mémoire     : ${info.memory}`,
+    `GPU         : ${info.gpu || "inconnu"}`,
+    "",
+    "--- Journal recent ---",
+    recentLog,
+  ];
+  const reportPath = path.join(logStore.logsDir(), `rapport-diagnostic-${Date.now()}.txt`);
+  fs.writeFileSync(reportPath, lines.join("\n"));
+  shell.showItemInFolder(reportPath);
+  return { ok: true, path: reportPath };
+});
+
+ipcMain.handle("diagnostics:getSystemInfo", () =>
+  diagnostics.getSystemInfo({ ...settingsStore.loadSettings(), gameRoot: GAME_ROOT, appVersion: app.getVersion() }),
+);
+ipcMain.handle("diagnostics:getCacheSizeBytes", () => diagnostics.getCacheSizeBytes());
+ipcMain.handle("diagnostics:repair", () => {
+  diagnostics.repairGameFiles();
+  logStore.pushLog({ source: "launcher", message: "Fichiers du jeu réparés (versions/libraries effacés)." });
+});
+ipcMain.handle("diagnostics:clearCache", () => {
+  diagnostics.clearCache();
+  logStore.pushLog({ source: "launcher", message: "Cache vidé (assets/téléchargements)." });
 });
 
 // Toutes les requêtes réseau vers le site passent par le processus principal
@@ -486,11 +543,22 @@ function suggestMemoryGB() {
 ipcMain.handle("settings:get", () => ({
   ...settingsStore.loadSettings(),
   gameRoot: GAME_ROOT,
+  logsDir: logStore.logsDir(),
   appVersion: app.getVersion(),
   ...suggestMemoryGB(),
 }));
 
-ipcMain.handle("settings:set", (_event, partial) => settingsStore.saveSettings(partial || {}));
+ipcMain.handle("settings:set", (_event, partial) => {
+  const next = settingsStore.saveSettings(partial || {});
+  if (partial && partial.logLevel !== undefined) logStore.setMinFileLevel(next.logLevel);
+  return next;
+});
+
+ipcMain.handle("settings:reset", () => {
+  const next = settingsStore.resetSettings();
+  logStore.setMinFileLevel(next.logLevel);
+  return next;
+});
 
 ipcMain.handle("settings:openGameFolder", () => shell.openPath(GAME_ROOT));
 
@@ -593,6 +661,7 @@ app.whenReady().then(() => {
     app.exit(1);
     return;
   }
+  logStore.setMinFileLevel(settingsStore.loadSettings().logLevel);
   logStore.pushLog({ source: "launcher", message: `Démarrage d'Omniscient Launcher ${app.getVersion()}` });
   createWindow();
   globalShortcut.register("CommandOrControl+Shift+D", () => createConsoleWindow());
