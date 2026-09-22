@@ -1826,6 +1826,7 @@ async function boot() {
   // pour ne pas donner une impression buguee (texte qui clignote).
   bootstrapStatusEl.textContent = t("bootstrap.checkingUpdates");
   bootstrapProgressEl.style.width = "15%";
+  let updateReadyToInstall = false;
   const stopUpdateStatus = window.mchub.updates.onStatus((status) => {
     if (status.phase === "downloading") {
       bootstrapStatusEl.textContent = status.percent
@@ -1835,6 +1836,7 @@ async function boot() {
     } else if (status.phase === "ready-to-install") {
       bootstrapStatusEl.textContent = t("bootstrap.updateReady");
       bootstrapProgressEl.style.width = "100%";
+      updateReadyToInstall = true;
     }
     // "up-to-date" et "error" : silencieux, l'etape suivante (Java) prend le
     // relai tout de suite — jamais d'ecran d'erreur pour une verification de
@@ -1842,6 +1844,20 @@ async function boot() {
   });
   await Promise.all([window.mchub.updates.check(), new Promise((resolve) => setTimeout(resolve, 500))]);
   stopUpdateStatus();
+
+  if (updateReadyToInstall) {
+    // BUG corrige ici : window.mchub.updates.check() se resolvait des que
+    // "update-downloaded" arrivait, alors que main.js n'appelle
+    // quitAndInstall() que ~1.2s plus tard (le temps de montrer ce message).
+    // Boot() enchainait donc immediatement sur Java/reprise de session
+    // PENDANT ce delai, et l'appli se fermait en plein milieu pour installer
+    // la mise a jour — donnant l'impression d'un crash sans aucune erreur a
+    // journaliser (il n'y en avait pas : l'appli se fermait exactement comme
+    // prevu, juste au mauvais moment aux yeux du joueur). On s'arrete ici :
+    // l'appli va se fermer puis se relancer seule (main.js, isForceRunAfter),
+    // le prochain demarrage repartira de zero sur la nouvelle version.
+    return;
+  }
 
   bootstrapStatusEl.textContent = t("bootstrap.checkingJava");
   bootstrapProgressEl.style.width = "45%";
