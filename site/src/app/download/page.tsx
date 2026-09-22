@@ -23,9 +23,31 @@ async function detectPlatform(): Promise<PlatformId> {
   return "windows";
 }
 
+// Version/taille lues depuis la release GitHub reelle (jamais figees en dur
+// ici — sinon ce texte se decale du binaire reellement servi a chaque nouvelle
+// publication). Echoue silencieusement (API GitHub indisponible, pas encore
+// de release) : la ligne "detecte : {os}" s'affiche seule dans ce cas.
+async function getLatestRelease(): Promise<{ version: string; sizeMB: number } | null> {
+  try {
+    const res = await fetch("https://api.github.com/repos/nono84250-sudo/omniscient-launcher/releases/latest", {
+      headers: { Accept: "application/vnd.github+json" },
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const asset = data.assets?.find((a: { name: string }) => a.name === "Omniscient.Launcher.Setup.exe");
+    const version = typeof data.tag_name === "string" ? data.tag_name.replace(/^v/, "") : null;
+    if (!asset || !version) return null;
+    return { version, sizeMB: Math.round(asset.size / (1024 * 1024)) };
+  } catch {
+    return null;
+  }
+}
+
 export default async function DownloadPage() {
   const { dict } = await getT();
   const detected = await detectPlatform();
+  const release = await getLatestRelease();
 
   // Seul Windows a un build reel pour l'instant (voir project_launcher_installer) —
   // macOS/Linux restent affiches mais desactives ("Bientot disponible").
@@ -81,7 +103,14 @@ export default async function DownloadPage() {
           )}
 
           {primary.href ? (
-            <p className="text-xs text-muted">{dict.download.detected.replace("{os}", primary.label)}</p>
+            <p className="text-xs text-muted">
+              {release
+                ? dict.download.versionSizeDetected
+                    .replace("{version}", release.version)
+                    .replace("{size}", String(release.sizeMB))
+                    .replace("{os}", primary.label)
+                : dict.download.detected.replace("{os}", primary.label)}
+            </p>
           ) : (
             <Link
               href={windows.href!}

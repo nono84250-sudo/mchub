@@ -37,6 +37,7 @@
     "ctaComingSoonFor": "Coming soon on {os}",
     "ctaDownloadWindowsInstead": "Download for Windows instead",
     "detected": "detected: {os}",
+    "versionSizeDetected": "v{version} · {size} MB · detected: {os}",
     "osWindows": "Windows",
     "osMac": "macOS",
     "osLinux": "Linux",
