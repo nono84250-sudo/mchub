@@ -30,6 +30,14 @@ contextBridge.exposeInMainWorld("mchub", {
     openGameFolder: () => ipcRenderer.invoke("settings:openGameFolder"),
   },
   getMinecraftStatus: () => ipcRenderer.invoke("status:getMinecraftStatus"),
+  updates: {
+    check: () => ipcRenderer.invoke("update:check"),
+    onStatus: (callback) => {
+      const listener = (_event, status) => callback(status);
+      ipcRenderer.on("update:status", listener);
+      return () => ipcRenderer.removeListener("update:status", listener);
+    },
+  },
   account: {
     list: () => ipcRenderer.invoke("account:list"),
     switch: (id) => ipcRenderer.invoke("account:switch", id),

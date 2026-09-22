@@ -38,6 +38,10 @@ const DICTIONARIES = {
     },
     bootstrap: {
       starting: "Démarrage…",
+      checkingUpdates: "Vérification des mises à jour…",
+      downloadingUpdate: "Téléchargement de la mise à jour {version}…",
+      downloadingUpdateProgress: "Téléchargement de la mise à jour… {percent}%",
+      updateReady: "Redémarrage pour installer la mise à jour…",
       checkingJava: "Vérification de Java…",
       resumingSession: "Reprise de la session…",
     },
@@ -214,6 +218,10 @@ const DICTIONARIES = {
     },
     bootstrap: {
       starting: "Starting…",
+      checkingUpdates: "Checking for updates…",
+      downloadingUpdate: "Downloading update {version}…",
+      downloadingUpdateProgress: "Downloading update… {percent}%",
+      updateReady: "Restarting to install the update…",
       checkingJava: "Checking Java…",
       resumingSession: "Resuming session…",
     },

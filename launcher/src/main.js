@@ -29,6 +29,7 @@ const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
 const { checkMinecraftStatus } = require("./minecraftStatus");
 const javaManager = require("./javaManager");
+const { autoUpdater } = require("electron-updater");
 
 // URL du site Omniscient, source de vérité (voir cahier des charges, section
 // "modèle de synchronisation"). En dur sur le localhost de dev pour l'instant
@@ -103,7 +104,67 @@ function createWindow() {
   win.on("unmaximize", sendMaximizedState);
 
   win.loadFile(path.join(__dirname, "index.html"));
+  wireAutoUpdater(win);
 }
+
+// Mise a jour automatique (voir Deploiement Vercel.md) : le .exe distribue
+// publiquement ne contient que ce launcher a une version donnee — les
+// nouvelles fonctionnalites arrivent en telechargeant une nouvelle version
+// ici, jamais en repassant par l'installateur d'origine. electron-updater lit
+// app-update.yml (genere par electron-builder a partir de build.publish dans
+// package.json) pour savoir ou chercher — inutilisable tel quel en dev
+// (app.isPackaged est faux via `electron .`), donc on saute la vraie
+// verification hors app packagee plutot que de planter sur un fichier absent.
+let updateCheckResolve = null;
+
+function wireAutoUpdater(win) {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  const send = (status) => {
+    if (!win.isDestroyed()) win.webContents.send("update:status", status);
+  };
+
+  autoUpdater.on("checking-for-update", () => send({ phase: "checking" }));
+  autoUpdater.on("update-available", (info) => send({ phase: "downloading", version: info.version, percent: 0 }));
+  autoUpdater.on("download-progress", (progress) => send({ phase: "downloading", percent: Math.round(progress.percent) }));
+
+  autoUpdater.on("update-not-available", () => {
+    send({ phase: "up-to-date" });
+    updateCheckResolve?.();
+    updateCheckResolve = null;
+  });
+  autoUpdater.on("error", (error) => {
+    send({ phase: "error", message: error?.message || String(error) });
+    updateCheckResolve?.();
+    updateCheckResolve = null;
+  });
+  autoUpdater.on("update-downloaded", () => {
+    send({ phase: "ready-to-install" });
+    updateCheckResolve?.();
+    updateCheckResolve = null;
+    // Laisse le temps au message de s'afficher avant que l'appli ne
+    // redemarre pour appliquer la mise a jour telechargee.
+    setTimeout(() => autoUpdater.quitAndInstall(), 1200);
+  });
+}
+
+// Resout des que le resultat est connu (a jour, en erreur, ou mise a jour
+// telechargee et prete) — jamais bloque en attente indefinie si
+// electron-updater ne trouve rien a faire. Le bootstrap attend cette
+// promesse avant de passer a l'etape suivante (verification de Java).
+function checkForUpdates() {
+  return new Promise((resolve) => {
+    if (!app.isPackaged) {
+      resolve();
+      return;
+    }
+    updateCheckResolve = resolve;
+    autoUpdater.checkForUpdates().catch(() => resolve());
+  });
+}
+
+ipcMain.handle("update:check", () => checkForUpdates());
 
 // Toutes les requêtes réseau vers le site passent par le processus principal
 // (jamais par le renderer) : évite le CORS et garde le renderer sans accès

@@ -1612,11 +1612,34 @@ async function boot() {
   wirePlaybar();
 
   // Ecran de demarrage : ne couvre que les verifications reelles qui
-  // precedent la premiere UI interactive (Java, reprise de session) — pas
-  // de fausse etape ("checking for updates") pour une fonctionnalite qui
-  // n'existe pas. Si Java manque, ensureJavaAvailable() masque cet ecran
+  // precedent la premiere UI interactive (mise a jour, Java, reprise de
+  // session). Si Java manque, ensureJavaAvailable() masque cet ecran
   // lui-meme pour laisser place a son propre ecran de blocage.
   bootstrapVersionEl.textContent = settings.appVersion ? `v${settings.appVersion}` : "";
+
+  // Verification de mise a jour (voir main.js/electron-updater) — hors app
+  // packagee (dev via `electron .`), main.js resout tout de suite sans rien
+  // verifier reellement, mais cette etape reste visible un court instant
+  // pour ne pas donner une impression buguee (texte qui clignote).
+  bootstrapStatusEl.textContent = t("bootstrap.checkingUpdates");
+  bootstrapProgressEl.style.width = "15%";
+  const stopUpdateStatus = window.mchub.updates.onStatus((status) => {
+    if (status.phase === "downloading") {
+      bootstrapStatusEl.textContent = status.percent
+        ? t("bootstrap.downloadingUpdateProgress", { percent: status.percent })
+        : t("bootstrap.downloadingUpdate", { version: status.version });
+      bootstrapProgressEl.style.width = `${15 + Math.round((status.percent || 0) * 0.55)}%`;
+    } else if (status.phase === "ready-to-install") {
+      bootstrapStatusEl.textContent = t("bootstrap.updateReady");
+      bootstrapProgressEl.style.width = "100%";
+    }
+    // "up-to-date" et "error" : silencieux, l'etape suivante (Java) prend le
+    // relai tout de suite — jamais d'ecran d'erreur pour une verification de
+    // mise a jour ratee (pas de connexion, releases indisponibles...).
+  });
+  await Promise.all([window.mchub.updates.check(), new Promise((resolve) => setTimeout(resolve, 500))]);
+  stopUpdateStatus();
+
   bootstrapStatusEl.textContent = t("bootstrap.checkingJava");
   bootstrapProgressEl.style.width = "45%";
 

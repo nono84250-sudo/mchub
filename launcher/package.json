@@ -6,13 +6,42 @@
   "description": "Launcher Minecraft Omniscient — lit les serveurs publiés sur le site Omniscient et lance le jeu.",
   "main": "src/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder"
   },
   "devDependencies": {
-    "electron": "^44.3.0"
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
+    "electron-updater": "^6.8.9",
     "minecraft-launcher-core": "^3.18.2"
+  },
+  "build": {
+    "appId": "app.omniscient.launcher",
+    "productName": "Omniscient Launcher",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "nono84250-sudo",
+      "repo": "omniscient-launcher"
+    },
+    "win": {
+      "target": "nsis-web",
+      "icon": "build/icon.ico"
+    },
+    "nsisWeb": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
