@@ -12,8 +12,7 @@
   },
   "footer": {
     "tagline": "the Minecraft server toolkit.",
-    "servers": "Servers",
-    "publish": "Publish a server"
+    "servers": "Servers"
   },
   "home": {
     "badge": "Minecraft/Xbox access approved — the launcher is online",
@@ -127,6 +126,7 @@
   },
   "theme": {
     "label": "Theme",
+    "appearanceLabel": "Appearance",
     "system": "System",
     "dark": "Dark",
     "light": "Light"

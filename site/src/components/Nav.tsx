@@ -3,8 +3,6 @@ import { auth } from "@/auth";
 import { LogoMark } from "@/components/LogoMark";
 import { MobileNav } from "@/components/MobileNav";
 import { AccountMenu } from "@/components/AccountMenu";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { getT } from "@/i18n/getDictionary";
 
 export async function Nav() {
@@ -34,11 +32,10 @@ export async function Nav() {
 
         <MobileNav loggedIn={!!session?.user} />
 
-        {/* Elements utilitaires, toujours a droite. */}
+        {/* Elements utilitaires, toujours a droite. Langue/Apparence vivent
+            dans le pied de page (Footer.tsx), pas ici — connecte, elles
+            restent aussi accessibles depuis "Mon espace" (AccountMenu.tsx). */}
         <div className="hidden sm:flex items-center gap-4 text-sm">
-          <ThemeSwitcher />
-          <LanguageSwitcher />
-
           {session?.user ? (
             <AccountMenu />
           ) : (

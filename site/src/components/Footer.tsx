@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { getT } from "@/i18n/getDictionary";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 
+// Langue/Apparence vivent ici (pied de page, toutes les pages, connecte ou
+// non) plutot que dans la barre de nav — voir AccountMenu.tsx pour l'acces
+// rapide propose en plus une fois connecte. "Publier un serveur" retire de
+// partout.
 export async function Footer() {
   const { dict } = await getT();
 
@@ -14,9 +20,8 @@ export async function Footer() {
           <Link href="/servers" className="hover:text-foreground transition-colors">
             {dict.footer.servers}
           </Link>
-          <Link href="/signup" className="hover:text-foreground transition-colors">
-            {dict.footer.publish}
-          </Link>
+          <ThemeSwitcher />
+          <LanguageSwitcher />
         </div>
       </div>
     </footer>
