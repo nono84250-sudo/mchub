@@ -1,0 +1,44 @@
+[
+  {
+    "id": "column.public.server.backgroundUrl",
+    "label": "Add column \"backgroundUrl\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "backgroundUrl",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"backgroundUrl\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "backgroundUrl"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"backgroundUrl\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"backgroundUrl\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"backgroundUrl\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "backgroundUrl"
+        ]
+      }
+    ]
+  }
+]

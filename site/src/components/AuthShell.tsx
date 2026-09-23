@@ -1,11 +1,10 @@
-import Link from "next/link";
 import { getT } from "@/i18n/getDictionary";
 
-// Mise en page a deux panneaux partagee par /login et /signup (maquette
-// "Nocturne" ecran 01) : un panneau hero a gauche, le formulaire a droite
-// avec un bascule Connexion/Creer un compte au-dessus. Les deux pages
-// restent des routes/actions distinctes — seule l'habillage est partage.
-export async function AuthShell({ active, children }: { active: "login" | "signup"; children: React.ReactNode }) {
+// Mise en page a deux panneaux (maquette "Nocturne" ecran 01) : un panneau
+// hero a gauche, le contenu de connexion a droite. Plus de bascule Connexion/
+// Creer un compte depuis le passage a "Se connecter avec Microsoft" (voir
+// auth.ts) — une seule action, qui cree le compte au besoin.
+export async function AuthShell({ children }: { children: React.ReactNode }) {
   const { dict } = await getT();
 
   return (
@@ -28,34 +27,7 @@ export async function AuthShell({ active, children }: { active: "login" | "signu
       </div>
 
       <div className="flex flex-col justify-center px-6 py-16 sm:px-16">
-        <div className="w-full max-w-sm mx-auto flex flex-col gap-6">
-          <div className="inline-flex border border-border rounded-md overflow-hidden w-fit">
-            <Link
-              href="/login"
-              className="px-4 py-2 text-sm whitespace-nowrap"
-              style={
-                active === "login"
-                  ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: "var(--accent)" }
-                  : { color: "var(--muted)" }
-              }
-            >
-              {dict.auth.tabLogin}
-            </Link>
-            <Link
-              href="/signup"
-              className="px-4 py-2 text-sm whitespace-nowrap border-l border-border"
-              style={
-                active === "signup"
-                  ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: "var(--accent)" }
-                  : { color: "var(--muted)" }
-              }
-            >
-              {dict.auth.tabSignup}
-            </Link>
-          </div>
-
-          {children}
-        </div>
+        <div className="w-full max-w-sm mx-auto flex flex-col gap-6">{children}</div>
       </div>
     </div>
   );

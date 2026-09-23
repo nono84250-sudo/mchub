@@ -10,6 +10,7 @@ type ServerFormValues = {
   description: string;
   bannerUrl: string;
   iconUrl: string;
+  backgroundUrl: string;
   type: "vanilla" | "modded";
   minecraftVersion: string;
   ip: string;
@@ -24,6 +25,7 @@ const EMPTY_VALUES: ServerFormValues = {
   description: "",
   bannerUrl: "",
   iconUrl: "",
+  backgroundUrl: "",
   type: "vanilla",
   minecraftVersion: "",
   ip: "",
@@ -112,6 +114,21 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
           className="field-input"
         />
         <p className="text-xs text-muted">{t("serverForm.iconHelp")}</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="backgroundUrl" className="field-label">
+          {t("serverForm.backgroundUrl")}
+        </label>
+        <input
+          id="backgroundUrl"
+          name="backgroundUrl"
+          type="url"
+          defaultValue={values.backgroundUrl}
+          placeholder="https://..."
+          className="field-input"
+        />
+        <p className="text-xs text-muted">{t("serverForm.backgroundHelp")}</p>
       </div>
 
       <div className="flex flex-col gap-1.5">

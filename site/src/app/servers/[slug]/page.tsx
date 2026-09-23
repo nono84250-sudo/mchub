@@ -23,10 +23,19 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
   const { dict } = await getT();
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-12">
-      <AutoRefresh intervalMs={30_000} />
-      <ViewTracker slug={slug} />
-      <div className="relative h-48 w-full mb-9">
+    <div className="relative">
+      {server.backgroundUrl ? (
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={server.backgroundUrl} alt="" className="h-full w-full object-cover opacity-20" />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background" />
+        </div>
+      ) : null}
+
+      <div className="relative mx-auto max-w-3xl px-4 sm:px-6 py-12">
+        <AutoRefresh intervalMs={30_000} />
+        <ViewTracker slug={slug} />
+        <div className="relative h-48 w-full mb-9">
         <div className="absolute inset-0 overflow-hidden rounded-xl banner-placeholder">
           {server.bannerUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -82,6 +91,7 @@ export default async function ServerDetailPage({ params }: PageProps<"/servers/[
 
       <div className="mt-8 rounded-lg border border-dashed border-border p-4 text-sm text-muted">
         {dict.serverDetail.joinNote}
+      </div>
       </div>
     </div>
   );

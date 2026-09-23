@@ -19,10 +19,11 @@ export type PublicServerSummary = {
   playerCapacity: number | null;
   createdAt: string;
   viewCount: number;
-  // UUID Minecraft du proprietaire (si son compte site est lie, voir
-  // minecraftLink.ts) — permet au launcher d'afficher un badge "Owner" sur
-  // ses propres serveurs dans l'annuaire, en comparant a son propre profil
-  // deja connu localement (aucune donnee de session ne remonte au site).
+  // UUID Minecraft du proprietaire (toujours renseigne desormais : voir
+  // auth.ts, la connexion se fait uniquement via Microsoft/Xbox) — permet au
+  // launcher d'afficher un badge "Owner" sur ses propres serveurs dans
+  // l'annuaire, en comparant a son propre profil deja connu localement
+  // (aucune donnee de session ne remonte au site).
   ownerMinecraftUuid: string | null;
 };
 
@@ -38,6 +39,7 @@ export type PublicServerDetail = PublicServerSummary & {
   curseforgeModpackName: string | null;
   curseforgeModpackVersion: string | null;
   recommendedRamGB: number | null;
+  backgroundUrl: string | null;
 };
 
 // Filtre et tri faits en JS plutot que dans la requete : a l'echelle d'un
@@ -167,6 +169,7 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     "description",
     "bannerUrl",
     "iconUrl",
+    "backgroundUrl",
     "type",
     "minecraftVersion",
     "ip",
@@ -193,6 +196,7 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     description: row.description,
     bannerUrl: row.bannerUrl,
     iconUrl: row.iconUrl,
+    backgroundUrl: row.backgroundUrl,
     ownerMinecraftUuid: row.owner?.minecraftUuid ?? null,
     type: row.type,
     minecraftVersion: row.minecraftVersion,

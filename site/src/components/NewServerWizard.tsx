@@ -113,7 +113,7 @@ export function NewServerWizard({ action, versions }: Props) {
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="bannerUrl" className="field-label">{t("serverForm.bannerUrl")}</label>
             <input id="bannerUrl" name="bannerUrl" type="url" placeholder="https://..." className="field-input" />
@@ -121,6 +121,10 @@ export function NewServerWizard({ action, versions }: Props) {
           <div className="flex flex-col gap-1.5">
             <label htmlFor="iconUrl" className="field-label">{t("serverForm.iconUrl")}</label>
             <input id="iconUrl" name="iconUrl" type="url" placeholder="https://..." className="field-input" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="backgroundUrl" className="field-label">{t("serverForm.backgroundUrl")}</label>
+            <input id="backgroundUrl" name="backgroundUrl" type="url" placeholder="https://..." className="field-input" />
           </div>
         </div>
 

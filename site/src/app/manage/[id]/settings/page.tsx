@@ -43,6 +43,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
             description: server.description,
             bannerUrl: server.bannerUrl ?? "",
             iconUrl: server.iconUrl ?? "",
+            backgroundUrl: server.backgroundUrl ?? "",
             type: server.type,
             minecraftVersion: server.minecraftVersion,
             ip: server.ip,

@@ -244,6 +244,13 @@
           },
           "Server": {
             "fields": {
+              "backgroundUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "bannerUrl": {
                 "nullable": true,
                 "type": {
@@ -454,6 +461,9 @@
             },
             "storage": {
               "fields": {
+                "backgroundUrl": {
+                  "column": "backgroundUrl"
+                },
                 "bannerUrl": {
                   "column": "bannerUrl"
                 },
@@ -615,7 +625,7 @@
                 }
               },
               "email": {
-                "nullable": false,
+                "nullable": true,
                 "type": {
                   "codecId": "pg/text@1",
                   "kind": "scalar"
@@ -657,7 +667,7 @@
                 }
               },
               "passwordHash": {
-                "nullable": false,
+                "nullable": true,
                 "type": {
                   "codecId": "pg/text@1",
                   "kind": "scalar"
@@ -945,6 +955,11 @@
                 }
               ],
               "columns": {
+                "backgroundUrl": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "bannerUrl": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -1234,7 +1249,7 @@
                 "email": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
-                  "nullable": false
+                  "nullable": true
                 },
                 "emailVerified": {
                   "codecId": "pg/bool@1",
@@ -1268,7 +1283,7 @@
                 "passwordHash": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
-                  "nullable": false
+                  "nullable": true
                 },
                 "updatedAt": {
                   "codecId": "pg/timestamptz-string@1",
@@ -1325,7 +1340,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "9f36b6dd748039e461da6c81f8ab299c488d25bb2816be940113402e50ce4190"
+    "storageHash": "1f15a3f81527ead19a0d991ed60606f604fb98914ea23e1aae9a63d535bcc315"
   },
   "execution": {
     "executionHash": "7412a5fb8b37fd672b9f709ce8a4fd63a4181827d200dc5247f70a79a3990219",

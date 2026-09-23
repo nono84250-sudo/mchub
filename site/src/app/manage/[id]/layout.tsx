@@ -21,7 +21,7 @@ export default async function ManageServerLayout({ children, params }: LayoutPro
       <ManageSidebar serverId={server.id} serverName={server.name} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-end border-b border-border px-6 py-3">
-          <ManageAvatarMenu name={session.user.name ?? ""} email={session.user.email ?? ""} />
+          <ManageAvatarMenu name={session.user.name ?? ""} />
         </header>
         <main className="flex-1 px-6 py-8 sm:px-10">{children}</main>
       </div>

@@ -1,17 +1,20 @@
 // use prisma-8
 
 model User {
-  id           String  @id @default(uuid())
-  email        String  @unique
-  passwordHash String
-  name         String
-  servers      Server[]
+  id   String  @id @default(uuid())
+  name String
+  servers Server[]
 
-  // Lie ce compte site a un profil Minecraft/Xbox (uuid + pseudo), pour que
-  // le launcher (deja connecte via son propre flux Microsoft, voir
-  // launcher/src/msAuth.js) puisse retrouver "Mes instances" sans jamais
-  // avoir besoin du mot de passe du site — voir le flux de code de liaison
-  // dans /account et POST /api/launcher/link-minecraft.
+  // email/passwordHash restent pour les comptes crees avant le passage a
+  // "Se connecter avec Microsoft" (voir auth.ts) — plus jamais renseignes a
+  // la creation d'un nouveau compte, uniquement le profil Minecraft/Xbox
+  // ci-dessous compte desormais comme identite. minecraftUuid est la seule
+  // cle vraiment stable (voir xboxAuth.ts) : contrairement a un email
+  // Microsoft, elle est garantie presente et immuable pour tout compte
+  // Xbox/Minecraft relie.
+  email        String? @unique
+  passwordHash String?
+
   minecraftUuid     String? @unique
   minecraftUsername String?
   linkCodes         MinecraftLinkCode[]
@@ -83,9 +86,10 @@ model Server {
   slug        String      @unique
   name        String
   description String
-  bannerUrl   String?
-  iconUrl     String?
-  type        server_type @default(vanilla)
+  bannerUrl     String?
+  iconUrl       String?
+  backgroundUrl String?
+  type          server_type @default(vanilla)
 
   minecraftVersion String
   ip               String

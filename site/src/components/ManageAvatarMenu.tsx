@@ -9,7 +9,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 // La console de gestion masque la nav du site (voir SiteChrome) — ce menu
 // est donc le seul moyen de revenir au site principal ou de se deconnecter
 // depuis une page /manage/*.
-export function ManageAvatarMenu({ name, email }: { name: string; email: string }) {
+export function ManageAvatarMenu({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
@@ -22,7 +22,7 @@ export function ManageAvatarMenu({ name, email }: { name: string; email: string 
     return () => document.removeEventListener("click", onClickOutside);
   }, []);
 
-  const initial = (name || email).trim().charAt(0).toUpperCase() || "?";
+  const initial = name.trim().charAt(0).toUpperCase() || "?";
 
   return (
     <div ref={rootRef} className="relative">
@@ -33,7 +33,7 @@ export function ManageAvatarMenu({ name, email }: { name: string; email: string 
         className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-surface-raised"
       >
         <span className="server-icon h-8 w-8 text-sm">{initial}</span>
-        <span className="max-w-[40vw] truncate">{name || email}</span>
+        <span className="max-w-[40vw] truncate">{name}</span>
         <CaretDown className="h-4 w-4 text-muted" />
       </button>
 

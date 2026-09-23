@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'1f15a3f81527ead19a0d991ed60606f604fb98914ea23e1aae9a63d535bcc315'>;
+  StorageHashBase<'05076c494ef07e2df7a0deb3199c5e222aa70331a49e3ea8064a605c56b92b6d'>;
 export type ExecutionHash =
   ExecutionHashBase<'7412a5fb8b37fd672b9f709ce8a4fd63a4181827d200dc5247f70a79a3990219'>;
 export type ProfileHash =
@@ -264,7 +264,6 @@ export type FieldOutputTypes = {
       readonly description: CodecTypes['pg/text@1']['output'];
       readonly bannerUrl: CodecTypes['pg/text@1']['output'] | null;
       readonly iconUrl: CodecTypes['pg/text@1']['output'] | null;
-      readonly backgroundUrl: CodecTypes['pg/text@1']['output'] | null;
       readonly type: 'vanilla' | 'modded';
       readonly minecraftVersion: CodecTypes['pg/text@1']['output'];
       readonly ip: CodecTypes['pg/text@1']['output'];
@@ -327,7 +326,6 @@ export type FieldInputTypes = {
       readonly description: CodecTypes['pg/text@1']['input'];
       readonly bannerUrl: CodecTypes['pg/text@1']['input'] | null;
       readonly iconUrl: CodecTypes['pg/text@1']['input'] | null;
-      readonly backgroundUrl: CodecTypes['pg/text@1']['input'] | null;
       readonly type: 'vanilla' | 'modded';
       readonly minecraftVersion: CodecTypes['pg/text@1']['input'];
       readonly ip: CodecTypes['pg/text@1']['input'];
@@ -384,7 +382,6 @@ export type StorageColumnTypes = {
       readonly userId: CodecTypes['pg/text@1']['output'];
     };
     readonly server: {
-      readonly backgroundUrl: CodecTypes['pg/text@1']['output'] | null;
       readonly bannerUrl: CodecTypes['pg/text@1']['output'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly curseforgeModpackId: CodecTypes['pg/text@1']['output'] | null;
@@ -447,7 +444,6 @@ export type StorageColumnInputTypes = {
       readonly userId: CodecTypes['pg/text@1']['input'];
     };
     readonly server: {
-      readonly backgroundUrl: CodecTypes['pg/text@1']['input'] | null;
       readonly bannerUrl: CodecTypes['pg/text@1']['input'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly curseforgeModpackId: CodecTypes['pg/text@1']['input'] | null;
@@ -535,7 +531,6 @@ export namespace Models {
     description: CodecTypes['pg/text@1']['output'];
     bannerUrl: CodecTypes['pg/text@1']['output'] | null;
     iconUrl: CodecTypes['pg/text@1']['output'] | null;
-    backgroundUrl: CodecTypes['pg/text@1']['output'] | null;
     type: 'vanilla' | 'modded';
     minecraftVersion: CodecTypes['pg/text@1']['output'];
     ip: CodecTypes['pg/text@1']['output'];
@@ -743,11 +738,6 @@ type ContractBase = Omit<
                   readonly nullable: true;
                 };
                 readonly iconUrl: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
-                };
-                readonly backgroundUrl: {
                   readonly nativeType: 'text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: true;
@@ -1177,10 +1167,6 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
-              readonly backgroundUrl: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
               readonly type: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -1295,7 +1281,6 @@ type ContractBase = Omit<
                 readonly description: { readonly column: 'description' };
                 readonly bannerUrl: { readonly column: 'bannerUrl' };
                 readonly iconUrl: { readonly column: 'iconUrl' };
-                readonly backgroundUrl: { readonly column: 'backgroundUrl' };
                 readonly type: { readonly column: 'type' };
                 readonly minecraftVersion: { readonly column: 'minecraftVersion' };
                 readonly ip: { readonly column: 'ip' };

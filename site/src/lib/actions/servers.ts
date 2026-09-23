@@ -13,6 +13,7 @@ type ServerFormValues = {
   description: string;
   bannerUrl: string | null;
   iconUrl: string | null;
+  backgroundUrl: string | null;
   type: "vanilla" | "modded";
   minecraftVersion: string;
   ip: string;
@@ -27,6 +28,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   const description = String(formData.get("description") ?? "").trim();
   const bannerUrl = String(formData.get("bannerUrl") ?? "").trim() || null;
   const iconUrl = String(formData.get("iconUrl") ?? "").trim() || null;
+  const backgroundUrl = String(formData.get("backgroundUrl") ?? "").trim() || null;
   const type = formData.get("type") === "modded" ? "modded" : "vanilla";
   const minecraftVersion = String(formData.get("minecraftVersion") ?? "").trim();
   const ip = String(formData.get("ip") ?? "").trim();
@@ -55,6 +57,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
     description,
     bannerUrl,
     iconUrl,
+    backgroundUrl,
     type,
     minecraftVersion,
     ip,
@@ -180,6 +183,7 @@ export async function duplicateServer(serverId: string) {
     description: source.description,
     bannerUrl: source.bannerUrl,
     iconUrl: source.iconUrl,
+    backgroundUrl: source.backgroundUrl,
     type: source.type,
     minecraftVersion: source.minecraftVersion,
     ip: source.ip,
