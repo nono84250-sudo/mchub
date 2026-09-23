@@ -1,8 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { GlobeHemisphereWest, LockSimple, Copy, ArrowsClockwise, Image, Cube, ImageSquare } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
+import { resetInviteCode } from "@/lib/actions/servers";
 import { OTHER_VERSION_VALUE } from "@/lib/minecraft-versions";
+import { ImageDropzone } from "@/components/ImageDropzone";
 import { useI18n } from "@/i18n/I18nProvider";
 
 type ServerFormValues = {
@@ -11,6 +14,7 @@ type ServerFormValues = {
   bannerUrl: string;
   iconUrl: string;
   backgroundUrl: string;
+  isPrivate: boolean;
   type: "vanilla" | "modded";
   minecraftVersion: string;
   ip: string;
@@ -26,6 +30,7 @@ const EMPTY_VALUES: ServerFormValues = {
   bannerUrl: "",
   iconUrl: "",
   backgroundUrl: "",
+  isPrivate: false,
   type: "vanilla",
   minecraftVersion: "",
   ip: "",
@@ -40,13 +45,26 @@ type ServerFormProps = {
   defaultValues?: Partial<ServerFormValues>;
   submitLabel: string;
   versions: string[];
+  // Absents en creation (NewServerWizard gere sa propre visibilite sans lien
+  // — un serveur qui n'existe pas encore n'a pas de code a afficher) :
+  // seule la page /manage/[id]/settings les passe.
+  serverId?: string;
+  inviteCode?: string | null;
 };
 
-export function ServerForm({ action, defaultValues, submitLabel, versions }: ServerFormProps) {
+export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode }: ServerFormProps) {
   const { t } = useI18n();
   const values = { ...EMPTY_VALUES, ...defaultValues };
   const [state, formAction, pending] = useActionState(action, undefined);
   const [type, setType] = useState<"vanilla" | "modded">(values.type);
+  const [visibility, setVisibility] = useState<"public" | "private">(values.isPrivate ? "private" : "public");
+
+  // Lu apres le montage seulement (jamais pendant le rendu serveur, ou
+  // location n'existe pas) — un state vide au premier rendu evite tout
+  // mismatch d'hydratation, le lien apparait juste un instant apres.
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+  const inviteLink = inviteCode ? `${origin}/join/${inviteCode}` : "";
 
   const isKnownVersion = values.minecraftVersion !== "" && versions.includes(values.minecraftVersion);
   const [versionChoice, setVersionChoice] = useState(
@@ -86,49 +104,103 @@ export function ServerForm({ action, defaultValues, submitLabel, versions }: Ser
         />
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="bannerUrl" className="field-label">
-          {t("serverForm.bannerUrl")}
-        </label>
-        <input
-          id="bannerUrl"
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <ImageDropzone
           name="bannerUrl"
-          type="url"
           defaultValue={values.bannerUrl}
-          placeholder="https://..."
-          className="field-input"
+          label={t("serverForm.bannerUrl")}
+          placeholder={t("serverForm.dropBanner")}
+          icon={Image}
         />
-        <p className="text-xs text-muted">{t("serverForm.bannerHelp")}</p>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="iconUrl" className="field-label">
-          {t("serverForm.iconUrl")}
-        </label>
-        <input
-          id="iconUrl"
+        <ImageDropzone
           name="iconUrl"
-          type="url"
           defaultValue={values.iconUrl}
-          placeholder="https://..."
-          className="field-input"
+          label={t("serverForm.iconUrl")}
+          placeholder=""
+          icon={Cube}
+          shape="square"
         />
-        <p className="text-xs text-muted">{t("serverForm.iconHelp")}</p>
+        <ImageDropzone
+          name="backgroundUrl"
+          defaultValue={values.backgroundUrl}
+          label={t("serverForm.backgroundUrl")}
+          placeholder={t("serverForm.dropBackground")}
+          icon={ImageSquare}
+        />
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="backgroundUrl" className="field-label">
-          {t("serverForm.backgroundUrl")}
-        </label>
-        <input
-          id="backgroundUrl"
-          name="backgroundUrl"
-          type="url"
-          defaultValue={values.backgroundUrl}
-          placeholder="https://..."
-          className="field-input"
-        />
-        <p className="text-xs text-muted">{t("serverForm.backgroundHelp")}</p>
+      <div className="flex flex-col gap-2">
+        <span className="field-label">{t("serverForm.visibility")}</span>
+        <div className="flex flex-col sm:flex-row gap-2.5">
+          <label
+            className="flex flex-1 items-start gap-2.5 rounded-md border p-3 cursor-pointer"
+            style={
+              visibility === "public"
+                ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
+                : { borderColor: "var(--border)" }
+            }
+          >
+            <input
+              type="radio" name="visibility" value="public" className="sr-only"
+              checked={visibility === "public"} onChange={() => setVisibility("public")}
+            />
+            <GlobeHemisphereWest className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "public" ? "var(--accent)" : "var(--muted)" }} />
+            <span className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-sm font-medium text-foreground">{t("serverForm.visibilityPublic")}</span>
+              <span className="text-xs text-muted leading-relaxed">{t("serverForm.visibilityPublicHelp")}</span>
+            </span>
+          </label>
+          <label
+            className="flex flex-1 items-start gap-2.5 rounded-md border p-3 cursor-pointer"
+            style={
+              visibility === "private"
+                ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
+                : { borderColor: "var(--border)" }
+            }
+          >
+            <input
+              type="radio" name="visibility" value="private" className="sr-only"
+              checked={visibility === "private"} onChange={() => setVisibility("private")}
+            />
+            <LockSimple className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "private" ? "var(--accent)" : "var(--muted)" }} />
+            <span className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-sm font-medium text-foreground">{t("serverForm.visibilityPrivate")}</span>
+              <span className="text-xs text-muted leading-relaxed">{t("serverForm.visibilityPrivateHelp")}</span>
+            </span>
+          </label>
+        </div>
+
+        {visibility === "private" && serverId ? (
+          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+            <span className="text-xs text-muted">{t("serverForm.inviteLinkLabel")}</span>
+            {inviteCode ? (
+              <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <code className="flex-1 min-w-[180px] h-[34px] flex items-center px-2.5 rounded-md border border-border bg-background text-xs font-mono truncate">
+                    {inviteLink}
+                  </code>
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs"
+                    onClick={() => navigator.clipboard?.writeText(inviteLink)}
+                  >
+                    <Copy className="h-3.5 w-3.5" /> {t("serverForm.inviteLinkCopy")}
+                  </button>
+                  <form action={resetInviteCode.bind(null, serverId)}>
+                    <button type="submit" className="btn-secondary text-xs">
+                      <ArrowsClockwise className="h-3.5 w-3.5" /> {t("serverForm.inviteLinkReset")}
+                    </button>
+                  </form>
+                </div>
+                <span className="text-[11.5px] text-muted">
+                  {t("serverForm.inviteLinkHelp", { code: inviteCode })}
+                </span>
+              </>
+            ) : (
+              <span className="text-xs text-muted">{t("serverForm.inviteLinkPending")}</span>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-1.5">

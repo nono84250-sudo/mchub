@@ -1,0 +1,128 @@
+[
+  {
+    "id": "column.public.server.inviteCode",
+    "label": "Add column \"inviteCode\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "inviteCode",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"inviteCode\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "inviteCode"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"inviteCode\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"inviteCode\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"inviteCode\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "inviteCode"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.isPrivate",
+    "label": "Add column \"isPrivate\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "isPrivate",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"isPrivate\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "isPrivate"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"isPrivate\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"isPrivate\" bool DEFAULT false NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"isPrivate\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "isPrivate"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.server.server_inviteCode_key",
+    "label": "Add unique constraint on \"server\" (inviteCode)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "server_inviteCode_key",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"server_inviteCode_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "server_inviteCode_key",
+          "public",
+          "\"public\".\"server\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"server_inviteCode_key\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD CONSTRAINT \"server_inviteCode_key\" UNIQUE (\"inviteCode\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"server_inviteCode_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "server_inviteCode_key",
+          "public",
+          "\"public\".\"server\""
+        ]
+      }
+    ]
+  }
+]

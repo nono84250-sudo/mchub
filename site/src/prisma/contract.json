@@ -314,10 +314,24 @@
                   "kind": "scalar"
                 }
               },
+              "inviteCode": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "ip": {
                 "nullable": false,
                 "type": {
                   "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "isPrivate": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
                   "kind": "scalar"
                 }
               },
@@ -491,8 +505,14 @@
                 "id": {
                   "column": "id"
                 },
+                "inviteCode": {
+                  "column": "inviteCode"
+                },
                 "ip": {
                   "column": "ip"
+                },
+                "isPrivate": {
+                  "column": "isPrivate"
                 },
                 "lastPingedAt": {
                   "column": "lastPingedAt"
@@ -1009,9 +1029,23 @@
                   "nativeType": "text",
                   "nullable": false
                 },
+                "inviteCode": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "ip": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
+                  "nullable": false
+                },
+                "isPrivate": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
                   "nullable": false
                 },
                 "lastPingedAt": {
@@ -1145,6 +1179,11 @@
                 {
                   "columns": [
                     "slug"
+                  ]
+                },
+                {
+                  "columns": [
+                    "inviteCode"
                   ]
                 }
               ]
@@ -1340,7 +1379,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "1f15a3f81527ead19a0d991ed60606f604fb98914ea23e1aae9a63d535bcc315"
+    "storageHash": "0189c507402e41c66e9bbccef89b447963fe77908c9fc2dd0bdbeb0c696be6b8"
   },
   "execution": {
     "executionHash": "7412a5fb8b37fd672b9f709ce8a4fd63a4181827d200dc5247f70a79a3990219",

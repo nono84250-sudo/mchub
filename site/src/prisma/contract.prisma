@@ -117,6 +117,15 @@ model Server {
   viewCount   Int     @default(0)
   launchCount Int     @default(0)
 
+  // Visibilite (distincte de `published`, voir ci-dessus) : un serveur prive
+  // n'apparait ni dans l'annuaire public ni dans l'API /api/public/servers
+  // (voir listPublicServers) — seul le code/lien d'invitation permet de le
+  // rejoindre. inviteCode genere/regenere uniquement quand isPrivate passe a
+  // true (voir setServerVisibility) ; conserve tel quel si repasse public,
+  // pour ne pas invalider un lien deja partage si le joueur change d'avis.
+  isPrivate  Boolean @default(false)
+  inviteCode String? @unique
+
   // Liens affiches sur la fiche publique, a cote de la description — un
   // premier pas simple pour donner plus de presence au proprietaire, en
   // attendant une vraie personnalisation de la page (voir memoire

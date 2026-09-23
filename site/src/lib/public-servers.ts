@@ -66,7 +66,7 @@ export async function listPublicServers(options: ListPublicServersOptions = {}):
     "viewCount",
   )
     .include("owner", (o) => o.select("minecraftUuid"))
-    .where({ published: true })
+    .where({ published: true, isPrivate: false })
     .orderBy((s) => s.createdAt.desc())
     .all();
 
@@ -217,17 +217,19 @@ export type OwnedServerSummary = {
   minecraftVersion: string;
   ip: string;
   published: boolean;
+  isPrivate: boolean;
+  inviteCode: string | null;
   playerCount: number | null;
   playerCapacity: number | null;
 };
 
 // Sert la vue "Mes instances" du launcher (route /api/launcher/servers/mine,
 // protegee par LAUNCHER_API_KEY comme le reste des routes launcher) : tous
-// les serveurs du proprietaire dont le compte Minecraft est lie a ce compte
-// site, publies OU en pause — contrairement a listPublicServers() qui ne
-// montre que les serveurs publies. Inclut `ip` : le proprietaire connait
-// deja sa propre adresse de connexion (meme raisonnement que
-// getServerWithIpBySlug).
+// les serveurs du proprietaire connecte (identifie par son UUID Minecraft/
+// Xbox, voir auth.ts), publies OU en pause — contrairement a
+// listPublicServers() qui ne montre que les serveurs publies ET publics.
+// Inclut `ip` : le proprietaire connait deja sa propre adresse de connexion
+// (meme raisonnement que getServerWithIpBySlug).
 export async function listServersOwnedByMinecraftUuid(minecraftUuid: string): Promise<OwnedServerSummary[]> {
   const owner = await db.orm.public.User.select("id").where({ minecraftUuid }).first();
   if (!owner) return [];
@@ -239,6 +241,8 @@ export async function listServersOwnedByMinecraftUuid(minecraftUuid: string): Pr
     "minecraftVersion",
     "ip",
     "published",
+    "isPrivate",
+    "inviteCode",
     "playerCount",
     "playerCapacity",
   )
@@ -247,4 +251,12 @@ export async function listServersOwnedByMinecraftUuid(minecraftUuid: string): Pr
     .all();
 
   return rows;
+}
+
+// Resout un code d'invitation vers la fiche du serveur prive correspondant
+// (voir /join/[code]) — jamais expose autrement qu'ici, puisque
+// listPublicServers() exclut deja les serveurs prives de l'annuaire.
+export async function getSlugByInviteCode(code: string): Promise<string | null> {
+  const row = await db.orm.public.Server.select("slug").where({ inviteCode: code, published: true }).first();
+  return row?.slug ?? null;
 }

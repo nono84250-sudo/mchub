@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { Globe, PuzzlePiece, ArrowRight, ArrowLeft, Info, MagnifyingGlass, CheckCircle } from "@phosphor-icons/react";
+import { Globe, PuzzlePiece, ArrowRight, ArrowLeft, Info, MagnifyingGlass, CheckCircle, GlobeHemisphereWest, LockSimple, Image, Cube, ImageSquare } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
 import { searchModpacks } from "@/lib/actions/curseforge";
 import type { CurseforgeModpack } from "@/lib/curseforge";
+import { ImageDropzone } from "@/components/ImageDropzone";
 import { useI18n } from "@/i18n/I18nProvider";
 
 type Props = {
@@ -28,6 +29,7 @@ export function NewServerWizard({ action, versions }: Props) {
   const [state, formAction, pending] = useActionState(action, undefined);
   const [step, setStep] = useState(0);
   const [type, setType] = useState<"vanilla" | "modded">("vanilla");
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -114,17 +116,50 @@ export function NewServerWizard({ action, versions }: Props) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="bannerUrl" className="field-label">{t("serverForm.bannerUrl")}</label>
-            <input id="bannerUrl" name="bannerUrl" type="url" placeholder="https://..." className="field-input" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="iconUrl" className="field-label">{t("serverForm.iconUrl")}</label>
-            <input id="iconUrl" name="iconUrl" type="url" placeholder="https://..." className="field-input" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="backgroundUrl" className="field-label">{t("serverForm.backgroundUrl")}</label>
-            <input id="backgroundUrl" name="backgroundUrl" type="url" placeholder="https://..." className="field-input" />
+          <ImageDropzone name="bannerUrl" label={t("serverForm.bannerUrl")} placeholder={t("serverForm.dropBanner")} icon={Image} />
+          <ImageDropzone name="iconUrl" label={t("serverForm.iconUrl")} placeholder="" icon={Cube} shape="square" />
+          <ImageDropzone name="backgroundUrl" label={t("serverForm.backgroundUrl")} placeholder={t("serverForm.dropBackground")} icon={ImageSquare} />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="field-label">{t("serverForm.visibility")}</span>
+          <div className="flex flex-col sm:flex-row gap-2.5">
+            <label
+              className="flex flex-1 items-start gap-2.5 rounded-md border p-3 cursor-pointer"
+              style={
+                visibility === "public"
+                  ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
+                  : { borderColor: "var(--border)" }
+              }
+            >
+              <input
+                type="radio" name="visibility" value="public" className="sr-only"
+                checked={visibility === "public"} onChange={() => setVisibility("public")}
+              />
+              <GlobeHemisphereWest className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "public" ? "var(--accent)" : "var(--muted)" }} />
+              <span className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-sm font-medium text-foreground">{t("serverForm.visibilityPublic")}</span>
+                <span className="text-xs text-muted leading-relaxed">{t("serverForm.visibilityPublicHelp")}</span>
+              </span>
+            </label>
+            <label
+              className="flex flex-1 items-start gap-2.5 rounded-md border p-3 cursor-pointer"
+              style={
+                visibility === "private"
+                  ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
+                  : { borderColor: "var(--border)" }
+              }
+            >
+              <input
+                type="radio" name="visibility" value="private" className="sr-only"
+                checked={visibility === "private"} onChange={() => setVisibility("private")}
+              />
+              <LockSimple className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "private" ? "var(--accent)" : "var(--muted)" }} />
+              <span className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-sm font-medium text-foreground">{t("serverForm.visibilityPrivate")}</span>
+                <span className="text-xs text-muted leading-relaxed">{t("serverForm.visibilityPrivateHelp")}</span>
+              </span>
+            </label>
           </div>
         </div>
 
@@ -344,6 +379,12 @@ export function NewServerWizard({ action, versions }: Props) {
           <div className="flex justify-between px-4 py-3 text-sm">
             <span className="text-muted">{t("wizard.reviewType")}</span>
             <span className="font-medium text-foreground">{type === "modded" ? t("serverForm.modded") : t("serverForm.vanilla")}</span>
+          </div>
+          <div className="flex justify-between px-4 py-3 text-sm">
+            <span className="text-muted">{t("wizard.reviewVisibility")}</span>
+            <span className="font-medium text-foreground">
+              {visibility === "private" ? t("serverForm.visibilityPrivate") : t("serverForm.visibilityPublic")}
+            </span>
           </div>
           <div className="flex justify-between px-4 py-3 text-sm">
             <span className="text-muted">{t("wizard.reviewVersion")}</span>

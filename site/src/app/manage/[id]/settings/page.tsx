@@ -38,12 +38,15 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
           action={boundUpdate}
           submitLabel={dict.manage.saveChanges}
           versions={versions}
+          serverId={server.id}
+          inviteCode={server.inviteCode}
           defaultValues={{
             name: server.name,
             description: server.description,
             bannerUrl: server.bannerUrl ?? "",
             iconUrl: server.iconUrl ?? "",
             backgroundUrl: server.backgroundUrl ?? "",
+            isPrivate: server.isPrivate,
             type: server.type,
             minecraftVersion: server.minecraftVersion,
             ip: server.ip,

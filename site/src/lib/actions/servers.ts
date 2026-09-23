@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/prisma/db";
 import { slugify } from "@/lib/slug";
+import { generateUniqueInviteCode } from "@/lib/inviteCode";
 
 export type ServerActionState = { error: string } | undefined;
 
@@ -14,6 +15,7 @@ type ServerFormValues = {
   bannerUrl: string | null;
   iconUrl: string | null;
   backgroundUrl: string | null;
+  isPrivate: boolean;
   type: "vanilla" | "modded";
   minecraftVersion: string;
   ip: string;
@@ -29,6 +31,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   const bannerUrl = String(formData.get("bannerUrl") ?? "").trim() || null;
   const iconUrl = String(formData.get("iconUrl") ?? "").trim() || null;
   const backgroundUrl = String(formData.get("backgroundUrl") ?? "").trim() || null;
+  const isPrivate = formData.get("visibility") === "private";
   const type = formData.get("type") === "modded" ? "modded" : "vanilla";
   const minecraftVersion = String(formData.get("minecraftVersion") ?? "").trim();
   const ip = String(formData.get("ip") ?? "").trim();
@@ -58,6 +61,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
     bannerUrl,
     iconUrl,
     backgroundUrl,
+    isPrivate,
     type,
     minecraftVersion,
     ip,
@@ -97,10 +101,12 @@ export async function createServer(_prevState: ServerActionState, formData: Form
   if ("error" in parsed) return parsed;
 
   const slug = await uniqueSlugFor(parsed.name);
+  const inviteCode = parsed.isPrivate ? await generateUniqueInviteCode() : null;
 
   const server = await db.orm.public.Server.create({
     ...parsed,
     slug,
+    inviteCode,
     ownerId: session.user.id,
   });
 
@@ -123,7 +129,13 @@ export async function updateServer(
   const parsed = readForm(formData);
   if ("error" in parsed) return parsed;
 
-  await db.orm.public.Server.where({ id: serverId }).update(parsed);
+  // Genere un code seulement en passant PUBLIC -> PRIVE sans code existant —
+  // rebasculer en prive plus tard reutilise le meme code plutot que d'en
+  // fabriquer un nouveau a chaque aller-retour (voir le commentaire sur
+  // inviteCode dans contract.prisma).
+  const inviteCode = parsed.isPrivate && !owned.inviteCode ? await generateUniqueInviteCode() : owned.inviteCode;
+
+  await db.orm.public.Server.where({ id: serverId }).update({ ...parsed, inviteCode });
 
   revalidatePath("/servers");
   revalidatePath(`/servers/${owned.slug}`);
@@ -184,6 +196,10 @@ export async function duplicateServer(serverId: string) {
     bannerUrl: source.bannerUrl,
     iconUrl: source.iconUrl,
     backgroundUrl: source.backgroundUrl,
+    isPrivate: source.isPrivate,
+    // Jamais le meme code que l'original : deux fiches distinctes ne
+    // doivent pas partager un lien d'invitation.
+    inviteCode: source.isPrivate ? await generateUniqueInviteCode() : null,
     type: source.type,
     minecraftVersion: source.minecraftVersion,
     ip: source.ip,
@@ -200,4 +216,21 @@ export async function duplicateServer(serverId: string) {
 
   revalidatePath("/dashboard");
   redirect(`/manage/${copy.id}`);
+}
+
+// Invalide l'ancien lien/code d'invitation (voir le commentaire sur
+// inviteCode dans contract.prisma : rebasculer Public->Prive->Public->Prive
+// garde normalement le meme code, ce bouton est le seul moyen de forcer un
+// nouveau code si l'ancien a fuite).
+export async function resetInviteCode(serverId: string) {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const owned = await getOwnedServer(serverId, session.user.id);
+  if (!owned || !owned.isPrivate) redirect("/dashboard");
+
+  const inviteCode = await generateUniqueInviteCode();
+  await db.orm.public.Server.where({ id: serverId }).update({ inviteCode });
+
+  revalidatePath(`/manage/${serverId}/settings`);
 }
