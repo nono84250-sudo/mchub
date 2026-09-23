@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 import { EnvelopeSimple, Lock } from "@phosphor-icons/react";
 import { login } from "@/lib/actions/auth";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -22,9 +23,14 @@ export function LoginForm() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="password" className="field-label">
-          {t("auth.password")}
-        </label>
+        <div className="flex items-center justify-between">
+          <label htmlFor="password" className="field-label">
+            {t("auth.password")}
+          </label>
+          <Link href="/forgot-password" className="text-xs text-muted hover:text-foreground">
+            {t("auth.forgotPassword")}
+          </Link>
+        </div>
         <div className="field-with-icon">
           <Lock className="h-4 w-4" />
           <input

@@ -1,0 +1,164 @@
+[
+  {
+    "id": "table.minecraftLinkCode",
+    "label": "Create table \"minecraftLinkCode\"",
+    "summary": "Creates table \"minecraftLinkCode\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "minecraftLinkCode"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"minecraftLinkCode\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"minecraftLinkCode\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"minecraftLinkCode\"",
+        "sql": "CREATE TABLE \"public\".\"minecraftLinkCode\" (\n  \"code\" text NOT NULL,\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"expiresAt\" timestamptz NOT NULL,\n  \"id\" text NOT NULL,\n  \"userId\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"minecraftLinkCode\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"minecraftLinkCode\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.minecraftLinkCode.minecraftLinkCode_code_key",
+    "label": "Add unique constraint on \"minecraftLinkCode\" (code)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "minecraftLinkCode_code_key",
+        "table": "minecraftLinkCode"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"minecraftLinkCode_code_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "minecraftLinkCode_code_key",
+          "public",
+          "\"public\".\"minecraftLinkCode\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"minecraftLinkCode_code_key\"",
+        "sql": "ALTER TABLE \"public\".\"minecraftLinkCode\" ADD CONSTRAINT \"minecraftLinkCode_code_key\" UNIQUE (\"code\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"minecraftLinkCode_code_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "minecraftLinkCode_code_key",
+          "public",
+          "\"public\".\"minecraftLinkCode\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.minecraftLinkCode.minecraftLinkCode_userId_idx_a489d58a",
+    "label": "Create index \"minecraftLinkCode_userId_idx_a489d58a\" on \"minecraftLinkCode\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "minecraftLinkCode_userId_idx_a489d58a",
+        "table": "minecraftLinkCode"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"minecraftLinkCode_userId_idx_a489d58a\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"minecraftLinkCode_userId_idx_a489d58a\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"minecraftLinkCode_userId_idx_a489d58a\"",
+        "sql": "CREATE INDEX \"minecraftLinkCode_userId_idx_a489d58a\" ON \"public\".\"minecraftLinkCode\" (\"userId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"minecraftLinkCode_userId_idx_a489d58a\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"minecraftLinkCode_userId_idx_a489d58a\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.minecraftLinkCode.minecraftLinkCode_userId_fkey",
+    "label": "Add foreign key \"minecraftLinkCode_userId_fkey\" on \"minecraftLinkCode\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "minecraftLinkCode_userId_fkey",
+        "table": "minecraftLinkCode"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"minecraftLinkCode_userId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "minecraftLinkCode_userId_fkey",
+          "public",
+          "\"public\".\"minecraftLinkCode\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"minecraftLinkCode_userId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"minecraftLinkCode\"\nADD CONSTRAINT \"minecraftLinkCode_userId_fkey\"\nFOREIGN KEY (\"userId\")\nREFERENCES \"public\".\"user\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"minecraftLinkCode_userId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "minecraftLinkCode_userId_fkey",
+          "public",
+          "\"public\".\"minecraftLinkCode\""
+        ]
+      }
+    ]
+  }
+]

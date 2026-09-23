@@ -1,0 +1,245 @@
+[
+  {
+    "id": "table.authToken",
+    "label": "Create table \"authToken\"",
+    "summary": "Creates table \"authToken\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "authToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"authToken\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"authToken\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"authToken\"",
+        "sql": "CREATE TABLE \"public\".\"authToken\" (\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"expiresAt\" timestamptz NOT NULL,\n  \"id\" text NOT NULL,\n  \"kind\" text NOT NULL,\n  \"token\" text NOT NULL,\n  \"userId\" text NOT NULL,\n  PRIMARY KEY (\"id\"),\n  CONSTRAINT \"authToken_kind_check_a969e32a\" CHECK (\"kind\" IN ('email_verify', 'password_reset'))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"authToken\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"authToken\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.user.emailVerified",
+    "label": "Add column \"emailVerified\" to \"user\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "emailVerified",
+        "table": "user"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"emailVerified\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "emailVerified"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"emailVerified\"",
+        "sql": "ALTER TABLE \"public\".\"user\" ADD COLUMN \"emailVerified\" bool DEFAULT true NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"emailVerified\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "emailVerified"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.authToken.authToken_token_key",
+    "label": "Add unique constraint on \"authToken\" (token)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "authToken_token_key",
+        "table": "authToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"authToken_token_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "authToken_token_key",
+          "public",
+          "\"public\".\"authToken\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"authToken_token_key\"",
+        "sql": "ALTER TABLE \"public\".\"authToken\" ADD CONSTRAINT \"authToken_token_key\" UNIQUE (\"token\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"authToken_token_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "authToken_token_key",
+          "public",
+          "\"public\".\"authToken\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.authToken.authToken_userId_idx_a489d58a",
+    "label": "Create index \"authToken_userId_idx_a489d58a\" on \"authToken\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "authToken_userId_idx_a489d58a",
+        "table": "authToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"authToken_userId_idx_a489d58a\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"authToken_userId_idx_a489d58a\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"authToken_userId_idx_a489d58a\"",
+        "sql": "CREATE INDEX \"authToken_userId_idx_a489d58a\" ON \"public\".\"authToken\" (\"userId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"authToken_userId_idx_a489d58a\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"authToken_userId_idx_a489d58a\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.authToken.authToken_userId_kind_idx_ed3360ff",
+    "label": "Create index \"authToken_userId_kind_idx_ed3360ff\" on \"authToken\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "authToken_userId_kind_idx_ed3360ff",
+        "table": "authToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"authToken_userId_kind_idx_ed3360ff\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"authToken_userId_kind_idx_ed3360ff\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"authToken_userId_kind_idx_ed3360ff\"",
+        "sql": "CREATE INDEX \"authToken_userId_kind_idx_ed3360ff\" ON \"public\".\"authToken\" (\"userId\", \"kind\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"authToken_userId_kind_idx_ed3360ff\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"authToken_userId_kind_idx_ed3360ff\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.authToken.authToken_userId_fkey",
+    "label": "Add foreign key \"authToken_userId_fkey\" on \"authToken\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "authToken_userId_fkey",
+        "table": "authToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"authToken_userId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "authToken_userId_fkey",
+          "public",
+          "\"public\".\"authToken\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"authToken_userId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"authToken\"\nADD CONSTRAINT \"authToken_userId_fkey\"\nFOREIGN KEY (\"userId\")\nREFERENCES \"public\".\"user\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"authToken_userId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "authToken_userId_fkey",
+          "public",
+          "\"public\".\"authToken\""
+        ]
+      }
+    ]
+  }
+]

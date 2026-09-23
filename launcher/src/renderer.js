@@ -16,6 +16,7 @@ const settingsPanelEl = document.getElementById("settings-panel");
 const accountPanelEl = document.getElementById("account-panel");
 const favoritesPanelEl = document.getElementById("favorites-panel");
 const recentPanelEl = document.getElementById("recent-panel");
+const myInstancesPanelEl = document.getElementById("my-instances-panel");
 const javaGateEl = document.getElementById("java-gate");
 const bootstrapEl = document.getElementById("bootstrap");
 const bootstrapStatusEl = document.getElementById("bootstrap-status");
@@ -24,6 +25,7 @@ const bootstrapVersionEl = document.getElementById("bootstrap-version");
 const navServersBtn = document.getElementById("nav-servers");
 const navFavoritesBtn = document.getElementById("nav-favorites");
 const navRecentBtn = document.getElementById("nav-recent");
+const navMyInstancesBtn = document.getElementById("nav-my-instances");
 const navSettingsBtn = document.getElementById("nav-settings");
 // D'ou vient la fiche detail actuellement affichee (liste "Serveurs" ou
 // page "Favoris") — pour que le bouton "Retour" ramene au bon endroit.
@@ -109,9 +111,18 @@ function favoriteBtnHtml(slug, isFav, extraClass = "") {
     </button>`;
 }
 
+// Vrai si le joueur actuellement connecte possede ce serveur (compte
+// Minecraft lie a son compte Omniscient, voir minecraft-link) — jamais vrai
+// tant qu'aucun compte n'est lie ou que server.ownerMinecraftUuid est absent
+// (serveur sans proprietaire lie).
+function isOwnServer(server) {
+  return !!(currentProfile && server.ownerMinecraftUuid && server.ownerMinecraftUuid === currentProfile.id);
+}
+
 // Ligne serveur partagee entre la liste principale, "Favoris" et "Recents" —
 // meme rendu partout, seule la source de la liste de serveurs change.
 function serverRowHtml(server, isFav) {
+  const ownerTag = isOwnServer(server) ? `<span class="owner-tag">${t("serverCard.owner")}</span>` : "";
   return `
     <div class="row" data-slug="${escapeHtml(server.slug)}">
       <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverIconInner(server)}</span>
@@ -119,6 +130,7 @@ function serverRowHtml(server, isFav) {
         <div class="row-title-line">
           <h3>${escapeHtml(server.name)}</h3>
           ${typeBadge(server.type)}
+          ${ownerTag}
         </div>
         <p>${escapeHtml(server.description || "")}</p>
       </div>
@@ -456,6 +468,7 @@ async function joinServer(server, joinBtn) {
 async function openDetail(slug) {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
+  listToolbarEl.hidden = true;
   statusEl.hidden = false;
   statusEl.classList.remove("error");
   statusEl.textContent = t("serverList.loadingDetail");
@@ -790,9 +803,11 @@ function showServersView() {
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = true;
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
+  navMyInstancesBtn.classList.remove("active");
   navServersBtn.classList.add("active");
   loadServers();
 }
@@ -820,14 +835,17 @@ async function resolveServersBySlug(slugs) {
 async function showFavoritesView() {
   statusEl.hidden = true;
   listEl.hidden = true;
+  listToolbarEl.hidden = true;
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
   recentPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = true;
   favoritesPanelEl.hidden = false;
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
+  navMyInstancesBtn.classList.remove("active");
   navFavoritesBtn.classList.add("active");
   await renderFavoritesList();
 }
@@ -852,14 +870,17 @@ async function renderFavoritesList() {
 async function showRecentView() {
   statusEl.hidden = true;
   listEl.hidden = true;
+  listToolbarEl.hidden = true;
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = true;
   recentPanelEl.hidden = false;
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
+  navMyInstancesBtn.classList.remove("active");
   navRecentBtn.classList.add("active");
   await renderRecentList();
 }
@@ -882,6 +903,82 @@ async function renderRecentList() {
   await renderRowsInto(recentPanelEl, recentServers, "recent", renderRecentList);
 }
 
+// "Mes instances" : tous les serveurs du proprietaire connecte (publies OU
+// en pause), retrouves via son compte Minecraft lie (voir Reglages > Divers
+// et minecraft-link cote site). Rendu dedie plutot que serverRowHtml/
+// openDetail : contrairement a la liste publique, ces serveurs peuvent etre
+// en pause (donc absents de /api/public/servers/[slug], qui 404 dessus).
+function myInstanceRowHtml(server) {
+  const statusBadge = server.published
+    ? `<span class="owner-tag">${t("myInstances.published")}</span>`
+    : `<span class="badge">${t("myInstances.paused")}</span>`;
+  return `
+    <div class="row" data-slug="${escapeHtml(server.slug)}">
+      <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverInitial(server.name)}</span>
+      <div class="row-body">
+        <div class="row-title-line">
+          <h3>${escapeHtml(server.name)}</h3>
+          ${typeBadge(server.type)}
+          ${statusBadge}
+        </div>
+        <p>${escapeHtml(server.ip)} · ${escapeHtml(server.minecraftVersion)}</p>
+      </div>
+      <div class="players">${playersLabel(server)}</div>
+      ${server.published ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("serverDetail.joinBtn")}</button>` : ""}
+    </div>`;
+}
+
+async function showMyInstancesView() {
+  statusEl.hidden = true;
+  listEl.hidden = true;
+  listToolbarEl.hidden = true;
+  detailEl.hidden = true;
+  settingsPanelEl.hidden = true;
+  accountPanelEl.hidden = true;
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = false;
+  navServersBtn.classList.remove("active");
+  navSettingsBtn.classList.remove("active");
+  navFavoritesBtn.classList.remove("active");
+  navRecentBtn.classList.remove("active");
+  navMyInstancesBtn.classList.add("active");
+  await renderMyInstancesList();
+}
+
+async function renderMyInstancesList() {
+  if (!currentProfile) {
+    myInstancesPanelEl.className = "detail";
+    myInstancesPanelEl.innerHTML = `
+      <h2>${t("nav.myInstances")}</h2>
+      <p class="join-note">${t("myInstances.loginRequired")}</p>
+    `;
+    return;
+  }
+
+  const result = await window.mchub.listMyServers();
+  const servers = result.ok ? result.servers : [];
+
+  if (servers.length === 0) {
+    myInstancesPanelEl.className = "detail";
+    myInstancesPanelEl.innerHTML = `
+      <h2>${t("nav.myInstances")}</h2>
+      <p class="join-note">${result.ok ? t("myInstances.empty") : t("myInstances.loginRequired")}</p>
+    `;
+    return;
+  }
+
+  myInstancesPanelEl.className = "server-list";
+  myInstancesPanelEl.innerHTML = servers.map(myInstanceRowHtml).join("");
+  myInstancesPanelEl.querySelectorAll(".my-instance-play").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const server = servers.find((s) => s.slug === btn.dataset.slug);
+      if (server) launchServer(server);
+    });
+  });
+}
+
 const ICON_DESKTOP =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
 const ICON_MOON =
@@ -900,14 +997,17 @@ let activeSettingsTab = "appearance";
 async function showSettingsView() {
   statusEl.hidden = true;
   listEl.hidden = true;
+  listToolbarEl.hidden = true;
   detailEl.hidden = true;
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = true;
   settingsPanelEl.hidden = false;
   navServersBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
+  navMyInstancesBtn.classList.remove("active");
   navSettingsBtn.classList.add("active");
   await renderSettingsTab(activeSettingsTab);
 }
@@ -1275,6 +1375,8 @@ function renderMemoryTab(contentEl, settings) {
 }
 
 function renderMiscTab(contentEl, settings) {
+  const linkedName = settings.minecraftLinkedUserName;
+
   contentEl.innerHTML = `
     <section class="settings-section">
       <div>
@@ -1297,12 +1399,63 @@ function renderMiscTab(contentEl, settings) {
         <span class="join-note">${settings.appVersion ? `v${settings.appVersion}` : "—"}</span>
       </div>
     </section>
+
+    <section class="settings-section">
+      <div>
+        <div class="settings-row-label">${t("settings.omniscientAccountLabel")}</div>
+        <p class="settings-row-desc" style="margin-top: 4px;">${
+          linkedName
+            ? t("settings.omniscientAccountLinked", { name: escapeHtml(linkedName) })
+            : t("settings.omniscientAccountDesc")
+        }</p>
+        ${
+          linkedName
+            ? `<button id="settings-unlink-minecraft" class="btn-secondary" type="button" style="margin-top: 8px;">${t("settings.omniscientAccountForget")}</button>`
+            : `
+              <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap;">
+                <input id="settings-link-code" type="text" maxlength="6" placeholder="${t("settings.omniscientAccountCodePlaceholder")}" style="text-transform: uppercase; letter-spacing: .2em; width: 140px;" />
+                <button id="settings-link-submit" class="btn-secondary" type="button">${t("settings.omniscientAccountLinkBtn")}</button>
+              </div>
+              <p class="join-note" id="settings-link-status" style="margin-top: 6px;"></p>
+            `
+        }
+      </div>
+    </section>
   `;
 
   document.getElementById("settings-open-folder").addEventListener("click", () => {
     window.mchub.settings.openGameFolder();
   });
   refreshJavaStatus("settings-java-status", "settings-java-install");
+
+  const unlinkBtn = document.getElementById("settings-unlink-minecraft");
+  if (unlinkBtn) {
+    unlinkBtn.addEventListener("click", async () => {
+      await window.mchub.settings.set({ minecraftLinkedUserName: null });
+      renderSettingsTab("misc");
+    });
+  }
+
+  const linkSubmitBtn = document.getElementById("settings-link-submit");
+  if (linkSubmitBtn) {
+    const codeInput = document.getElementById("settings-link-code");
+    const statusEl2 = document.getElementById("settings-link-status");
+    linkSubmitBtn.addEventListener("click", async () => {
+      const code = codeInput.value.trim();
+      if (!code) return;
+      linkSubmitBtn.disabled = true;
+      statusEl2.textContent = t("common.checking");
+      statusEl2.style.color = "";
+      const result = await window.mchub.account.linkMinecraft(code);
+      linkSubmitBtn.disabled = false;
+      if (result.ok) {
+        renderSettingsTab("misc");
+      } else {
+        statusEl2.textContent = result.error;
+        statusEl2.style.color = "var(--danger)";
+      }
+    });
+  }
 }
 
 // Partagé entre le verrou Java obligatoire et les paramètres : verifie Java
@@ -1382,14 +1535,17 @@ async function ensureJavaAvailable() {
 async function showAccountView() {
   statusEl.hidden = true;
   listEl.hidden = true;
+  listToolbarEl.hidden = true;
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = true;
   accountPanelEl.hidden = false;
   navServersBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
+  navMyInstancesBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   await renderAccountPanel();
 }
@@ -1707,6 +1863,7 @@ function wireSidebar() {
   navServersBtn.addEventListener("click", showServersView);
   navFavoritesBtn.addEventListener("click", showFavoritesView);
   navRecentBtn.addEventListener("click", showRecentView);
+  navMyInstancesBtn.addEventListener("click", showMyInstancesView);
   navSettingsBtn.addEventListener("click", showSettingsView);
 }
 

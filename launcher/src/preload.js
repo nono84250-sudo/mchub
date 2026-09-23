@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("mchub", {
   listServers: () => ipcRenderer.invoke("servers:list"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
+  listMyServers: () => ipcRenderer.invoke("servers:mine"),
   signIn: (remember) => ipcRenderer.invoke("auth:signIn", remember),
   tryRestoreSession: () => ipcRenderer.invoke("auth:tryRestore"),
   signOut: () => ipcRenderer.invoke("auth:signOut"),
@@ -45,6 +46,7 @@ contextBridge.exposeInMainWorld("mchub", {
     remove: (id) => ipcRenderer.invoke("account:remove", id),
     changeSkin: (variant, fileBuffer) => ipcRenderer.invoke("account:changeSkin", { variant, fileBuffer }),
     resetSkin: () => ipcRenderer.invoke("account:resetSkin"),
+    linkMinecraft: (code) => ipcRenderer.invoke("account:linkMinecraft", code),
   },
   java: {
     detect: () => ipcRenderer.invoke("java:detect"),

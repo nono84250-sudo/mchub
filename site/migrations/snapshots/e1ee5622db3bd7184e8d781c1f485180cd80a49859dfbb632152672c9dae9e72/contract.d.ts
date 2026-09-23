@@ -34,9 +34,9 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'9f36b6dd748039e461da6c81f8ab299c488d25bb2816be940113402e50ce4190'>;
+  StorageHashBase<'e1ee5622db3bd7184e8d781c1f485180cd80a49859dfbb632152672c9dae9e72'>;
 export type ExecutionHash =
-  ExecutionHashBase<'7412a5fb8b37fd672b9f709ce8a4fd63a4181827d200dc5247f70a79a3990219'>;
+  ExecutionHashBase<'ca7ae7ff22384bf432c8a306ff7444a7cd5f38bb166a712b63204a1d97dbec8f'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -242,14 +242,6 @@ type DefaultLiteralValue<CodecId extends string, Encoded> = CodecId extends keyo
 
 export type FieldOutputTypes = {
   readonly public: {
-    readonly AuthToken: {
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly token: CodecTypes['pg/text@1']['output'];
-      readonly userId: CodecTypes['pg/text@1']['output'];
-      readonly kind: 'email_verify' | 'password_reset';
-      readonly expiresAt: CodecTypes['pg/timestamptz-string@1']['output'];
-      readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
-    };
     readonly MinecraftLinkCode: {
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly code: CodecTypes['pg/text@1']['output'];
@@ -296,7 +288,6 @@ export type FieldOutputTypes = {
       readonly name: CodecTypes['pg/text@1']['output'];
       readonly minecraftUuid: CodecTypes['pg/text@1']['output'] | null;
       readonly minecraftUsername: CodecTypes['pg/text@1']['output'] | null;
-      readonly emailVerified: CodecTypes['pg/bool@1']['output'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
     };
@@ -304,14 +295,6 @@ export type FieldOutputTypes = {
 };
 export type FieldInputTypes = {
   readonly public: {
-    readonly AuthToken: {
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly token: CodecTypes['pg/text@1']['input'];
-      readonly userId: CodecTypes['pg/text@1']['input'];
-      readonly kind: 'email_verify' | 'password_reset';
-      readonly expiresAt: CodecTypes['pg/timestamptz-string@1']['input'];
-      readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
-    };
     readonly MinecraftLinkCode: {
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly code: CodecTypes['pg/text@1']['input'];
@@ -358,7 +341,6 @@ export type FieldInputTypes = {
       readonly name: CodecTypes['pg/text@1']['input'];
       readonly minecraftUuid: CodecTypes['pg/text@1']['input'] | null;
       readonly minecraftUsername: CodecTypes['pg/text@1']['input'] | null;
-      readonly emailVerified: CodecTypes['pg/bool@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
     };
@@ -366,14 +348,6 @@ export type FieldInputTypes = {
 };
 export type StorageColumnTypes = {
   readonly public: {
-    readonly authToken: {
-      readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
-      readonly expiresAt: CodecTypes['pg/timestamptz-string@1']['output'];
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly kind: 'email_verify' | 'password_reset';
-      readonly token: CodecTypes['pg/text@1']['output'];
-      readonly userId: CodecTypes['pg/text@1']['output'];
-    };
     readonly minecraftLinkCode: {
       readonly code: CodecTypes['pg/text@1']['output'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -416,7 +390,6 @@ export type StorageColumnTypes = {
     readonly user: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly email: CodecTypes['pg/text@1']['output'];
-      readonly emailVerified: CodecTypes['pg/bool@1']['output'];
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly minecraftUsername: CodecTypes['pg/text@1']['output'] | null;
       readonly minecraftUuid: CodecTypes['pg/text@1']['output'] | null;
@@ -428,14 +401,6 @@ export type StorageColumnTypes = {
 };
 export type StorageColumnInputTypes = {
   readonly public: {
-    readonly authToken: {
-      readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
-      readonly expiresAt: CodecTypes['pg/timestamptz-string@1']['input'];
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly kind: 'email_verify' | 'password_reset';
-      readonly token: CodecTypes['pg/text@1']['input'];
-      readonly userId: CodecTypes['pg/text@1']['input'];
-    };
     readonly minecraftLinkCode: {
       readonly code: CodecTypes['pg/text@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
@@ -478,7 +443,6 @@ export type StorageColumnInputTypes = {
     readonly user: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly email: CodecTypes['pg/text@1']['input'];
-      readonly emailVerified: CodecTypes['pg/bool@1']['input'];
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly minecraftUsername: CodecTypes['pg/text@1']['input'] | null;
       readonly minecraftUuid: CodecTypes['pg/text@1']['input'] | null;
@@ -497,23 +461,11 @@ export namespace Models {
     name: CodecTypes['pg/text@1']['output'];
     minecraftUuid: CodecTypes['pg/text@1']['output'] | null;
     minecraftUsername: CodecTypes['pg/text@1']['output'] | null;
-    emailVerified: CodecTypes['pg/bool@1']['output'];
     createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
     updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
-    authTokens: public_AuthToken[];
     linkCodes: public_MinecraftLinkCode[];
     servers: public_Server[];
-    readonly [RelationKeys]?: 'authTokens' | 'linkCodes' | 'servers';
-  };
-  export type public_AuthToken = {
-    id: CodecTypes['pg/text@1']['output'];
-    token: CodecTypes['pg/text@1']['output'];
-    userId: CodecTypes['pg/text@1']['output'];
-    kind: 'email_verify' | 'password_reset';
-    expiresAt: CodecTypes['pg/timestamptz-string@1']['output'];
-    createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
-    user: public_User;
-    readonly [RelationKeys]?: 'user';
+    readonly [RelationKeys]?: 'linkCodes' | 'servers';
   };
   export type public_MinecraftLinkCode = {
     id: CodecTypes['pg/text@1']['output'];
@@ -566,7 +518,6 @@ export namespace Models {
 export declare const models: {
   public: {
     User: Models.public_User;
-    AuthToken: Models.public_AuthToken;
     MinecraftLinkCode: Models.public_MinecraftLinkCode;
     Server: Models.public_Server;
     ServerEvent: Models.public_ServerEvent;
@@ -591,71 +542,6 @@ type ContractBase = Omit<
         readonly kind: 'postgres-schema';
         readonly entries: {
           readonly table: {
-            readonly authToken: {
-              columns: {
-                readonly id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly token: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly userId: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly kind: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly expiresAt: {
-                  readonly nativeType: 'timestamptz';
-                  readonly codecId: 'pg/timestamptz-string@1';
-                  readonly nullable: false;
-                };
-                readonly createdAt: {
-                  readonly nativeType: 'timestamptz';
-                  readonly codecId: 'pg/timestamptz-string@1';
-                  readonly nullable: false;
-                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
-                };
-              };
-              primaryKey: { readonly columns: readonly ['id'] };
-              uniques: readonly [{ readonly columns: readonly ['token'] }];
-              indexes: readonly [
-                {
-                  readonly name: 'authToken_userId_kind_idx_ed3360ff';
-                  readonly prefix: 'authToken_userId_kind_idx';
-                  readonly columns: readonly ['userId', 'kind'];
-                  readonly unique: false;
-                },
-                {
-                  readonly name: 'authToken_userId_idx_a489d58a';
-                  readonly prefix: 'authToken_userId_idx';
-                  readonly columns: readonly ['userId'];
-                  readonly unique: false;
-                },
-              ];
-              foreignKeys: readonly [
-                {
-                  readonly source: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'authToken';
-                    readonly columns: readonly ['userId'];
-                  };
-                  readonly target: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'user';
-                    readonly columns: readonly ['id'];
-                  };
-                },
-              ];
-            };
             readonly minecraftLinkCode: {
               columns: {
                 readonly id: {
@@ -962,15 +848,6 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/text@1';
                   readonly nullable: true;
                 };
-                readonly emailVerified: {
-                  readonly nativeType: 'bool';
-                  readonly codecId: 'pg/bool@1';
-                  readonly nullable: false;
-                  readonly default: {
-                    readonly kind: 'literal';
-                    readonly value: DefaultLiteralValue<'pg/bool@1', true>;
-                  };
-                };
                 readonly createdAt: {
                   readonly nativeType: 'timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
@@ -993,10 +870,6 @@ type ContractBase = Omit<
             };
           };
           readonly valueSet: {
-            readonly auth_token_kind: {
-              readonly kind: 'valueSet';
-              readonly values: readonly ['email_verify', 'password_reset'];
-            };
             readonly server_event_kind: {
               readonly kind: 'valueSet';
               readonly values: readonly ['view', 'launch'];
@@ -1017,7 +890,6 @@ type ContractBase = Omit<
   readonly targetFamily: 'sql';
   readonly roots: {
     readonly user: { readonly namespace: 'public' & NamespaceId; readonly model: 'User' };
-    readonly authToken: { readonly namespace: 'public' & NamespaceId; readonly model: 'AuthToken' };
     readonly minecraftLinkCode: {
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'MinecraftLinkCode';
@@ -1032,63 +904,6 @@ type ContractBase = Omit<
     readonly namespaces: {
       readonly public: {
         readonly models: {
-          readonly AuthToken: {
-            readonly fields: {
-              readonly id: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly token: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly userId: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly kind: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly expiresAt: {
-                readonly nullable: false;
-                readonly type: {
-                  readonly kind: 'scalar';
-                  readonly codecId: 'pg/timestamptz-string@1';
-                };
-              };
-              readonly createdAt: {
-                readonly nullable: false;
-                readonly type: {
-                  readonly kind: 'scalar';
-                  readonly codecId: 'pg/timestamptz-string@1';
-                };
-              };
-            };
-            readonly relations: {
-              readonly user: {
-                readonly to: { readonly namespace: 'public' & NamespaceId; readonly model: 'User' };
-                readonly cardinality: 'N:1';
-                readonly nullable: false;
-                readonly on: {
-                  readonly localFields: readonly ['userId'];
-                  readonly targetFields: readonly ['id'];
-                };
-              };
-            };
-            readonly storage: {
-              readonly table: 'authToken';
-              readonly namespaceId: 'public';
-              readonly fields: {
-                readonly id: { readonly column: 'id' };
-                readonly token: { readonly column: 'token' };
-                readonly userId: { readonly column: 'userId' };
-                readonly kind: { readonly column: 'kind' };
-                readonly expiresAt: { readonly column: 'expiresAt' };
-                readonly createdAt: { readonly column: 'createdAt' };
-              };
-            };
-          };
           readonly MinecraftLinkCode: {
             readonly fields: {
               readonly id: {
@@ -1375,10 +1190,6 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
-              readonly emailVerified: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
-              };
               readonly createdAt: {
                 readonly nullable: false;
                 readonly type: {
@@ -1395,17 +1206,6 @@ type ContractBase = Omit<
               };
             };
             readonly relations: {
-              readonly authTokens: {
-                readonly to: {
-                  readonly namespace: 'public' & NamespaceId;
-                  readonly model: 'AuthToken';
-                };
-                readonly cardinality: '1:N';
-                readonly on: {
-                  readonly localFields: readonly ['id'];
-                  readonly targetFields: readonly ['userId'];
-                };
-              };
               readonly linkCodes: {
                 readonly to: {
                   readonly namespace: 'public' & NamespaceId;
@@ -1439,7 +1239,6 @@ type ContractBase = Omit<
                 readonly name: { readonly column: 'name' };
                 readonly minecraftUuid: { readonly column: 'minecraftUuid' };
                 readonly minecraftUsername: { readonly column: 'minecraftUsername' };
-                readonly emailVerified: { readonly column: 'emailVerified' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };
               };
@@ -1447,13 +1246,6 @@ type ContractBase = Omit<
           };
         };
         readonly enum: {
-          readonly auth_token_kind: {
-            readonly codecId: 'pg/text@1';
-            readonly members: readonly [
-              { readonly name: 'email_verify'; readonly value: 'email_verify' },
-              { readonly name: 'password_reset'; readonly value: 'password_reset' },
-            ];
-          };
           readonly server_type: {
             readonly codecId: 'pg/text@1';
             readonly members: readonly [
@@ -1495,14 +1287,6 @@ type ContractBase = Omit<
     readonly executionHash: ExecutionHash;
     readonly mutations: {
       readonly defaults: readonly [
-        {
-          readonly ref: {
-            readonly namespace: 'public';
-            readonly table: 'authToken';
-            readonly column: 'id';
-          };
-          readonly onCreate: { readonly kind: 'generator'; readonly id: 'uuidv4' };
-        },
         {
           readonly ref: {
             readonly namespace: 'public';

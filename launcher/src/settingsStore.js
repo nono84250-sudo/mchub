@@ -42,6 +42,12 @@ const DEFAULTS = {
   logLevel: "info",
   openConsoleOnLaunch: false,
   keepLauncherOpenWhilePlaying: true,
+  // Pseudo Minecraft renvoye par POST /api/launcher/minecraft-link apres une
+  // liaison reussie (voir main.js/account:linkMinecraft) — purement pour
+  // l'affichage local ("Compte Omniscient" dans Reglages > Divers), jamais
+  // relu par le site : deliee cote site ou coche "Oublier" ici desynchronise
+  // sans consequence, il suffit de relier de nouveau si besoin.
+  minecraftLinkedUserName: null,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le

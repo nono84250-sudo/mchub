@@ -1,0 +1,128 @@
+[
+  {
+    "id": "column.public.user.minecraftUsername",
+    "label": "Add column \"minecraftUsername\" to \"user\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "minecraftUsername",
+        "table": "user"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"minecraftUsername\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "minecraftUsername"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"minecraftUsername\"",
+        "sql": "ALTER TABLE \"public\".\"user\" ADD COLUMN \"minecraftUsername\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"minecraftUsername\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "minecraftUsername"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.user.minecraftUuid",
+    "label": "Add column \"minecraftUuid\" to \"user\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "minecraftUuid",
+        "table": "user"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"minecraftUuid\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "minecraftUuid"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"minecraftUuid\"",
+        "sql": "ALTER TABLE \"public\".\"user\" ADD COLUMN \"minecraftUuid\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"minecraftUuid\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "minecraftUuid"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.user.user_minecraftUuid_key",
+    "label": "Add unique constraint on \"user\" (minecraftUuid)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "user_minecraftUuid_key",
+        "table": "user"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"user_minecraftUuid_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "user_minecraftUuid_key",
+          "public",
+          "\"public\".\"user\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"user_minecraftUuid_key\"",
+        "sql": "ALTER TABLE \"public\".\"user\" ADD CONSTRAINT \"user_minecraftUuid_key\" UNIQUE (\"minecraftUuid\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"user_minecraftUuid_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "user_minecraftUuid_key",
+          "public",
+          "\"public\".\"user\""
+        ]
+      }
+    ]
+  }
+]

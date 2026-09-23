@@ -78,6 +78,7 @@ const DICTIONARIES = {
       servers: "Serveurs",
       favorites: "Favoris",
       recent: "Récents",
+      myInstances: "Mes instances",
       settings: "Paramètres",
     },
     serverList: {
@@ -96,6 +97,7 @@ const DICTIONARIES = {
       modded: "Moddé",
       statusUnknown: "Statut inconnu",
       playersOnline: { one: "{count} joueur en ligne{capacity}", other: "{count} joueurs en ligne{capacity}" },
+      owner: "Propriétaire",
     },
     serverDetail: {
       back: "← Retour à la liste",
@@ -113,6 +115,13 @@ const DICTIONARIES = {
     },
     recent: {
       empty: "Aucun serveur joué pour l'instant — les derniers serveurs lancés apparaîtront ici.",
+    },
+    myInstances: {
+      empty: "Aucun serveur pour le moment — publie-en un depuis le site Omniscient.",
+      manage: "Gérer",
+      loginRequired: "Lie ton compte Minecraft à ton compte Omniscient (Paramètres > Divers) pour voir tes serveurs ici.",
+      published: "Publié",
+      paused: "En pause",
     },
     settings: {
       title: "Paramètres",
@@ -136,6 +145,12 @@ const DICTIONARIES = {
       changeFolder: "Changer d'emplacement",
       launcherVersion: "Version du launcher",
       upToDate: "À jour.",
+      omniscientAccountLabel: "Compte Omniscient",
+      omniscientAccountDesc: "Lie ton compte Minecraft à ton compte du site pour retrouver tes serveurs dans « Mes instances ».",
+      omniscientAccountLinked: "Lié à {name}.",
+      omniscientAccountForget: "Oublier",
+      omniscientAccountCodePlaceholder: "Code à 6 caractères",
+      omniscientAccountLinkBtn: "Lier",
     },
     appearance: {
       theme: "Thème",
@@ -330,6 +345,7 @@ const DICTIONARIES = {
       servers: "Servers",
       favorites: "Favorites",
       recent: "Recent",
+      myInstances: "My instances",
       settings: "Settings",
     },
     serverList: {
@@ -348,6 +364,7 @@ const DICTIONARIES = {
       modded: "Modded",
       statusUnknown: "Unknown status",
       playersOnline: { one: "{count} player online{capacity}", other: "{count} players online{capacity}" },
+      owner: "Owner",
     },
     serverDetail: {
       back: "← Back to list",
@@ -365,6 +382,13 @@ const DICTIONARIES = {
     },
     recent: {
       empty: "No server played yet — recently launched servers will appear here.",
+    },
+    myInstances: {
+      empty: "No server yet — publish one from the Omniscient site.",
+      manage: "Manage",
+      loginRequired: "Link your Minecraft account to your Omniscient account (Settings > Misc) to see your servers here.",
+      published: "Published",
+      paused: "Paused",
     },
     settings: {
       title: "Settings",
@@ -388,6 +412,12 @@ const DICTIONARIES = {
       changeFolder: "Change location",
       launcherVersion: "Launcher version",
       upToDate: "You're up to date.",
+      omniscientAccountLabel: "Omniscient account",
+      omniscientAccountDesc: "Link your Minecraft account to your site account to find your servers under \"My instances\".",
+      omniscientAccountLinked: "Linked to {name}.",
+      omniscientAccountForget: "Forget",
+      omniscientAccountCodePlaceholder: "6-character code",
+      omniscientAccountLinkBtn: "Link",
     },
     appearance: {
       theme: "Theme",

@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { User, EnvelopeSimple, Lock } from "@phosphor-icons/react";
 import { updateProfile } from "@/lib/actions/account";
+import { requestPasswordResetLink } from "@/lib/actions/passwordReset";
 import { useI18n } from "@/i18n/I18nProvider";
 
 export function AccountForm({ name, email }: { name: string; email: string }) {
@@ -31,26 +32,6 @@ export function AccountForm({ name, email }: { name: string; email: string }) {
         </div>
       </div>
 
-      <div className="divider-fade" />
-
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="newPassword" className="field-label">
-          {t("account.newPassword")}
-        </label>
-        <div className="field-with-icon">
-          <Lock className="h-4 w-4" />
-          <input
-            id="newPassword"
-            name="newPassword"
-            type="password"
-            minLength={8}
-            autoComplete="new-password"
-            placeholder={t("account.newPasswordPlaceholder")}
-            className="field-input w-full"
-          />
-        </div>
-      </div>
-
       {state && "error" in state ? <p className="text-sm text-danger">{state.error}</p> : null}
       {state && "success" in state ? <p className="text-sm text-success">{t("account.saved")}</p> : null}
 
@@ -59,6 +40,33 @@ export function AccountForm({ name, email }: { name: string; email: string }) {
           {pending ? t("account.saving") : t("account.save")}
         </button>
       </div>
+
+      <div className="divider-fade" />
+
+      <PasswordResetButton />
     </form>
+  );
+}
+
+function PasswordResetButton() {
+  const { t } = useI18n();
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  async function handleClick() {
+    if (!window.confirm(t("account.resetPasswordConfirm"))) return;
+    setStatus("sending");
+    const result = await requestPasswordResetLink();
+    setStatus("sent" in result ? "sent" : "error");
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button type="button" onClick={handleClick} disabled={status === "sending"} className="btn-secondary self-start">
+        <Lock className="h-4 w-4" />
+        {status === "sending" ? t("account.resetPasswordSending") : t("account.resetPasswordButton")}
+      </button>
+      {status === "sent" ? <p className="text-sm text-success">{t("account.resetPasswordSent")}</p> : null}
+      {status === "error" ? <p className="text-sm text-danger">{t("account.resetPasswordError")}</p> : null}
+    </div>
   );
 }

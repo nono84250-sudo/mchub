@@ -19,6 +19,11 @@ export type PublicServerSummary = {
   playerCapacity: number | null;
   createdAt: string;
   viewCount: number;
+  // UUID Minecraft du proprietaire (si son compte site est lie, voir
+  // minecraftLink.ts) — permet au launcher d'afficher un badge "Owner" sur
+  // ses propres serveurs dans l'annuaire, en comparant a son propre profil
+  // deja connu localement (aucune donnee de session ne remonte au site).
+  ownerMinecraftUuid: string | null;
 };
 
 export type ServerListSort = "recent" | "popular" | "az";
@@ -58,6 +63,7 @@ export async function listPublicServers(options: ListPublicServersOptions = {}):
     "createdAt",
     "viewCount",
   )
+    .include("owner", (o) => o.select("minecraftUuid"))
     .where({ published: true })
     .orderBy((s) => s.createdAt.desc())
     .all();
@@ -87,6 +93,7 @@ export async function listPublicServers(options: ListPublicServersOptions = {}):
         playerCapacity: status.playerCapacity,
         createdAt: row.createdAt,
         viewCount: row.viewCount,
+        ownerMinecraftUuid: row.owner?.minecraftUuid ?? null,
       };
     }),
   );
@@ -172,6 +179,7 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     "createdAt",
     "viewCount",
   )
+    .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug, published: true })
     .first();
 
@@ -185,6 +193,7 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     description: row.description,
     bannerUrl: row.bannerUrl,
     iconUrl: row.iconUrl,
+    ownerMinecraftUuid: row.owner?.minecraftUuid ?? null,
     type: row.type,
     minecraftVersion: row.minecraftVersion,
     curseforgeModpackName: row.curseforgeModpackName,
@@ -195,4 +204,43 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
     createdAt: row.createdAt,
     viewCount: row.viewCount,
   };
+}
+
+export type OwnedServerSummary = {
+  slug: string;
+  name: string;
+  type: "vanilla" | "modded";
+  minecraftVersion: string;
+  ip: string;
+  published: boolean;
+  playerCount: number | null;
+  playerCapacity: number | null;
+};
+
+// Sert la vue "Mes instances" du launcher (route /api/launcher/servers/mine,
+// protegee par LAUNCHER_API_KEY comme le reste des routes launcher) : tous
+// les serveurs du proprietaire dont le compte Minecraft est lie a ce compte
+// site, publies OU en pause — contrairement a listPublicServers() qui ne
+// montre que les serveurs publies. Inclut `ip` : le proprietaire connait
+// deja sa propre adresse de connexion (meme raisonnement que
+// getServerWithIpBySlug).
+export async function listServersOwnedByMinecraftUuid(minecraftUuid: string): Promise<OwnedServerSummary[]> {
+  const owner = await db.orm.public.User.select("id").where({ minecraftUuid }).first();
+  if (!owner) return [];
+
+  const rows = await db.orm.public.Server.select(
+    "slug",
+    "name",
+    "type",
+    "minecraftVersion",
+    "ip",
+    "published",
+    "playerCount",
+    "playerCapacity",
+  )
+    .where({ ownerId: owner.id })
+    .orderBy((s) => s.createdAt.desc())
+    .all();
+
+  return rows;
 }

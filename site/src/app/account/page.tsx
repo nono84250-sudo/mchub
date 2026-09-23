@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/prisma/db";
 import { logout } from "@/lib/actions/auth";
 import { AccountForm } from "@/components/AccountForm";
+import { MinecraftLinkCard } from "@/components/MinecraftLinkCard";
 import { SignOut } from "@phosphor-icons/react/ssr";
 import { getT } from "@/i18n/getDictionary";
 
@@ -12,7 +13,9 @@ export default async function AccountPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const user = await db.orm.public.User.select("id", "name", "email").where({ id: session.user.id }).first();
+  const user = await db.orm.public.User.select("id", "name", "email", "minecraftUsername")
+    .where({ id: session.user.id })
+    .first();
   if (!user) redirect("/login");
   const { dict } = await getT();
 
@@ -31,6 +34,10 @@ export default async function AccountPage() {
       </div>
 
       <AccountForm name={user.name} email={user.email} />
+
+      <div className="divider-fade my-6" />
+
+      <MinecraftLinkCard minecraftUsername={user.minecraftUsername} />
 
       <div className="divider-fade my-6" />
 

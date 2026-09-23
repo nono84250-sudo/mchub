@@ -322,6 +322,55 @@ ipcMain.handle("servers:get", async (_event, slug) => {
   }
 });
 
+// Tous les serveurs (publies ou en pause) du compte Omniscient lie au
+// joueur actuellement connecte, pour la vue "Mes instances" (voir
+// site/src/lib/public-servers.ts:listServersOwnedByMinecraftUuid). Vide si
+// aucun compte n'est encore lie, plutot qu'une erreur — cas normal pour la
+// plupart des joueurs (uniquement les proprietaires de serveur ont besoin
+// de cette liaison).
+ipcMain.handle("servers:mine", async () => {
+  if (!currentSession) return { ok: true, servers: [] };
+  try {
+    const data = await fetchJson(
+      `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
+      { headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` } },
+    );
+    return { ok: true, servers: data.servers };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+// Echange le code affiche sur /account contre la liaison du profil
+// Minecraft/Xbox deja connu localement (voir msAuth.js) — jamais le mot de
+// passe du site, voir site/src/app/api/launcher/minecraft-link/route.ts.
+ipcMain.handle("account:linkMinecraft", async (_event, code) => {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  try {
+    const res = await fetch(`${SITE_URL}/api/launcher/minecraft-link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      body: JSON.stringify({
+        code,
+        minecraftUuid: currentSession.profile.id,
+        minecraftUsername: currentSession.profile.name,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const error =
+        data.error === "already_linked_elsewhere"
+          ? "Ce compte Minecraft est déjà lié à un autre compte Omniscient."
+          : "Code invalide ou expiré.";
+      return { ok: false, error };
+    }
+    settingsStore.saveSettings({ minecraftLinkedUserName: data.userName });
+    return { ok: true, userName: data.userName };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
 ipcMain.handle("auth:signIn", async (_event, remember) => {
   try {
     const { profile, authorization, refreshToken } = await msAuth.signIn();
