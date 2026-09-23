@@ -18,6 +18,10 @@
     --border: color-mix(in srgb, var(--foreground) 16%, transparent);
     --foreground: #e9e9ed;
     --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
+    /* Palier plus discret que --muted (timestamps, compteurs secondaires —
+       voir debug-console.html, seul endroit qui en avait besoin jusqu'ici).
+       Remonte ici pour rester partage si un autre ecran en a besoin. */
+    --muted2: color-mix(in srgb, var(--foreground) 50%, transparent);
     --accent: #9184d9;
     --accent-hover: color-mix(in srgb, var(--accent) 70%, white);
     --accent-2: color-mix(in srgb, var(--accent) 85%, white);
@@ -27,6 +31,7 @@
     --accent-fill: color-mix(in srgb, var(--accent) 45%, black);
     --accent-foreground: #f5f4ff;
     --danger: #e08a8a;
+    --warn: #e0c28a;
     --success: #5fd3a0;
   }
 
@@ -44,7 +49,9 @@
        passe qu'a ~3.75:1 (sous le seuil WCAG AA de 4.5:1) — 65% ramene ca a
        ~5.1:1. */
     --muted: color-mix(in srgb, var(--foreground) 65%, transparent);
+    --muted2: color-mix(in srgb, var(--foreground) 62%, transparent);
     --danger: #c0453f;
+    --warn: #9a6a1f;
     --success: #2f9e6e;
   }
 

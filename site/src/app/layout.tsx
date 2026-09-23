@@ -24,7 +24,19 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   const { locale, dict } = await getT();
 
   return (
-    <html lang={locale} className={`${inter.variable} h-full antialiased`}>
+    <html lang={locale} className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        {/* Bloquant, avant tout paint : evite le flash sombre->clair au
+           chargement pour un visiteur ayant choisi "Clair" (voir
+           ThemeSwitcher.tsx, meme logique que theme.js cote launcher). Ne
+           peut pas passer par un Server Component, la preference vit en
+           localStorage cote client, jamais sur le serveur. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var p=localStorage.getItem("theme")||"system";var m=p==="system"?(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):p;document.documentElement.dataset.theme=m;}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
         <I18nProvider locale={locale} dict={dict}>
           <SiteChrome>

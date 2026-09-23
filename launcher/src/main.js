@@ -31,6 +31,7 @@ const settingsStore = require("./settingsStore");
 const { checkMinecraftStatus } = require("./minecraftStatus");
 const javaManager = require("./javaManager");
 const diagnostics = require("./diagnostics");
+const discordPresence = require("./discordPresence");
 const { autoUpdater } = require("electron-updater");
 
 // Repli sur src/env.generated.js (voir scripts/generate-env.js) : une fois
@@ -55,6 +56,9 @@ const SITE_URL = process.env.MCHUB_SITE_URL || generatedEnv.MCHUB_SITE_URL || "h
 // de valeur par défaut en dur ici, une ancienne clé a fuité dans le dépôt
 // public pour cette raison exacte.
 const LAUNCHER_API_KEY = process.env.LAUNCHER_API_KEY || generatedEnv.LAUNCHER_API_KEY;
+// Optionnel (voir discordPresence.js) : Rich Presence desactivee proprement
+// si absent, jamais une erreur bloquante comme LAUNCHER_API_KEY ci-dessus.
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || generatedEnv.DISCORD_CLIENT_ID;
 const REQUEST_TIMEOUT_MS = 8000;
 
 // Session du joueur connecté (compte Microsoft/Minecraft), en mémoire.
@@ -638,6 +642,8 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       javaPath: settings.javaPath || undefined,
     });
 
+    discordPresence.setPlayingActivity(server.name);
+
     // Compteur indicatif pour la page de gestion du serveur (site) — ne
     // doit jamais faire echouer un lancement par ailleurs reussi.
     fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/launch`, {
@@ -670,10 +676,13 @@ app.whenReady().then(() => {
   logStore.pushLog({ source: "launcher", message: `Démarrage d'Omniscient Launcher ${app.getVersion()}` });
   createWindow();
   globalShortcut.register("CommandOrControl+Shift+D", () => createConsoleWindow());
+  discordPresence.init(DISCORD_CLIENT_ID);
+  discordPresence.setBrowsingActivity();
 });
 
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
+  discordPresence.shutdown();
 });
 
 app.on("window-all-closed", () => {

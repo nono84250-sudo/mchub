@@ -1080,11 +1080,11 @@ function renderDebugTab(contentEl, settings) {
   window.mchub.diagnostics.getSystemInfo().then((info) => {
     const rows = [
       [t("settings.launcherVersion"), `v${info.launcherVersion}`],
-      ["Electron", info.electronVersion],
-      ["OS", info.os],
-      ["Java", info.java || t("debug.javaNotDetected")],
+      [t("debug.labelElectron"), info.electronVersion],
+      [t("debug.labelOs"), info.os],
+      [t("debug.labelJava"), info.java || t("debug.javaNotDetected")],
       [t("settings.ramAllocation"), info.memory],
-      ["GPU", info.gpu || t("debug.gpuUnknown")],
+      [t("debug.labelGpu"), info.gpu || t("debug.gpuUnknown")],
     ];
     sysInfoEl.innerHTML = rows.map(([label, value]) => `<span class="label">${label}</span><span class="value">${escapeHtml(value)}</span>`).join("");
     const copyBtn = document.getElementById("settings-copy-sysinfo");

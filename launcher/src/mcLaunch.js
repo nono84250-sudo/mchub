@@ -3,6 +3,7 @@ const { spawn } = require("node:child_process");
 const { app } = require("electron");
 const { Client } = require("minecraft-launcher-core");
 const logStore = require("./logStore");
+const discordPresence = require("./discordPresence");
 
 // Repertoire de jeu local : Java, Minecraft (vanilla) et ses assets sont
 // telecharges ici au premier lancement, puis reutilises. Le launcher ne gere
@@ -74,6 +75,10 @@ async function launchMinecraft({ authorization, version, serverIp, onProgress, m
     let started = false;
     launcher.on("close", (code) => {
       logStore.pushLog({ source: "game", message: `Processus du jeu fermé (code ${code}).` });
+      // "started" distingue une vraie fin de partie (retour a "parcourt les
+      // serveurs" cote Discord) d'un lancement qui n'a jamais reellement
+      // demarre — jamais eu de presence "en jeu" a annuler dans ce cas.
+      if (started) discordPresence.setBrowsingActivity();
       if (!started) reject(new Error(`Le jeu s'est fermé avant de démarrer (code ${code}).`));
     });
     onProgress?.({ text: "Lancement du jeu…" });

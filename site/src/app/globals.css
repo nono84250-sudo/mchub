@@ -11,6 +11,9 @@
   --border: color-mix(in srgb, var(--foreground) 16%, transparent);
   --foreground: #e9e9ed;
   --muted: color-mix(in srgb, var(--foreground) 55%, transparent);
+  /* Palier plus discret que --muted — remonte depuis le launcher (console de
+     debug) pour rester un token partage entre les deux apps. */
+  --muted2: color-mix(in srgb, var(--foreground) 50%, transparent);
   --accent: #9184d9;
   /* Formules color-mix (pas de hex fige) pour rester identiques a celles du
      launcher (voir launcher/src/index.html) qui, elles, DOIVENT etre des
@@ -25,9 +28,32 @@
   --accent-fill: color-mix(in srgb, var(--accent) 45%, black);
   --accent-foreground: #f5f4ff;
   --danger: #e08a8a;
+  --warn: #e0c28a;
   --success: #5fd3a0;
   /* Elevation : un trait + une ombre sombre plutot qu'une lueur colorée. */
   --glow-accent: 0 0 0 1px var(--accent), 0 10px 24px -10px rgba(0, 0, 0, 0.6);
+}
+
+/* Theme clair : meme structure de tokens, valeurs inversees — memes valeurs
+   que launcher/src/index.html pour que les deux applications restent
+   visuellement alignees. Applique via [data-theme] sur <html> (voir
+   ThemeSwitcher/layout.tsx) plutot qu'uniquement prefers-color-scheme, pour
+   que "Systeme"/"Sombre"/"Clair" soient tous les trois des choix explicites,
+   comme dans le launcher. */
+:root[data-theme="light"] {
+  --background: #f3f3f6;
+  --surface: #ffffff;
+  --surface-raised: color-mix(in srgb, var(--foreground) 4%, var(--surface));
+  --border: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --foreground: #1a1b23;
+  /* 65%/62% (pas 55%/50% comme en sombre) : verifie par calcul de luminance
+     relative WCAG — en dessous, --muted/--muted2 sur ce fond clair tombent
+     sous le seuil AA de 4.5:1 (voir meme commentaire cote launcher). */
+  --muted: color-mix(in srgb, var(--foreground) 65%, transparent);
+  --muted2: color-mix(in srgb, var(--foreground) 62%, transparent);
+  --danger: #c0453f;
+  --warn: #9a6a1f;
+  --success: #2f9e6e;
 }
 
 @theme inline {
@@ -37,11 +63,13 @@
   --color-border: var(--border);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-muted2: var(--muted2);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-2: var(--accent-2);
   --color-danger: var(--danger);
+  --color-warn: var(--warn);
   --color-success: var(--success);
   --font-sans: var(--font-inter);
   --font-heading: var(--font-inter);

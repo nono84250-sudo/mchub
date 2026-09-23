@@ -20,6 +20,9 @@ const content = `// Genere automatiquement par scripts/generate-env.js juste ava
 module.exports = {
   LAUNCHER_API_KEY: ${JSON.stringify(process.env.LAUNCHER_API_KEY)},
   MCHUB_SITE_URL: ${JSON.stringify(process.env.MCHUB_SITE_URL || "http://localhost:3000")},
+  // Optionnel (voir discordPresence.js) : Rich Presence desactive proprement
+  // si absent, jamais bloquant pour le build.
+  DISCORD_CLIENT_ID: ${JSON.stringify(process.env.DISCORD_CLIENT_ID || "")},
 };
 `;
 

@@ -33,7 +33,7 @@ export function ManageAvatarMenu({ name, email }: { name: string; email: string 
         className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-surface-raised"
       >
         <span className="server-icon h-8 w-8 text-sm">{initial}</span>
-        <span className="max-w-[140px] truncate">{name || email}</span>
+        <span className="max-w-[40vw] truncate">{name || email}</span>
         <CaretDown className="h-4 w-4 text-muted" />
       </button>
 

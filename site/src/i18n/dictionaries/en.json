@@ -125,6 +125,12 @@
     "fr": "Français",
     "en": "English"
   },
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "dark": "Dark",
+    "light": "Light"
+  },
   "manage": {
     "backToDashboard": "Back to My space",
     "navOverview": "Overview",

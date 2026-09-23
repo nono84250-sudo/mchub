@@ -2,7 +2,7 @@
 
 Document vivant : décisions prises, ce qui est livré, ce qui reste ouvert, et les idées pour plus tard. À relire/mettre à jour à chaque étape importante plutôt que de repartir de zéro. Anciennement `Deploiement Vercel.md` — renommé car son contenu dépasse largement le déploiement initial.
 
-_Dernière mise à jour : 2026-09-23 (audit complet sécurité/code/UI-UX + corrections)._
+_Dernière mise à jour : 2026-09-23 (backlog de l'audit terminé, thème clair du site, Discord Rich Presence)._
 
 ## 1. État actuel en un coup d'œil
 
@@ -46,6 +46,8 @@ _Dernière mise à jour : 2026-09-23 (audit complet sécurité/code/UI-UX + corr
 - **Launcher — console de debug** (fenêtre séparée, `Ctrl+Shift+D` ou Paramètres > Débogage) : logs launcher + Minecraft en direct (jeton d'accès toujours masqué), filtres, recherche, pause/copier/effacer, niveau de log, logs persistés sur disque, rapport de diagnostic, infos système, réparation/vidage du cache, réinitialisation des paramètres.
 - **Correctif Java** : la détection exige désormais réellement Java 21 minimum (pas juste "présent + 64 bits") — un vieux Java 8 système faisait planter Minecraft 1.21+ au lancement sans que le launcher ne s'en rende compte.
 - **Audit complet du 2026-09-23** (sécurité, qualité de code, UI/UX) + corrections — voir §6.
+- **Thème clair du site** (harmonisé avec le launcher, sélecteur Système/Sombre/Clair dans la nav, persisté en `localStorage`) + tokens `--muted2`/`--warn` partagés entre les deux apps.
+- **Discord Rich Presence** (`launcher/src/discordPresence.js`) : le launcher annonce sur Discord "Parcourt les serveurs" ou "Joue sur {serveur}" avec le logo Omniscient. Code livré et désactivé proprement tant que `DISCORD_CLIENT_ID` n'est pas configuré — **configuration manuelle restante côté Discord, voir §5**.
 
 ## 5. Points ouverts (à trancher)
 
@@ -54,17 +56,16 @@ _Dernière mise à jour : 2026-09-23 (audit complet sécurité/code/UI-UX + corr
 - [ ] **`LAUNCHER_API_KEY` partagée** : embarquée dans chaque copie de l'app (extractible techniquement). Acceptable pour l'usage actuel (anti-scraping basique), à surveiller si la sécurité doit monter en exigence.
 - [ ] **Signature de code Windows** : sans certificat, SmartScreen avertit au premier lancement de l'installeur. Pas bloquant, à prévoir si l'image "pro" devient importante.
 - [ ] **Builds macOS/Linux** : la page Download les affiche déjà ("Bientôt disponible") mais aucun build n'existe — seul Windows (`nsis-web`) est construit aujourd'hui.
+- [ ] **Discord Rich Presence — configuration côté Discord** (code déjà livré, voir §4) : je ne peux pas créer l'application Discord ni uploader l'asset à la place de l'utilisateur, ça nécessite son propre compte Discord. Étapes restantes :
+  1. Créer une application sur https://discord.com/developers/applications, la nommer **exactement** "Omniscient Launcher" (c'est ce nom-là, pas une valeur de code, qui s'affiche en gras dans Discord).
+  2. Onglet "Rich Presence" > "Art Assets" : uploader `launcher/build/icon.png` comme asset, avec la clé exacte `omniscient_logo`.
+  3. Copier l'Application ID (Client ID, onglet général) et le donner pour l'ajouter à `DISCORD_CLIENT_ID` dans `launcher/.env` avant le prochain build publié.
 
 ## 6. Backlog technique (issu de l'audit du 2026-09-23, pas corrigé volontairement)
 
 Corrections déjà appliquées le jour même : fenêtre de connexion Microsoft sans `sandbox`, SSRF possible via le champ IP d'un serveur, comparaison non constante du secret launcher, nom de fichier externe non assaini, bouton "Effacer" de la console qui ne vidait pas le bon buffer, export mort avec commentaire trompeur ("mode test" disparu), pages Actualités/Notifications en français en dur, barre de titre dupliquée entre les 2 fenêtres du launcher, gestion d'erreur manquante sur les actions de la console de gestion, convention de bouton "plein" incohérente avec le reste du design system, sélecteur de langue inaccessible au clavier, contraste de texte insuffisant (`--muted`/`--muted2`, surtout en thème clair), unités de taille toujours en français, tokens de couleur dérivés désynchronisés entre site et launcher, rayons de bordure incohérents sur les cartes du site, et plusieurs petits exports/imports morts.
 
-Reste à trancher/faire si besoin plus tard (délibérément pas fait maintenant, impact mineur) :
-- [ ] `Design/` contient toutes les versions intermédiaires des maquettes (V1, V2...) en plus de la dernière — alourdit le repo en binaire sans plus-value une fois la version finale retenue. Envisager de ne garder que la dernière par plateforme.
-- [ ] Le site n'a aucun thème clair (le launcher, lui, en a un complet Système/Sombre/Clair) — à confirmer si c'est voulu ou à harmoniser un jour.
-- [ ] Tokens `--muted2`/`--warn` (ajoutés seulement pour la console de debug du launcher) pas remontés dans `site/globals.css` ni `launcher/index.html` — à faire seulement si le besoin réapparaît ailleurs.
-- [ ] `ManageAvatarMenu.tsx` a une largeur fixe (`max-w-[140px]`), seule largeur en dur du site — impact mineur, déjà couplée à `truncate`.
-- [ ] Libellés "Electron"/"OS"/"GPU" de la page Infos système (console de debug) pas passés par `t()` — acronymes identiques FR/EN, impact quasi nul.
+Tout le backlog mineur listé précédemment (nettoyage de `Design/`, thème clair du site, tokens `--muted2`/`--warn` partagés, largeur fixe de `ManageAvatarMenu`, libellés système non traduits) a été traité le 2026-09-23. Reste volontairement en suspens :
 - [ ] Colonnes `discordUrl`/`websiteUrl` du modèle `Server` existent en base mais ne sont utilisées nulle part — cohérent avec les liens Discord/site en attente sur la page admin serveur (voir §7), à réutiliser plutôt qu'à dupliquer quand ce chantier démarrera.
 
 ## 7. Idées pour plus tard (fonctionnalités futures, rien commencé)

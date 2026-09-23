@@ -6,6 +6,7 @@ import { List, X } from "@phosphor-icons/react";
 import { logout } from "@/lib/actions/auth";
 import { useI18n } from "@/i18n/I18nProvider";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 
 // Repli mobile de la nav globale (voir Nav.tsx) — sous ~640px, "Serveurs /
 // Mon espace / Se déconnecter" n'ont plus la place de tenir sur une ligne à
@@ -75,8 +76,9 @@ export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
             </Link>
           )}
 
-          <div className="border-t border-border mt-2 pt-2 px-3">
+          <div className="border-t border-border mt-2 pt-2 px-3 flex items-center justify-between">
             <LanguageSwitcher />
+            <ThemeSwitcher />
           </div>
         </div>
       ) : null}
