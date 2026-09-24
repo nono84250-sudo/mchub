@@ -211,8 +211,10 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
 }
 
 export type OwnedServerSummary = {
+  id: string;
   slug: string;
   name: string;
+  iconUrl: string | null;
   type: "vanilla" | "modded";
   minecraftVersion: string;
   ip: string;
@@ -235,8 +237,10 @@ export async function listServersOwnedByMinecraftUuid(minecraftUuid: string): Pr
   if (!owner) return [];
 
   const rows = await db.orm.public.Server.select(
+    "id",
     "slug",
     "name",
+    "iconUrl",
     "type",
     "minecraftVersion",
     "ip",

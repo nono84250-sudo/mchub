@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("mchub", {
   listServers: () => ipcRenderer.invoke("servers:list"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
   listMyServers: () => ipcRenderer.invoke("servers:mine"),
+  openManageServer: (serverId) => ipcRenderer.invoke("servers:openManage", serverId),
+  openNewInstance: () => ipcRenderer.invoke("servers:openNewInstance"),
   signIn: (remember) => ipcRenderer.invoke("auth:signIn", remember),
   tryRestoreSession: () => ipcRenderer.invoke("auth:tryRestore"),
   signOut: () => ipcRenderer.invoke("auth:signOut"),

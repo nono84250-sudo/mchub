@@ -444,6 +444,46 @@
   }
   .status-dot.online { background: var(--success); box-shadow: 0 0 6px rgba(95, 211, 160, 0.8); }
 
+  /* "Mes instances" (voir renderer.js/myInstanceRowHtml) : grille de cartes
+     plutot que la liste plate des autres onglets — chaque carte porte assez
+     d'info (visibilite, code d'invitation) pour ne jamais avoir a ouvrir le
+     site juste pour savoir dans quel etat est un serveur. */
+  .instances-header { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+  .instances-header h2 { margin: 0; }
+  .instances-header .join-note { margin: 4px 0 0; }
+  .instances-header .btn-secondary { margin-left: auto; flex-shrink: 0; }
+  .instances-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .instances-filters { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface-raised, var(--surface)); border: 1px solid var(--border); }
+  .instances-filters .sort-chip { border: none; padding: 5px 11px; border-radius: 7px; }
+  .instances-filters .sort-chip.active { background: var(--accent-fill); color: var(--accent-foreground); }
+  .instances-filters .sort-chip .count { opacity: 0.7; margin-left: 4px; }
+  .instances-note { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+  .instance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .instance-card { display: flex; flex-direction: column; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); overflow: hidden; }
+  .instance-card-banner {
+    position: relative;
+    height: 56px;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 35%, transparent), transparent 70%), var(--surface-raised, var(--surface));
+  }
+  .instance-card-icon {
+    position: absolute; left: 16px; bottom: -18px; width: 40px; height: 40px;
+    border-radius: 10px; border: 3px solid var(--surface);
+    background: var(--accent-fill); color: var(--accent-foreground);
+    display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; overflow: hidden;
+  }
+  .instance-card-icon img { width: 100%; height: 100%; object-fit: cover; }
+  .instance-badge { position: absolute; right: 12px; top: 10px; font-size: 11px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .instance-badge.public { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+  .instance-badge.private { background: var(--accent-fill); color: var(--accent-foreground); }
+  .instance-badge.paused { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
+  .instance-card-body { padding: 24px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .instance-card-body h3 { margin: 0; font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .instance-card-body > p { margin: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .instance-card-status { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .instance-card-status code { font-family: ui-monospace, Menlo, monospace; color: var(--foreground); }
+  .instance-card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
   .detail { max-width: 640px; }
 
   /* Panneau "Parametres" en onglets (maquette "04 Settings") : nav laterale

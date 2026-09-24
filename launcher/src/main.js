@@ -341,6 +341,14 @@ ipcMain.handle("servers:mine", async () => {
   }
 });
 
+// Rien n'est configurable dans le launcher : la console de gestion d'un
+// serveur (Mes instances) et la creation d'une nouvelle instance ouvrent
+// toujours le site dans le navigateur par defaut, jamais une fenetre interne.
+ipcMain.handle("servers:openManage", (_event, serverId) => {
+  if (typeof serverId === "string" && serverId) shell.openExternal(`${SITE_URL}/manage/${encodeURIComponent(serverId)}`);
+});
+ipcMain.handle("servers:openNewInstance", () => shell.openExternal(`${SITE_URL}/dashboard/servers/new`));
+
 // Echange le code affiche sur /account contre la liaison du profil
 // Minecraft/Xbox deja connu localement (voir msAuth.js) — jamais le mot de
 // passe du site, voir site/src/app/api/launcher/minecraft-link/route.ts.

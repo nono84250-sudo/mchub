@@ -908,24 +908,104 @@ async function renderRecentList() {
 // et minecraft-link cote site). Rendu dedie plutot que serverRowHtml/
 // openDetail : contrairement a la liste publique, ces serveurs peuvent etre
 // en pause (donc absents de /api/public/servers/[slug], qui 404 dessus).
-function myInstanceRowHtml(server) {
-  const statusBadge = server.published
-    ? `<span class="owner-tag">${t("myInstances.published")}</span>`
-    : `<span class="badge">${t("myInstances.paused")}</span>`;
+// La configuration (republier, changer la visibilite...) se fait toujours
+// sur le site — voir la note "manageNote" — jamais depuis une carte ici.
+let myInstancesServers = [];
+let myInstancesFilter = "all";
+
+function instanceStatus(server) {
+  if (!server.published) return "paused";
+  return server.isPrivate ? "private" : "public";
+}
+
+function instanceCardHtml(server) {
+  const status = instanceStatus(server);
+  const badgeKey = status === "public" ? "badgePublic" : status === "private" ? "badgePrivate" : "badgePaused";
+  const statusLine =
+    status === "paused"
+      ? `<span class="status-dot"></span>${t("myInstances.hiddenNote")}`
+      : status === "private"
+        ? t("myInstances.inviteCodeLabel", { code: `<code>${escapeHtml(server.inviteCode || "")}</code>` })
+        : playersLabel(server);
+
   return `
-    <div class="row" data-slug="${escapeHtml(server.slug)}">
-      <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverInitial(server.name)}</span>
-      <div class="row-body">
-        <div class="row-title-line">
-          <h3>${escapeHtml(server.name)}</h3>
-          ${typeBadge(server.type)}
-          ${statusBadge}
-        </div>
-        <p>${escapeHtml(server.ip)} · ${escapeHtml(server.minecraftVersion)}</p>
+    <div class="instance-card" data-slug="${escapeHtml(server.slug)}">
+      <div class="instance-card-banner">
+        <span class="instance-card-icon">${serverIconInner(server)}</span>
+        <span class="instance-badge ${status}">${t(`myInstances.${badgeKey}`)}</span>
       </div>
-      <div class="players">${playersLabel(server)}</div>
-      ${server.published ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("serverDetail.joinBtn")}</button>` : ""}
+      <div class="instance-card-body">
+        <h3>${escapeHtml(server.name)}</h3>
+        <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)} · ${escapeHtml(server.ip)}</p>
+        <div class="instance-card-status">${statusLine}</div>
+        <div class="instance-card-actions">
+          ${status !== "paused" ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("serverDetail.joinBtn")}</button>` : ""}
+          <button type="button" class="btn-secondary my-instance-manage" data-id="${escapeHtml(server.id)}">${t("myInstances.manage")} ↗</button>
+        </div>
+      </div>
     </div>`;
+}
+
+const INSTANCE_FILTERS = ["all", "public", "private", "paused"];
+
+function instancesToolbarHtml(servers) {
+  const counts = { all: servers.length, public: 0, private: 0, paused: 0 };
+  servers.forEach((server) => counts[instanceStatus(server)]++);
+  const chips = INSTANCE_FILTERS.map((filter) => {
+    const labelKey = `filter${filter.charAt(0).toUpperCase()}${filter.slice(1)}`;
+    return `<button type="button" class="sort-chip${filter === myInstancesFilter ? " active" : ""}" data-filter="${filter}">${t(`myInstances.${labelKey}`)}<span class="count">${counts[filter]}</span></button>`;
+  }).join("");
+
+  return `
+    <div class="instances-toolbar">
+      <div class="instances-filters">${chips}</div>
+      <span class="instances-note">${t("myInstances.manageNote")}</span>
+    </div>`;
+}
+
+function renderMyInstancesGrid() {
+  const filtered =
+    myInstancesFilter === "all" ? myInstancesServers : myInstancesServers.filter((server) => instanceStatus(server) === myInstancesFilter);
+
+  myInstancesPanelEl.innerHTML = `
+    <div class="instances-header">
+      <div>
+        <h2>${t("nav.myInstances")}</h2>
+        <p class="join-note">${t("myInstances.subtitle")}</p>
+      </div>
+      <button type="button" class="btn-secondary" id="my-instances-new">+ ${t("myInstances.newInstance")}</button>
+    </div>
+    ${instancesToolbarHtml(myInstancesServers)}
+    ${
+      filtered.length === 0
+        ? `<p class="join-note">${t("myInstances.filterEmpty")}</p>`
+        : `<div class="instance-grid">${filtered.map(instanceCardHtml).join("")}</div>`
+    }
+  `;
+
+  document.getElementById("my-instances-new").addEventListener("click", () => window.mchub.openNewInstance());
+
+  myInstancesPanelEl.querySelectorAll(".instances-filters .sort-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      myInstancesFilter = btn.dataset.filter;
+      renderMyInstancesGrid();
+    });
+  });
+
+  myInstancesPanelEl.querySelectorAll(".my-instance-play").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const server = myInstancesServers.find((s) => s.slug === btn.dataset.slug);
+      if (server) launchServer(server);
+    });
+  });
+
+  myInstancesPanelEl.querySelectorAll(".my-instance-manage").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      window.mchub.openManageServer(btn.dataset.id);
+    });
+  });
 }
 
 async function showMyInstancesView() {
@@ -957,9 +1037,9 @@ async function renderMyInstancesList() {
   }
 
   const result = await window.mchub.listMyServers();
-  const servers = result.ok ? result.servers : [];
+  myInstancesServers = result.ok ? result.servers : [];
 
-  if (servers.length === 0) {
+  if (myInstancesServers.length === 0) {
     myInstancesPanelEl.className = "detail";
     myInstancesPanelEl.innerHTML = `
       <h2>${t("nav.myInstances")}</h2>
@@ -968,15 +1048,9 @@ async function renderMyInstancesList() {
     return;
   }
 
-  myInstancesPanelEl.className = "server-list";
-  myInstancesPanelEl.innerHTML = servers.map(myInstanceRowHtml).join("");
-  myInstancesPanelEl.querySelectorAll(".my-instance-play").forEach((btn) => {
-    btn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const server = servers.find((s) => s.slug === btn.dataset.slug);
-      if (server) launchServer(server);
-    });
-  });
+  myInstancesFilter = "all";
+  myInstancesPanelEl.className = "instances-view";
+  renderMyInstancesGrid();
 }
 
 const ICON_DESKTOP =
