@@ -6,10 +6,27 @@ import { X, SpinnerGap } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 
+export type ImageField = "banner" | "icon" | "background";
+
+// Contraintes par champ (dimensions/formats/poids), affichees sous chaque
+// zone de depot comme dans la maquette (voir "02 Onboarding" dans
+// Design/Omniscient Site Mockups.dc.html) et appliquees cote client avant
+// meme d'appeler /api/upload. Purement indicatif ici — la seule limite qui
+// compte vraiment est appliquee cote serveur (voir FIELD_CONSTRAINTS dans
+// app/api/upload/route.ts), qui ne fait pas confiance a ce que le client
+// annonce.
+const FIELD_SPECS: Record<ImageField, { accept: string; maxSizeMB: number }> = {
+  banner: { accept: "image/jpeg,image/png,image/webp", maxSizeMB: 5 },
+  icon: { accept: "image/png,image/webp", maxSizeMB: 1 },
+  background: { accept: "image/jpeg,image/webp", maxSizeMB: 8 },
+};
+
 type ImageDropzoneProps = {
   name: string;
+  field: ImageField;
   defaultValue?: string | null;
   label: string;
+  hint?: string;
   placeholder: string;
   icon: Icon;
   shape?: "wide" | "square";
@@ -21,15 +38,16 @@ type ImageDropzoneProps = {
 // direct navigateur -> Vercel Blob (voir /api/upload) : seul le jeton
 // transite par notre serveur, jamais le fichier lui-meme — evite la limite
 // de taille des server actions Next.js pour des images de quelques Mo.
-export function ImageDropzone({ name, defaultValue, label, placeholder, icon: PlaceholderIcon, shape = "wide" }: ImageDropzoneProps) {
+export function ImageDropzone({ name, field, defaultValue, label, hint, placeholder, icon: PlaceholderIcon, shape = "wide" }: ImageDropzoneProps) {
   const { t } = useI18n();
   const [url, setUrl] = useState(defaultValue ?? "");
   const [status, setStatus] = useState<"idle" | "uploading" | "error">("idle");
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const { accept, maxSizeMB } = FIELD_SPECS[field];
 
   async function uploadFile(file: File) {
-    if (!file.type.startsWith("image/")) {
+    if (!accept.split(",").includes(file.type) || file.size > maxSizeMB * 1024 * 1024) {
       setStatus("error");
       return;
     }
@@ -38,6 +56,7 @@ export function ImageDropzone({ name, defaultValue, label, placeholder, icon: Pl
       const blob = await upload(file.name, file, {
         access: "public",
         handleUploadUrl: "/api/upload",
+        clientPayload: JSON.stringify({ field }),
       });
       setUrl(blob.url);
       setStatus("idle");
@@ -49,11 +68,12 @@ export function ImageDropzone({ name, defaultValue, label, placeholder, icon: Pl
   return (
     <div className="flex flex-col gap-1.5">
       <span className="field-label">{label}</span>
+      {hint ? <span className="text-[11px] leading-tight text-muted whitespace-pre-line">{hint}</span> : null}
       <input type="hidden" name={name} value={url} />
       <input
         ref={inputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
+        accept={accept}
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];
@@ -79,7 +99,7 @@ export function ImageDropzone({ name, defaultValue, label, placeholder, icon: Pl
           const file = event.dataTransfer.files?.[0];
           if (file) void uploadFile(file);
         }}
-        className={`relative flex h-24 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md border border-dashed text-center font-mono text-[11px] text-muted ${shape === "square" ? "w-24" : "w-full"}`}
+        className={`relative flex h-24 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md border border-dashed text-center font-mono text-[11px] text-muted ${shape === "square" ? "w-24 mx-auto" : "w-full"}`}
         style={{
           borderColor: dragOver ? "var(--accent)" : "var(--border)",
           backgroundImage: url

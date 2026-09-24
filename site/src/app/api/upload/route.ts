@@ -2,6 +2,18 @@ import { NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { auth } from "@/auth";
 
+// Contraintes autoritatives par champ (voir la maquette "02 Onboarding" —
+// dimensions/formats/poids affiches sous chaque zone de depot dans
+// ImageDropzone.tsx). Definies ici plutot que lues depuis le clientPayload
+// envoye par le navigateur : ce payload n'est qu'une indication pour l'UX
+// (message d'erreur, attribut accept du <input>), jamais une source fiable
+// pour une limite de securite — un client malveillant pourrait l'usurper.
+const FIELD_CONSTRAINTS: Record<string, { allowedContentTypes: string[]; maximumSizeInBytes: number }> = {
+  banner: { allowedContentTypes: ["image/jpeg", "image/png", "image/webp"], maximumSizeInBytes: 5 * 1024 * 1024 },
+  icon: { allowedContentTypes: ["image/png", "image/webp"], maximumSizeInBytes: 1 * 1024 * 1024 },
+  background: { allowedContentTypes: ["image/jpeg", "image/webp"], maximumSizeInBytes: 8 * 1024 * 1024 },
+};
+
 // Emet le jeton d'upload direct-navigateur -> Vercel Blob consomme par
 // ImageDropzone.tsx (bannerUrl/iconUrl/backgroundUrl de ServerForm et
 // NewServerWizard) : le fichier ne transite jamais par cette route, elle ne
@@ -20,11 +32,14 @@ export async function POST(request: Request): Promise<NextResponse> {
     const jsonResponse = await handleUpload({
       body,
       request,
-      onBeforeGenerateToken: async () => ({
-        allowedContentTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"],
-        maximumSizeInBytes: 5 * 1024 * 1024,
-        addRandomSuffix: true,
-      }),
+      onBeforeGenerateToken: async (_pathname, clientPayload) => {
+        const { field } = JSON.parse(clientPayload || "{}") as { field?: string };
+        const constraints = (field && FIELD_CONSTRAINTS[field]) || {
+          allowedContentTypes: ["image/jpeg", "image/png", "image/webp"],
+          maximumSizeInBytes: 5 * 1024 * 1024,
+        };
+        return { ...constraints, addRandomSuffix: true };
+      },
       onUploadCompleted: async () => {
         // Pas d'appel possible depuis Vercel vers un serveur de dev local
         // (localhost) : rien a faire ici, l'URL renvoyee directement au

@@ -164,9 +164,12 @@
     "description": "Description",
     "descriptionPlaceholder": "What makes this world worth joining?",
     "bannerUrl": "Banner (optional)",
+    "bannerHint": "1920 × 1080 ·\nJPG, PNG, WebP · 5 MB max",
     "dropBanner": "drop banner, 16:9",
     "iconUrl": "Icon (optional)",
+    "iconHint": "512 × 512 ·\nPNG, WebP · 1 MB",
     "backgroundUrl": "Background image (optional)",
+    "backgroundHint": "2560 × 1440 ·\nJPG, WebP · 8 MB max",
     "dropBackground": "drop background",
     "visibility": "Visibility",
     "visibilityPublic": "Public",
@@ -201,7 +204,7 @@
     "modpackNote": "Players download this modpack automatically on first launch."
   },
   "imageUpload": {
-    "failed": "Couldn't upload the image — try again with a file under 5MB (PNG, JPEG, WebP or GIF)."
+    "failed": "Couldn't upload the image — check the format and size shown above."
   },
   "wizard": {
     "stepBasics": "Basics",

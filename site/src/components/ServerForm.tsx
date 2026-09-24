@@ -110,23 +110,29 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <ImageDropzone
           name="bannerUrl"
+          field="banner"
           defaultValue={values.bannerUrl}
           label={t("serverForm.bannerUrl")}
+          hint={t("serverForm.bannerHint")}
           placeholder={t("serverForm.dropBanner")}
           icon={Image}
         />
         <ImageDropzone
           name="iconUrl"
+          field="icon"
           defaultValue={values.iconUrl}
           label={t("serverForm.iconUrl")}
+          hint={t("serverForm.iconHint")}
           placeholder=""
           icon={Cube}
           shape="square"
         />
         <ImageDropzone
           name="backgroundUrl"
+          field="background"
           defaultValue={values.backgroundUrl}
           label={t("serverForm.backgroundUrl")}
+          hint={t("serverForm.backgroundHint")}
           placeholder={t("serverForm.dropBackground")}
           icon={ImageSquare}
         />

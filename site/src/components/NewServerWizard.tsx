@@ -116,9 +116,9 @@ export function NewServerWizard({ action, versions }: Props) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <ImageDropzone name="bannerUrl" label={t("serverForm.bannerUrl")} placeholder={t("serverForm.dropBanner")} icon={Image} />
-          <ImageDropzone name="iconUrl" label={t("serverForm.iconUrl")} placeholder="" icon={Cube} shape="square" />
-          <ImageDropzone name="backgroundUrl" label={t("serverForm.backgroundUrl")} placeholder={t("serverForm.dropBackground")} icon={ImageSquare} />
+          <ImageDropzone name="bannerUrl" field="banner" label={t("serverForm.bannerUrl")} hint={t("serverForm.bannerHint")} placeholder={t("serverForm.dropBanner")} icon={Image} />
+          <ImageDropzone name="iconUrl" field="icon" label={t("serverForm.iconUrl")} hint={t("serverForm.iconHint")} placeholder="" icon={Cube} shape="square" />
+          <ImageDropzone name="backgroundUrl" field="background" label={t("serverForm.backgroundUrl")} hint={t("serverForm.backgroundHint")} placeholder={t("serverForm.dropBackground")} icon={ImageSquare} />
         </div>
 
         <div className="flex flex-col gap-2">
