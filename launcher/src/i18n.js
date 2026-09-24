@@ -76,11 +76,19 @@ const DICTIONARIES = {
       continueBtn: "Continuer",
     },
     nav: {
+      home: "Accueil",
       servers: "Serveurs",
       favorites: "Favoris",
       recent: "Récents",
       myInstances: "Mes instances",
       settings: "Paramètres",
+    },
+    home: {
+      greeting: "Bonjour {name}",
+      continuePlaying: "Continuer",
+      noHistory: "Aucun serveur joué pour l'instant — découvre l'annuaire pour commencer.",
+      seeAll: "Voir tout",
+      myServersTitle: "Mes serveurs",
     },
     serverList: {
       loading: "Chargement des serveurs…",
@@ -375,11 +383,19 @@ const DICTIONARIES = {
       continueBtn: "Continue",
     },
     nav: {
+      home: "Home",
       servers: "Servers",
       favorites: "Favorites",
       recent: "Recent",
       myInstances: "My instances",
       settings: "Settings",
+    },
+    home: {
+      greeting: "Hi {name}",
+      continuePlaying: "Continue",
+      noHistory: "No server played yet — browse the directory to get started.",
+      seeAll: "See all",
+      myServersTitle: "My servers",
     },
     serverList: {
       loading: "Loading servers…",

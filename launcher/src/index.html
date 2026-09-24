@@ -484,6 +484,43 @@
   .instance-card-status code { font-family: ui-monospace, Menlo, monospace; color: var(--foreground); }
   .instance-card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+  /* Accueil (voir renderer.js/renderHomeView) : carte "continuer" + sections
+     compactes reutilisant les .row deja stylees ailleurs (favoris, mes
+     instances) plutot que d'inventer un nouveau composant. */
+  .home-continue-card {
+    position: relative;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    overflow: hidden;
+    cursor: pointer;
+    margin-bottom: 28px;
+  }
+  .home-continue-banner {
+    position: relative;
+    height: 96px;
+    background: radial-gradient(70% 140% at 80% 0%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%), var(--surface-raised);
+  }
+  .home-continue-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .home-continue-icon {
+    position: absolute; left: 18px; bottom: -20px; width: 44px; height: 44px;
+    border-radius: 10px; border: 3px solid var(--surface);
+    background: var(--accent-fill); color: var(--accent-foreground);
+    display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 17px; overflow: hidden;
+  }
+  .home-continue-icon img { width: 100%; height: 100%; object-fit: cover; }
+  .home-continue-body { padding: 28px 18px 18px; display: flex; flex-direction: column; gap: 6px; }
+  .home-continue-eyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-2); }
+  .home-continue-body h2 { margin: 0; font-size: 18px; }
+  .home-continue-body p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .home-continue-play { align-self: flex-start; margin-top: 6px; }
+
+  .home-section { margin-bottom: 28px; }
+  .home-section-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .home-section-header h3 { margin: 0; font-size: 15px; }
+  .home-see-all { margin-left: auto; border: none; background: none; color: var(--accent-2); font-size: 12.5px; cursor: pointer; padding: 0; }
+  .home-see-all:hover { text-decoration: underline; }
+
   .detail { max-width: 640px; }
 
   /* Panneau "Parametres" en onglets (maquette "04 Settings") : nav laterale
@@ -1157,7 +1194,10 @@
 
   <div id="app" hidden style="flex: 1 1 auto; display: flex; min-height: 0;">
     <nav id="sidebar">
-      <button id="nav-servers" class="sidebar-btn active" data-i18n-title="nav.servers">
+      <button id="nav-home" class="sidebar-btn active" data-i18n-title="nav.home">
+        <span class="logo-mark" style="width: 14px; height: 14px;"></span>
+      </button>
+      <button id="nav-servers" class="sidebar-btn" data-i18n-title="nav.servers">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
           <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
@@ -1214,6 +1254,7 @@
         </div>
       </div>
       <div id="account-panel" class="detail" hidden></div>
+      <div id="home-panel" class="detail" hidden></div>
       <div id="favorites-panel" class="detail" hidden></div>
       <div id="recent-panel" class="detail" hidden></div>
       <div id="my-instances-panel" class="detail" hidden></div>

@@ -17,11 +17,13 @@ const accountPanelEl = document.getElementById("account-panel");
 const favoritesPanelEl = document.getElementById("favorites-panel");
 const recentPanelEl = document.getElementById("recent-panel");
 const myInstancesPanelEl = document.getElementById("my-instances-panel");
+const homePanelEl = document.getElementById("home-panel");
 const javaGateEl = document.getElementById("java-gate");
 const bootstrapEl = document.getElementById("bootstrap");
 const bootstrapStatusEl = document.getElementById("bootstrap-status");
 const bootstrapProgressEl = document.getElementById("bootstrap-progress");
 const bootstrapVersionEl = document.getElementById("bootstrap-version");
+const navHomeBtn = document.getElementById("nav-home");
 const navServersBtn = document.getElementById("nav-servers");
 const navFavoritesBtn = document.getElementById("nav-favorites");
 const navRecentBtn = document.getElementById("nav-recent");
@@ -290,6 +292,7 @@ async function renderDetail(server) {
   detailEl.querySelector(".back").addEventListener("click", () => {
     if (detailOrigin === "favorites") showFavoritesView();
     else if (detailOrigin === "recent") showRecentView();
+    else if (detailOrigin === "home") showHomeView();
     else loadServers();
   });
 
@@ -553,6 +556,7 @@ async function joinServer(server, joinBtn) {
 }
 
 async function openDetail(slug) {
+  homePanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   listToolbarEl.hidden = true;
@@ -762,7 +766,7 @@ function enterApp(profile, opts) {
   gateEl.hidden = true;
   appEl.hidden = false;
   renderAccountHeader(profile, opts);
-  loadServers();
+  showHomeView();
   refreshPlaybarFavorites();
 }
 
@@ -886,17 +890,160 @@ function wireNotifications() {
 // la barre latérale — deux destinations distinctes plutôt qu'un simple lien,
 // pour matcher la convention des launchers du genre (Lunar, Modrinth...).
 function showServersView() {
+  homePanelEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  navHomeBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
   navServersBtn.classList.add("active");
   loadServers();
+}
+
+// Accueil (voir "01b Home" dans Design/Omniscient Launcher Mockups.dc.html) —
+// sans le bandeau "a la une" (lie au futur systeme payant, voir memoire
+// project_page_builder) ni les actualites (aucun systeme de contenu a
+// publier dessus pour l'instant) : uniquement ce qui vient de donnees deja
+// disponibles localement — dernier serveur joue, favoris, et un apercu de
+// "Mes instances" pour les proprietaires.
+function homeContinueCardHtml(server) {
+  return `
+    <div class="home-continue-card" data-slug="${escapeHtml(server.slug)}">
+      <div class="home-continue-banner">
+        ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
+        <span class="home-continue-icon">${serverIconInner(server)}</span>
+      </div>
+      <div class="home-continue-body">
+        <span class="home-continue-eyebrow">${t("home.continuePlaying")}</span>
+        <h2>${escapeHtml(server.name)}</h2>
+        <p>${playersLabel(server)}</p>
+        <button type="button" class="join-btn home-continue-play" data-slug="${escapeHtml(server.slug)}">${t("serverDetail.joinBtn")}</button>
+      </div>
+    </div>`;
+}
+
+function homeInstanceRowHtml(server) {
+  const status = instanceStatus(server);
+  return `
+    <div class="row" data-slug="${escapeHtml(server.slug)}" style="cursor: default;">
+      <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverIconInner(server)}</span>
+      <div class="row-body">
+        <div class="row-title-line">
+          <h3>${escapeHtml(server.name)}</h3>
+          <span class="badge">${t(`myInstances.${instanceBadgeKey(status)}`)}</span>
+        </div>
+        <p>${instanceStatusLineHtml(server, status)}</p>
+      </div>
+    </div>`;
+}
+
+async function showHomeView() {
+  statusEl.hidden = true;
+  listEl.hidden = true;
+  listToolbarEl.hidden = true;
+  detailEl.hidden = true;
+  settingsPanelEl.hidden = true;
+  accountPanelEl.hidden = true;
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = true;
+  homePanelEl.hidden = false;
+  navServersBtn.classList.remove("active");
+  navSettingsBtn.classList.remove("active");
+  navFavoritesBtn.classList.remove("active");
+  navRecentBtn.classList.remove("active");
+  navMyInstancesBtn.classList.remove("active");
+  navHomeBtn.classList.add("active");
+  await renderHomeView();
+}
+
+async function renderHomeView() {
+  homePanelEl.className = "detail";
+
+  const [settings, favoriteSlugs, myServersResult] = await Promise.all([
+    window.mchub.settings.get(),
+    getFavoriteSlugs(),
+    currentProfile ? window.mchub.listMyServers() : Promise.resolve({ ok: false, servers: [] }),
+  ]);
+
+  const continueServer = settings.lastPlayedSlug ? (await resolveServersBySlug([settings.lastPlayedSlug]))[0] : null;
+  const favoriteServers = favoriteSlugs.length > 0 ? await resolveServersBySlug(favoriteSlugs.slice(0, 4)) : [];
+  const myServers = myServersResult.ok ? myServersResult.servers.slice(0, 4) : [];
+
+  homePanelEl.innerHTML = `
+    <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: currentProfile ? currentProfile.name : "" })}</h2>
+    ${
+      continueServer
+        ? homeContinueCardHtml(continueServer)
+        : `<p class="join-note" style="margin-bottom: 18px;">${t("home.noHistory")}</p>`
+    }
+    <div class="home-section">
+      <div class="home-section-header">
+        <h3>${t("nav.favorites")}</h3>
+        ${favoriteServers.length > 0 ? `<button type="button" class="home-see-all" data-target="favorites">${t("home.seeAll")}</button>` : ""}
+      </div>
+      ${
+        favoriteServers.length > 0
+          ? `<div class="server-list" id="home-favorites-list">${favoriteServers.map((s) => serverRowHtml(s, true)).join("")}</div>`
+          : `<p class="join-note">${t("favorites.empty")}</p>`
+      }
+    </div>
+    ${
+      myServers.length > 0
+        ? `<div class="home-section">
+            <div class="home-section-header">
+              <h3>${t("home.myServersTitle")}</h3>
+              <button type="button" class="home-see-all" data-target="instances">${t("home.seeAll")}</button>
+            </div>
+            <div class="server-list">${myServers.map(homeInstanceRowHtml).join("")}</div>
+          </div>`
+        : ""
+    }
+  `;
+
+  const playBtn = homePanelEl.querySelector(".home-continue-play");
+  if (playBtn) {
+    playBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (continueServer) launchServer(continueServer);
+    });
+  }
+  const continueCard = homePanelEl.querySelector(".home-continue-card");
+  if (continueCard) {
+    continueCard.addEventListener("click", () => {
+      detailOrigin = "home";
+      openDetail(continueCard.dataset.slug);
+    });
+  }
+
+  const favoritesListEl = document.getElementById("home-favorites-list");
+  if (favoritesListEl) {
+    favoritesListEl.querySelectorAll(".row").forEach((row) => {
+      row.addEventListener("click", () => {
+        detailOrigin = "home";
+        openDetail(row.dataset.slug);
+      });
+    });
+  }
+  homePanelEl.querySelectorAll(".favorite-btn").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await toggleFavorite(btn.dataset.slug);
+      await refreshPlaybarFavorites();
+      renderHomeView();
+    });
+  });
+  homePanelEl.querySelectorAll(".home-see-all").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.target === "favorites") showFavoritesView();
+      else showMyInstancesView();
+    });
+  });
 }
 
 // Resout une liste de slugs en objets serveur complets (nom, description,
@@ -920,6 +1067,7 @@ async function resolveServersBySlug(slugs) {
 }
 
 async function showFavoritesView() {
+  homePanelEl.hidden = true;
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
@@ -929,6 +1077,7 @@ async function showFavoritesView() {
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
   favoritesPanelEl.hidden = false;
+  navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
@@ -955,6 +1104,7 @@ async function renderFavoritesList() {
 }
 
 async function showRecentView() {
+  homePanelEl.hidden = true;
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
@@ -964,6 +1114,7 @@ async function showRecentView() {
   favoritesPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
   recentPanelEl.hidden = false;
+  navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
@@ -1005,15 +1156,25 @@ function instanceStatus(server) {
   return server.isPrivate ? "private" : "public";
 }
 
+function instanceBadgeKey(status) {
+  return status === "public" ? "badgePublic" : status === "private" ? "badgePrivate" : "badgePaused";
+}
+
+// Partagee entre la carte de "Mes instances" et la ligne compacte de
+// l'accueil (voir homeInstanceRowHtml) — le seul endroit qui decide quoi
+// afficher a la place du nombre de joueurs pour un serveur prive/en pause.
+function instanceStatusLineHtml(server, status) {
+  return status === "paused"
+    ? `<span class="status-dot"></span>${t("myInstances.hiddenNote")}`
+    : status === "private"
+      ? t("myInstances.inviteCodeLabel", { code: `<code>${escapeHtml(server.inviteCode || "")}</code>` })
+      : playersLabel(server);
+}
+
 function instanceCardHtml(server) {
   const status = instanceStatus(server);
-  const badgeKey = status === "public" ? "badgePublic" : status === "private" ? "badgePrivate" : "badgePaused";
-  const statusLine =
-    status === "paused"
-      ? `<span class="status-dot"></span>${t("myInstances.hiddenNote")}`
-      : status === "private"
-        ? t("myInstances.inviteCodeLabel", { code: `<code>${escapeHtml(server.inviteCode || "")}</code>` })
-        : playersLabel(server);
+  const badgeKey = instanceBadgeKey(status);
+  const statusLine = instanceStatusLineHtml(server, status);
 
   return `
     <div class="instance-card" data-slug="${escapeHtml(server.slug)}">
@@ -1096,6 +1257,7 @@ function renderMyInstancesGrid() {
 }
 
 async function showMyInstancesView() {
+  homePanelEl.hidden = true;
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
@@ -1105,6 +1267,7 @@ async function showMyInstancesView() {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = false;
+  navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
@@ -1156,6 +1319,7 @@ const ICON_CHECK =
 let activeSettingsTab = "appearance";
 
 async function showSettingsView() {
+  homePanelEl.hidden = true;
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
@@ -1165,6 +1329,7 @@ async function showSettingsView() {
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
   settingsPanelEl.hidden = false;
+  navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
@@ -1694,6 +1859,7 @@ async function ensureJavaAvailable() {
 // (pas depuis la barre latérale, pour ne pas la surcharger d'icônes) —
 // changement de skin et bascule entre comptes Microsoft mémorisés.
 async function showAccountView() {
+  homePanelEl.hidden = true;
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
@@ -2021,6 +2187,7 @@ function wirePlaybar() {
 }
 
 function wireSidebar() {
+  navHomeBtn.addEventListener("click", showHomeView);
   navServersBtn.addEventListener("click", showServersView);
   navFavoritesBtn.addEventListener("click", showFavoritesView);
   navRecentBtn.addEventListener("click", showRecentView);
