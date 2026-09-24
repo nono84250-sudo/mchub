@@ -768,6 +768,7 @@ function enterApp(profile, opts) {
   renderAccountHeader(profile, opts);
   showHomeView();
   refreshPlaybarFavorites();
+  refreshNotifications();
 }
 
 function wireGate() {
@@ -870,18 +871,98 @@ function wireMcStatus() {
   loadMcStatus();
 }
 
-// Cloche de notifications : juste le bouton + un panneau vide pour l'instant
-// (voir index.html) — le vrai contenu viendra d'un futur systeme controle
-// par les admins/moderateurs depuis le site.
+// Cloche de notifications : alertes personnelles du joueur (reponse/
+// resolution de signalement, voir site/src/lib/notifications.ts) — pas les
+// Actualites (diffusion admin, distincte, pas encore construite).
+let notifBadgeEl;
+let notifListEl;
+let latestNotifications = [];
+
+function notifTimeLabel(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return t("notifications.justNow");
+  if (minutes < 60) return t("notifications.minutesAgo", { count: String(minutes) });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t("notifications.hoursAgo", { count: String(hours) });
+  const days = Math.floor(hours / 24);
+  return t("notifications.daysAgo", { count: String(days) });
+}
+
+function notifItemHtml(notif) {
+  const title =
+    notif.type === "report_resolved"
+      ? t("notifications.reportResolvedTitle", { server: notif.serverName })
+      : t("notifications.reportRepliedTitle", { server: notif.serverName });
+  const message = notif.message ? `<div class="notif-item-message">${escapeHtml(notif.message)}</div>` : "";
+  return `
+    <div class="notif-item${notif.read ? "" : " unread"}" data-id="${escapeHtml(notif.id)}">
+      <button type="button" class="notif-item-delete" data-id="${escapeHtml(notif.id)}" title="${t("notifications.deleteOne")}">×</button>
+      <div class="notif-item-title">${escapeHtml(title)}</div>
+      ${message}
+      <div class="notif-item-time">${notifTimeLabel(notif.createdAt)}</div>
+    </div>
+  `;
+}
+
+function renderNotifications() {
+  if (!latestNotifications.length) {
+    notifListEl.className = "notif-empty";
+    notifListEl.textContent = t("titlebar.noNotifications");
+    return;
+  }
+  notifListEl.className = "";
+  notifListEl.innerHTML = latestNotifications.map(notifItemHtml).join("");
+}
+
+async function refreshNotifications() {
+  if (!signedIn) return;
+  const result = await window.mchub.listNotifications();
+  if (!result.ok) return;
+  latestNotifications = result.notifications;
+  renderNotifications();
+  const unreadCount = latestNotifications.filter((n) => !n.read).length;
+  notifBadgeEl.hidden = unreadCount === 0;
+  if (unreadCount > 0) notifBadgeEl.textContent = unreadCount > 9 ? "9+" : String(unreadCount);
+}
+
 function wireNotifications() {
   const trigger = document.getElementById("notif-trigger");
   const panel = document.getElementById("notif-panel");
-  trigger.addEventListener("click", (event) => {
+  notifBadgeEl = document.getElementById("notif-badge");
+  notifListEl = document.getElementById("notif-list");
+  const markAllReadBtn = document.getElementById("notif-mark-all-read");
+  const clearReadBtn = document.getElementById("notif-clear-read");
+
+  trigger.addEventListener("click", async (event) => {
     event.stopPropagation();
+    const wasHidden = panel.hidden;
     panel.hidden = !panel.hidden;
+    if (wasHidden) await refreshNotifications();
   });
+  // Sans ca, tout clic a l'interieur du panneau (croix de suppression,
+  // boutons du bas) remonterait jusqu'a ce listener document et refermerait
+  // le panneau avant meme que l'action ait un effet visible.
+  panel.addEventListener("click", (event) => event.stopPropagation());
   document.addEventListener("click", () => {
     panel.hidden = true;
+  });
+
+  notifListEl.addEventListener("click", async (event) => {
+    const deleteBtn = event.target.closest(".notif-item-delete");
+    if (!deleteBtn) return;
+    await window.mchub.deleteNotification(deleteBtn.dataset.id);
+    await refreshNotifications();
+  });
+
+  markAllReadBtn.addEventListener("click", async () => {
+    await window.mchub.markNotificationsRead();
+    await refreshNotifications();
+  });
+
+  clearReadBtn.addEventListener("click", async () => {
+    await window.mchub.clearReadNotifications();
+    await refreshNotifications();
   });
   wireDismissOnEscape(panel, trigger);
 }
@@ -2387,3 +2468,4 @@ async function silentRefreshList() {
 }
 
 setInterval(silentRefreshList, REFRESH_INTERVAL_MS);
+setInterval(refreshNotifications, REFRESH_INTERVAL_MS);

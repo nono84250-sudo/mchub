@@ -12,6 +12,10 @@
       "model": "MinecraftLinkCode",
       "namespace": "public"
     },
+    "notification": {
+      "model": "Notification",
+      "namespace": "public"
+    },
     "report": {
       "model": "Report",
       "namespace": "public"
@@ -43,6 +47,19 @@
               {
                 "name": "password_reset",
                 "value": "password_reset"
+              }
+            ]
+          },
+          "notification_type": {
+            "codecId": "pg/text@1",
+            "members": [
+              {
+                "name": "report_replied",
+                "value": "report_replied"
+              },
+              {
+                "name": "report_resolved",
+                "value": "report_resolved"
               }
             ]
           },
@@ -286,6 +303,93 @@
               },
               "namespaceId": "public",
               "table": "minecraftLinkCode"
+            }
+          },
+          "Notification": {
+            "fields": {
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "message": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "read": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
+                }
+              },
+              "recipientMinecraftUuid": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "serverName": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "type": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                },
+                "valueSet": {
+                  "entityKind": "enum",
+                  "entityName": "notification_type",
+                  "namespaceId": "public",
+                  "plane": "domain"
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "createdAt": {
+                  "column": "createdAt"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "message": {
+                  "column": "message"
+                },
+                "read": {
+                  "column": "read"
+                },
+                "recipientMinecraftUuid": {
+                  "column": "recipientMinecraftUuid"
+                },
+                "serverName": {
+                  "column": "serverName"
+                },
+                "type": {
+                  "column": "type"
+                }
+              },
+              "namespaceId": "public",
+              "table": "notification"
             }
           },
           "Report": {
@@ -1187,6 +1291,85 @@
                 }
               ]
             },
+            "notification": {
+              "checks": [
+                {
+                  "expression": "\"type\" IN ('report_replied', 'report_resolved')",
+                  "name": "notification_type_check_e748acba",
+                  "prefix": "notification_type_check"
+                }
+              ],
+              "columns": {
+                "createdAt": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "message": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "read": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
+                  "nullable": false
+                },
+                "recipientMinecraftUuid": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "serverName": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "type": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false,
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "notification_type",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [
+                {
+                  "columns": [
+                    "recipientMinecraftUuid",
+                    "read",
+                    "createdAt"
+                  ],
+                  "name": "notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2",
+                  "prefix": "notification_recipientMinecraftUuid_read_createdAt_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": []
+            },
             "report": {
               "checks": [
                 {
@@ -1721,6 +1904,13 @@
                 "password_reset"
               ]
             },
+            "notification_type": {
+              "kind": "valueSet",
+              "values": [
+                "report_replied",
+                "report_resolved"
+              ]
+            },
             "report_issue": {
               "kind": "valueSet",
               "values": [
@@ -1759,10 +1949,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "586b9bde50b5ba2c5c0d22e0bef0a2b9efa4b85c4487384a1e9e54a84418dbf2"
+    "storageHash": "6f75b7aefe9442b10a31faabf74fcee159fc812666a10c3de22b460f61b66431"
   },
   "execution": {
-    "executionHash": "f73f92fa230007f251c170c550e0ba3393c20e3178f49b191e55f89569858e6a",
+    "executionHash": "8896e154d9743fcde5e333f54c07d991d348862a0417251a64007c34e5810f4a",
     "mutations": {
       "defaults": [
         {
@@ -1785,6 +1975,17 @@
             "column": "id",
             "namespace": "public",
             "table": "minecraftLinkCode"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "uuidv4",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "notification"
           }
         },
         {

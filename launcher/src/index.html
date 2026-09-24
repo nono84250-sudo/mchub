@@ -815,11 +815,11 @@
   .status-dot.degraded { background: #f5b942; box-shadow: 0 0 6px rgba(245, 185, 66, 0.8); }
   .status-dot.offline { background: var(--danger); box-shadow: 0 0 6px rgba(224, 138, 138, 0.8); }
 
-  /* Cloche de notifications : emplacement reserve pour un futur systeme
-     controle par les admins/moderateurs depuis le site (annonces, alertes
-     de maintenance...) — pour l'instant juste le bouton et un panneau vide. */
+  /* Cloche de notifications : alertes personnelles du joueur (reponse/
+     resolution de signalement) — voir renderer.js/refreshNotifications. */
   .notif-menu { position: relative; -webkit-app-region: no-drag; margin-right: 8px; }
   .notif-trigger {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -833,6 +833,20 @@
   }
   .notif-trigger:hover { border-color: var(--accent); color: var(--foreground); }
   .notif-trigger svg { width: 16px; height: 16px; }
+  .notif-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 10px;
+    line-height: 16px;
+    text-align: center;
+  }
   .notif-panel {
     position: absolute;
     top: calc(100% + 8px);
@@ -840,14 +854,60 @@
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 16px;
-    min-width: 220px;
+    width: 300px;
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     z-index: 20;
     font-size: 12.5px;
     color: var(--muted);
-    text-align: center;
   }
+  .notif-list-scroll { overflow-y: auto; padding: 8px; min-height: 0; }
+  .notif-panel .notif-empty { padding: 12px; text-align: center; }
+  .notif-item { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 10px 26px 10px 10px; border-radius: 8px; text-align: left; }
+  .notif-item + .notif-item { margin-top: 2px; }
+  .notif-item.unread { background: var(--surface-raised); }
+  .notif-item-title { color: var(--foreground); font-weight: 600; }
+  .notif-item-message { color: var(--muted); line-height: 1.4; }
+  .notif-item-time { color: var(--muted); font-size: 11px; opacity: 0.75; }
+  .notif-item-delete {
+    position: absolute;
+    top: 8px;
+    right: 6px;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .notif-item-delete:hover { background: var(--border); color: var(--foreground); }
+  .notif-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 8px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .notif-footer-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .notif-footer-btn:hover { color: var(--foreground); background: var(--surface-raised); }
 
   /* Modale generique (confirmation/avertissement RAM) : fond assombri +
      boite centree, reutilisable pour n'importe quel prompt bloquant. */
@@ -1065,8 +1125,17 @@
           <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
+        <span class="notif-badge" id="notif-badge" hidden></span>
       </button>
-      <div class="notif-panel" id="notif-panel" hidden data-i18n="titlebar.noNotifications">Aucune notification pour le moment.</div>
+      <div class="notif-panel" id="notif-panel" hidden>
+        <div class="notif-list-scroll">
+          <div id="notif-list" class="notif-empty" data-i18n="titlebar.noNotifications">Aucune notification pour le moment.</div>
+        </div>
+        <div class="notif-footer">
+          <button type="button" class="notif-footer-btn" id="notif-mark-all-read" data-i18n="notifications.markAllRead">Tout marquer comme lu</button>
+          <button type="button" class="notif-footer-btn" id="notif-clear-read" data-i18n="notifications.clearRead">Effacer les lues</button>
+        </div>
+      </div>
     </div>
     <div id="titlebar-controls">
       <button id="win-min" class="titlebar-btn" data-i18n-title="titlebar.minimize">

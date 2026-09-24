@@ -1,0 +1,80 @@
+[
+  {
+    "id": "table.notification",
+    "label": "Create table \"notification\"",
+    "summary": "Creates table \"notification\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "notification"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"notification\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"notification\"",
+        "sql": "CREATE TABLE \"public\".\"notification\" (\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"id\" text NOT NULL,\n  \"message\" text,\n  \"read\" bool DEFAULT false NOT NULL,\n  \"recipientMinecraftUuid\" text NOT NULL,\n  \"serverName\" text NOT NULL,\n  \"type\" text NOT NULL,\n  PRIMARY KEY (\"id\"),\n  CONSTRAINT \"notification_type_check_e748acba\" CHECK (\"type\" IN ('report_replied', 'report_resolved'))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"notification\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification.notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2",
+    "label": "Create index \"notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2\" on \"notification\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2",
+        "table": "notification"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2\"",
+        "sql": "CREATE INDEX \"notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2\" ON \"public\".\"notification\" (\"recipientMinecraftUuid\", \"read\", \"createdAt\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_recipientMinecraftUuid_read_createdAt_idx_7f5b47c2\""
+        ]
+      }
+    ]
+  }
+]

@@ -375,6 +375,67 @@ ipcMain.handle("reports:submit", async (_event, { slug, issue, message, clientVe
   }
 });
 
+// Cloche de notifications : alertes personnelles (reponse/resolution de
+// signalement) pour le joueur connecte, voir renderer.js/refreshNotifications
+// et site/src/app/api/launcher/notifications/route.ts.
+ipcMain.handle("notifications:list", async () => {
+  if (!currentSession) return { ok: true, notifications: [] };
+  try {
+    const data = await fetchJson(
+      `${SITE_URL}/api/launcher/notifications?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
+      { headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` } },
+    );
+    return { ok: true, notifications: data.notifications };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+ipcMain.handle("notifications:markRead", async () => {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  try {
+    const res = await fetch(`${SITE_URL}/api/launcher/notifications/read`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      body: JSON.stringify({ minecraftUuid: currentSession.profile.id }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+ipcMain.handle("notifications:delete", async (_event, id) => {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  try {
+    const res = await fetch(`${SITE_URL}/api/launcher/notifications/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      body: JSON.stringify({ minecraftUuid: currentSession.profile.id, id }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+ipcMain.handle("notifications:clearRead", async () => {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  try {
+    const res = await fetch(`${SITE_URL}/api/launcher/notifications/clear-read`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      body: JSON.stringify({ minecraftUuid: currentSession.profile.id }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
 // Echange le code affiche sur /account contre la liaison du profil
 // Minecraft/Xbox deja connu localement (voir msAuth.js) — jamais le mot de
 // passe du site, voir site/src/app/api/launcher/minecraft-link/route.ts.

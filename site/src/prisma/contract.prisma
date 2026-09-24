@@ -223,3 +223,28 @@ model Report {
 
   @@index([serverId, status, createdAt])
 }
+
+enum notification_type {
+  @@type("pg/text@1")
+  report_replied  = "report_replied"
+  report_resolved = "report_resolved"
+}
+
+// Alerte personnelle pour un joueur (cloche du launcher, voir memoire
+// project_notifications_system) — distincte des Actualites (diffusion admin
+// identique pour tout le monde). Cible par minecraftUuid et non par une
+// relation User : comme pour Report, le joueur qui a signale un probleme n'a
+// pas forcement de compte Omniscient (il n'a jamais utilise que le launcher).
+// serverName est duplique volontairement (pas de relation Server) pour rester
+// affichable meme si le serveur est supprime plus tard.
+model Notification {
+  id                     String             @id @default(uuid())
+  recipientMinecraftUuid String
+  type                   notification_type
+  serverName             String
+  message                String?
+  read                   Boolean            @default(false)
+  createdAt              TimestamptzString  @default(now())
+
+  @@index([recipientMinecraftUuid, read, createdAt])
+}
