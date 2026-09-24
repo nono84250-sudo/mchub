@@ -176,6 +176,7 @@
     "inviteLinkLabel": "Lien d'invitation",
     "inviteLinkCopy": "Copier",
     "inviteLinkReset": "Réinitialiser",
+    "inviteLinkResetConfirm": "Réinitialiser le lien d'invitation ? L'ancien lien cessera de fonctionner immédiatement.",
     "inviteLinkHelp": "Code {code} · les joueurs peuvent aussi le saisir dans le launcher. Réinitialiser invalide l'ancien lien.",
     "inviteLinkPending": "Le lien sera généré à l'enregistrement.",
     "type": "Type de serveur",

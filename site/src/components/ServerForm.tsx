@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { GlobeHemisphereWest, LockSimple, Copy, ArrowsClockwise, Image, Cube, ImageSquare } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
 import { resetInviteCode } from "@/lib/actions/servers";
@@ -54,10 +55,12 @@ type ServerFormProps = {
 
 export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode }: ServerFormProps) {
   const { t } = useI18n();
+  const router = useRouter();
   const values = { ...EMPTY_VALUES, ...defaultValues };
   const [state, formAction, pending] = useActionState(action, undefined);
   const [type, setType] = useState<"vanilla" | "modded">(values.type);
   const [visibility, setVisibility] = useState<"public" | "private">(values.isPrivate ? "private" : "public");
+  const [resettingCode, setResettingCode] = useState(false);
 
   // Lu apres le montage seulement (jamais pendant le rendu serveur, ou
   // location n'existe pas) — un state vide au premier rendu evite tout
@@ -186,11 +189,23 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
                   >
                     <Copy className="h-3.5 w-3.5" /> {t("serverForm.inviteLinkCopy")}
                   </button>
-                  <form action={resetInviteCode.bind(null, serverId)}>
-                    <button type="submit" className="btn-secondary text-xs">
-                      <ArrowsClockwise className="h-3.5 w-3.5" /> {t("serverForm.inviteLinkReset")}
-                    </button>
-                  </form>
+                  <button
+                    type="button"
+                    disabled={resettingCode}
+                    className="btn-secondary text-xs"
+                    onClick={async () => {
+                      if (!serverId || !window.confirm(t("serverForm.inviteLinkResetConfirm"))) return;
+                      setResettingCode(true);
+                      try {
+                        await resetInviteCode(serverId);
+                        router.refresh();
+                      } finally {
+                        setResettingCode(false);
+                      }
+                    }}
+                  >
+                    <ArrowsClockwise className="h-3.5 w-3.5" /> {t("serverForm.inviteLinkReset")}
+                  </button>
                 </div>
                 <span className="text-[11.5px] text-muted">
                   {t("serverForm.inviteLinkHelp", { code: inviteCode })}

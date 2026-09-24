@@ -176,6 +176,7 @@
     "inviteLinkLabel": "Invite link",
     "inviteLinkCopy": "Copy",
     "inviteLinkReset": "Reset",
+    "inviteLinkResetConfirm": "Reset the invite link? The old link will stop working immediately.",
     "inviteLinkHelp": "Code {code} · players can also enter it in the launcher. Resetting invalidates the old link.",
     "inviteLinkPending": "The link will be generated when you save.",
     "type": "Server type",
