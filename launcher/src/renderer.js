@@ -91,6 +91,8 @@ function serverIconInner(server) {
 // settings.get/set comme pour tout le reste des préférences locales.
 const STAR_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>';
+const FLAG_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>';
 
 async function getFavoriteSlugs() {
   const settings = await window.mchub.settings.get();
@@ -254,6 +256,11 @@ async function renderDetail(server) {
       <div style="display: flex; align-items: center; gap: 10px;">
         <h2 style="margin: 0;">${escapeHtml(server.name)}</h2>
         ${favoriteBtnHtml(server.slug, isFav, "detail-favorite-btn")}
+        ${
+          signedIn
+            ? `<button class="favorite-btn" id="report-open-btn" type="button" title="${t("serverDetail.report")}" style="margin-left: auto;">${FLAG_SVG}</button>`
+            : ""
+        }
       </div>
       <p class="meta">${playersLabel(server)}</p>
     </div>
@@ -297,7 +304,87 @@ async function renderDetail(server) {
     await refreshPlaybarFavorites();
     renderDetail(server);
   });
+
+  const reportBtn = document.getElementById("report-open-btn");
+  if (reportBtn) reportBtn.addEventListener("click", () => openReportDialog(server));
 }
+
+const REPORT_ISSUES = ["cant_connect", "wrong_version", "modpack_download", "crash", "other"];
+const reportOverlayEl = document.getElementById("report-overlay");
+const reportTitleEl = document.getElementById("report-title");
+const reportChipsEl = document.getElementById("report-issue-chips");
+const reportMessageEl = document.getElementById("report-message");
+const reportDiagnosticsEl = document.getElementById("report-diagnostics");
+const reportDiagnosticsDetailEl = document.getElementById("report-diagnostics-detail");
+const reportErrorEl = document.getElementById("report-error");
+const reportSendBtn = document.getElementById("report-send");
+const reportCancelBtn = document.getElementById("report-cancel");
+let reportSelectedIssue = null;
+
+function closeReportDialog() {
+  reportOverlayEl.hidden = true;
+}
+
+// Dialogue "Signaler un probleme technique" (voir "03b Report a server" dans
+// Design/Omniscient Launcher Mockups.dc.html) — uniquement pour le
+// proprietaire du serveur (voir le commentaire sur le modele Report cote
+// site pour la categorie "Comportement/contenu", pas implementee).
+async function openReportDialog(server) {
+  reportSelectedIssue = null;
+  reportTitleEl.textContent = `${t("report.title")} — ${server.name}`;
+  reportMessageEl.value = "";
+  reportDiagnosticsEl.checked = true;
+  const info = await window.mchub.diagnostics.getSystemInfo();
+  reportDiagnosticsDetailEl.textContent = `client ${server.minecraftVersion} · launcher ${info.launcherVersion || ""}`;
+  reportErrorEl.hidden = true;
+  reportSendBtn.disabled = false;
+  reportSendBtn.textContent = t("report.send");
+
+  reportChipsEl.innerHTML = REPORT_ISSUES.map(
+    (issue) => `<button type="button" class="issue-chip" data-issue="${issue}">${t(`report.issue${issue.replace(/(^|_)(\w)/g, (_, __, c) => c.toUpperCase())}`)}</button>`,
+  ).join("");
+  reportChipsEl.querySelectorAll(".issue-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      reportSelectedIssue = chip.dataset.issue;
+      reportChipsEl.querySelectorAll(".issue-chip").forEach((c) => c.classList.toggle("active", c === chip));
+    });
+  });
+
+  reportOverlayEl.hidden = false;
+
+  reportSendBtn.onclick = async () => {
+    const message = reportMessageEl.value.trim();
+    if (!reportSelectedIssue || !message) {
+      reportErrorEl.textContent = t("report.missingFields");
+      reportErrorEl.hidden = false;
+      return;
+    }
+    reportErrorEl.hidden = true;
+    reportSendBtn.disabled = true;
+    reportSendBtn.textContent = t("report.sending");
+    const result = await window.mchub.submitReport({
+      slug: server.slug,
+      issue: reportSelectedIssue,
+      message,
+      clientVersion: server.minecraftVersion,
+      attachDiagnostics: reportDiagnosticsEl.checked,
+    });
+    if (result.ok) {
+      closeReportDialog();
+      showModal({ title: t("report.sent"), body: "", confirmLabel: t("common.close") });
+    } else {
+      reportErrorEl.textContent = t("report.failed");
+      reportErrorEl.hidden = false;
+      reportSendBtn.disabled = false;
+      reportSendBtn.textContent = t("report.send");
+    }
+  };
+}
+
+reportCancelBtn.addEventListener("click", closeReportDialog);
+reportOverlayEl.addEventListener("click", (event) => {
+  if (event.target === reportOverlayEl) closeReportDialog();
+});
 
 // Un serveur peut suggérer une RAM (voir ServerForm côté site) — comparée à
 // la RAM totale de la machine avant de lancer, avec un vrai avertissement

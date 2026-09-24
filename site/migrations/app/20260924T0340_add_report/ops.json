@@ -1,0 +1,161 @@
+[
+  {
+    "id": "table.report",
+    "label": "Create table \"report\"",
+    "summary": "Creates table \"report\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "report"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"report\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"report\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"report\"",
+        "sql": "CREATE TABLE \"public\".\"report\" (\n  \"clientVersion\" text,\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"id\" text NOT NULL,\n  \"issue\" text NOT NULL,\n  \"launcherVersion\" text,\n  \"message\" text NOT NULL,\n  \"reply\" text,\n  \"reporterMinecraftUsername\" text NOT NULL,\n  \"reporterMinecraftUuid\" text NOT NULL,\n  \"serverId\" text NOT NULL,\n  \"status\" text DEFAULT 'new' NOT NULL,\n  \"updatedAt\" timestamptz NOT NULL,\n  PRIMARY KEY (\"id\"),\n  CONSTRAINT \"report_issue_check_79c13b0d\" CHECK (\"issue\" IN ('cant_connect', 'wrong_version', 'modpack_download', 'crash', 'other')),\n  CONSTRAINT \"report_status_check_337da199\" CHECK (\"status\" IN ('new', 'replied', 'resolved'))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"report\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"report\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.report.report_serverId_idx_cfc44675",
+    "label": "Create index \"report_serverId_idx_cfc44675\" on \"report\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "report_serverId_idx_cfc44675",
+        "table": "report"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"report_serverId_idx_cfc44675\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"report_serverId_idx_cfc44675\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"report_serverId_idx_cfc44675\"",
+        "sql": "CREATE INDEX \"report_serverId_idx_cfc44675\" ON \"public\".\"report\" (\"serverId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"report_serverId_idx_cfc44675\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"report_serverId_idx_cfc44675\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.report.report_serverId_status_createdAt_idx_ed546ac1",
+    "label": "Create index \"report_serverId_status_createdAt_idx_ed546ac1\" on \"report\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "report_serverId_status_createdAt_idx_ed546ac1",
+        "table": "report"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"report_serverId_status_createdAt_idx_ed546ac1\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"report_serverId_status_createdAt_idx_ed546ac1\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"report_serverId_status_createdAt_idx_ed546ac1\"",
+        "sql": "CREATE INDEX \"report_serverId_status_createdAt_idx_ed546ac1\" ON \"public\".\"report\" (\"serverId\", \"status\", \"createdAt\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"report_serverId_status_createdAt_idx_ed546ac1\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"report_serverId_status_createdAt_idx_ed546ac1\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.report.report_serverId_fkey",
+    "label": "Add foreign key \"report_serverId_fkey\" on \"report\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "report_serverId_fkey",
+        "table": "report"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"report_serverId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "report_serverId_fkey",
+          "public",
+          "\"public\".\"report\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"report_serverId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"report\"\nADD CONSTRAINT \"report_serverId_fkey\"\nFOREIGN KEY (\"serverId\")\nREFERENCES \"public\".\"server\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"report_serverId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "report_serverId_fkey",
+          "public",
+          "\"public\".\"report\""
+        ]
+      }
+    ]
+  }
+]

@@ -12,6 +12,10 @@
       "model": "MinecraftLinkCode",
       "namespace": "public"
     },
+    "report": {
+      "model": "Report",
+      "namespace": "public"
+    },
     "server": {
       "model": "Server",
       "namespace": "public"
@@ -39,6 +43,48 @@
               {
                 "name": "password_reset",
                 "value": "password_reset"
+              }
+            ]
+          },
+          "report_issue": {
+            "codecId": "pg/text@1",
+            "members": [
+              {
+                "name": "cant_connect",
+                "value": "cant_connect"
+              },
+              {
+                "name": "wrong_version",
+                "value": "wrong_version"
+              },
+              {
+                "name": "modpack_download",
+                "value": "modpack_download"
+              },
+              {
+                "name": "crash",
+                "value": "crash"
+              },
+              {
+                "name": "other",
+                "value": "other"
+              }
+            ]
+          },
+          "report_status": {
+            "codecId": "pg/text@1",
+            "members": [
+              {
+                "name": "new",
+                "value": "new"
+              },
+              {
+                "name": "replied",
+                "value": "replied"
+              },
+              {
+                "name": "resolved",
+                "value": "resolved"
               }
             ]
           },
@@ -240,6 +286,166 @@
               },
               "namespaceId": "public",
               "table": "minecraftLinkCode"
+            }
+          },
+          "Report": {
+            "fields": {
+              "clientVersion": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "issue": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                },
+                "valueSet": {
+                  "entityKind": "enum",
+                  "entityName": "report_issue",
+                  "namespaceId": "public",
+                  "plane": "domain"
+                }
+              },
+              "launcherVersion": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "message": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "reply": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "reporterMinecraftUsername": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "reporterMinecraftUuid": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "serverId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                },
+                "valueSet": {
+                  "entityKind": "enum",
+                  "entityName": "report_status",
+                  "namespaceId": "public",
+                  "plane": "domain"
+                }
+              },
+              "updatedAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "server": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "serverId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Server",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "clientVersion": {
+                  "column": "clientVersion"
+                },
+                "createdAt": {
+                  "column": "createdAt"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "issue": {
+                  "column": "issue"
+                },
+                "launcherVersion": {
+                  "column": "launcherVersion"
+                },
+                "message": {
+                  "column": "message"
+                },
+                "reply": {
+                  "column": "reply"
+                },
+                "reporterMinecraftUsername": {
+                  "column": "reporterMinecraftUsername"
+                },
+                "reporterMinecraftUuid": {
+                  "column": "reporterMinecraftUuid"
+                },
+                "serverId": {
+                  "column": "serverId"
+                },
+                "status": {
+                  "column": "status"
+                },
+                "updatedAt": {
+                  "column": "updatedAt"
+                }
+              },
+              "namespaceId": "public",
+              "table": "report"
             }
           },
           "Server": {
@@ -469,6 +675,21 @@
                 },
                 "to": {
                   "model": "User",
+                  "namespace": "public"
+                }
+              },
+              "reports": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "serverId"
+                  ]
+                },
+                "to": {
+                  "model": "Report",
                   "namespace": "public"
                 }
               }
@@ -966,6 +1187,147 @@
                 }
               ]
             },
+            "report": {
+              "checks": [
+                {
+                  "expression": "\"issue\" IN ('cant_connect', 'wrong_version', 'modpack_download', 'crash', 'other')",
+                  "name": "report_issue_check_79c13b0d",
+                  "prefix": "report_issue_check"
+                },
+                {
+                  "expression": "\"status\" IN ('new', 'replied', 'resolved')",
+                  "name": "report_status_check_337da199",
+                  "prefix": "report_status_check"
+                }
+              ],
+              "columns": {
+                "clientVersion": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "createdAt": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "issue": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false,
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "report_issue",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "launcherVersion": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "message": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "reply": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "reporterMinecraftUsername": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "reporterMinecraftUuid": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "serverId": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "status": {
+                  "codecId": "pg/text@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": "new"
+                  },
+                  "nativeType": "text",
+                  "nullable": false,
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "report_status",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "updatedAt": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [
+                {
+                  "onDelete": "cascade",
+                  "source": {
+                    "columns": [
+                      "serverId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "report"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "server"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "serverId"
+                  ],
+                  "name": "report_serverId_idx_cfc44675",
+                  "prefix": "report_serverId_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "serverId",
+                    "status",
+                    "createdAt"
+                  ],
+                  "name": "report_serverId_status_createdAt_idx_ed546ac1",
+                  "prefix": "report_serverId_status_createdAt_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": []
+            },
             "server": {
               "checks": [
                 {
@@ -1359,6 +1721,24 @@
                 "password_reset"
               ]
             },
+            "report_issue": {
+              "kind": "valueSet",
+              "values": [
+                "cant_connect",
+                "wrong_version",
+                "modpack_download",
+                "crash",
+                "other"
+              ]
+            },
+            "report_status": {
+              "kind": "valueSet",
+              "values": [
+                "new",
+                "replied",
+                "resolved"
+              ]
+            },
             "server_event_kind": {
               "kind": "valueSet",
               "values": [
@@ -1379,10 +1759,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "0189c507402e41c66e9bbccef89b447963fe77908c9fc2dd0bdbeb0c696be6b8"
+    "storageHash": "586b9bde50b5ba2c5c0d22e0bef0a2b9efa4b85c4487384a1e9e54a84418dbf2"
   },
   "execution": {
-    "executionHash": "7412a5fb8b37fd672b9f709ce8a4fd63a4181827d200dc5247f70a79a3990219",
+    "executionHash": "f73f92fa230007f251c170c550e0ba3393c20e3178f49b191e55f89569858e6a",
     "mutations": {
       "defaults": [
         {
@@ -1405,6 +1785,32 @@
             "column": "id",
             "namespace": "public",
             "table": "minecraftLinkCode"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "uuidv4",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "report"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "timestampNow",
+            "kind": "generator"
+          },
+          "onUpdate": {
+            "id": "timestampNow",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "updatedAt",
+            "namespace": "public",
+            "table": "report"
           }
         },
         {

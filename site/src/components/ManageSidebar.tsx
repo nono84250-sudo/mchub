@@ -2,17 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Layout, ChartBar, Gear } from "@phosphor-icons/react";
+import { Layout, ChartBar, Flag, Gear } from "@phosphor-icons/react";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 
-export function ManageSidebar({ serverId, serverName }: { serverId: string; serverName: string }) {
+export function ManageSidebar({
+  serverId,
+  serverName,
+  openReportsCount,
+}: {
+  serverId: string;
+  serverName: string;
+  openReportsCount: number;
+}) {
   const pathname = usePathname();
   const { t } = useI18n();
 
-  const navItems: { href: string; label: string; icon: PhosphorIcon }[] = [
+  const navItems: { href: string; label: string; icon: PhosphorIcon; badge?: number }[] = [
     { href: `/manage/${serverId}`, label: t("manage.navOverview"), icon: Layout },
     { href: `/manage/${serverId}/activity`, label: t("manage.navActivity"), icon: ChartBar },
+    { href: `/manage/${serverId}/reports`, label: t("manage.navReports"), icon: Flag, badge: openReportsCount },
     { href: `/manage/${serverId}/settings`, label: t("manage.navSettings"), icon: Gear },
   ];
 
@@ -27,7 +36,7 @@ export function ManageSidebar({ serverId, serverName }: { serverId: string; serv
         <span className="hidden min-w-0 truncate font-medium text-foreground sm:inline">{serverName}</span>
       </Link>
 
-      {navItems.map(({ href, label, icon: Icon }) => {
+      {navItems.map(({ href, label, icon: Icon, badge }) => {
         const active = pathname === href;
         return (
           <Link
@@ -39,7 +48,15 @@ export function ManageSidebar({ serverId, serverName }: { serverId: string; serv
             }`}
           >
             <Icon className="h-4 w-4 flex-shrink-0" />
-            <span className="hidden sm:inline">{label}</span>
+            <span className="hidden min-w-0 flex-1 truncate sm:inline">{label}</span>
+            {badge ? (
+              <span
+                className="hidden flex-shrink-0 rounded-full px-1.5 text-[11px] font-semibold sm:inline"
+                style={{ background: "color-mix(in srgb, var(--danger) 18%, transparent)", color: "var(--danger)" }}
+              >
+                {badge}
+              </span>
+            ) : null}
           </Link>
         );
       })}

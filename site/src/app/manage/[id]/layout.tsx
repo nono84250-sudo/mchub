@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/prisma/db";
+import { listReportsForServer } from "@/lib/reports";
 import { ManageSidebar } from "@/components/ManageSidebar";
 import { ManageAvatarMenu } from "@/components/ManageAvatarMenu";
 
@@ -16,9 +17,12 @@ export default async function ManageServerLayout({ children, params }: LayoutPro
   const server = await db.orm.public.Server.select("id", "name").where({ id, ownerId: session.user.id }).first();
   if (!server) notFound();
 
+  const reports = await listReportsForServer(server.id);
+  const openReportsCount = reports.filter((r) => r.status !== "resolved").length;
+
   return (
     <div className="flex min-h-screen">
-      <ManageSidebar serverId={server.id} serverName={server.name} />
+      <ManageSidebar serverId={server.id} serverName={server.name} openReportsCount={openReportsCount} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-end border-b border-border px-6 py-3">
           <ManageAvatarMenu name={session.user.name ?? ""} />

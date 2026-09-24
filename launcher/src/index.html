@@ -837,6 +837,19 @@
   .modal-box p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
+  #report-modal-box { max-width: 460px; }
+  .issue-chip {
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: transparent;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .issue-chip.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
   /* Barre de lancement rapide : favoris + gros bouton Jouer, inspiree des
      launchers du genre (Lunar Client...). La progression de telechargement/
      lancement s'affiche ICI (plus dans la fiche serveur) — un seul endroit
@@ -1086,6 +1099,43 @@
       <p class="join-note" id="ram-setup-note"></p>
       <div class="modal-actions">
         <button id="ram-setup-continue" class="join-btn" type="button" data-i18n="ramSetup.continueBtn">Continuer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Signaler un probleme technique (voir renderer.js/openReportDialog) —
+       uniquement la categorie "Probleme technique" de la maquette (03b
+       Report dialog) : la categorie "Comportement/contenu" irait aux
+       moderateurs Omniscient, qui n'existent pas encore (voir le
+       commentaire sur le modele Report cote site). -->
+  <div class="modal-overlay" id="report-overlay" hidden>
+    <div class="modal-box" id="report-modal-box">
+      <h3 id="report-title" data-i18n="report.title">Signaler un problème</h3>
+      <p style="margin-bottom: 14px;" data-i18n="report.subtitle">Quel type de problème rencontres-tu ?</p>
+
+      <div class="settings-field" style="max-width: none;">
+        <label class="field-label" data-i18n="report.issueLabel">Problème</label>
+        <div id="report-issue-chips" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+      </div>
+
+      <div class="settings-field" style="max-width: none;">
+        <label for="report-message" class="field-label" data-i18n="report.messageLabel">Décris ce qu'il s'est passé</label>
+        <textarea id="report-message" class="settings-input" rows="3" style="resize: vertical;"></textarea>
+      </div>
+
+      <label class="gate-remember" style="align-items: flex-start;">
+        <input type="checkbox" id="report-diagnostics" checked />
+        <span>
+          <span data-i18n="report.attachDiagnostics">Joindre les diagnostics</span>
+          <span id="report-diagnostics-detail" style="display: block; font-size: 11.5px; color: var(--muted); font-family: ui-monospace, Menlo, monospace;"></span>
+        </span>
+      </label>
+
+      <p class="join-note" id="report-error" style="color: var(--danger);" hidden></p>
+
+      <div class="modal-actions">
+        <button id="report-cancel" class="btn-secondary" type="button" data-i18n="report.cancel">Annuler</button>
+        <button id="report-send" class="join-btn" type="button" data-i18n="report.send">Envoyer</button>
       </div>
     </div>
   </div>

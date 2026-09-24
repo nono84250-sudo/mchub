@@ -137,7 +137,8 @@ model Server {
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  events ServerEvent[]
+  events  ServerEvent[]
+  reports Report[]
 
   createdAt TimestamptzString @default(now())
   updatedAt temporal.updatedAtString()
@@ -167,4 +168,58 @@ model ServerEvent {
   createdAt TimestamptzString @default(now())
 
   @@index([serverId, kind, createdAt])
+}
+
+enum report_issue {
+  @@type("pg/text@1")
+  cant_connect     = "cant_connect"
+  wrong_version    = "wrong_version"
+  modpack_download = "modpack_download"
+  crash            = "crash"
+  other            = "other"
+}
+
+enum report_status {
+  @@type("pg/text@1")
+  new      = "new"
+  replied  = "replied"
+  resolved = "resolved"
+}
+
+// Signalement technique envoye par un joueur depuis le launcher (voir "03b
+// Report a server" dans Design/Omniscient Launcher Mockups.dc.html) —
+// uniquement la categorie "Probleme technique" (va au proprietaire). La
+// categorie "Comportement/contenu" de la maquette (va aux moderateurs
+// Omniscient) n'a nulle part ou atterrir tant que le panel admin/moderation
+// n'existe pas (voir memoire project_platform_admin_panel) : volontairement
+// pas implementee, pour ne pas construire un bouton qui ne mene nulle part.
+model Report {
+  id       String @id @default(uuid())
+  serverId String
+  server   Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  // Identite du joueur qui signale — jamais un compte Omniscient (le
+  // launcher connait deja son profil Minecraft/Xbox, voir xboxAuth.ts), donc
+  // pas de relation vers User ici : juste de quoi identifier le joueur pour
+  // le proprietaire.
+  reporterMinecraftUuid     String
+  reporterMinecraftUsername String
+
+  issue   report_issue
+  message String
+
+  // Diagnostics optionnels (case a cocher cote launcher) : versions au
+  // moment du signalement. La version serveur n'est pas dupliquee ici — elle
+  // est comparee a Server.minecraftVersion (valeur actuelle) au moment de
+  // l'affichage, pour refleter un ecart reellement toujours d'actualite.
+  clientVersion   String?
+  launcherVersion String?
+
+  status report_status @default(new)
+  reply  String?
+
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+
+  @@index([serverId, status, createdAt])
 }

@@ -349,6 +349,32 @@ ipcMain.handle("servers:openManage", (_event, serverId) => {
 });
 ipcMain.handle("servers:openNewInstance", () => shell.openExternal(`${SITE_URL}/dashboard/servers/new`));
 
+// Signalement "Probleme technique" depuis la fiche d'un serveur (voir
+// renderer.js/openReportDialog et site/src/app/api/launcher/servers/[slug]/
+// report/route.ts) — necessite d'etre connecte, le joueur qui signale doit
+// etre identifiable par le proprietaire.
+ipcMain.handle("reports:submit", async (_event, { slug, issue, message, clientVersion, attachDiagnostics }) => {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  try {
+    const res = await fetch(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      body: JSON.stringify({
+        reporterMinecraftUuid: currentSession.profile.id,
+        reporterMinecraftUsername: currentSession.profile.name,
+        issue,
+        message,
+        clientVersion: attachDiagnostics ? clientVersion || null : null,
+        launcherVersion: attachDiagnostics ? app.getVersion() : null,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
 // Echange le code affiche sur /account contre la liaison du profil
 // Minecraft/Xbox deja connu localement (voir msAuth.js) — jamais le mot de
 // passe du site, voir site/src/app/api/launcher/minecraft-link/route.ts.
