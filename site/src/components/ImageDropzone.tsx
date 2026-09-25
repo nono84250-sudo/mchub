@@ -10,7 +10,7 @@ export type ImageField = "banner" | "icon" | "background";
 
 // Contraintes par champ (dimensions/formats/poids), affichees sous chaque
 // zone de depot comme dans la maquette (voir "02 Onboarding" dans
-// Design/Omniscient Site Mockups.dc.html) et appliquees cote client avant
+// Design/Omniscient UI Mockups.dc.html) et appliquees cote client avant
 // meme d'appeler /api/upload. Purement indicatif ici — la seule limite qui
 // compte vraiment est appliquee cote serveur (voir FIELD_CONSTRAINTS dans
 // app/api/upload/route.ts), qui ne fait pas confiance a ce que le client
@@ -29,16 +29,15 @@ type ImageDropzoneProps = {
   hint?: string;
   placeholder: string;
   icon: Icon;
-  shape?: "wide" | "square";
 };
 
 // Remplace les anciens champs "URL de l'image" (coller un lien externe) par
 // un vrai depot de fichier, conforme a la maquette (voir "drop banner, 16:9"
-// / "drop background" dans Design/Omniscient Site Mockups.dc.html). Upload
+// / "drop background" dans Design/Omniscient UI Mockups.dc.html). Upload
 // direct navigateur -> Vercel Blob (voir /api/upload) : seul le jeton
 // transite par notre serveur, jamais le fichier lui-meme — evite la limite
 // de taille des server actions Next.js pour des images de quelques Mo.
-export function ImageDropzone({ name, field, defaultValue, label, hint, placeholder, icon: PlaceholderIcon, shape = "wide" }: ImageDropzoneProps) {
+export function ImageDropzone({ name, field, defaultValue, label, hint, placeholder, icon: PlaceholderIcon }: ImageDropzoneProps) {
   const { t } = useI18n();
   const [url, setUrl] = useState(defaultValue ?? "");
   const [status, setStatus] = useState<"idle" | "uploading" | "error">("idle");
@@ -66,9 +65,14 @@ export function ImageDropzone({ name, field, defaultValue, label, hint, placehol
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="field-label">{label}</span>
-      {hint ? <span className="text-[11px] leading-tight text-muted whitespace-pre-line">{hint}</span> : null}
+    // Meme structure que la maquette "02 · Onboarding" : libelle + indication
+    // dans un seul bloc de hauteur mini fixe (44 px) pour que les trois zones
+    // d'une meme rangee restent alignees quelle que soit la longueur du texte.
+    <div className="flex flex-col gap-[5px]">
+      <div className="flex min-h-11 flex-col gap-0.5">
+        <span className="text-xs text-muted">{label}</span>
+        {hint ? <span className="whitespace-pre-line text-[11px] leading-[1.4] text-muted2">{hint}</span> : null}
+      </div>
       <input type="hidden" name={name} value={url} />
       <input
         ref={inputRef}
@@ -83,6 +87,7 @@ export function ImageDropzone({ name, field, defaultValue, label, hint, placehol
       />
       <div
         role="button"
+        aria-label={label}
         tabIndex={0}
         onClick={() => status !== "uploading" && inputRef.current?.click()}
         onKeyDown={(event) => {
@@ -99,7 +104,7 @@ export function ImageDropzone({ name, field, defaultValue, label, hint, placehol
           const file = event.dataTransfer.files?.[0];
           if (file) void uploadFile(file);
         }}
-        className={`relative flex h-24 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md border border-dashed text-center font-mono text-[11px] text-muted ${shape === "square" ? "w-24 mx-auto" : "w-full"}`}
+        className="relative flex h-24 w-full cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md border border-dashed text-center font-mono text-[11px] text-muted"
         style={{
           borderColor: dragOver ? "var(--accent)" : "var(--border)",
           backgroundImage: url

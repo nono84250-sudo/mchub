@@ -6,17 +6,15 @@ import { NewServerWizard } from "@/components/NewServerWizard";
 
 export const metadata = { title: "Nouveau serveur — Omniscient" };
 
+// Hors du groupe (shell) de /dashboard : pas de barre laterale du tableau de
+// bord autour, l'assistant prend toute la page (voir SiteChrome et
+// NewServerWizard). L'authentification est donc verifiee ici, plus dans le
+// layout du tableau de bord.
 export default async function NewServerPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
   const versions = await getMinecraftVersions();
 
-  return (
-    <div className="max-w-2xl">
-      <div className="panel p-6 sm:p-10">
-        <NewServerWizard action={createServer} versions={versions} />
-      </div>
-    </div>
-  );
+  return <NewServerWizard action={createServer} versions={versions} />;
 }

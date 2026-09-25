@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { GlobeHemisphereWest, LockSimple, Copy, ArrowsClockwise, Image, Cube, ImageSquare } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
@@ -51,9 +51,14 @@ type ServerFormProps = {
   // seule la page /manage/[id]/settings les passe.
   serverId?: string;
   inviteCode?: string | null;
+  // Section rendue entre les champs et le bouton d'enregistrement (voir
+  // /manage/[id]/settings : Pause/Dupliquer/Supprimer, comme sur la maquette
+  // "05 · Settings"). Ne doit contenir que des boutons type="button" —
+  // jamais un autre <form>, invalide a l'interieur de celui-ci.
+  children?: ReactNode;
 };
 
-export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode }: ServerFormProps) {
+export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode, children }: ServerFormProps) {
   const { t } = useI18n();
   const router = useRouter();
   const values = { ...EMPTY_VALUES, ...defaultValues };
@@ -107,7 +112,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)]">
         <ImageDropzone
           name="bannerUrl"
           field="banner"
@@ -125,7 +130,6 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
           hint={t("serverForm.iconHint")}
           placeholder=""
           icon={Cube}
-          shape="square"
         />
         <ImageDropzone
           name="backgroundUrl"
@@ -364,6 +368,8 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
           </div>
         </div>
       ) : null}
+
+      {children}
 
       {state?.error ? <p className="text-sm text-danger">{state.error}</p> : null}
 

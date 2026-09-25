@@ -1,9 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/prisma/db";
-import { updateServer } from "@/lib/actions/servers";
+import { updateServer, deleteServer, toggleServerPublished, duplicateServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
 import { ServerForm } from "@/components/ServerForm";
+import { ManageActions } from "@/components/ManageActions";
 import { getT } from "@/i18n/getDictionary";
 
 export const metadata = { title: "Paramètres — Omniscient" };
@@ -18,7 +19,26 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
   const { dict } = await getT();
 
   const boundUpdate = updateServer.bind(null, server.id);
+  const boundDelete = deleteServer.bind(null, server.id);
+  const boundTogglePublished = toggleServerPublished.bind(null, server.id);
+  const boundDuplicate = duplicateServer.bind(null, server.id);
   const versions = await getMinecraftVersions();
+
+  const defaultValues = {
+    name: server.name,
+    description: server.description,
+    bannerUrl: server.bannerUrl ?? "",
+    iconUrl: server.iconUrl ?? "",
+    backgroundUrl: server.backgroundUrl ?? "",
+    isPrivate: server.isPrivate,
+    type: server.type,
+    minecraftVersion: server.minecraftVersion,
+    ip: server.ip,
+    curseforgeModpackId: server.curseforgeModpackId ?? "",
+    curseforgeModpackName: server.curseforgeModpackName ?? "",
+    curseforgeModpackVersion: server.curseforgeModpackVersion ?? "",
+    recommendedRamGB: server.recommendedRamGB?.toString() ?? "",
+  };
 
   return (
     <div className="max-w-2xl">
@@ -26,36 +46,34 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
 
       <div className="panel p-6 sm:p-8">
         <ServerForm
-          // Remonte le formulaire a chaque sauvegarde reussie (updatedAt
-          // change) : le select de version/le type gardent un etat React
-          // local initialise une seule fois au montage (voir ServerForm),
-          // qui ne se resynchronise jamais tout seul avec des props mises a
-          // jour — sans ce remount, la valeur choisie juste avant semblait
-          // "revenir" a l'ancienne apres l'enregistrement (visuel seulement,
-          // la base est deja a jour) jusqu'a un rechargement complet de la
-          // page.
-          key={server.updatedAt}
+          // Remonte le formulaire quand les valeurs enregistrees changent :
+          // le select de version/le type gardent un etat React local
+          // initialise une seule fois au montage (voir ServerForm), qui ne se
+          // resynchronise jamais tout seul avec des props mises a jour — sans
+          // ce remount, la valeur choisie juste avant semblait "revenir" a
+          // l'ancienne apres l'enregistrement (visuel seulement, la base est
+          // deja a jour) jusqu'a un rechargement complet de la page. Cle
+          // fondee sur les valeurs et non sur updatedAt : Pause/Republier
+          // (ManageActions, dans ce meme formulaire) change updatedAt sans
+          // toucher aux champs, et ne doit pas effacer une saisie en cours.
+          key={JSON.stringify(defaultValues)}
           action={boundUpdate}
           submitLabel={dict.manage.saveChanges}
           versions={versions}
           serverId={server.id}
           inviteCode={server.inviteCode}
-          defaultValues={{
-            name: server.name,
-            description: server.description,
-            bannerUrl: server.bannerUrl ?? "",
-            iconUrl: server.iconUrl ?? "",
-            backgroundUrl: server.backgroundUrl ?? "",
-            isPrivate: server.isPrivate,
-            type: server.type,
-            minecraftVersion: server.minecraftVersion,
-            ip: server.ip,
-            curseforgeModpackId: server.curseforgeModpackId ?? "",
-            curseforgeModpackName: server.curseforgeModpackName ?? "",
-            curseforgeModpackVersion: server.curseforgeModpackVersion ?? "",
-            recommendedRamGB: server.recommendedRamGB?.toString() ?? "",
-          }}
-        />
+          defaultValues={defaultValues}
+        >
+          <div className="border-t border-border pt-5">
+            <ManageActions
+              slug={server.slug}
+              published={server.published}
+              onTogglePublished={boundTogglePublished}
+              onDuplicate={boundDuplicate}
+              onDelete={boundDelete}
+            />
+          </div>
+        </ServerForm>
       </div>
     </div>
   );

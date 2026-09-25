@@ -1,11 +1,13 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { Globe, PuzzlePiece, ArrowRight, ArrowLeft, Info, MagnifyingGlass, CheckCircle, GlobeHemisphereWest, LockSimple, Image, Cube, ImageSquare } from "@phosphor-icons/react";
+import Link from "next/link";
+import { Globe, PuzzlePiece, ArrowRight, Info, MagnifyingGlass, CheckCircle, GlobeHemisphereWest, LockSimple, Image, Cube, ImageSquare } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
 import { searchModpacks } from "@/lib/actions/curseforge";
 import type { CurseforgeModpack } from "@/lib/curseforge";
 import { ImageDropzone } from "@/components/ImageDropzone";
+import { LogoMark } from "@/components/LogoMark";
 import { useI18n } from "@/i18n/I18nProvider";
 
 type Props = {
@@ -72,7 +74,21 @@ export function NewServerWizard({ action, versions }: Props) {
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
   return (
-    <form action={formAction} className="flex flex-col gap-8">
+    <div>
+      <header>
+        <div className="flex items-center gap-4 px-7 py-3.5">
+          <Link href="/dashboard" className="font-heading flex items-center gap-2 text-[17px] font-semibold text-foreground">
+            <LogoMark className="h-4 w-4" />
+            Omniscient
+          </Link>
+          <div className="ml-auto text-[13px] text-muted">
+            {t("wizard.stepOf", { current: String(step + 1), total: String(STEPS.length) })}
+          </div>
+        </div>
+        <div className="divider-fade" />
+      </header>
+
+      <form action={formAction} className="onboarding mx-auto flex max-w-[640px] flex-col gap-9 px-6 pb-[72px] pt-14">
       <div className="flex items-center">
         {STEPS.map((s, i) => (
           <div key={s.label} className="flex flex-1 items-center last:flex-none">
@@ -83,7 +99,7 @@ export function NewServerWizard({ action, versions }: Props) {
               >
                 {i + 1}
               </span>
-              <span className={`text-sm whitespace-nowrap ${i <= step ? "text-foreground" : "text-muted opacity-50"}`}>{s.label}</span>
+              <span className={`text-[13px] whitespace-nowrap ${i <= step ? "text-foreground" : "text-muted opacity-50"}`}>{s.label}</span>
             </div>
             {i < STEPS.length - 1 ? <div className="mx-3 h-px flex-1 bg-border" /> : null}
           </div>
@@ -91,9 +107,9 @@ export function NewServerWizard({ action, versions }: Props) {
       </div>
 
       {/* Etape 1 — Infos */}
-      <div className={step === 0 ? "flex flex-col gap-5" : "hidden"}>
+      <div className={step === 0 ? "flex flex-col gap-9" : "hidden"}>
         <div>
-          <h2 className="text-xl font-heading text-foreground mb-1">{t("wizard.basicsTitle")}</h2>
+          <h2 className="text-[26px] font-heading text-foreground mb-1.5">{t("wizard.basicsTitle")}</h2>
           <p className="text-sm text-muted">{t("wizard.basicsSubtitle")}</p>
         </div>
 
@@ -115,9 +131,9 @@ export function NewServerWizard({ action, versions }: Props) {
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)]">
           <ImageDropzone name="bannerUrl" field="banner" label={t("serverForm.bannerUrl")} hint={t("serverForm.bannerHint")} placeholder={t("serverForm.dropBanner")} icon={Image} />
-          <ImageDropzone name="iconUrl" field="icon" label={t("serverForm.iconUrl")} hint={t("serverForm.iconHint")} placeholder="" icon={Cube} shape="square" />
+          <ImageDropzone name="iconUrl" field="icon" label={t("serverForm.iconUrl")} hint={t("serverForm.iconHint")} placeholder="" icon={Cube} />
           <ImageDropzone name="backgroundUrl" field="background" label={t("serverForm.backgroundUrl")} hint={t("serverForm.backgroundHint")} placeholder={t("serverForm.dropBackground")} icon={ImageSquare} />
         </div>
 
@@ -125,11 +141,11 @@ export function NewServerWizard({ action, versions }: Props) {
           <span className="field-label">{t("serverForm.visibility")}</span>
           <div className="flex flex-col sm:flex-row gap-2.5">
             <label
-              className="flex flex-1 items-start gap-2.5 rounded-md border p-3 cursor-pointer"
+              className="flex min-w-0 flex-1 items-start gap-2.5 rounded-md border px-3.5 py-3 cursor-pointer"
               style={
                 visibility === "public"
                   ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
-                  : { borderColor: "var(--border)" }
+                  : { borderColor: "var(--border)", background: "var(--surface)" }
               }
             >
               <input
@@ -137,17 +153,18 @@ export function NewServerWizard({ action, versions }: Props) {
                 checked={visibility === "public"} onChange={() => setVisibility("public")}
               />
               <GlobeHemisphereWest className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "public" ? "var(--accent)" : "var(--muted)" }} />
-              <span className="flex flex-col gap-0.5 min-w-0">
-                <span className="text-sm font-medium text-foreground">{t("serverForm.visibilityPublic")}</span>
-                <span className="text-xs text-muted leading-relaxed">{t("serverForm.visibilityPublicHelp")}</span>
+              <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                <span className="text-[13.5px] font-medium text-foreground">{t("serverForm.visibilityPublic")}</span>
+                <span className="text-xs text-muted leading-normal">{t("serverForm.visibilityPublicHelp")}</span>
               </span>
+              <RadioDot selected={visibility === "public"} />
             </label>
             <label
-              className="flex flex-1 items-start gap-2.5 rounded-md border p-3 cursor-pointer"
+              className="flex min-w-0 flex-1 items-start gap-2.5 rounded-md border px-3.5 py-3 cursor-pointer"
               style={
                 visibility === "private"
                   ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
-                  : { borderColor: "var(--border)" }
+                  : { borderColor: "var(--border)", background: "var(--surface)" }
               }
             >
               <input
@@ -155,10 +172,11 @@ export function NewServerWizard({ action, versions }: Props) {
                 checked={visibility === "private"} onChange={() => setVisibility("private")}
               />
               <LockSimple className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "private" ? "var(--accent)" : "var(--muted)" }} />
-              <span className="flex flex-col gap-0.5 min-w-0">
-                <span className="text-sm font-medium text-foreground">{t("serverForm.visibilityPrivate")}</span>
-                <span className="text-xs text-muted leading-relaxed">{t("serverForm.visibilityPrivateHelp")}</span>
+              <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                <span className="text-[13.5px] font-medium text-foreground">{t("serverForm.visibilityPrivate")}</span>
+                <span className="text-xs text-muted leading-normal">{t("serverForm.visibilityPrivateHelp")}</span>
               </span>
+              <RadioDot selected={visibility === "private"} />
             </label>
           </div>
         </div>
@@ -184,13 +202,13 @@ export function NewServerWizard({ action, versions }: Props) {
         </div>
 
         {type === "modded" ? (
-          <div className="flex flex-col gap-4 rounded-lg p-4" style={{ border: "1px solid var(--accent)" }}>
+          <div className="flex flex-col gap-1.5">
             <input type="hidden" name="curseforgeModpackId" value={effectiveModpackId} />
             <input type="hidden" name="curseforgeModpackName" value={selectedModpack?.name ?? manualModpack.name} />
             <input type="hidden" name="curseforgeModpackVersion" value={selectedModpack?.latestVersion ?? manualModpack.version} />
 
             {manualModpackEntry ? (
-              <>
+              <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="manualModpackId" className="field-label">{t("serverForm.modpackId")}</label>
                   <input
@@ -221,7 +239,7 @@ export function NewServerWizard({ action, versions }: Props) {
                 <button type="button" onClick={() => setManualModpackEntry(false)} className="self-start text-xs text-accent underline">
                   {t("wizard.modpackUseSearch")}
                 </button>
-              </>
+              </div>
             ) : (
               <>
                 <div className="flex flex-col gap-1.5">
@@ -242,14 +260,14 @@ export function NewServerWizard({ action, versions }: Props) {
                 </div>
 
                 {selectedModpack ? (
-                  <div className="flex items-center gap-3 rounded-md p-3" style={{ border: "1px solid var(--accent)", background: "var(--surface)" }}>
+                  <div className="mt-1.5 flex items-center gap-2.5 rounded-md px-3 py-2.5" style={{ border: "1px solid var(--accent)", background: "var(--surface)" }}>
                     {selectedModpack.iconUrl ? (
                       <img src={selectedModpack.iconUrl} alt="" className="h-8 w-8 flex-shrink-0 rounded-md object-cover" />
                     ) : (
                       <span className="server-icon h-8 w-8 flex-shrink-0 text-sm">{selectedModpack.name.charAt(0).toUpperCase()}</span>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">{selectedModpack.name}</p>
+                      <p className="truncate text-[13.5px] font-medium text-foreground">{selectedModpack.name}</p>
                       <p className="truncate text-xs text-muted">
                         {selectedModpack.latestVersion ? `${selectedModpack.latestVersion} · ` : ""}CurseForge · {t("wizard.modpackVerified")}
                       </p>
@@ -290,20 +308,21 @@ export function NewServerWizard({ action, versions }: Props) {
                   <p className="text-xs text-muted">{t("wizard.modpackNoResults")}</p>
                 ) : null}
 
-                <button type="button" onClick={() => setManualModpackEntry(true)} className="self-start text-xs text-accent underline">
+                <button type="button" onClick={() => setManualModpackEntry(true)} className="mt-1.5 self-start text-xs text-accent underline">
                   {t("wizard.modpackEnterManually")}
                 </button>
               </>
             )}
 
-            <p className="flex items-center gap-1.5 text-xs text-muted">
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted2">
               <Info className="h-3.5 w-3.5 flex-shrink-0" />
               {t("serverForm.modpackNote")}
             </p>
           </div>
         ) : null}
 
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex justify-end gap-2.5">
+          <Link href="/dashboard" className="btn-secondary">{t("wizard.back")}</Link>
           <button
             type="button" onClick={next}
             disabled={!name || !description || (type === "modded" && !effectiveModpackId)}
@@ -315,9 +334,9 @@ export function NewServerWizard({ action, versions }: Props) {
       </div>
 
       {/* Etape 2 — Connexion */}
-      <div className={step === 1 ? "flex flex-col gap-5" : "hidden"}>
+      <div className={step === 1 ? "flex flex-col gap-9" : "hidden"}>
         <div>
-          <h2 className="text-xl font-heading text-foreground mb-1">{t("wizard.connectionTitle")}</h2>
+          <h2 className="text-[26px] font-heading text-foreground mb-1.5">{t("wizard.connectionTitle")}</h2>
           <p className="text-sm text-muted">{t("wizard.connectionSubtitle")}</p>
         </div>
 
@@ -354,9 +373,9 @@ export function NewServerWizard({ action, versions }: Props) {
           </div>
         </div>
 
-        <div className="mt-2 flex justify-between">
+        <div className="mt-2 flex justify-end gap-2.5">
           <button type="button" onClick={back} className="btn-secondary">
-            <ArrowLeft className="h-4 w-4" /> {t("wizard.back")}
+            {t("wizard.back")}
           </button>
           <button type="button" onClick={next} disabled={!ip || !minecraftVersion} className="btn-primary">
             {t("wizard.continue")} <ArrowRight className="h-4 w-4" />
@@ -365,9 +384,9 @@ export function NewServerWizard({ action, versions }: Props) {
       </div>
 
       {/* Etape 3 — Verification */}
-      <div className={step === 2 ? "flex flex-col gap-5" : "hidden"}>
+      <div className={step === 2 ? "flex flex-col gap-9" : "hidden"}>
         <div>
-          <h2 className="text-xl font-heading text-foreground mb-1">{t("wizard.reviewTitle")}</h2>
+          <h2 className="text-[26px] font-heading text-foreground mb-1.5">{t("wizard.reviewTitle")}</h2>
           <p className="text-sm text-muted">{t("wizard.reviewSubtitle")}</p>
         </div>
 
@@ -404,15 +423,28 @@ export function NewServerWizard({ action, versions }: Props) {
 
         {state?.error ? <p className="text-sm text-danger">{state.error}</p> : null}
 
-        <div className="mt-2 flex justify-between">
+        <div className="mt-2 flex justify-end gap-2.5">
           <button type="button" onClick={back} className="btn-secondary">
-            <ArrowLeft className="h-4 w-4" /> {t("wizard.back")}
+            {t("wizard.back")}
           </button>
           <button type="submit" disabled={pending} className="btn-primary">
             {pending ? t("wizard.publishing") : t("wizard.publish")}
           </button>
         </div>
       </div>
-    </form>
+      </form>
+    </div>
+  );
+}
+
+// Rond de selection a droite des cartes Public/Prive (maquette "02 · Onboarding") :
+// anneau epais de la couleur accent quand la carte est choisie, fin et neutre sinon.
+function RadioDot({ selected }: { selected: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="mt-px h-4 w-4 flex-shrink-0 rounded-full"
+      style={{ border: selected ? "5px solid var(--accent)" : "1.5px solid var(--border)" }}
+    />
   );
 }

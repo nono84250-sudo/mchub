@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Pause, Play, Copy, Trash, ArrowSquareOut } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 
-// Boutons d'action de "Vue d'ensemble" — avec confirmation avant toute
+// Boutons d'action de "Paramètres" (voir maquette "05 · Settings") — avec confirmation avant toute
 // action destructive/impactante (l'utilisateur a signale que le formulaire
 // brut sans confirmation etait dangereux). La suppression est isolee dans
 // son propre encadre (voir maquette "Nocturne") plutot que d'avoir le meme
@@ -51,7 +51,7 @@ export function ManageActions({
   }
 
   return (
-    <div className="mb-6 flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
         <span className="tag-chip tag-chip-accent self-start">{published ? t("manage.published") : t("manage.paused")}</span>
