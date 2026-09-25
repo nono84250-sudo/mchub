@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-ab8d36a0-be64-4c6d-afa1-1dfd9e011868/styles.css">
+<script src="_ds/nocturne-ab8d36a0-be64-4c6d-afa1-1dfd9e011868/_ds_bundle.js"></script>
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+  body{margin:0}
+  ::selection{background:rgba(145,132,217,.3)}
+  a{color:var(--color-accent);text-decoration:none}
+  a:hover{color:var(--color-accent-400)}
+  input::placeholder,textarea::placeholder{color:color-mix(in srgb, var(--color-text) 40%, transparent)}
+</style>
+</helmet>
+<div style="--muted:color-mix(in srgb, var(--color-text) 55%, transparent);--muted2:color-mix(in srgb, var(--color-text) 40%, transparent);--raised:color-mix(in srgb, var(--color-text) 6%, var(--color-surface));--danger:#e08a8a;--success:#5fd3a0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);min-height:100vh;padding:56px 24px 120px;display:flex;flex-direction:column;align-items:center;gap:72px;">
+
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;gap:4px;">
+    <h1 style="font-family:var(--font-heading);font-weight:500;font-size:28px;letter-spacing:-.015em;margin:0;color:var(--color-text)">Omniscient — UI mockups</h1>
+    <p style="margin:0;font-size:14px;color:var(--muted);max-width:640px">Directory + owner console for Minecraft server listings, styled with the Nocturne system. Six screens across the public site and the manage console.</p>
+  </div>
+
+  <!-- ============ 00 HOME ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Home" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">00 · Home — public site</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);">
+
+      <div style="display:flex;align-items:center;gap:16px;padding:14px 28px;">
+        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-heading);font-weight:600;font-size:17px;">
+          <span style="width:16px;height:16px;border:1.5px solid var(--color-accent);transform:rotate(45deg);flex-shrink:0"></span>
+          Omniscient
+        </div>
+        <nav style="display:flex;align-items:center;gap:20px;font-size:14px;margin-left:32px;">
+          <a href="#" style="color:var(--muted)">Servers</a>
+          <a href="#download" style="color:var(--muted)">Download</a>
+        </nav>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+          <button style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13px var(--font-heading);cursor:pointer;white-space:nowrap;">Log in</button>
+        </div>
+      </div>
+
+      <div style="position:relative;padding:88px 24px 48px;display:flex;flex-direction:column;align-items:center;text-align:center;overflow:hidden;">
+        <div style="position:absolute;inset:0;background:radial-gradient(50% 45% at 30% 0%, var(--color-accent-900), transparent 70%), radial-gradient(45% 40% at 80% 10%, var(--color-accent-800), transparent 70%);opacity:.55"></div>
+
+        <span style="position:relative;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--color-divider);background:var(--color-surface);border-radius:999px;padding:6px 14px;font-size:12.5px;color:var(--muted);white-space:nowrap;">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 6px rgba(95,211,160,.7)"></span>
+          Microsoft/Xbox sign-in approved — the launcher is live
+        </span>
+
+        <h1 style="position:relative;margin:22px 0 0;font-family:var(--font-heading);font-weight:500;font-size:48px;letter-spacing:-.015em;max-width:680px;line-height:1.1;">
+          The toolkit for <span style="color:var(--color-accent)">Minecraft</span> server owners
+        </h1>
+        <p style="position:relative;margin:18px 0 0;font-size:16px;color:var(--muted);max-width:520px;line-height:1.6;">
+          Publish your server, link your CurseForge-verified modpack, and let players join in one click through the Omniscient launcher.
+        </p>
+
+        <div style="position:relative;margin-top:32px;display:flex;align-items:center;gap:12px;">
+          <button style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:11px 22px;border-radius:var(--radius-md);font:500 14px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:8px;">Discover servers <i class="ph ph-arrow-right"></i></button>
+          <button style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:11px 22px;border-radius:var(--radius-md);font:500 14px var(--font-heading);cursor:pointer;white-space:nowrap;">Publish my server</button>
+        </div>
+      </div>
+
+      <div style="padding:8px 56px 72px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+          <div style="grid-column:1 / -1;display:flex;align-items:center;gap:16px;padding:22px 24px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);">
+            <span style="width:44px;height:44px;flex-shrink:0;border-radius:var(--radius-md);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;"><i class="ph ph-compass" style="font-size:20px"></i></span>
+            <div>
+              <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:16px;">Public directory</h3>
+              <p style="margin:6px 0 0;font-size:13.5px;color:var(--muted);">Every server gets its own listing — description, modpack, live player status.</p>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:16px;padding:22px 24px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);">
+            <span style="width:44px;height:44px;flex-shrink:0;border-radius:var(--radius-md);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;"><i class="ph ph-game-controller" style="font-size:20px"></i></span>
+            <div>
+              <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:16px;">Microsoft/Xbox sign-in</h3>
+              <p style="margin:6px 0 0;font-size:13.5px;color:var(--muted);">Players sign in with their real Minecraft account, right in the launcher.</p>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:16px;padding:22px 24px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);">
+            <span style="width:44px;height:44px;flex-shrink:0;border-radius:var(--radius-md);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;"><i class="ph ph-cube" style="font-size:20px"></i></span>
+            <div>
+              <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:16px;">CurseForge modpacks</h3>
+              <p style="margin:6px 0 0;font-size:13.5px;color:var(--muted);">Link your verified modpack so players join with zero manual setup.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 00b DOWNLOAD ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Download" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">00b · Download — public site</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);">
+
+      <div style="display:flex;align-items:center;gap:16px;padding:14px 28px;">
+        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-heading);font-weight:600;font-size:17px;">
+          <span style="width:16px;height:16px;border:1.5px solid var(--color-accent);transform:rotate(45deg);flex-shrink:0"></span>
+          Omniscient
+        </div>
+        <nav style="display:flex;align-items:center;gap:20px;font-size:14px;margin-left:32px;">
+          <a href="#" style="color:var(--muted)">Servers</a>
+          <a href="#" style="color:var(--color-text)">Download</a>
+        </nav>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+          <button style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13px var(--font-heading);cursor:pointer;white-space:nowrap;">Log in</button>
+        </div>
+      </div>
+
+      <div style="position:relative;padding:88px 24px 56px;display:flex;flex-direction:column;align-items:center;text-align:center;overflow:hidden;">
+        <div style="position:absolute;inset:0;background:radial-gradient(50% 45% at 50% 0%, var(--color-accent-900), transparent 70%);opacity:.55"></div>
+
+        <h1 style="position:relative;margin:0;font-family:var(--font-heading);font-weight:500;font-size:44px;letter-spacing:-.015em;max-width:640px;line-height:1.1;">
+          Get the <span style="color:var(--color-accent)">Omniscient</span> launcher
+        </h1>
+        <p style="position:relative;margin:16px 0 0;font-size:16px;color:var(--muted);max-width:520px;line-height:1.6;">
+          Sign in with Microsoft/Xbox, browse servers, and join modpacks in one click. Available for Windows, macOS and Linux.
+        </p>
+
+        <div style="position:relative;margin-top:36px;display:flex;align-items:center;gap:12px;">
+          <button style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:13px 26px;border-radius:var(--radius-md);font:500 15px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:10px;">
+            <i class="ph ph-windows-logo" style="font-size:18px"></i> Download for Windows
+          </button>
+        </div>
+        <p style="position:relative;margin:12px 0 0;font-size:12.5px;color:var(--muted2);">v2.4.1 · 84 MB · detected: Windows</p>
+      </div>
+
+      <div style="padding:8px 56px 72px;">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;">
+          <div style="display:flex;flex-direction:column;gap:14px;padding:26px 24px;border-radius:var(--radius-md);border:1px solid var(--color-accent);background:var(--color-surface);">
+            <span style="width:44px;height:44px;border-radius:var(--radius-md);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;"><i class="ph ph-windows-logo" style="font-size:20px"></i></span>
+            <div>
+              <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:16px;">Windows</h3>
+              <p style="margin:6px 0 0;font-size:13.5px;color:var(--muted);">Windows 10 and later, 64-bit.</p>
+            </div>
+            <button style="margin-top:auto;border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:10px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;">Download .exe</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;padding:26px 24px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);opacity:.6;">
+            <span style="width:44px;height:44px;border-radius:var(--radius-md);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;"><i class="ph ph-apple-logo" style="font-size:20px"></i></span>
+            <div>
+              <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:16px;">macOS</h3>
+              <p style="margin:6px 0 0;font-size:13.5px;color:var(--muted);">macOS 12 and later, Apple Silicon &amp; Intel.</p>
+            </div>
+            <span style="margin-top:auto;align-self:center;font-size:12px;padding:4px 10px;border-radius:6px;background:var(--raised);border:1px solid var(--color-divider);color:var(--color-text);">Coming soon</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;padding:26px 24px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);opacity:.6;">
+            <span style="width:44px;height:44px;border-radius:var(--radius-md);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;"><i class="ph ph-linux-logo" style="font-size:20px"></i></span>
+            <div>
+              <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:16px;">Linux</h3>
+              <p style="margin:6px 0 0;font-size:13.5px;color:var(--muted);">AppImage, works on most distros.</p>
+            </div>
+            <span style="margin-top:auto;align-self:center;font-size:12px;padding:4px 10px;border-radius:6px;background:var(--raised);border:1px solid var(--color-divider);color:var(--color-text);">Coming soon</span>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;display:flex;align-items:center;gap:16px;padding:20px 24px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);">
+          <span style="width:44px;height:44px;flex-shrink:0;border-radius:var(--radius-md);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;"><i class="ph ph-shield-check" style="font-size:20px"></i></span>
+          <div>
+            <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:15px;">Older versions &amp; checksums</h3>
+            <p style="margin:6px 0 0;font-size:13.5px;color:var(--muted);">Need a specific build or want to verify your download? See the full release history.</p>
+          </div>
+          <a href="#" style="margin-left:auto;font-size:13.5px;color:var(--color-accent);white-space:nowrap;">Release notes <i class="ph ph-arrow-right" style="font-size:12px"></i></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 01 LOGIN / SIGNUP ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Login / Signup" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">01 · Login / Signup</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);">
+
+      <div style="display:flex;align-items:center;gap:16px;padding:14px 28px;">
+        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-heading);font-weight:600;font-size:17px;">
+          <span style="width:16px;height:16px;border:1.5px solid var(--color-accent);transform:rotate(45deg);flex-shrink:0"></span>
+          Omniscient
+        </div>
+        <nav style="display:flex;align-items:center;gap:20px;font-size:14px;margin-left:32px;">
+          <a href="#" style="color:var(--color-text)">Servers</a>
+        </nav>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1.1fr 1fr;min-height:560px;">
+        <div style="position:relative;background:linear-gradient(160deg,var(--color-accent-900),var(--color-bg) 70%);padding:56px;display:flex;flex-direction:column;justify-content:center;overflow:hidden;">
+          <div style="position:absolute;inset:0;background-image:repeating-linear-gradient(135deg, rgba(145,132,217,.05) 0 2px, transparent 2px 14px);"></div>
+          <div style="position:relative;z-index:1;display:flex;flex-direction:column;gap:10px;max-width:380px;">
+            <div style="font:600 10px/1 ui-monospace,monospace;letter-spacing:.1em;color:var(--color-accent-300);text-transform:uppercase;margin-bottom:6px;">product shot placeholder — modpack world screenshot, .lighten blend</div>
+            <h2 style="font-size:30px;margin:0">Publish once. Play everywhere it matters.</h2>
+            <p style="margin:0;font-size:14px;color:var(--muted);opacity:.9">Server owners list modpacks and vanilla worlds; players discover and launch straight from the companion app.</p>
+          </div>
+        </div>
+
+        <div style="padding:56px 64px;display:flex;flex-direction:column;justify-content:center;">
+          <div style="max-width:340px;width:100%;display:flex;flex-direction:column;gap:24px;">
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <h3 style="margin:0;font:500 24px/1.2 var(--font-heading);color:var(--color-text);">Log in / Sign up</h3>
+              <p style="margin:0;font-size:13.5px;color:var(--muted);line-height:1.5;text-wrap:pretty;">Use your Minecraft account. New here? Your Omniscient account is created on first sign-in.</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <button style="display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:10px 16px;border-radius:var(--radius-md);font:500 14px var(--font-heading);cursor:pointer;white-space:nowrap;" style-hover="background:color-mix(in srgb, var(--color-accent) 12%, transparent);"><i class="ph ph-cube" style="font-size:17px;"></i>Continue with Minecraft</button>
+              <p style="margin:0;font-size:12px;color:var(--muted2);line-height:1.5;text-align:center;">Secured by Microsoft — we never see your password.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 02 ONBOARDING ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Onboarding" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">02 · Onboarding — list your server</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);">
+
+      <div style="display:flex;align-items:center;gap:16px;padding:14px 28px;background:linear-gradient(to right, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent) no-repeat bottom/100% 1px;">
+        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-heading);font-weight:600;font-size:17px;">
+          <span style="width:16px;height:16px;border:1.5px solid var(--color-accent);transform:rotate(45deg);flex-shrink:0"></span>
+          Omniscient
+        </div>
+        <div style="margin-left:auto;font-size:13px;color:var(--muted)">Step 1 of 3</div>
+      </div>
+
+      <div style="max-width:640px;margin:0 auto;padding:56px 24px 72px;display:flex;flex-direction:column;gap:36px;">
+        <div style="display:flex;align-items:center;gap:0;">
+          <div style="display:flex;align-items:center;gap:8px;"><span style="width:24px;height:24px;border-radius:50%;border:1.5px solid var(--color-accent);color:var(--color-accent);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;">1</span><span style="font-size:13px;color:var(--color-text)">Basics</span></div>
+          <div style="flex:1;height:1px;background:var(--color-divider);margin:0 12px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;opacity:.5"><span style="width:24px;height:24px;border-radius:50%;border:1.5px solid var(--color-divider);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;">2</span><span style="font-size:13px;color:var(--muted)">Connection</span></div>
+          <div style="flex:1;height:1px;background:var(--color-divider);margin:0 12px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;opacity:.5"><span style="width:24px;height:24px;border-radius:50%;border:1.5px solid var(--color-divider);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;">3</span><span style="font-size:13px;color:var(--muted)">Review</span></div>
+        </div>
+
+        <div>
+          <h2 style="font-size:26px;margin:0 0 6px;">Tell players what they're joining</h2>
+          <p style="margin:0;font-size:14px;color:var(--muted)">This shows on your public listing and in the launcher.</p>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:12px;color:var(--muted)">Server name</label>
+          <input placeholder="e.g. Frostpeak SMP" style="height:36px;padding:6px 10px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);color:var(--color-text);font-size:14px;font-family:var(--font-body)">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:12px;color:var(--muted)">Description</label>
+          <textarea rows="3" placeholder="What makes this world worth joining?" style="padding:8px 10px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);color:var(--color-text);font-size:14px;font-family:var(--font-body);resize:vertical"></textarea>
+        </div>
+
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) 120px minmax(0,1fr);gap:16px;align-items:start;">
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="display:flex;flex-direction:column;gap:2px;min-height:44px;font-size:12px;color:var(--muted)">Banner image<span style="font-size:11px;line-height:1.4;color:var(--muted2);">1920 × 1080 ·<br>JPG, PNG, WebP · 5 MB max</span></label>
+            <div style="height:96px;border-radius:var(--radius-md);border:1px dashed var(--color-divider);background-image:repeating-linear-gradient(45deg, var(--color-surface) 0 8px, var(--raised) 8px 16px);display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font:11px ui-monospace,monospace;"><i class="ph ph-image"></i> drop banner, 16:9</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="display:flex;flex-direction:column;gap:2px;min-height:44px;font-size:12px;color:var(--muted)">Icon<span style="font-size:11px;line-height:1.4;color:var(--muted2);">512 × 512 ·<br>PNG, WebP · 1 MB</span></label>
+            <div style="height:96px;width:100%;border-radius:var(--radius-md);border:1px dashed var(--color-divider);background-image:repeating-linear-gradient(45deg, var(--color-surface) 0 8px, var(--raised) 8px 16px);display:flex;align-items:center;justify-content:center;color:var(--muted);font:10px ui-monospace,monospace;text-align:center;padding:4px;"><i class="ph ph-cube"></i></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="display:flex;flex-direction:column;gap:2px;min-height:44px;font-size:12px;color:var(--muted)">Background image<span style="font-size:11px;line-height:1.4;color:var(--muted2);">2560 × 1440 ·<br>JPG, WebP · 8 MB max</span></label>
+            <div style="height:96px;border-radius:var(--radius-md);border:1px dashed var(--color-divider);background-image:repeating-linear-gradient(45deg, var(--color-surface) 0 8px, var(--raised) 8px 16px);display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font:11px ui-monospace,monospace;"><i class="ph ph-image-square"></i> drop background</div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label style="font-size:12px;color:var(--muted)">Visibility</label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:0;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--color-accent);background:color-mix(in srgb, var(--color-accent) 8%, transparent);">
+              <i class="ph ph-globe-hemisphere-west" style="font-size:17px;color:var(--color-accent);margin-top:1px;flex-shrink:0"></i>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;"><span style="font-size:13.5px;font-weight:500;">Public</span><span style="font-size:12px;color:var(--muted);line-height:1.5;">Listed in the directory, search and the launcher. Anyone can join.</span></div>
+              <span style="width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:1px;border:5px solid var(--color-accent);"></span>
+            </div>
+            <div style="flex:1;min-width:0;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);">
+              <i class="ph ph-lock-simple" style="font-size:17px;color:var(--muted);margin-top:1px;flex-shrink:0"></i>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;"><span style="font-size:13.5px;font-weight:500;">Private</span><span style="font-size:12px;color:var(--muted);line-height:1.5;">Hidden everywhere. Only players with the invite link or code can join.</span></div>
+              <span style="width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:1px;border:1.5px solid var(--color-divider);"></span>
+            </div>
+          </div>
+          
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label style="font-size:12px;color:var(--muted)">Server type</label>
+          <div style="display:inline-flex;border:1px solid var(--color-divider);border-radius:var(--radius-md);overflow:hidden;width:fit-content;">
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;font-size:13px;color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent);"><i class="ph ph-globe"></i> Vanilla</div>
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;font-size:13px;color:var(--muted);border-left:1px solid var(--color-divider);"><i class="ph ph-puzzle-piece"></i> Modded (CurseForge)</div>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px;">
+          <button style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:9px 16px;border-radius:var(--radius-md);font:500 14px var(--font-heading);cursor:pointer;white-space:nowrap;">Back</button>
+          <button style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:9px 18px;border-radius:var(--radius-md);font:500 14px var(--font-heading);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">Continue <i class="ph ph-arrow-right"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 02b ONBOARDING — MODDED ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Onboarding — Modded" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">02b · Onboarding — list your server (Modded)</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);">
+
+      <div style="display:flex;align-items:center;gap:16px;padding:14px 28px;background:linear-gradient(to right, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent) no-repeat bottom/100% 1px;">
+        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-heading);font-weight:600;font-size:17px;">
+          <span style="width:16px;height:16px;border:1.5px solid var(--color-accent);transform:rotate(45deg);flex-shrink:0"></span>
+          Omniscient
+        </div>
+        <div style="margin-left:auto;font-size:13px;color:var(--muted)">Step 1 of 3</div>
+      </div>
+
+      <div style="max-width:640px;margin:0 auto;padding:56px 24px 72px;display:flex;flex-direction:column;gap:36px;">
+        <div style="display:flex;align-items:center;gap:0;">
+          <div style="display:flex;align-items:center;gap:8px;"><span style="width:24px;height:24px;border-radius:50%;border:1.5px solid var(--color-accent);color:var(--color-accent);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;">1</span><span style="font-size:13px;color:var(--color-text)">Basics</span></div>
+          <div style="flex:1;height:1px;background:var(--color-divider);margin:0 12px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;opacity:.5"><span style="width:24px;height:24px;border-radius:50%;border:1.5px solid var(--color-divider);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;">2</span><span style="font-size:13px;color:var(--muted)">Connection</span></div>
+          <div style="flex:1;height:1px;background:var(--color-divider);margin:0 12px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;opacity:.5"><span style="width:24px;height:24px;border-radius:50%;border:1.5px solid var(--color-divider);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;">3</span><span style="font-size:13px;color:var(--muted)">Review</span></div>
+        </div>
+
+        <div>
+          <h2 style="font-size:26px;margin:0 0 6px;">Tell players what they're joining</h2>
+          <p style="margin:0;font-size:14px;color:var(--muted)">This shows on your public listing and in the launcher.</p>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:12px;color:var(--muted)">Server name</label>
+          <input placeholder="e.g. Verdant Expanse" style="height:36px;padding:6px 10px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);color:var(--color-text);font-size:14px;font-family:var(--font-body)">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:12px;color:var(--muted)">Description</label>
+          <textarea rows="3" placeholder="What makes this world worth joining?" style="padding:8px 10px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);color:var(--color-text);font-size:14px;font-family:var(--font-body);resize:vertical"></textarea>
+        </div>
+
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) 120px minmax(0,1fr);gap:16px;align-items:start;">
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="display:flex;flex-direction:column;gap:2px;min-height:44px;font-size:12px;color:var(--muted)">Banner image<span style="font-size:11px;line-height:1.4;color:var(--muted2);">1920 × 1080 ·<br>JPG, PNG, WebP · 5 MB max</span></label>
+            <div style="height:96px;border-radius:var(--radius-md);border:1px dashed var(--color-divider);background-image:repeating-linear-gradient(45deg, var(--color-surface) 0 8px, var(--raised) 8px 16px);display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font:11px ui-monospace,monospace;"><i class="ph ph-image"></i> drop banner, 16:9</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="display:flex;flex-direction:column;gap:2px;min-height:44px;font-size:12px;color:var(--muted)">Icon<span style="font-size:11px;line-height:1.4;color:var(--muted2);">512 × 512 ·<br>PNG, WebP · 1 MB</span></label>
+            <div style="height:96px;width:100%;border-radius:var(--radius-md);border:1px dashed var(--color-divider);background-image:repeating-linear-gradient(45deg, var(--color-surface) 0 8px, var(--raised) 8px 16px);display:flex;align-items:center;justify-content:center;color:var(--muted);font:10px ui-monospace,monospace;text-align:center;padding:4px;"><i class="ph ph-cube"></i></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="display:flex;flex-direction:column;gap:2px;min-height:44px;font-size:12px;color:var(--muted)">Background image<span style="font-size:11px;line-height:1.4;color:var(--muted2);">2560 × 1440 ·<br>JPG, WebP · 8 MB max</span></label>
+            <div style="height:96px;border-radius:var(--radius-md);border:1px dashed var(--color-divider);background-image:repeating-linear-gradient(45deg, var(--color-surface) 0 8px, var(--raised) 8px 16px);display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font:11px ui-monospace,monospace;"><i class="ph ph-image-square"></i> drop background</div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label style="font-size:12px;color:var(--muted)">Visibility</label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:0;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--color-accent);background:color-mix(in srgb, var(--color-accent) 8%, transparent);">
+              <i class="ph ph-globe-hemisphere-west" style="font-size:17px;color:var(--color-accent);margin-top:1px;flex-shrink:0"></i>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;"><span style="font-size:13.5px;font-weight:500;">Public</span><span style="font-size:12px;color:var(--muted);line-height:1.5;">Listed in the directory, search and the launcher. Anyone can join.</span></div>
+              <span style="width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:1px;border:5px solid var(--color-accent);"></span>
+            </div>
+            <div style="flex:1;min-width:0;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);">
+              <i class="ph ph-lock-simple" style="font-size:17px;color:var(--muted);margin-top:1px;flex-shrink:0"></i>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;"><span style="font-size:13.5px;font-weight:500;">Private</span><span style="font-size:12px;color:var(--muted);line-height:1.5;">Hidden everywhere. Only players with the invite link or code can join.</span></div>
+              <span style="width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:1px;border:1.5px solid var(--color-divider);"></span>
+            </div>
+          </div>
+          
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label style="font-size:12px;color:var(--muted)">Server type</label>
+          <div style="display:inline-flex;border:1px solid var(--color-divider);border-radius:var(--radius-md);overflow:hidden;width:fit-content;">
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;font-size:13px;color:var(--muted);"><i class="ph ph-globe"></i> Vanilla</div>
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;font-size:13px;color:var(--color-accent);border-left:1px solid var(--color-divider);box-shadow:inset 0 0 0 1px var(--color-accent);"><i class="ph ph-puzzle-piece"></i> Modded (CurseForge)</div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:12px;color:var(--muted)">CurseForge modpack</label>
+          <div style="display:flex;align-items:center;gap:8px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:0 10px;height:36px;">
+            <i class="ph ph-magnifying-glass" style="font-size:15px;color:var(--muted2)"></i>
+            <input placeholder="Search a modpack on CurseForge…" style="border:0;background:transparent;color:var(--color-text);font-size:14px;outline:none;width:100%;height:100%;font-family:var(--font-body)">
+          </div>
+          <div style="margin-top:6px;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);background:var(--color-surface);border:1px solid var(--color-accent);">
+            <span style="width:32px;height:32px;flex-shrink:0;border-radius:6px;background-image:repeating-linear-gradient(45deg, var(--raised) 0 6px, var(--color-surface) 6px 12px);"></span>
+            <div style="min-width:0;flex:1;"><p style="margin:0;font-size:13.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Verdant Core</p><p style="margin:0;font-size:12px;color:var(--muted);">v3.2 · CurseForge · verified</p></div>
+            <i class="ph ph-check-circle" style="color:var(--success);font-size:16px;flex-shrink:0;"></i>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="font-size:12px;color:var(--muted)">Minecraft version</label>
+            <input value="1.20.4" style="height:36px;padding:6px 10px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);color:var(--color-text);font-size:14px;font-family:var(--font-body)">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="font-size:12px;color:var(--muted)">Recommended RAM (GB)</label>
+            <input value="6" type="number" style="height:36px;padding:6px 10px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);color:var(--color-text);font-size:14px;font-family:var(--font-body)">
+          </div>
+        </div>
+
+        <p style="margin:0;font-size:12px;color:var(--muted2);display:flex;align-items:center;gap:6px;"><i class="ph ph-info"></i> Players download this modpack automatically on first launch — no manual setup.</p>
+
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px;">
+          <button style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:9px 16px;border-radius:var(--radius-md);font:500 14px var(--font-heading);cursor:pointer;white-space:nowrap;">Back</button>
+          <button style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:9px 18px;border-radius:var(--radius-md);font:500 14px var(--font-heading);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">Continue <i class="ph ph-arrow-right"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 03 HOME / DASHBOARD ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Home / Dashboard" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">03 · Home / Dashboard — My servers</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);">
+
+      <div style="display:flex;align-items:center;gap:16px;padding:14px 28px;background:linear-gradient(to right, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent) no-repeat bottom/100% 1px;">
+        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-heading);font-weight:600;font-size:17px;">
+          <span style="width:16px;height:16px;border:1.5px solid var(--color-accent);transform:rotate(45deg);flex-shrink:0"></span>
+          Omniscient
+        </div>
+        <nav style="display:flex;align-items:center;gap:20px;font-size:14px;margin-left:32px;">
+          <a href="#" style="color:var(--muted)">Servers</a>
+        </nav>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:14px;color:var(--muted);cursor:pointer;">My space <i class="ph ph-caret-down" style="font-size:13px"></i></div>
+      </div>
+
+      <div style="display:flex;gap:32px;padding:48px 56px 64px;">
+        <nav style="width:192px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-md);font-size:14px;background:var(--color-surface);color:var(--color-text);"><i class="ph ph-squares-four" style="font-size:16px"></i>Servers</div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-bell" style="font-size:16px"></i>Notifications</div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-newspaper" style="font-size:16px"></i>News</div>
+        </nav>
+        <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:32px;">
+          <h1 style="font-size:26px;margin:0;">My servers</h1>
+          <button style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:9px 16px;border-radius:var(--radius-md);font:500 14px var(--font-heading);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><i class="ph ph-plus"></i> New server</button>
+        </div>
+
+        <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;">
+          <li style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm);">
+            <div style="display:flex;align-items:center;gap:14px;">
+              <span style="width:38px;height:38px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;">F</span>
+              <div><p style="margin:0;font-weight:500;">Frostpeak SMP</p><p style="margin:0;font-size:13px;color:var(--muted)">Vanilla</p></div>
+            </div>
+            <span style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--color-accent);">Manage <i class="ph ph-arrow-right" style="font-size:14px"></i></span>
+          </li>
+          <li style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm);">
+            <div style="display:flex;align-items:center;gap:14px;">
+              <span style="width:38px;height:38px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;">V</span>
+              <div><p style="margin:0;font-weight:500;">Verdant Expanse</p><p style="margin:0;font-size:13px;color:var(--muted)">Modded · Paused</p></div>
+            </div>
+            <span style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--color-accent);">Manage <i class="ph ph-arrow-right" style="font-size:14px"></i></span>
+          </li>
+          <li style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm);">
+            <div style="display:flex;align-items:center;gap:14px;">
+              <span style="width:38px;height:38px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;">D</span>
+              <div><p style="margin:0;font-weight:500;">Deepslate Anarchy</p><p style="margin:0;font-size:13px;color:var(--muted)">Vanilla</p></div>
+            </div>
+            <span style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--color-accent);">Manage <i class="ph ph-arrow-right" style="font-size:14px"></i></span>
+          </li>
+        </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 04 SEARCH ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Search" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">04 · Search — server directory</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);">
+
+      <div style="display:flex;align-items:center;gap:16px;padding:14px 28px;background:linear-gradient(to right, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent) no-repeat bottom/100% 1px;">
+        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-heading);font-weight:600;font-size:17px;">
+          <span style="width:16px;height:16px;border:1.5px solid var(--color-accent);transform:rotate(45deg);flex-shrink:0"></span>
+          Omniscient
+        </div>
+        <nav style="display:flex;align-items:center;gap:20px;font-size:14px;margin-left:32px;">
+          <a href="#" style="color:var(--color-accent)">Servers</a>
+        </nav>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:14px;color:var(--muted);cursor:pointer;">My space <i class="ph ph-caret-down" style="font-size:13px"></i></div>
+      </div>
+
+      <div style="padding:48px 56px 64px;">
+        <h1 style="font-size:26px;margin:0 0 4px;">Server directory</h1>
+        <p style="margin:0 0 28px;color:var(--muted);font-size:14px;">128 servers listed.</p>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:0 10px;height:36px;max-width:340px;width:100%;">
+            <i class="ph ph-magnifying-glass" style="color:var(--muted2);font-size:15px"></i>
+            <input placeholder="Search a server..." style="border:0;background:transparent;color:var(--color-text);font-size:14px;outline:none;width:100%;height:100%;font-family:var(--font-body)">
+          </div>
+          <div style="display:flex;gap:8px;">
+            <span style="border:1px solid var(--color-accent);color:var(--color-accent);padding:7px 14px;border-radius:var(--radius-md);font-size:13px;white-space:nowrap;">Most recent</span>
+            <span style="border:1px solid var(--color-divider);color:var(--muted);padding:7px 14px;border-radius:var(--radius-md);font-size:13px;white-space:nowrap;">Most visited</span>
+            <span style="border:1px solid var(--color-divider);color:var(--muted);padding:7px 14px;border-radius:var(--radius-md);font-size:13px;">A → Z</span>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <a href="#" style="display:flex;overflow:hidden;border-radius:var(--radius-lg);border:1px solid var(--color-divider);background:var(--color-surface);text-decoration:none;color:var(--color-text);">
+            <div style="position:relative;width:220px;flex-shrink:0;background-image:repeating-linear-gradient(45deg, var(--color-surface) 0 8px, var(--raised) 8px 16px);display:flex;align-items:center;justify-content:center;color:var(--muted);font:10px ui-monospace,monospace;">banner</div>
+            <div style="flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:6px;min-width:0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:22px;height:22px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;">F</span>
+                <h3 style="margin:0;font-size:16px;font-weight:600;">Frostpeak SMP</h3>
+                <span style="margin-left:auto;font-size:11px;padding:3px 10px;border-radius:calc(var(--radius-md)*.75);border:1px solid var(--color-accent);color:var(--color-accent);">Vanilla</span>
+              </div>
+              <p style="margin:0;font-size:13px;color:var(--muted);">A cold survival world with slow progression, seasonal events and a friendly economy. New players welcome any time.</p>
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text);margin-top:auto;"><span style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 6px rgba(95,211,160,.7)"></span>34 players online / 100</div>
+            </div>
+          </a>
+          <a href="#" style="display:flex;overflow:hidden;border-radius:var(--radius-lg);border:1px solid var(--color-divider);background:var(--color-surface);text-decoration:none;color:var(--color-text);">
+            <div style="position:relative;width:220px;flex-shrink:0;background-image:repeating-linear-gradient(45deg, var(--color-surface) 0 8px, var(--raised) 8px 16px);display:flex;align-items:center;justify-content:center;color:var(--muted);font:10px ui-monospace,monospace;">banner</div>
+            <div style="flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:6px;min-width:0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:22px;height:22px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;">V</span>
+                <h3 style="margin:0;font-size:16px;font-weight:600;">Verdant Expanse</h3>
+                <span style="margin-left:auto;font-size:11px;padding:3px 10px;border-radius:calc(var(--radius-md)*.75);background:var(--color-accent-800);color:var(--color-accent-100);">Modded</span>
+              </div>
+              <p style="margin:0;font-size:13px;color:var(--muted);">Exploration-focused modpack with tech and magic progression. Weekly boss events on the community calendar.</p>
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text);margin-top:auto;"><span style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 6px rgba(95,211,160,.7)"></span>12 players online / 40</div>
+            </div>
+          </a>
+          <a href="#" style="display:flex;overflow:hidden;border-radius:var(--radius-lg);border:1px solid var(--color-divider);background:var(--color-surface);text-decoration:none;color:var(--color-text);">
+            <div style="position:relative;width:220px;flex-shrink:0;background-image:repeating-linear-gradient(45deg, var(--color-surface) 0 8px, var(--raised) 8px 16px);display:flex;align-items:center;justify-content:center;color:var(--muted);font:10px ui-monospace,monospace;">banner</div>
+            <div style="flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:6px;min-width:0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:22px;height:22px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;">D</span>
+                <h3 style="margin:0;font-size:16px;font-weight:600;">Deepslate Anarchy</h3>
+                <span style="margin-left:auto;font-size:11px;padding:3px 10px;border-radius:calc(var(--radius-md)*.75);border:1px solid var(--color-accent);color:var(--color-accent);">Vanilla</span>
+              </div>
+              <p style="margin:0;font-size:13px;color:var(--muted);">No rules, no grief protection. Pure PvP survival — build fast, defend faster.</p>
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:auto;"><span style="width:6px;height:6px;border-radius:50%;background:var(--muted2)"></span>Status unknown</div>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 05a OVERVIEW (manage console) ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Overview" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">05 · Overview — manage console</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);display:flex;min-height:640px;">
+
+      <nav style="width:220px;flex-shrink:0;border-right:1px solid var(--color-divider);background:color-mix(in srgb, var(--color-surface) 60%, transparent);padding:20px 16px;display:flex;flex-direction:column;gap:4px;">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px 20px;">
+          <span style="width:28px;height:28px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">F</span>
+          <span style="font-size:14px;font-weight:500;">Frostpeak SMP</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);background:var(--raised);color:var(--color-text);font-size:14px;"><i class="ph ph-layout" style="font-size:16px"></i> Overview</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-chart-bar" style="font-size:16px"></i> Activity</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-flag" style="font-size:16px"></i> <span style="flex:1">Reports</span><span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--danger) 18%, transparent);color:var(--danger);">3</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-gear" style="font-size:16px"></i> Settings</div>
+      </nav>
+
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:flex-end;padding:12px 24px;border-bottom:1px solid var(--color-divider);">
+          <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);"><span style="width:26px;height:26px;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:12px;">A</span>Alex Kade</div>
+        </div>
+
+        <div style="padding:32px 40px 48px;max-width:680px;display:flex;flex-direction:column;gap:22px;">
+          <h1 style="font-size:22px;margin:0;">Overview</h1>
+
+          <div style="display:flex;gap:14px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:160px;padding:16px 18px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);display:flex;flex-direction:column;gap:6px;">
+              <span style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);">Page views</span>
+              <span style="font-size:22px;font-weight:500;">1,284</span>
+              <span style="font-size:12px;color:var(--muted);">last 30 days</span>
+            </div>
+            <div style="flex:1;min-width:160px;padding:16px 18px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);display:flex;flex-direction:column;gap:6px;">
+              <span style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);">Launcher joins</span>
+              <span style="font-size:22px;font-weight:500;">312</span>
+              <span style="font-size:12px;color:var(--muted);">last 30 days</span>
+            </div>
+            <div style="flex:1;min-width:160px;padding:16px 18px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);display:flex;flex-direction:column;gap:6px;">
+              <span style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);">Players online</span>
+              <span style="font-size:22px;font-weight:500;">18<span style="font-size:14px;color:var(--muted);"> / 60</span></span>
+              <span style="font-size:12px;color:var(--muted);">right now</span>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:1px;border:1px solid var(--color-divider);border-radius:var(--radius-md);overflow:hidden;background:var(--color-surface);">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--color-divider);"><span style="font-size:13px;color:var(--muted);">Status</span><span style="font-size:11px;padding:3px 10px;border-radius:calc(var(--radius-md)*.75);background:var(--color-accent-800);color:var(--color-accent-100);">Published</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--color-divider);"><span style="font-size:13px;color:var(--muted);">Visibility</span><span style="display:inline-flex;align-items:center;gap:6px;font-size:13.5px;font-weight:500;"><i class="ph ph-lock-simple" style="color:var(--color-accent);"></i> Private</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--color-divider);"><span style="font-size:13px;color:var(--muted);">Connection address</span><span style="font:12.5px ui-monospace,Menlo,monospace;">play.frostpeak.net:25565</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--color-divider);"><span style="font-size:13px;color:var(--muted);">Invite code</span><span style="font:12.5px ui-monospace,Menlo,monospace;">8K2QX</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;"><span style="font-size:13px;color:var(--muted);">Created</span><span style="font-size:13.5px;">March 12, 2025</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============ 05b ACTIVITY (manage console) ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Activity" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">05b · Activity — manage console</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);display:flex;min-height:640px;">
+
+      <nav style="width:220px;flex-shrink:0;border-right:1px solid var(--color-divider);background:color-mix(in srgb, var(--color-surface) 60%, transparent);padding:20px 16px;display:flex;flex-direction:column;gap:4px;">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px 20px;">
+          <span style="width:28px;height:28px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">F</span>
+          <span style="font-size:14px;font-weight:500;">Frostpeak SMP</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-layout" style="font-size:16px"></i> Overview</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);background:var(--raised);color:var(--color-text);font-size:14px;"><i class="ph ph-chart-bar" style="font-size:16px"></i> Activity</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-flag" style="font-size:16px"></i> <span style="flex:1">Reports</span><span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--danger) 18%, transparent);color:var(--danger);">3</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-gear" style="font-size:16px"></i> Settings</div>
+      </nav>
+
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:flex-end;padding:12px 24px;border-bottom:1px solid var(--color-divider);">
+          <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);"><span style="width:26px;height:26px;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:12px;">A</span>Alex Kade</div>
+        </div>
+
+        <div style="padding:32px 40px 48px;max-width:900px;display:flex;flex-direction:column;gap:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+            <h1 style="font-size:22px;margin:0;">Activity</h1>
+            <div style="display:inline-flex;border:1px solid var(--color-divider);border-radius:var(--radius-md);overflow:hidden;">
+              <div style="padding:7px 16px;font-size:13px;color:var(--color-text);background:var(--raised);">Day</div>
+              <div style="padding:7px 16px;font-size:13px;color:var(--color-text);background:var(--color-accent-800);border-left:1px solid var(--color-divider);">Week</div>
+              <div style="padding:7px 16px;font-size:13px;color:var(--muted);border-left:1px solid var(--color-divider);">Month</div>
+              <div style="padding:7px 16px;font-size:13px;color:var(--muted);border-left:1px solid var(--color-divider);">Year</div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:14px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:160px;padding:16px 18px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);display:flex;flex-direction:column;gap:6px;">
+              <span style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);">Views over period</span>
+              <span style="font-size:22px;font-weight:500;">1,284</span>
+            </div>
+            <div style="flex:1;min-width:160px;padding:16px 18px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);display:flex;flex-direction:column;gap:6px;">
+              <span style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);">Launches over period</span>
+              <span style="font-size:22px;font-weight:500;">312</span>
+            </div>
+            <div style="flex:1;min-width:160px;padding:16px 18px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);display:flex;flex-direction:column;gap:6px;">
+              <span style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);">Players online (instant)</span>
+              <span style="font-size:22px;font-weight:500;">18</span>
+            </div>
+          </div>
+
+          <div style="padding:20px 24px 16px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);display:flex;flex-direction:column;gap:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <span style="font-size:12px;color:var(--muted2);">Chart colors are customizable — each series keeps its own color, so the lines stay easy to tell apart even close together.</span>
+              <button style="flex-shrink:0;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:6px 12px;border-radius:var(--radius-md);font:500 12.5px var(--font-heading);cursor:pointer;white-space:nowrap;"><i class="ph ph-palette" style="font-size:14px;"></i>Customize colors</button>
+            </div>
+
+            <svg viewBox="0 0 900 300" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">
+              <line x1="40" y1="20" x2="40" y2="260" stroke="var(--color-divider)" stroke-width="1"/>
+              <line x1="40" y1="260" x2="880" y2="260" stroke="var(--color-divider)" stroke-width="1"/>
+              <line x1="40" y1="80" x2="880" y2="80" stroke="var(--color-divider)" stroke-width="1" stroke-dasharray="3 5" opacity=".5"/>
+              <line x1="40" y1="140" x2="880" y2="140" stroke="var(--color-divider)" stroke-width="1" stroke-dasharray="3 5" opacity=".5"/>
+              <line x1="40" y1="200" x2="880" y2="200" stroke="var(--color-divider)" stroke-width="1" stroke-dasharray="3 5" opacity=".5"/>
+              <text x="28" y="24" fill="var(--muted2)" font-size="12" text-anchor="end">8</text>
+              <text x="28" y="144" fill="var(--muted2)" font-size="12" text-anchor="end">4</text>
+              <text x="28" y="264" fill="var(--muted2)" font-size="12" text-anchor="end">0</text>
+              <path d="M40,255 C220,252 340,250 460,150 C540,80 620,40 700,50 C760,58 820,140 880,255" fill="none" stroke="var(--color-accent)" stroke-width="2.5"/>
+              <path d="M40,258 C220,257 380,254 460,225 C560,190 620,225 700,245 C760,258 820,258 880,258" fill="none" stroke="#f2c879" stroke-width="2.5" stroke-dasharray="6 5"/>
+            </svg>
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted2);padding:0 4px;">
+              <span>17/09</span><span>18/09</span><span>19/09</span><span>20/09</span><span>21/09</span><span>22/09</span><span>23/09</span><span>24/09</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:20px;padding-top:4px;border-top:1px solid var(--color-divider);">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:14px;height:14px;border-radius:50%;border:2px solid var(--color-accent);background:var(--color-bg);cursor:pointer;"></span>
+                <span style="font-size:13px;">Launches</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:14px;height:14px;border-radius:50%;border:2px solid #f2c879;background:var(--color-bg);cursor:pointer;"></span>
+                <span style="font-size:13px;">Views</span>
+              </div>
+            </div>
+          </div>
+
+          <p style="margin:0;font-size:12.5px;color:var(--muted2);line-height:1.6;">Players online isn't tracked over time yet — only the latest known value is shown above. A history would need a periodic background ping, which this project doesn't have yet.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============ 05 SETTINGS (manage console) ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Settings" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">05 · Settings — manage console</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);display:flex;min-height:640px;">
+
+      <nav style="width:220px;flex-shrink:0;border-right:1px solid var(--color-divider);background:color-mix(in srgb, var(--color-surface) 60%, transparent);padding:20px 16px;display:flex;flex-direction:column;gap:4px;">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px 20px;">
+          <span style="width:28px;height:28px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">F</span>
+          <span style="font-size:14px;font-weight:500;">Frostpeak SMP</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-layout" style="font-size:16px"></i> Overview</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-chart-bar" style="font-size:16px"></i> Activity</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-flag" style="font-size:16px"></i> <span style="flex:1">Reports</span><span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--danger) 18%, transparent);color:var(--danger);">3</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);background:var(--raised);color:var(--color-text);font-size:14px;"><i class="ph ph-gear" style="font-size:16px"></i> Settings</div>
+      </nav>
+
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:flex-end;padding:12px 24px;border-bottom:1px solid var(--color-divider);">
+          <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);"><span style="width:26px;height:26px;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:12px;">A</span>Alex Kade</div>
+        </div>
+
+        <div style="padding:32px 40px 48px;max-width:560px;display:flex;flex-direction:column;gap:22px;">
+          <h1 style="font-size:22px;margin:0;">Settings</h1>
+
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="font-size:12px;color:var(--muted)">Server name</label>
+            <input value="Frostpeak SMP" style="height:36px;padding:6px 10px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);color:var(--color-text);font-size:14px;font-family:var(--font-body)">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="font-size:12px;color:var(--muted)">Description</label>
+            <textarea rows="3" style="padding:8px 10px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);color:var(--color-text);font-size:14px;font-family:var(--font-body);resize:vertical">A cold survival world with slow progression, seasonal events and a friendly economy.</textarea>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="font-size:12px;color:var(--muted)">Connection address (IP)</label>
+            <input value="play.frostpeak.net:25565" style="height:36px;padding:6px 10px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);color:var(--color-text);font-size:14px;font-family:var(--font-body)">
+            <p style="margin:0;font-size:12px;color:var(--muted2)">Never shown publicly — only passed through the launcher.</p>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <label style="font-size:12px;color:var(--muted)">Visibility</label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <div style="flex:1;min-width:0;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);">
+                <i class="ph ph-globe-hemisphere-west" style="font-size:17px;color:var(--muted);margin-top:1px;flex-shrink:0"></i>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;"><span style="font-size:13.5px;font-weight:500;">Public</span><span style="font-size:12px;color:var(--muted);line-height:1.5;">Listed in the directory, search and the launcher. Anyone can join.</span></div>
+                <span style="width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:1px;border:1.5px solid var(--color-divider);"></span>
+              </div>
+              <div style="flex:1;min-width:0;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--color-accent);background:color-mix(in srgb, var(--color-accent) 8%, transparent);">
+                <i class="ph ph-lock-simple" style="font-size:17px;color:var(--color-accent);margin-top:1px;flex-shrink:0"></i>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;"><span style="font-size:13.5px;font-weight:500;">Private</span><span style="font-size:12px;color:var(--muted);line-height:1.5;">Hidden everywhere. Only players with the invite link or code can join.</span></div>
+                <span style="width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:1px;border:5px solid var(--color-accent);"></span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);">
+              <span style="font-size:12px;color:var(--muted);">Invite link</span>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <span style="flex:1;min-width:180px;height:34px;display:flex;align-items:center;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font:12.5px ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">omniscient.gg/join/fp-8K2QX</span>
+                <button style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:7px 12px;border-radius:var(--radius-md);font:500 12.5px var(--font-heading);cursor:pointer;white-space:nowrap;"><i class="ph ph-copy" style="font-size:13px;"></i>Copy</button>
+                <button style="display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;color:var(--muted);background:transparent;padding:7px 10px;border-radius:var(--radius-md);font:500 12.5px var(--font-heading);cursor:pointer;white-space:nowrap;"><i class="ph ph-arrows-clockwise" style="font-size:13px;"></i>Reset</button>
+              </div>
+              <span style="font-size:11.5px;color:var(--muted2);">Code <span style="font-family:ui-monospace,Menlo,monospace;color:var(--color-text);">8K2QX</span> · players can also enter it in the launcher. Resetting invalidates the old link.</span>
+            </div>
+          </div>
+
+          <div style="height:1px;background:linear-gradient(to right, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent);margin:8px 0;"></div>
+
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:11px;padding:3px 10px;border-radius:calc(var(--radius-md)*.75);background:var(--color-accent-800);color:var(--color-accent-100);">Published</span>
+            <button style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:7px 14px;border-radius:var(--radius-md);font:500 13px var(--font-heading);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><i class="ph ph-pause"></i> Pause listing</button>
+            <button style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:7px 14px;border-radius:var(--radius-md);font:500 13px var(--font-heading);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><i class="ph ph-copy"></i> Duplicate</button>
+          </div>
+
+          <div style="margin-top:8px;padding:16px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb, var(--danger) 35%, transparent);display:flex;align-items:center;justify-content:space-between;gap:16px;">
+            <div><p style="margin:0;font-size:13px;font-weight:500;">Delete this server</p><p style="margin:0;font-size:12px;color:var(--muted)">Permanent — removes the listing everywhere.</p></div>
+            <button style="border:1px solid var(--danger);color:var(--danger);background:transparent;padding:7px 14px;border-radius:var(--radius-md);font:500 13px var(--font-heading);cursor:pointer;display:inline-flex;align-items:center;gap:6px;flex-shrink:0;white-space:nowrap;"><i class="ph ph-trash"></i> Delete</button>
+          </div>
+
+          <button style="align-self:flex-start;margin-top:4px;border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:9px 18px;border-radius:var(--radius-md);font:500 14px var(--font-heading);cursor:pointer;white-space:nowrap;">Save changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============ 05b REPORTS (manage console) ============ -->
+  <div style="width:100%;max-width:1280px;display:flex;flex-direction:column;">
+    <div data-screen-label="Reports" style="font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);margin:0 0 12px 4px;">05b · Reports — manage console</div>
+    <div style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;background:var(--color-bg);display:flex;min-height:640px;">
+      <nav style="width:220px;flex-shrink:0;border-right:1px solid var(--color-divider);background:color-mix(in srgb, var(--color-surface) 60%, transparent);padding:20px 16px;display:flex;flex-direction:column;gap:4px;">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px 20px;"><span style="width:28px;height:28px;border-radius:var(--radius-sm);background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">F</span><span style="font-size:14px;font-weight:500;">Frostpeak SMP</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-layout" style="font-size:16px"></i> Overview</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-chart-bar" style="font-size:16px"></i> Activity</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);background:var(--raised);color:var(--color-text);font-size:14px;"><i class="ph ph-flag" style="font-size:16px"></i> <span style="flex:1">Reports</span><span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--danger) 18%, transparent);color:var(--danger);">3</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--muted);font-size:14px;"><i class="ph ph-gear" style="font-size:16px"></i> Settings</div>
+      </nav>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:flex-end;padding:12px 24px;border-bottom:1px solid var(--color-divider);"><div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);"><span style="width:26px;height:26px;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:12px;">A</span>Alex Kade</div></div>
+        <div style="padding:32px 40px 48px;display:flex;flex-direction:column;gap:20px;">
+          <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;"><div style="display:flex;flex-direction:column;gap:4px;min-width:0;"><h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:24px;letter-spacing:-.01em;">Reports</h1><p style="margin:0;font-size:13.5px;color:var(--muted);">Technical problems your players reported from the launcher.</p></div><div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><div style="display:inline-flex;padding:3px;gap:2px;border-radius:var(--radius-md);background:var(--raised);border:1px solid var(--color-divider);flex-shrink:0;"><span style="padding:5px 11px;border-radius:6px;font-size:12.5px;white-space:nowrap;background:var(--color-accent-800);color:var(--color-accent-100);">Open 3</span><span style="padding:5px 11px;border-radius:6px;font-size:12.5px;white-space:nowrap;color:var(--muted);">Resolved</span></div></div></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:18px;align-items:start;">
+            <section style="display:flex;flex-direction:column;gap:16px;padding:20px 22px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;padding:12px 8px;"><div style="overflow-x:auto;"><div style="display:grid;min-width:520px;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 80px 90px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Issue</span><span>Player</span><span>Age</span><span>Status</span></div><div style="display:grid;min-width:520px;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 80px 90px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;background:var(--raised);"><div style="min-width:0;"><div style="display:flex;flex-direction:column;gap:2px;min-width:0;"><span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Can't connect</span><span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Outdated server! I'm still on 1.20.1</span></div></div><div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">Pixelbee</span></div><div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">2 h</span></div><div style="min-width:0;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--danger) 16%, transparent);color:var(--danger);">New</span></div></div><div style="display:grid;min-width:520px;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 80px 90px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;"><div style="min-width:0;"><div style="display:flex;flex-direction:column;gap:2px;min-width:0;"><span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Wrong version</span><span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Launcher installs 1.20.1, server is 1.20.4</span></div></div><div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">Orin</span></div><div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">3 h</span></div><div style="min-width:0;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--danger) 16%, transparent);color:var(--danger);">New</span></div></div><div style="display:grid;min-width:520px;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 80px 90px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;"><div style="min-width:0;"><div style="display:flex;flex-direction:column;gap:2px;min-width:0;"><span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Modpack won't download</span><span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Stuck at 64% on jei.jar</span></div></div><div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">Snowdrift</span></div><div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">1 d</span></div><div style="min-width:0;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:var(--color-accent-800);color:var(--color-accent-100);">Replied</span></div></div><div style="display:grid;min-width:520px;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 80px 90px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;"><div style="min-width:0;"><div style="display:flex;flex-direction:column;gap:2px;min-width:0;"><span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Crash on launch</span><span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Exit code -1 after mods load</span></div></div><div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">Brakk</span></div><div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">4 d</span></div><div style="min-width:0;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Resolved</span></div></div></div></section>
+            <section style="display:flex;flex-direction:column;gap:16px;padding:20px 22px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;"><div style="display:flex;align-items:center;gap:12px;min-height:28px;"><h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:15px;">Can't connect</h2><div style="margin-left:auto;display:flex;align-items:center;gap:8px;"></div></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:var(--raised);color:var(--muted);border:1px solid var(--color-divider);">Technical</span><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, #e0c28a 16%, transparent);color:#e0c28a;">2 similar reports</span></div>
+              <div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;"><span style="color:var(--muted);white-space:nowrap;">Player</span><span style="text-align:right;min-width:0;">Pixelbee</span></div><div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;"><span style="color:var(--muted);white-space:nowrap;">Sent</span><span style="text-align:right;min-width:0;">Today, 12:04 · via launcher</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;min-width:0;"><label style="font-size:12px;color:var(--muted)">Message</label><div style="min-height:60px;padding:10px 12px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:var(--radius-md);font-size:13.5px;line-height:1.6;text-wrap:pretty;">Game launches fine but I get "Outdated server! I'm still on 1.20.1" when joining.</div></div>
+              <div style="display:flex;flex-direction:column;gap:6px;min-width:0;"><label style="font-size:12px;color:var(--muted)">Diagnostics</label><div style="display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:var(--radius-md);background:var(--color-bg);border:1px solid var(--color-divider);font:12px/1.5 ui-monospace,Menlo,monospace;"><div style="display:flex;justify-content:space-between;gap:12px;"><span style="color:var(--muted)">Listed version</span><span style="color:var(--danger)">1.20.1</span></div><div style="display:flex;justify-content:space-between;gap:12px;"><span style="color:var(--muted)">Server responds</span><span style="color:var(--danger)">1.20.4</span></div><div style="display:flex;justify-content:space-between;gap:12px;"><span style="color:var(--muted)">Launcher</span><span>1.4.2 · Windows</span></div></div></div>
+              <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb, #e0c28a 35%, transparent);background:color-mix(in srgb, #e0c28a 7%, transparent);font-size:12.5px;line-height:1.5;"><i class="ph ph-lightbulb" style="font-size:16px;color:#e0c28a;margin-top:1px"></i><span>Your listing says <b style="font-weight:600">1.20.1</b> but the server runs <b style="font-weight:600">1.20.4</b>. Update the version in Settings to fix it for everyone.</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;min-width:0;"><label style="font-size:12px;color:var(--muted)">Reply to player</label><div style="min-height:60px;padding:10px 12px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:var(--radius-md);font-size:13.5px;line-height:1.6;text-wrap:pretty;"></div></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;"><button style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;"><i class="ph ph-gear" style="font-size:14.5px;"></i>Open settings</button><span style="margin-left:auto;display:flex;gap:8px;"><button style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;">Send reply</button><button style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;"><i class="ph ph-check" style="font-size:14.5px;"></i>Mark resolved</button></span></div></section>
+          </div>
+          <p style="margin:0;font-size:12px;color:var(--muted2);display:flex;align-items:center;gap:6px;"><i class="ph ph-info" style="font-size:14px;"></i>Behaviour and content reports go to Omniscient moderators and are not shown here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

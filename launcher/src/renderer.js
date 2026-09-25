@@ -329,7 +329,7 @@ function closeReportDialog() {
 }
 
 // Dialogue "Signaler un probleme technique" (voir "03b Report a server" dans
-// Design/Omniscient Launcher Mockups.dc.html) — uniquement pour le
+// Design/Omniscient Launcher UI Mockups.dc.html) — uniquement pour le
 // proprietaire du serveur (voir le commentaire sur le modele Report cote
 // site pour la categorie "Comportement/contenu", pas implementee).
 async function openReportDialog(server) {
@@ -986,7 +986,8 @@ function showServersView() {
   loadServers();
 }
 
-// Accueil (voir "01b Home" dans Design/Omniscient Launcher Mockups.dc.html) —
+// Accueil (voir "01b Home" dans Design/archive/2026-09-23/Omniscient Launcher
+// Mockups.dc.html — retire par megarde du dernier export, mais toujours voulu) —
 // sans le bandeau "a la une" (lie au futur systeme payant, voir memoire
 // project_page_builder) ni les actualites (aucun systeme de contenu a
 // publier dessus pour l'instant) : uniquement ce qui vient de donnees deja

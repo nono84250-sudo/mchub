@@ -187,7 +187,7 @@ enum report_status {
 }
 
 // Signalement technique envoye par un joueur depuis le launcher (voir "03b
-// Report a server" dans Design/Omniscient Launcher Mockups.dc.html) —
+// Report a server" dans Design/Omniscient Launcher UI Mockups.dc.html) —
 // uniquement la categorie "Probleme technique" (va au proprietaire). La
 // categorie "Comportement/contenu" de la maquette (va aux moderateurs
 // Omniscient) n'a nulle part ou atterrir tant que le panel admin/moderation
