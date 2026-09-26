@@ -813,6 +813,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       authorization: currentSession.authorization,
       version: modded?.minecraftVersion ?? server.minecraftVersion,
       serverIp: server.ip,
+      serverName: server.name,
       onProgress,
       memory: { min: `${memoryMinGB}G`, max: `${memoryMaxGB}G` },
       // Serveur moddé : le Java demandé par sa version de Minecraft (Forge plante

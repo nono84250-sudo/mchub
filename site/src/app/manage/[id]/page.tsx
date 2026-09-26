@@ -11,8 +11,8 @@ export const metadata = { title: "Vue d'ensemble — Omniscient" };
 
 function OverviewStat({ label, caption, children }: { label: string; caption: string; children: ReactNode }) {
   return (
-    <div className="flex min-w-40 flex-1 flex-col gap-1.5 rounded-lg border border-border bg-surface px-[18px] py-4">
-      <span className="text-[11px] uppercase tracking-[0.04em] text-muted2">{label}</span>
+    <div className="flex min-w-40 flex-auto flex-col gap-1.5 rounded-lg border border-border bg-surface px-[18px] py-4">
+      <span className="whitespace-nowrap text-[11px] uppercase tracking-[0.04em] text-muted2">{label}</span>
       <span className="text-[22px] font-medium text-foreground">{children}</span>
       <span className="text-xs text-muted">{caption}</span>
     </div>

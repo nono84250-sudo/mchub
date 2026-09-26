@@ -4,6 +4,7 @@ const { app } = require("electron");
 const { Client } = require("minecraft-launcher-core");
 const logStore = require("./logStore");
 const discordPresence = require("./discordPresence");
+const { addServerToList } = require("./serversDat");
 
 // Repertoire de jeu local : Java, Minecraft (vanilla) et ses assets sont
 // telecharges ici au premier lancement, puis reutilises. Les serveurs moddes
@@ -38,6 +39,7 @@ async function launchMinecraft({
   authorization,
   version,
   serverIp,
+  serverName,
   onProgress,
   memory,
   javaPath,
@@ -79,6 +81,17 @@ async function launchMinecraft({
   if (customJvmArgs?.length) opts.customArgs = customJvmArgs;
 
   if (serverIp) {
+    // Le lancement rapide connecte le joueur mais n'ajoute rien a la liste
+    // Multijoueur : sans ca, apres une deconnexion il ne peut plus revenir sans
+    // tout relancer. Ne doit jamais empecher le lancement.
+    try {
+      if (addServerToList(gameDirectory || GAME_ROOT, { name: serverName, ip: serverIp })) {
+        logStore.pushLog({ source: "launcher", message: `« ${serverName || serverIp} » ajouté à la liste Multijoueur.` });
+      }
+    } catch (error) {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Liste Multijoueur non mise à jour : ${error instanceof Error ? error.message : error}` });
+    }
+
     const [host, port] = serverIp.split(":");
     opts.quickPlay = {
       type: "multiplayer",
