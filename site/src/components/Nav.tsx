@@ -30,13 +30,13 @@ export async function Nav() {
           </nav>
         </div>
 
-        <MobileNav loggedIn={!!session?.user} />
+        <MobileNav loggedIn={!!session?.user?.id} />
 
         {/* Elements utilitaires, toujours a droite. Langue/Apparence vivent
             dans le pied de page (Footer.tsx), pas ici — connecte, elles
             restent aussi accessibles depuis "Mon espace" (AccountMenu.tsx). */}
         <div className="hidden sm:flex items-center gap-4 text-sm">
-          {session?.user ? (
+          {session?.user?.id ? (
             <AccountMenu />
           ) : (
             <Link href="/login" className="btn-primary text-sm">

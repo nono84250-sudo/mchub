@@ -56,7 +56,9 @@
     "heroBody": "Owners publish their modpacks and vanilla worlds; players discover and launch them straight from the launcher.",
     "signInTitle": "Sign in",
     "signInHelp": "Your Omniscient account is your Microsoft/Xbox account — the same one as in the launcher. Nothing separate to create.",
-    "signInWithMicrosoft": "Sign in with Microsoft"
+    "signInWithMicrosoft": "Sign in with Microsoft",
+    "signInErrorProfile": "Your Microsoft sign-in worked, but we couldn't fetch your Minecraft profile. Try again; if it keeps happening, it's on our side.",
+    "signInErrorPending": "Your Microsoft sign-in worked, but access to the Minecraft API is still pending Microsoft's approval. Try again later."
   },
   "dashboard": {
     "myServers": "My servers",

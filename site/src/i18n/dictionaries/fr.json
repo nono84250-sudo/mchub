@@ -56,7 +56,9 @@
     "heroBody": "Les propriétaires publient leurs modpacks et mondes vanilla ; les joueurs les découvrent et les lancent directement depuis le launcher.",
     "signInTitle": "Connexion",
     "signInHelp": "Ton compte Omniscient, c'est ton compte Microsoft/Xbox — le même que dans le launcher. Rien à créer séparément.",
-    "signInWithMicrosoft": "Se connecter avec Microsoft"
+    "signInWithMicrosoft": "Se connecter avec Microsoft",
+    "signInErrorProfile": "Ta connexion Microsoft a réussi, mais on n'a pas pu récupérer ton profil Minecraft. Réessaie ; si ça persiste, c'est un souci de notre côté.",
+    "signInErrorPending": "Ta connexion Microsoft a réussi, mais l'accès à l'API Minecraft est en attente de validation par Microsoft. Réessaie plus tard."
   },
   "dashboard": {
     "myServers": "Mes serveurs",

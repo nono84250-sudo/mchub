@@ -26,7 +26,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // d'openid-client rejette sinon la reponse ("issuer property does not
       // match the expected value") des que l'alias texte est utilise ici.
       issuer: "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
-      authorization: { params: { scope: "openid XboxLive.signin offline_access" } },
+      // prompt: "select_account" — sans lui, Microsoft reprend en silence le compte
+      // deja connecte dans le navigateur, qui n'est pas forcement celui qui possede
+      // Minecraft (profil Minecraft introuvable, alors que ca marche avec le bon compte).
+      authorization: { params: { scope: "openid XboxLive.signin offline_access", prompt: "select_account" } },
       // Place-holder immediatement remplace dans jwt() par l'identite
       // Minecraft reelle — sans "profile" scope, id_token.name/email sont
       // absents, donc jamais utilises ici.
@@ -70,7 +73,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // session.user.id aussi — le reste de l'appli traite deja ca comme
         // "non connecte" (voir les redirect("/login") existants).
         token.error = error instanceof PendingApprovalError ? "pending_approval" : "xbox_auth_failed";
-        console.error("[auth] Échec de la récupération du profil Minecraft/Xbox", error);
+        // Debut de l'identifiant Microsoft (pas un secret) : permet de savoir si deux
+        // tentatives, en local et en ligne, viennent bien du meme compte Microsoft.
+        console.error("[auth] Échec de la récupération du profil Minecraft/Xbox — compte Microsoft", String(account.providerAccountId).slice(0, 6), error);
       }
 
       return token;
