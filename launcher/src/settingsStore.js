@@ -17,6 +17,10 @@ const DEFAULTS = {
   // securite RAM (voir main.js/game:launch) et lance direct avec la valeur
   // recommandee a chaque fois.
   alwaysUseRecommendedRam: false,
+  // Contraire : toujours lancer avec la RAM reglee par le joueur, sans jamais
+  // appliquer celle du serveur (il est seulement prevenu si elle est trop basse).
+  // Exclusif avec alwaysUseRecommendedRam.
+  alwaysUseCustomRam: false,
   // Slugs des serveurs mis en favoris (barre de lancement rapide en bas de
   // l'appli), dernier serveur reellement lance (favori ou non — affiche en
   // "Dernier joue" s'il n'est pas deja dans les favoris), et nombre de
@@ -42,12 +46,6 @@ const DEFAULTS = {
   logLevel: "info",
   openConsoleOnLaunch: false,
   keepLauncherOpenWhilePlaying: true,
-  // Pseudo Minecraft renvoye par POST /api/launcher/minecraft-link apres une
-  // liaison reussie (voir main.js/account:linkMinecraft) — purement pour
-  // l'affichage local ("Compte Omniscient" dans Reglages > Divers), jamais
-  // relu par le site : deliee cote site ou coche "Oublier" ici desynchronise
-  // sans consequence, il suffit de relier de nouveau si besoin.
-  minecraftLinkedUserName: null,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -85,6 +83,12 @@ function saveSettings(partial) {
 
   if (partial.onboarded !== undefined) next.onboarded = !!partial.onboarded;
   if (partial.alwaysUseRecommendedRam !== undefined) next.alwaysUseRecommendedRam = !!partial.alwaysUseRecommendedRam;
+  if (partial.alwaysUseCustomRam !== undefined) next.alwaysUseCustomRam = !!partial.alwaysUseCustomRam;
+  // Les deux sont exclusifs : la case qui vient d'etre cochee l'emporte.
+  if (next.alwaysUseRecommendedRam && next.alwaysUseCustomRam) {
+    if (partial.alwaysUseCustomRam) next.alwaysUseRecommendedRam = false;
+    else next.alwaysUseCustomRam = false;
+  }
   if (partial.locale !== undefined) next.locale = ["fr", "en"].includes(partial.locale) ? partial.locale : current.locale;
   if (partial.theme !== undefined) next.theme = ["system", "dark", "light"].includes(partial.theme) ? partial.theme : current.theme;
   if (partial.compactServerList !== undefined) next.compactServerList = !!partial.compactServerList;

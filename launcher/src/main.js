@@ -26,7 +26,7 @@ app.setPath("userData", dottedUserDataPath);
 
 const msAuth = require("./msAuth");
 const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
-const { installModpack } = require("./modpack");
+const { installModpack, ensureVanillaVersion } = require("./modpack");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
 const { checkMinecraftStatus } = require("./minecraftStatus");
@@ -437,36 +437,6 @@ ipcMain.handle("notifications:clearRead", async () => {
   }
 });
 
-// Echange le code affiche sur /account contre la liaison du profil
-// Minecraft/Xbox deja connu localement (voir msAuth.js) — jamais le mot de
-// passe du site, voir site/src/app/api/launcher/minecraft-link/route.ts.
-ipcMain.handle("account:linkMinecraft", async (_event, code) => {
-  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
-  try {
-    const res = await fetch(`${SITE_URL}/api/launcher/minecraft-link`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
-      body: JSON.stringify({
-        code,
-        minecraftUuid: currentSession.profile.id,
-        minecraftUsername: currentSession.profile.name,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      const error =
-        data.error === "already_linked_elsewhere"
-          ? "Ce compte Minecraft est déjà lié à un autre compte Omniscient."
-          : "Code invalide ou expiré.";
-      return { ok: false, error };
-    }
-    settingsStore.saveSettings({ minecraftLinkedUserName: data.userName });
-    return { ok: true, userName: data.userName };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
-  }
-});
-
 ipcMain.handle("auth:signIn", async (_event, remember) => {
   try {
     const { profile, authorization, refreshToken } = await msAuth.signIn();
@@ -719,19 +689,19 @@ ipcMain.handle("settings:openGameFolder", () => shell.openPath(GAME_ROOT));
 ipcMain.handle("java:detect", async () => {
   const settings = settingsStore.loadSettings();
   const result = await javaManager.detectJava(settings.javaPath || undefined);
-  return { ...result, managed: !!settings.javaPath };
+  return { ...result, managed: !!settings.javaPath, installed: await javaManager.installedJavaMajors() };
 });
 
+// Installe les quatre Java que Minecraft demande selon sa version (8, 17, 21, 25) :
+// chaque lancement prend ensuite celui de sa version (voir game:launch).
 ipcMain.handle("java:install", async (event) => {
-  try {
-    const { javaPath, version } = await javaManager.downloadAndInstallJava((status) =>
-      event.sender.send("java:installProgress", status),
-    );
-    settingsStore.saveSettings({ javaPath });
-    return { ok: true, version };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
-  }
+  const paths = await javaManager.installAllJava((status) => event.sender.send("java:installProgress", status));
+  // Java 21 reste le Java "par defaut" des reglages (ce que le verrou de demarrage controle) ;
+  // un autre qui aurait echoue sera retente au lancement du serveur qui en a besoin.
+  const done = Object.keys(paths).filter((major) => paths[major]);
+  if (!paths[21]) return { ok: false, error: `Java 21 n'a pas pu être installé (obtenus : ${done.join(", ") || "aucun"}).` };
+  settingsStore.saveSettings({ javaPath: paths[21] });
+  return { ok: true, version: done.join(", ") };
 });
 
 // Mis en cache brievement : un clic repete sur le bouton de statut ne doit
@@ -804,6 +774,22 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       });
     }
 
+    // Java de cette version de Minecraft (Mojang l'indique dans le JSON de la version ;
+    // sans indication = Java 8, les versions anciennes). Un serveur moddé l'a deja resolu.
+    let gameJava = modded?.javaPath;
+    if (!gameJava) {
+      try {
+        const vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
+        gameJava = await javaManager.ensureJavaForMajor(vanilla.javaVersion?.majorVersion ?? 8, {
+          preferredPath: settings.javaPath || undefined,
+          onProgress: (text) => onProgress({ text }),
+        });
+      } catch (error) {
+        // Version inconnue de Mojang (snapshot, personnalisee…) : Java par defaut, comme avant.
+        logStore.pushLog({ level: "warn", source: "launcher", message: `Java par défaut (version de Minecraft non résolue) : ${error instanceof Error ? error.message : error}` });
+      }
+    }
+
     await launchMinecraft({
       authorization: currentSession.authorization,
       version: modded?.minecraftVersion ?? server.minecraftVersion,
@@ -812,7 +798,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       memory: { min: `${memoryMinGB}G`, max: `${memoryMaxGB}G` },
       // Serveur moddé : le Java demandé par sa version de Minecraft (Forge plante
       // sur un Java trop récent) ; sinon celui des réglages, comme avant.
-      javaPath: modded?.javaPath || settings.javaPath || undefined,
+      javaPath: gameJava || settings.javaPath || undefined,
       gameDirectory: modded?.instanceDir,
       customVersion: modded?.customVersion,
       customJvmArgs: modded?.jvmArgs,

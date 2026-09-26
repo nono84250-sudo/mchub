@@ -216,16 +216,19 @@ async function findInstalledJava(major) {
 // null si rien n'est possible : l'appelant garde alors son Java par defaut.
 async function ensureJavaForMajor(major, { preferredPath, onProgress } = {}) {
   if (!Number.isInteger(major)) return null;
+  // Mojang cite parfois une version sans JRE Temurin (16 pour la 1.17, etc.) : on
+  // prend la suivante des quatre gerees, qui fait tourner la meme version du jeu.
+  major = SUPPORTED_JAVA_MAJORS.find((m) => m >= major) ?? major;
   if (preferredPath) {
     const info = await detectJava(preferredPath);
     if (info.found && info.majorVersion === major && info.is64Bit) return preferredPath;
   }
   const installed = await findInstalledJava(major);
   if (installed) {
-    onProgress?.(`Java ${major} utilisé pour ce jeu.`);
+    onProgress?.(`Java ${major} : déjà présent.`);
     return installed;
   }
-  onProgress?.(`Java ${major} est nécessaire pour ce jeu : téléchargement…`);
+  onProgress?.(`Java ${major} : téléchargement…`);
   try {
     const { javaPath } = await downloadAndInstallJava(onProgress, { major, destDir: path.join(RUNTIME_BASE, `java-${major}`) });
     return javaPath;
@@ -235,4 +238,33 @@ async function ensureJavaForMajor(major, { preferredPath, onProgress } = {}) {
   }
 }
 
-module.exports = { detectJava, downloadAndInstallJava, ensureJavaForMajor, findInstalledJava, javaMajorFromFolderName, RUNTIME_DIR };
+// Les Java que Minecraft demande selon sa version : 8 (jusqu'a la 1.16), 17 (1.17 a
+// 1.20.4), 21 (1.20.5 a 1.21.x), 25 (versions les plus recentes).
+const SUPPORTED_JAVA_MAJORS = [8, 17, 21, 25];
+
+// { 8: true, 17: false, ... } : lequel est deja disponible (installe sur le PC ou par le launcher).
+async function installedJavaMajors() {
+  const status = {};
+  for (const major of SUPPORTED_JAVA_MAJORS) status[major] = !!(await findInstalledJava(major));
+  return status;
+}
+
+// Installe d'un coup ceux qui manquent (un par un, les presents sont sautes).
+// Renvoie { 8: chemin|null, ... } — null = echec, deja signale par onProgress.
+async function installAllJava(onProgress) {
+  const paths = {};
+  for (const major of SUPPORTED_JAVA_MAJORS) paths[major] = await ensureJavaForMajor(major, { onProgress });
+  return paths;
+}
+
+module.exports = {
+  detectJava,
+  downloadAndInstallJava,
+  ensureJavaForMajor,
+  findInstalledJava,
+  installedJavaMajors,
+  installAllJava,
+  SUPPORTED_JAVA_MAJORS,
+  javaMajorFromFolderName,
+  RUNTIME_DIR,
+};

@@ -53,7 +53,6 @@ contextBridge.exposeInMainWorld("mchub", {
     remove: (id) => ipcRenderer.invoke("account:remove", id),
     changeSkin: (variant, fileBuffer) => ipcRenderer.invoke("account:changeSkin", { variant, fileBuffer }),
     resetSkin: () => ipcRenderer.invoke("account:resetSkin"),
-    linkMinecraft: (code) => ipcRenderer.invoke("account:linkMinecraft", code),
   },
   java: {
     detect: () => ipcRenderer.invoke("java:detect"),

@@ -1,6 +1,6 @@
 // Installation d'un modpack (CurseForge ou Modrinth) pour un serveur moddé :
 // telecharge le modpack, ses mods et ses fichiers de config dans une instance
-// propre au serveur, installe le chargeur de mods (NeoForge / Forge) et prepare
+// propre au serveur, installe le chargeur de mods (NeoForge / Forge / Fabric) et prepare
 // la version a lancer avec minecraft-launcher-core.
 //
 // Node pur (aucune dependance a Electron) pour pouvoir etre teste en ligne de
@@ -295,17 +295,18 @@ async function installFiles({ entries, instanceDir, previousFiles, keepPaths = [
   return entries.map((entry) => entry.path);
 }
 
-// --- Chargeur de mods (NeoForge / Forge) ------------------------------------
+// --- Chargeur de mods (NeoForge / Forge / Fabric) ---------------------------
 
 function parseLoader(loaderId, minecraftVersion) {
-  const match = /^(neoforge|forge)-(.+)$/.exec(loaderId || "");
+  const match = /^(neoforge|forge|fabric)-(.+)$/.exec(loaderId || "");
   if (!match) {
     throw new ModpackError(
-      `Chargeur de mods non pris en charge pour l'instant : ${loaderId || "aucun"} (NeoForge et Forge seulement).`,
+      `Chargeur de mods non pris en charge pour l'instant : ${loaderId || "aucun"} (NeoForge, Forge et Fabric seulement).`,
       { code: "unsupported_loader" },
     );
   }
   const [, kind, loaderVersion] = match;
+  if (kind === "fabric") return { kind, loaderVersion };
   const mavenVersion = kind === "neoforge" ? loaderVersion : `${minecraftVersion}-${loaderVersion}`;
   const installerUrl =
     kind === "neoforge"
@@ -356,10 +357,36 @@ function runInstaller({ javaPath, installerPath, gameRoot, onProgress }) {
   });
 }
 
-// Installe le chargeur (NeoForge/Forge) avec son installateur officiel, en
-// mode client, dans le dossier de jeu partage. Ne refait rien s'il est deja la.
+// Fabric n'a pas d'installateur a lancer : son API officielle sert directement le
+// JSON de version (avec le lien Maven de chaque bibliotheque, que
+// minecraft-launcher-core telecharge au lancement). On le pose tel quel.
+async function installFabric({ loaderVersion, minecraftVersion, gameRoot, onProgress }) {
+  const versionId = `fabric-loader-${loaderVersion}-${minecraftVersion}`;
+  const versionJson = path.join(gameRoot, "versions", versionId, `${versionId}.json`);
+  if (fs.existsSync(versionJson)) return versionId;
+
+  onProgress({ text: "Téléchargement de Fabric…" });
+  const res = await fetch(
+    `https://meta.fabricmc.net/v2/versions/loader/${encodeURIComponent(minecraftVersion)}/${encodeURIComponent(loaderVersion)}/profile/json`,
+  );
+  if (!res.ok) {
+    throw new ModpackError(`Fabric ${loaderVersion} introuvable pour Minecraft ${minecraftVersion} (HTTP ${res.status}).`, { code: "installer_failed" });
+  }
+  const profile = await res.json();
+  if (profile.id !== versionId || !Array.isArray(profile.libraries)) {
+    throw new ModpackError("Profil Fabric illisible ou inattendu.", { code: "installer_failed" });
+  }
+  await fsp.mkdir(path.dirname(versionJson), { recursive: true });
+  await fsp.writeFile(`${versionJson}.part`, JSON.stringify(profile, null, 2));
+  await fsp.rename(`${versionJson}.part`, versionJson);
+  return versionId;
+}
+
+// Installe le chargeur : NeoForge/Forge avec leur installateur officiel, en mode
+// client, dans le dossier de jeu partage. Ne refait rien s'il est deja la.
 async function installLoader({ loaderId, minecraftVersion, gameRoot, javaPath, onProgress }) {
-  const { kind, installerUrl } = parseLoader(loaderId, minecraftVersion);
+  const { kind, installerUrl, loaderVersion } = parseLoader(loaderId, minecraftVersion);
+  if (kind === "fabric") return installFabric({ loaderVersion, minecraftVersion, gameRoot, onProgress });
   const installerPath = path.join(gameRoot, "cache", "installers", path.basename(installerUrl));
 
   if (!fs.existsSync(installerPath)) {
@@ -511,12 +538,16 @@ async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, o
   const pack = source === "modrinth" ? readModrinthPack(zip) : readCurseforgePack(zip);
 
   // Chargeur non gere = echec immediat, avant de telecharger quoi que ce soit.
-  parseLoader(pack.loaderId, pack.minecraftVersion);
+  const { kind: loaderKind } = parseLoader(pack.loaderId, pack.minecraftVersion);
 
   // Java que Mojang demande pour cette version de Minecraft (17 pour la 1.20.1,
   // 21 pour la 1.21.1…) : le chargeur et le jeu tourneront avec lui.
   const vanilla = await ensureVanillaVersion(path.join(gameRoot, "versions"), pack.minecraftVersion);
-  const javaMajor = vanilla.javaVersion?.majorVersion ?? null;
+  let javaMajor = vanilla.javaVersion?.majorVersion ?? null;
+  // Mojang donne un minimum. Fabric tourne tres bien sur Java 21 et ses mods sont
+  // souvent compiles pour lui (le pack « Ce Soir la Vendée » plante sous Java 17 :
+  // "compatibility level JAVA_21"). Forge, lui, n'est valide qu'avec le Java de Mojang.
+  if (loaderKind === "fabric" && javaMajor === 17) javaMajor = 21;
   const gameJava = (resolveJava && javaMajor ? await resolveJava(javaMajor, (text) => onProgress({ text })) : null) || javaPath;
 
   const previousFiles = await readInstalledFiles(instanceDir);
@@ -571,4 +602,4 @@ async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, o
   };
 }
 
-module.exports = { installModpack, installLoader, prepareLaunchVersion, ModpackError };
+module.exports = { installModpack, installLoader, prepareLaunchVersion, ensureVanillaVersion, ModpackError };

@@ -115,10 +115,9 @@ function favoriteBtnHtml(slug, isFav, extraClass = "") {
     </button>`;
 }
 
-// Vrai si le joueur actuellement connecte possede ce serveur (compte
-// Minecraft lie a son compte Omniscient, voir minecraft-link) — jamais vrai
-// tant qu'aucun compte n'est lie ou que server.ownerMinecraftUuid est absent
-// (serveur sans proprietaire lie).
+// Vrai si le joueur actuellement connecte possede ce serveur (son UUID Minecraft
+// est celui du proprietaire sur le site) — jamais vrai si server.ownerMinecraftUuid
+// est absent (serveur sans proprietaire).
 function isOwnServer(server) {
   return !!(currentProfile && server.ownerMinecraftUuid && server.ownerMinecraftUuid === currentProfile.id);
 }
@@ -402,6 +401,22 @@ async function applyRecommendedRamIfNeeded(server) {
 
   const settings = await window.mchub.settings.get();
   const recommended = server.recommendedRamGB;
+  const configured = settings.memoryMaxGB;
+
+  if (settings.alwaysUseCustomRam) {
+    // Le joueur veut toujours sa propre RAM : celle du serveur n'est jamais
+    // appliquee (donc pas de controle de securite ici), il est seulement
+    // prevenu quand la sienne est en dessous de la recommandation.
+    if (recommended <= configured) return { proceed: true, memoryOverride: null };
+    const warning = await showModal({
+      title: t("modal.ramBelowRecommendedTitle"),
+      body: t("modal.ramBelowRecommendedBody", { recommended, configured }),
+      confirmLabel: t("modal.continueAnyway"),
+      cancelLabel: t("common.cancel"),
+    });
+    return { proceed: warning.confirmed, memoryOverride: null };
+  }
+
   // Au-dela de 80% de la RAM totale, il ne resterait quasiment rien pour
   // l'OS et le reste du systeme — on refuse d'appliquer la valeur telle
   // quelle, meme si "toujours utiliser la RAM recommandée" est coché.
@@ -433,14 +448,15 @@ async function applyRecommendedRamIfNeeded(server) {
 
   const result = await showModal({
     title: t("modal.ramRecommendedTitle"),
-    body: t("modal.ramRecommendedBody", { recommended }),
+    body: t("modal.ramRecommendedBody", { recommended, configured }),
     confirmLabel: t("modal.launchWith", { recommended }),
-    cancelLabel: t("modal.keepCurrentSettings"),
-    checkboxLabel: t("settings.alwaysRecommended"),
+    cancelLabel: t("modal.keepCurrentSettings", { configured }),
+    checkboxLabel: t("modal.rememberChoice"),
   });
 
   if (!result.confirmed) {
-    if (result.checked) await window.mchub.settings.set({ alwaysUseRecommendedRam: true });
+    // "Garder mes Go" : la case "toujours" en fait le choix permanent.
+    if (result.checked) await window.mchub.settings.set({ alwaysUseCustomRam: true });
     return { proceed: true, memoryOverride: null };
   }
 
@@ -1224,8 +1240,8 @@ async function renderRecentList() {
 }
 
 // "Mes instances" : tous les serveurs du proprietaire connecte (publies OU
-// en pause), retrouves via son compte Minecraft lie (voir Reglages > Divers
-// et minecraft-link cote site). Rendu dedie plutot que serverRowHtml/
+// en pause), retrouves via son UUID Minecraft (le meme compte Microsoft que sur
+// le site, plus aucune liaison a faire). Rendu dedie plutot que serverRowHtml/
 // openDetail : contrairement a la liste publique, ces serveurs peuvent etre
 // en pause (donc absents de /api/public/servers/[slug], qui 404 dessus).
 // La configuration (republier, changer la visibilite...) se fait toujours
@@ -1765,17 +1781,35 @@ function renderMemoryTab(contentEl, settings) {
         <span class="settings-row-label">${t("settings.alwaysRecommended")}</span>
         <input type="checkbox" id="settings-always-recommended" ${settings.alwaysUseRecommendedRam ? "checked" : ""} />
       </label>
+      <label class="settings-row" style="cursor: pointer; margin-top: 10px;">
+        <span class="settings-row-label">${t("settings.alwaysCustom")}</span>
+        <input type="checkbox" id="settings-always-custom" ${settings.alwaysUseCustomRam ? "checked" : ""} />
+      </label>
     </section>
     <button id="settings-save-memory" class="join-btn" type="button" style="align-self: flex-start;">${t("settings.saveChanges")}</button>
     <p class="join-note" id="settings-status"></p>
   `;
 
+  // Les deux cases sont exclusives : cocher l'une decoche l'autre.
+  const alwaysRecommendedEl = document.getElementById("settings-always-recommended");
+  const alwaysCustomEl = document.getElementById("settings-always-custom");
+  alwaysRecommendedEl.addEventListener("change", () => {
+    if (alwaysRecommendedEl.checked) alwaysCustomEl.checked = false;
+  });
+  alwaysCustomEl.addEventListener("change", () => {
+    if (alwaysCustomEl.checked) alwaysRecommendedEl.checked = false;
+  });
+
   document.getElementById("settings-save-memory").addEventListener("click", async () => {
     const min = Number(document.getElementById("settings-mem-min").value);
     const max = Number(document.getElementById("settings-mem-max").value);
-    const alwaysUseRecommendedRam = document.getElementById("settings-always-recommended").checked;
     const settingsStatusEl = document.getElementById("settings-status");
-    const updated = await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max, alwaysUseRecommendedRam });
+    const updated = await window.mchub.settings.set({
+      memoryMinGB: min,
+      memoryMaxGB: max,
+      alwaysUseRecommendedRam: alwaysRecommendedEl.checked,
+      alwaysUseCustomRam: alwaysCustomEl.checked,
+    });
     settingsStatusEl.classList.remove("ms-error");
     settingsStatusEl.textContent = t("settings.saved");
     renderMemoryTab(contentEl, { ...settings, ...updated });
@@ -1783,8 +1817,6 @@ function renderMemoryTab(contentEl, settings) {
 }
 
 function renderMiscTab(contentEl, settings) {
-  const linkedName = settings.minecraftLinkedUserName;
-
   contentEl.innerHTML = `
     <section class="settings-section">
       <div>
@@ -1807,63 +1839,12 @@ function renderMiscTab(contentEl, settings) {
         <span class="join-note">${settings.appVersion ? `v${settings.appVersion}` : "—"}</span>
       </div>
     </section>
-
-    <section class="settings-section">
-      <div>
-        <div class="settings-row-label">${t("settings.omniscientAccountLabel")}</div>
-        <p class="settings-row-desc" style="margin-top: 4px;">${
-          linkedName
-            ? t("settings.omniscientAccountLinked", { name: escapeHtml(linkedName) })
-            : t("settings.omniscientAccountDesc")
-        }</p>
-        ${
-          linkedName
-            ? `<button id="settings-unlink-minecraft" class="btn-secondary" type="button" style="margin-top: 8px;">${t("settings.omniscientAccountForget")}</button>`
-            : `
-              <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap;">
-                <input id="settings-link-code" type="text" maxlength="6" placeholder="${t("settings.omniscientAccountCodePlaceholder")}" style="text-transform: uppercase; letter-spacing: .2em; width: 140px;" />
-                <button id="settings-link-submit" class="btn-secondary" type="button">${t("settings.omniscientAccountLinkBtn")}</button>
-              </div>
-              <p class="join-note" id="settings-link-status" style="margin-top: 6px;"></p>
-            `
-        }
-      </div>
-    </section>
   `;
 
   document.getElementById("settings-open-folder").addEventListener("click", () => {
     window.mchub.settings.openGameFolder();
   });
   refreshJavaStatus("settings-java-status", "settings-java-install");
-
-  const unlinkBtn = document.getElementById("settings-unlink-minecraft");
-  if (unlinkBtn) {
-    unlinkBtn.addEventListener("click", async () => {
-      await window.mchub.settings.set({ minecraftLinkedUserName: null });
-      renderSettingsTab("misc");
-    });
-  }
-
-  const linkSubmitBtn = document.getElementById("settings-link-submit");
-  if (linkSubmitBtn) {
-    const codeInput = document.getElementById("settings-link-code");
-    const statusEl2 = document.getElementById("settings-link-status");
-    linkSubmitBtn.addEventListener("click", async () => {
-      const code = codeInput.value.trim();
-      if (!code) return;
-      linkSubmitBtn.disabled = true;
-      statusEl2.textContent = t("common.checking");
-      statusEl2.style.color = "";
-      const result = await window.mchub.account.linkMinecraft(code);
-      linkSubmitBtn.disabled = false;
-      if (result.ok) {
-        renderSettingsTab("misc");
-      } else {
-        statusEl2.textContent = result.error;
-        statusEl2.style.color = "var(--danger)";
-      }
-    });
-  }
 }
 
 // Partagé entre le verrou Java obligatoire et les paramètres : verifie Java
@@ -1878,8 +1859,13 @@ async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
   installBtn.hidden = true;
 
   const java = await window.mchub.java.detect();
+  // Minecraft utilise un Java different selon sa version (8, 17, 21, 25) : on signale
+  // ceux qui manquent, meme si le Java par defaut est bon, avec le bouton pour les installer.
+  const missing = [8, 17, 21, 25].filter((major) => java.installed && !java.installed[major]);
   if (java.found && java.is64Bit && java.meetsMinimum) {
-    statusEl2.textContent = java.version ? t("java.detectedWithVersion", { version: java.version }) : t("java.detectedNoVersion");
+    const detected = java.version ? t("java.detectedWithVersion", { version: java.version }) : t("java.detectedNoVersion");
+    statusEl2.textContent = missing.length ? `${detected} ${t("java.missingOthers", { list: missing.join(", ") })}` : detected;
+    installBtn.hidden = missing.length === 0;
     if (onReady) onReady();
   } else if (java.found && !java.is64Bit) {
     statusEl2.textContent = t("java.is32Bit");
@@ -1918,6 +1904,8 @@ async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
 // démarrage, pas seulement au premier lancement.
 async function ensureJavaAvailable() {
   const initial = await window.mchub.java.detect();
+  // Seul le Java par defaut (21+) verrouille le demarrage : les autres (8, 17, 25) sont
+  // telecharges au lancement d'un serveur qui en a besoin, ou via le bouton des Reglages.
   if (initial.found && initial.is64Bit && initial.meetsMinimum) return;
 
   // Java manquant : cet ecran peut impliquer une vraie attente (telechargement
