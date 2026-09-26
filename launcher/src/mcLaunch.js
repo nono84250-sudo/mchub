@@ -6,9 +6,9 @@ const logStore = require("./logStore");
 const discordPresence = require("./discordPresence");
 
 // Repertoire de jeu local : Java, Minecraft (vanilla) et ses assets sont
-// telecharges ici au premier lancement, puis reutilises. Le launcher ne gere
-// que le vanilla pour l'instant — CurseForge/Forge/Fabric viendront plus
-// tard (voir cahier des charges, "launcher complet autonome").
+// telecharges ici au premier lancement, puis reutilises. Les serveurs moddes
+// (modpack CurseForge, NeoForge/Forge) y ont chacun leur instance dans
+// instances/<slug> (voir modpack.js) ; Fabric/Quilt ne sont pas encore geres.
 const GAME_ROOT = path.join(app.getPath("userData"), "minecraft");
 
 // minecraft-launcher-core spawn Java lui-meme sans jamais ecouter l'evenement
@@ -27,11 +27,24 @@ function ensureJavaAvailable(javaPath) {
 }
 
 /**
- * Lance Minecraft (vanilla). `onProgress(status)` reçoit des mises à jour
- * lisibles pendant le téléchargement ; la promesse se résout dès que le
- * processus du jeu démarre (pas quand le joueur quitte le jeu).
+ * Lance Minecraft. `onProgress(status)` reçoit des mises à jour lisibles
+ * pendant le téléchargement ; la promesse se résout dès que le processus du
+ * jeu démarre (pas quand le joueur quitte le jeu). Pour un serveur moddé,
+ * `gameDirectory` (instance du serveur), `customVersion` (version du
+ * chargeur préparée par modpack.js) et `customJvmArgs` (arguments JVM du
+ * chargeur) viennent de installModpack().
  */
-async function launchMinecraft({ authorization, version, serverIp, onProgress, memory, javaPath }) {
+async function launchMinecraft({
+  authorization,
+  version,
+  serverIp,
+  onProgress,
+  memory,
+  javaPath,
+  gameDirectory,
+  customVersion,
+  customJvmArgs,
+}) {
   await ensureJavaAvailable(javaPath);
 
   const launcher = new Client();
@@ -58,10 +71,12 @@ async function launchMinecraft({ authorization, version, serverIp, onProgress, m
   const opts = {
     authorization,
     root: GAME_ROOT,
-    version: { number: version, type: "release" },
+    version: { number: version, type: "release", ...(customVersion ? { custom: customVersion } : {}) },
     memory: memory || { max: "4G", min: "1G" },
   };
   if (javaPath) opts.javaPath = javaPath;
+  if (gameDirectory) opts.overrides = { gameDirectory };
+  if (customJvmArgs?.length) opts.customArgs = customJvmArgs;
 
   if (serverIp) {
     const [host, port] = serverIp.split(":");

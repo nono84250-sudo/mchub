@@ -1,0 +1,86 @@
+[
+  {
+    "id": "column.public.server.modpackSource",
+    "label": "Add column \"modpackSource\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "modpackSource",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"modpackSource\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "modpackSource"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"modpackSource\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"modpackSource\" text DEFAULT 'curseforge' NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"modpackSource\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "modpackSource"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "checkConstraint.server.server_modpackSource_check_dc063fb6",
+    "label": "Add check constraint \"server_modpackSource_check_dc063fb6\" on \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "server_modpackSource_check_dc063fb6",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"server_modpackSource_check_dc063fb6\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "server_modpackSource_check_dc063fb6",
+          "public",
+          "\"public\".\"server\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add check constraint \"server_modpackSource_check_dc063fb6\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD CONSTRAINT \"server_modpackSource_check_dc063fb6\" CHECK (\"modpackSource\" IN ('curseforge', 'modrinth'))"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"server_modpackSource_check_dc063fb6\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "server_modpackSource_check_dc063fb6",
+          "public",
+          "\"public\".\"server\""
+        ]
+      }
+    ]
+  }
+]

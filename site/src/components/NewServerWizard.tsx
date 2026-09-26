@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
-import { Globe, PuzzlePiece, ArrowRight, Info, MagnifyingGlass, CheckCircle, GlobeHemisphereWest, LockSimple, Image, Cube, ImageSquare } from "@phosphor-icons/react";
+import { Globe, PuzzlePiece, ArrowRight, Info, GlobeHemisphereWest, LockSimple, Image, Cube, ImageSquare } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
-import { searchModpacks } from "@/lib/actions/curseforge";
-import type { CurseforgeModpack } from "@/lib/curseforge";
 import { ImageDropzone } from "@/components/ImageDropzone";
+import { ModpackPicker, type ModpackValue } from "@/components/ModpackPicker";
+import { MinecraftVersionField } from "@/components/MinecraftVersionField";
+import { DEFAULT_MODPACK_SOURCE } from "@/lib/modpack-types";
 import { LogoMark } from "@/components/LogoMark";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -39,36 +40,18 @@ export function NewServerWizard({ action, versions }: Props) {
   const [minecraftVersion, setMinecraftVersion] = useState("");
   const [recommendedRamGB, setRecommendedRamGB] = useState("");
 
-  // Recherche CurseForge (voir src/lib/curseforge.ts) avec repli en saisie
-  // manuelle si l'API n'est pas configuree ou echoue — jamais bloquant pour
-  // la publication d'un serveur modde.
-  const [modpackQuery, setModpackQuery] = useState("");
-  const [modpackResults, setModpackResults] = useState<CurseforgeModpack[]>([]);
-  const [selectedModpack, setSelectedModpack] = useState<CurseforgeModpack | null>(null);
-  const [modpackSearchState, setModpackSearchState] = useState<"idle" | "searching" | "error" | "not-configured">("idle");
-  const [manualModpackEntry, setManualModpackEntry] = useState(false);
-  const [manualModpack, setManualModpack] = useState({ id: "", name: "", version: "" });
+  // Modpack choisi dans <ModpackPicker> (recherche CurseForge ou saisie
+  // manuelle) : l'assistant n'a besoin que de l'identifiant, pour ne pas
+  // laisser continuer un serveur modde sans modpack.
+  const [modpack, setModpack] = useState<ModpackValue>({ id: "", name: "", version: "", source: DEFAULT_MODPACK_SOURCE });
 
-  useEffect(() => {
-    if (manualModpackEntry || selectedModpack || !modpackQuery.trim()) {
-      setModpackResults([]);
-      return;
-    }
-    setModpackSearchState("searching");
-    const timeout = setTimeout(async () => {
-      const result = await searchModpacks(modpackQuery);
-      if (result.ok) {
-        setModpackResults(result.results);
-        setModpackSearchState("idle");
-      } else {
-        setModpackResults([]);
-        setModpackSearchState(result.notConfigured ? "not-configured" : "error");
-      }
-    }, 400);
-    return () => clearTimeout(timeout);
-  }, [modpackQuery, manualModpackEntry, selectedModpack]);
-
-  const effectiveModpackId = selectedModpack?.id ?? manualModpack.id;
+  // Version de Minecraft + chargeur du modpack choisi dans la recherche
+  // CurseForge, montres sous le champ "Version de Minecraft" pour que le
+  // proprietaire n'ait pas a aller les chercher lui-meme.
+  const modpackDetails =
+    type === "modded"
+      ? [modpack.minecraftVersion ? `Minecraft ${modpack.minecraftVersion}` : null, modpack.loader].filter(Boolean).join(" · ")
+      : "";
 
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
@@ -201,131 +184,18 @@ export function NewServerWizard({ action, versions }: Props) {
           </div>
         </div>
 
-        {type === "modded" ? (
-          <div className="flex flex-col gap-1.5">
-            <input type="hidden" name="curseforgeModpackId" value={effectiveModpackId} />
-            <input type="hidden" name="curseforgeModpackName" value={selectedModpack?.name ?? manualModpack.name} />
-            <input type="hidden" name="curseforgeModpackVersion" value={selectedModpack?.latestVersion ?? manualModpack.version} />
-
-            {manualModpackEntry ? (
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="manualModpackId" className="field-label">{t("serverForm.modpackId")}</label>
-                  <input
-                    id="manualModpackId" type="text" required
-                    value={manualModpack.id}
-                    onChange={(e) => setManualModpack((m) => ({ ...m, id: e.target.value }))}
-                    className="field-input"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="manualModpackName" className="field-label">{t("serverForm.modpackName")}</label>
-                  <input
-                    id="manualModpackName" type="text"
-                    value={manualModpack.name}
-                    onChange={(e) => setManualModpack((m) => ({ ...m, name: e.target.value }))}
-                    className="field-input"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="manualModpackVersion" className="field-label">{t("serverForm.modpackVersion")}</label>
-                  <input
-                    id="manualModpackVersion" type="text"
-                    value={manualModpack.version}
-                    onChange={(e) => setManualModpack((m) => ({ ...m, version: e.target.value }))}
-                    className="field-input"
-                  />
-                </div>
-                <button type="button" onClick={() => setManualModpackEntry(false)} className="self-start text-xs text-accent underline">
-                  {t("wizard.modpackUseSearch")}
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="modpackSearch" className="field-label">{t("wizard.modpackSearchLabel")}</label>
-                  <div className="field-with-icon">
-                    <MagnifyingGlass className="h-4 w-4" />
-                    <input
-                      id="modpackSearch" type="text" className="field-input w-full"
-                      placeholder={t("wizard.modpackSearchPlaceholder")}
-                      value={selectedModpack ? selectedModpack.name : modpackQuery}
-                      onChange={(e) => {
-                        setSelectedModpack(null);
-                        setModpackQuery(e.target.value);
-                      }}
-                      disabled={!!selectedModpack}
-                    />
-                  </div>
-                </div>
-
-                {selectedModpack ? (
-                  <div className="mt-1.5 flex items-center gap-2.5 rounded-md px-3 py-2.5" style={{ border: "1px solid var(--accent)", background: "var(--surface)" }}>
-                    {selectedModpack.iconUrl ? (
-                      <img src={selectedModpack.iconUrl} alt="" className="h-8 w-8 flex-shrink-0 rounded-md object-cover" />
-                    ) : (
-                      <span className="server-icon h-8 w-8 flex-shrink-0 text-sm">{selectedModpack.name.charAt(0).toUpperCase()}</span>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13.5px] font-medium text-foreground">{selectedModpack.name}</p>
-                      <p className="truncate text-xs text-muted">
-                        {selectedModpack.latestVersion ? `${selectedModpack.latestVersion} · ` : ""}CurseForge · {t("wizard.modpackVerified")}
-                      </p>
-                    </div>
-                    <CheckCircle className="h-4 w-4 flex-shrink-0" style={{ color: "var(--success)" }} />
-                    <button type="button" onClick={() => setSelectedModpack(null)} className="flex-shrink-0 text-xs text-muted underline">
-                      {t("wizard.modpackChange")}
-                    </button>
-                  </div>
-                ) : modpackSearchState === "not-configured" || modpackSearchState === "error" ? (
-                  <p className="text-xs text-muted">{t("wizard.modpackSearchUnavailable")}</p>
-                ) : modpackSearchState === "searching" ? (
-                  <p className="text-xs text-muted">{t("wizard.modpackSearching")}</p>
-                ) : modpackResults.length > 0 ? (
-                  <div className="flex flex-col gap-1 rounded-md border border-border p-1">
-                    {modpackResults.map((mod) => (
-                      <button
-                        key={mod.id} type="button"
-                        onClick={() => {
-                          setSelectedModpack(mod);
-                          setModpackResults([]);
-                        }}
-                        className="flex items-center gap-3 rounded-md p-2 text-left hover:bg-surface-raised"
-                      >
-                        {mod.iconUrl ? (
-                          <img src={mod.iconUrl} alt="" className="h-7 w-7 flex-shrink-0 rounded object-cover" />
-                        ) : (
-                          <span className="server-icon h-7 w-7 flex-shrink-0 text-xs">{mod.name.charAt(0).toUpperCase()}</span>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm text-foreground">{mod.name}</p>
-                          <p className="truncate text-xs text-muted">{mod.summary}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                ) : modpackQuery.trim() && modpackSearchState === "idle" ? (
-                  <p className="text-xs text-muted">{t("wizard.modpackNoResults")}</p>
-                ) : null}
-
-                <button type="button" onClick={() => setManualModpackEntry(true)} className="mt-1.5 self-start text-xs text-accent underline">
-                  {t("wizard.modpackEnterManually")}
-                </button>
-              </>
-            )}
-
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted2">
-              <Info className="h-3.5 w-3.5 flex-shrink-0" />
-              {t("serverForm.modpackNote")}
-            </p>
-          </div>
-        ) : null}
+        {/* Monte en permanence, juste masque en vanilla : la selection survit a un
+            aller-retour Vanilla/Modde. Les champs caches partent aussi en vanilla,
+            createServer les ignore (voir lib/actions/servers.ts). */}
+        <div className={type === "modded" ? undefined : "hidden"}>
+          <ModpackPicker onChange={setModpack} />
+        </div>
 
         <div className="mt-2 flex justify-end gap-2.5">
           <Link href="/dashboard" className="btn-secondary">{t("wizard.back")}</Link>
           <button
             type="button" onClick={next}
-            disabled={!name || !description || (type === "modded" && !effectiveModpackId)}
+            disabled={!name || !description || (type === "modded" && !modpack.id)}
             className="btn-primary"
           >
             {t("wizard.continue")} <ArrowRight className="h-4 w-4" />
@@ -350,19 +220,17 @@ export function NewServerWizard({ action, versions }: Props) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="minecraftVersion" className="field-label">{t("serverForm.version")}</label>
-            <input
-              id="minecraftVersion" name="minecraftVersion" type="text" list="mc-versions" required
-              value={minecraftVersion} onChange={(e) => setMinecraftVersion(e.target.value)}
-              placeholder={t("serverForm.versionPlaceholder")} className="field-input"
-            />
-            <datalist id="mc-versions">
-              {versions.map((v) => (
-                <option key={v} value={v} />
-              ))}
-            </datalist>
-          </div>
+          <MinecraftVersionField versions={versions} defaultValue={minecraftVersion} onChange={setMinecraftVersion}>
+            {modpackDetails ? (
+              <div className="flex items-start gap-1.5 text-xs text-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-accent" />
+                <div className="flex flex-col gap-0.5">
+                  <span>{t("wizard.modpackChosen", { name: modpack.name })}</span>
+                  <span>{modpackDetails}</span>
+                </div>
+              </div>
+            ) : null}
+          </MinecraftVersionField>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="recommendedRamGB" className="field-label">{t("serverForm.ram")}</label>
             <input

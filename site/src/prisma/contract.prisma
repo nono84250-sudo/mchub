@@ -98,6 +98,12 @@ model Server {
   curseforgeModpackName    String?
   curseforgeModpackVersion String?
 
+  // Plateforme d'ou vient le modpack. Les trois colonnes curseforgeModpack*
+  // gardent leur nom historique mais contiennent, pour "modrinth", l'identifiant
+  // du projet Modrinth, son nom et le numero de version — a renommer un jour
+  // (migration de renommage, plus lourde qu'un simple ajout).
+  modpackSource modpack_source @default(curseforge)
+
   playerCount    Int?
   playerCapacity Int?
   lastPingedAt   TimestamptzString?
@@ -144,6 +150,12 @@ model Server {
   updatedAt temporal.updatedAtString()
 
   @@index([ownerId])
+}
+
+enum modpack_source {
+  @@type("pg/text@1")
+  curseforge = "curseforge"
+  modrinth   = "modrinth"
 }
 
 enum server_event_kind {

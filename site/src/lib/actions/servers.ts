@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { db } from "@/prisma/db";
 import { slugify } from "@/lib/slug";
 import { generateUniqueInviteCode } from "@/lib/inviteCode";
+import type { ModpackSource } from "@/lib/modpack-types";
 
 export type ServerActionState = { error: string } | undefined;
 
@@ -22,6 +23,7 @@ type ServerFormValues = {
   curseforgeModpackId: string | null;
   curseforgeModpackName: string | null;
   curseforgeModpackVersion: string | null;
+  modpackSource: ModpackSource;
   recommendedRamGB: number | null;
 };
 
@@ -38,6 +40,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   const curseforgeModpackId = String(formData.get("curseforgeModpackId") ?? "").trim() || null;
   const curseforgeModpackName = String(formData.get("curseforgeModpackName") ?? "").trim() || null;
   const curseforgeModpackVersion = String(formData.get("curseforgeModpackVersion") ?? "").trim() || null;
+  const modpackSource: ModpackSource = formData.get("modpackSource") === "modrinth" ? "modrinth" : "curseforge";
   const recommendedRamRaw = String(formData.get("recommendedRamGB") ?? "").trim();
   const recommendedRamGB = recommendedRamRaw ? Number(recommendedRamRaw) : null;
 
@@ -45,7 +48,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
     return { error: "Nom, description, version et IP sont obligatoires." };
   }
   if (type === "modded" && !curseforgeModpackId) {
-    return { error: "Un serveur moddé doit indiquer l'identifiant de son modpack CurseForge." };
+    return { error: "Un serveur moddé doit indiquer son modpack (CurseForge ou Modrinth)." };
   }
   // Plafonnee a 32 Go : au-dela, le launcher clampe silencieusement la
   // valeur reelle utilisee (voir settingsStore.js/MAX_GB cote launcher),
@@ -68,6 +71,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
     curseforgeModpackId: type === "modded" ? curseforgeModpackId : null,
     curseforgeModpackName: type === "modded" ? curseforgeModpackName : null,
     curseforgeModpackVersion: type === "modded" ? curseforgeModpackVersion : null,
+    modpackSource: type === "modded" ? modpackSource : "curseforge",
     recommendedRamGB,
   };
 }
@@ -206,6 +210,7 @@ export async function duplicateServer(serverId: string) {
     curseforgeModpackId: source.curseforgeModpackId,
     curseforgeModpackName: source.curseforgeModpackName,
     curseforgeModpackVersion: source.curseforgeModpackVersion,
+    modpackSource: source.modpackSource,
     recommendedRamGB: source.recommendedRamGB,
     // Une fiche mise en pause reste en pause dans sa copie — sans ça, un
     // serveur intentionnellement masque republiait automatiquement sa

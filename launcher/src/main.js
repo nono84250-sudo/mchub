@@ -26,6 +26,7 @@ app.setPath("userData", dottedUserDataPath);
 
 const msAuth = require("./msAuth");
 const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
+const { installModpack } = require("./modpack");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
 const { checkMinecraftStatus } = require("./minecraftStatus");
@@ -777,13 +778,44 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     const memoryMinGB = memoryOverride ? settingsStore.clampGB(memoryOverride.minGB, settings.memoryMinGB) : settings.memoryMinGB;
     const memoryMaxGB = memoryOverride ? settingsStore.clampGB(memoryOverride.maxGB, settings.memoryMaxGB) : settings.memoryMaxGB;
 
+    const onProgress = (status) => event.sender.send("game:progress", status);
+
+    // Serveur moddé : installe (ou met à jour) son modpack CurseForge dans une
+    // instance propre au serveur avant de lancer. Voir modpack.js.
+    let modded = null;
+    if (server.type === "modded" && server.curseforgeModpackId) {
+      modded = await installModpack({
+        config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY },
+        slug,
+        gameRoot: GAME_ROOT,
+        javaPath: settings.javaPath || undefined,
+        // Java de la version que Mojang demande pour ce jeu (voir javaManager.js).
+        resolveJava: (major, onJavaProgress) =>
+          javaManager.ensureJavaForMajor(major, { preferredPath: settings.javaPath || undefined, onProgress: onJavaProgress }),
+        onProgress: (status) => {
+          // Les mises a jour chiffrees (une par mod) ne sont pas journalisees.
+          if (status.text && typeof status.task !== "number") logStore.pushLog({ source: "launcher", message: status.text });
+          onProgress(status);
+        },
+      });
+      logStore.pushLog({
+        source: "launcher",
+        message: `Modpack "${modded.modpackName}" prêt (${modded.customVersion})${modded.javaMajor ? ` — Java ${modded.javaMajor}` : ""}.`,
+      });
+    }
+
     await launchMinecraft({
       authorization: currentSession.authorization,
-      version: server.minecraftVersion,
+      version: modded?.minecraftVersion ?? server.minecraftVersion,
       serverIp: server.ip,
-      onProgress: (status) => event.sender.send("game:progress", status),
+      onProgress,
       memory: { min: `${memoryMinGB}G`, max: `${memoryMaxGB}G` },
-      javaPath: settings.javaPath || undefined,
+      // Serveur moddé : le Java demandé par sa version de Minecraft (Forge plante
+      // sur un Java trop récent) ; sinon celui des réglages, comme avant.
+      javaPath: modded?.javaPath || settings.javaPath || undefined,
+      gameDirectory: modded?.instanceDir,
+      customVersion: modded?.customVersion,
+      customJvmArgs: modded?.jvmArgs,
     });
 
     discordPresence.setPlayingActivity(server.name);

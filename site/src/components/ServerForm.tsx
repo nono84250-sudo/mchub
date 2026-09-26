@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { GlobeHemisphereWest, LockSimple, Copy, ArrowsClockwise, Image, Cube, ImageSquare } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
 import { resetInviteCode } from "@/lib/actions/servers";
-import { OTHER_VERSION_VALUE } from "@/lib/minecraft-versions";
 import { ImageDropzone } from "@/components/ImageDropzone";
+import { ModpackPicker } from "@/components/ModpackPicker";
+import { MinecraftVersionField } from "@/components/MinecraftVersionField";
+import { DEFAULT_MODPACK_SOURCE, type ModpackSource } from "@/lib/modpack-types";
 import { useI18n } from "@/i18n/I18nProvider";
 
 type ServerFormValues = {
@@ -20,6 +22,7 @@ type ServerFormValues = {
   minecraftVersion: string;
   ip: string;
   curseforgeModpackId: string;
+  modpackSource: ModpackSource;
   curseforgeModpackName: string;
   curseforgeModpackVersion: string;
   recommendedRamGB: string;
@@ -36,6 +39,7 @@ const EMPTY_VALUES: ServerFormValues = {
   minecraftVersion: "",
   ip: "",
   curseforgeModpackId: "",
+  modpackSource: DEFAULT_MODPACK_SOURCE,
   curseforgeModpackName: "",
   curseforgeModpackVersion: "",
   recommendedRamGB: "",
@@ -73,12 +77,6 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
   const [origin, setOrigin] = useState("");
   useEffect(() => setOrigin(window.location.origin), []);
   const inviteLink = inviteCode ? `${origin}/join/${inviteCode}` : "";
-
-  const isKnownVersion = values.minecraftVersion !== "" && versions.includes(values.minecraftVersion);
-  const [versionChoice, setVersionChoice] = useState(
-    values.minecraftVersion === "" ? "" : isKnownVersion ? values.minecraftVersion : OTHER_VERSION_VALUE,
-  );
-  const [customVersion, setCustomVersion] = useState(isKnownVersion ? "" : values.minecraftVersion);
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
@@ -254,43 +252,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
         </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="minecraftVersionSelect" className="field-label">
-          {t("serverForm.version")}
-        </label>
-        <select
-          id="minecraftVersionSelect"
-          required
-          value={versionChoice}
-          onChange={(event) => setVersionChoice(event.target.value)}
-          className="field-input"
-        >
-          <option value="" disabled>
-            {t("serverForm.chooseVersion")}
-          </option>
-          {versions.map((version) => (
-            <option key={version} value={version}>
-              {version}
-            </option>
-          ))}
-          <option value={OTHER_VERSION_VALUE}>{t("serverForm.otherVersion")}</option>
-        </select>
-
-        {versionChoice === OTHER_VERSION_VALUE ? (
-          <input
-            name="minecraftVersion"
-            type="text"
-            required
-            placeholder={t("serverForm.otherVersionPlaceholder")}
-            value={customVersion}
-            onChange={(event) => setCustomVersion(event.target.value)}
-            className="field-input"
-          />
-        ) : (
-          <input type="hidden" name="minecraftVersion" value={versionChoice} />
-        )}
-        <p className="text-xs text-muted">{t("serverForm.versionHelp")}</p>
-      </div>
+      <MinecraftVersionField versions={versions} defaultValue={values.minecraftVersion} />
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="ip" className="field-label">
@@ -327,46 +289,17 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
       </div>
 
       {type === "modded" ? (
-        <div className="panel flex flex-col gap-4 p-4">
-          <p className="text-sm font-medium text-foreground">{t("serverForm.modpackSection")}</p>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="curseforgeModpackId" className="field-label">
-              {t("serverForm.modpackId")}
-            </label>
-            <input
-              id="curseforgeModpackId"
-              name="curseforgeModpackId"
-              type="text"
-              required={type === "modded"}
-              defaultValue={values.curseforgeModpackId}
-              className="field-input"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="curseforgeModpackName" className="field-label">
-              {t("serverForm.modpackName")}
-            </label>
-            <input
-              id="curseforgeModpackName"
-              name="curseforgeModpackName"
-              type="text"
-              defaultValue={values.curseforgeModpackName}
-              className="field-input"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="curseforgeModpackVersion" className="field-label">
-              {t("serverForm.modpackVersion")}
-            </label>
-            <input
-              id="curseforgeModpackVersion"
-              name="curseforgeModpackVersion"
-              type="text"
-              defaultValue={values.curseforgeModpackVersion}
-              className="field-input"
-            />
-          </div>
-        </div>
+        // Meme composant que l'assistant de creation : recherche CurseForge, avec
+        // saisie manuelle en repli. Demonte quand on repasse en Vanilla ; en
+        // revenant a Modde il repart du modpack enregistre.
+        <ModpackPicker
+          defaultValue={{
+            id: values.curseforgeModpackId,
+            name: values.curseforgeModpackName,
+            version: values.curseforgeModpackVersion,
+            source: values.modpackSource,
+          }}
+        />
       ) : null}
 
       {children}

@@ -35,10 +35,15 @@ function todayLogPath() {
 // Le jeton Microsoft/Minecraft transite en clair sur la ligne de commande
 // Java (--accessToken ...) passee a minecraft-launcher-core — jamais
 // affiche, meme dans cette console de debug (voir le commentaire dans
-// mcLaunch.js). Coupe aussi les en-tetes Bearer par prudence.
+// mcLaunch.js). MCLC repasse aussi ce meme jeton dans --xuid quand
+// l'autorisation n'a pas de xuid (c'est le cas : le XSTS de Minecraft n'en
+// renvoie pas), donc on coupe --xuid et, par filet de securite, tout ce qui
+// ressemble a un JWT. Coupe aussi les en-tetes Bearer par prudence.
 function redact(message) {
   return message
     .replace(/--accessToken\s+\S+/gi, "--accessToken [REDACTED]")
+    .replace(/--xuid\s+\S+/gi, "--xuid [REDACTED]")
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[REDACTED-JWT]")
     .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]");
 }
 

@@ -50,6 +50,19 @@
               }
             ]
           },
+          "modpack_source": {
+            "codecId": "pg/text@1",
+            "members": [
+              {
+                "name": "curseforge",
+                "value": "curseforge"
+              },
+              {
+                "name": "modrinth",
+                "value": "modrinth"
+              }
+            ]
+          },
           "notification_type": {
             "codecId": "pg/text@1",
             "members": [
@@ -666,6 +679,19 @@
                   "kind": "scalar"
                 }
               },
+              "modpackSource": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                },
+                "valueSet": {
+                  "entityKind": "enum",
+                  "entityName": "modpack_source",
+                  "namespaceId": "public",
+                  "plane": "domain"
+                }
+              },
               "name": {
                 "nullable": false,
                 "type": {
@@ -847,6 +873,9 @@
                 },
                 "minecraftVersion": {
                   "column": "minecraftVersion"
+                },
+                "modpackSource": {
+                  "column": "modpackSource"
                 },
                 "name": {
                   "column": "name"
@@ -1514,6 +1543,11 @@
             "server": {
               "checks": [
                 {
+                  "expression": "\"modpackSource\" IN ('curseforge', 'modrinth')",
+                  "name": "server_modpackSource_check_dc063fb6",
+                  "prefix": "server_modpackSource_check"
+                },
+                {
                   "expression": "\"type\" IN ('vanilla', 'modded')",
                   "name": "server_type_check_0e26c0a7",
                   "prefix": "server_type_check"
@@ -1611,6 +1645,21 @@
                   "codecId": "pg/text@1",
                   "nativeType": "text",
                   "nullable": false
+                },
+                "modpackSource": {
+                  "codecId": "pg/text@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": "curseforge"
+                  },
+                  "nativeType": "text",
+                  "nullable": false,
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "modpack_source",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
                 },
                 "name": {
                   "codecId": "pg/text@1",
@@ -1904,6 +1953,13 @@
                 "password_reset"
               ]
             },
+            "modpack_source": {
+              "kind": "valueSet",
+              "values": [
+                "curseforge",
+                "modrinth"
+              ]
+            },
             "notification_type": {
               "kind": "valueSet",
               "values": [
@@ -1949,7 +2005,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "6f75b7aefe9442b10a31faabf74fcee159fc812666a10c3de22b460f61b66431"
+    "storageHash": "472d26a5cdf5b8b25ee1ab6f10f29828e66976f99ea28d694d5b260a36382cac"
   },
   "execution": {
     "executionHash": "8896e154d9743fcde5e333f54c07d991d348862a0417251a64007c34e5810f4a",
