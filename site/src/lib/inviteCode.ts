@@ -1,8 +1,7 @@
 import { randomInt } from "node:crypto";
 import { db } from "@/prisma/db";
 
-// Meme alphabet que les autres codes du projet (minecraftLink, mots de
-// passe oublies) — sans caracteres ambigus (0/O, 1/I), un code d'invitation
+// Alphabet sans caracteres ambigus (0/O, 1/I) : un code d'invitation
 // se lit et se retape a la main, y compris depuis le launcher.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CODE_LENGTH = 5;

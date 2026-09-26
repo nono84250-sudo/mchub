@@ -1,5 +1,5 @@
-import { Socket } from "node:net";
-import { lookup } from "node:dns/promises";
+import { Socket, isIP } from "node:net";
+import { lookup, resolveSrv } from "node:dns/promises";
 import { isPrivateOrReservedAddress } from "@/lib/ssrfGuard";
 
 // Implémentation directe du protocole "Server List Ping" de Minecraft
@@ -32,6 +32,20 @@ function parseServerAddress(address: string): { host: string; port: number } {
     return { host: trimmed, port: DEFAULT_PORT };
   }
   return { host, port };
+}
+
+// Comme le client Minecraft : avec le port par defaut, un enregistrement SRV
+// _minecraft._tcp.<hote> redirige vers un autre hote et port. Cas courant : le
+// domaine du serveur n'a AUCUN enregistrement A, seulement ce SRV — sans lui le
+// ping echouait et le serveur restait en "statut inconnu" alors qu'il est ouvert.
+// Le hote redirige repasse par la meme verification d'adresse que les autres.
+async function resolveSrvTarget(host: string): Promise<{ host: string; port: number } | null> {
+  try {
+    const [best] = (await resolveSrv(`_minecraft._tcp.${host}`)).sort((a, b) => a.priority - b.priority || b.weight - a.weight);
+    return best ? { host: best.name.replace(/\.$/, ""), port: best.port } : null;
+  } catch {
+    return null;
+  }
 }
 
 function writeVarInt(value: number): Buffer {
@@ -118,7 +132,11 @@ function tryParseStatusResponse(buffer: Buffer): MinecraftServerStatus | null {
  * ou ne répond pas dans le délai imparti.
  */
 export async function pingMinecraftServer(address: string): Promise<MinecraftServerStatus | null> {
-  const { host, port } = parseServerAddress(address);
+  let { host, port } = parseServerAddress(address);
+  if (port === DEFAULT_PORT && !isIP(host)) {
+    const srv = await resolveSrvTarget(host);
+    if (srv) ({ host, port } = srv);
+  }
 
   // Resout et verifie l'adresse REELLE avant toute connexion — jamais le nom
   // d'hote tel quel, pour attraper aussi bien une IP privee saisie
