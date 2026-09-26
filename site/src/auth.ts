@@ -73,9 +73,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // session.user.id aussi — le reste de l'appli traite deja ca comme
         // "non connecte" (voir les redirect("/login") existants).
         token.error = error instanceof PendingApprovalError ? "pending_approval" : "xbox_auth_failed";
-        // Debut de l'identifiant Microsoft (pas un secret) : permet de savoir si deux
-        // tentatives, en local et en ligne, viennent bien du meme compte Microsoft.
-        console.error("[auth] Échec de la récupération du profil Minecraft/Xbox — compte Microsoft", String(account.providerAccountId).slice(0, 6), error);
+        console.error("[auth] Échec de la récupération du profil Minecraft/Xbox", error);
       }
 
       return token;
