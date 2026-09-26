@@ -1,0 +1,244 @@
+[
+  {
+    "id": "dropTable.authToken",
+    "label": "Drop table \"authToken\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "authToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"authToken\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"authToken\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"authToken\"",
+        "sql": "DROP TABLE \"public\".\"authToken\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"authToken\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"authToken\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.minecraftLinkCode",
+    "label": "Drop table \"minecraftLinkCode\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "minecraftLinkCode"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"minecraftLinkCode\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"minecraftLinkCode\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"minecraftLinkCode\"",
+        "sql": "DROP TABLE \"public\".\"minecraftLinkCode\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"minecraftLinkCode\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"minecraftLinkCode\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropColumn.user.emailVerified",
+    "label": "Drop column \"emailVerified\" from \"user\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "emailVerified",
+        "table": "user"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"emailVerified\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "emailVerified"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop column \"emailVerified\"",
+        "sql": "ALTER TABLE \"public\".\"user\" DROP COLUMN \"emailVerified\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"emailVerified\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "emailVerified"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropColumn.user.passwordHash",
+    "label": "Drop column \"passwordHash\" from \"user\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "passwordHash",
+        "table": "user"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"passwordHash\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "passwordHash"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop column \"passwordHash\"",
+        "sql": "ALTER TABLE \"public\".\"user\" DROP COLUMN \"passwordHash\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"passwordHash\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "passwordHash"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropConstraint.user.user_email_key",
+    "label": "Drop constraint \"user_email_key\" on \"user\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "user_email_key",
+        "table": "user"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"user_email_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "user_email_key",
+          "public",
+          "\"public\".\"user\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop constraint \"user_email_key\"",
+        "sql": "ALTER TABLE \"public\".\"user\" DROP CONSTRAINT \"user_email_key\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"user_email_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "user_email_key",
+          "public",
+          "\"public\".\"user\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropColumn.user.email",
+    "label": "Drop column \"email\" from \"user\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "email",
+        "table": "user"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"email\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "email"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop column \"email\"",
+        "sql": "ALTER TABLE \"public\".\"user\" DROP COLUMN \"email\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"email\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "user",
+          "email"
+        ]
+      }
+    ]
+  }
+]

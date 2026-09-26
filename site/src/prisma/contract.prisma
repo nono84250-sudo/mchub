@@ -5,71 +5,15 @@ model User {
   name String
   servers Server[]
 
-  // email/passwordHash restent pour les comptes crees avant le passage a
-  // "Se connecter avec Microsoft" (voir auth.ts) — plus jamais renseignes a
-  // la creation d'un nouveau compte, uniquement le profil Minecraft/Xbox
-  // ci-dessous compte desormais comme identite. minecraftUuid est la seule
-  // cle vraiment stable (voir xboxAuth.ts) : contrairement a un email
-  // Microsoft, elle est garantie presente et immuable pour tout compte
-  // Xbox/Minecraft relie.
-  email        String? @unique
-  passwordHash String?
-
+  // La connexion se fait uniquement par "Se connecter avec Microsoft" (voir
+  // auth.ts) : ni email ni mot de passe ne sont stockes. minecraftUuid est la
+  // seule cle vraiment stable (voir xboxAuth.ts) : garantie presente et
+  // immuable pour tout compte Xbox/Minecraft relie.
   minecraftUuid     String? @unique
   minecraftUsername String?
-  linkCodes         MinecraftLinkCode[]
-
-  // Defaut a true (et non false) pour que les comptes deja crees avant
-  // l'ajout de ce champ restent utilisables sans reverification forcee —
-  // seule la creation de compte (signup()) force explicitement false, avant
-  // la saisie du code recu par email.
-  emailVerified Boolean     @default(true)
-  authTokens    AuthToken[]
 
   createdAt TimestamptzString @default(now())
   updatedAt temporal.updatedAtString()
-}
-
-enum auth_token_kind {
-  @@type("pg/text@1")
-  email_verify   = "email_verify"
-  password_reset = "password_reset"
-}
-
-// Codes/jetons ephemeres envoyes par email : "email_verify" (code a 6
-// caracteres, inscription) et "password_reset" (code a 6 caracteres pour
-// "mot de passe oublie" OU jeton long integre dans le lien envoye depuis
-// /account — meme table, seule la longueur du token differe). Usage unique,
-// courte duree de vie — meme principe que MinecraftLinkCode.
-model AuthToken {
-  id     String           @id @default(uuid())
-  token  String           @unique
-  userId String
-  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind   auth_token_kind
-
-  expiresAt TimestamptzString
-  createdAt TimestamptzString @default(now())
-
-  @@index([userId, kind])
-}
-
-// Code de liaison ephemere (6 caracteres, usage unique) : genere depuis
-// /account, saisi dans le launcher qui connait deja l'UUID Minecraft du
-// joueur via sa propre auth Microsoft (voir launcher/src/msAuth.js) — evite
-// de jamais faire transiter le mot de passe du site dans l'app Electron.
-// Supprime des sa consommation ; les codes expires et non utilises restent
-// jusqu'a nettoyage (volume negligeable, pas de tache de fond dediee).
-model MinecraftLinkCode {
-  id     String @id @default(uuid())
-  code   String @unique
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  expiresAt TimestamptzString
-  createdAt TimestamptzString @default(now())
-
-  @@index([userId])
 }
 
 enum server_type {
