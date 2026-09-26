@@ -71,8 +71,8 @@ Bloquant = à faire **avant** de publier la politique. Utile = à faire vite.
 | 2 | **Durées de conservation annoncées** | Bloquant | Comptes inactifs 3 ans, signalements 12 mois, notifications 90 jours après lecture, messages de contact 12 mois : **aucune purge automatique n'existe**. Les construire, ou allonger les durées dans la politique. |
 | 3 | **Suppression de compte** | Utile | N'existe pas : traitée à la main sur demande (c'est ce que dit la politique). À construire en libre-service à terme. |
 | 4 | **UUID du propriétaire dans l'API publique** | Utile | `ownerMinecraftUuid` est renvoyé publiquement. Le retirer si le launcher n'en a pas besoin (puis supprimer la phrase correspondante, section 3.2 de la politique). |
-| 5 | **Colonnes héritées** | Utile | `email`, `passwordHash`, `emailVerified` et la table `AuthToken` datent de l'ancienne connexion par e-mail (aujourd'hui Microsoft seul). Les supprimer (migration) ou vérifier qu'elles sont vides en production. |
-| 6 | **Région Vercel** | Utile | Fixer les fonctions à Paris (`cdg1`) pour garder le traitement en Europe. |
+| 5 | **Colonnes héritées (e-mail, mot de passe)** | **Bloquant** | `email`, `passwordHash`, `emailVerified`, les tables `AuthToken` et `MinecraftLinkCode` datent de l'ancienne connexion par e-mail (aujourd'hui Microsoft seul), plus utilisées par le code. **Vérifié le 26/09/2026 : elles ne sont PAS vides.** Production : 3 comptes de test (dont le tien) avec e-mail et mot de passe haché, 1 jeton. Dev : 5 comptes avec e-mail, 1 jeton, 1 code de liaison. La politique de confidentialité dit « aucun mot de passe stocké, e-mail non collecté » : **c'est faux tant que ces données existent.** Supprimer les données puis les colonnes et tables (migration destructive, à appliquer aussi à la production). |
+| 6 | **Région Vercel** | Fait | Fonctions fixées à Paris (`cdg1`) le 26/09/2026 (`site/vercel.json`), vérifié en production. Reste à vérifier la région du stockage d'images (Vercel Blob). |
 | 7 | **Vercel « Hobby » interdit l'usage commercial** | Bloquant avant le 1er paiement | Passer en forfait **Pro**. Source : règles officielles de Vercel (« Fair use guidelines »). |
 
 ## 5. Abonnements : ce que le paiement doit respecter
@@ -100,7 +100,7 @@ Bloquant = à faire **avant** de publier la politique. Utile = à faire vite.
 
 Pour ne rien perdre, voici ce qui reste ouvert ailleurs dans le projet :
 
-- [ ] **Migrations de base à appliquer à la production** (`omniscient-production`), **avant** de promouvoir `master` : `add_report`, `add_notification`, `add_modpack_source`. Sans `add_modpack_source`, toute lecture d'un serveur échouera en ligne.
+- [ ] **Migrations de base à appliquer à la production** (`omniscient-production`), **dans l'ordre et avant** de promouvoir `master`. **Fait le 26/09/2026 : les 6 migrations en retard sont appliquées** (`make_email_password_optional`, `add_server_background_url`, `add_server_visibility`, `add_report`, `add_notification`, `add_modpack_source`) et `production` a été avancée à `84a3300`. Reste : `AUTH_MICROSOFT_ENTRA_ID_ID` / `_SECRET` à ajouter chez Vercel puis redéployer, sinon la connexion est cassée en ligne. Sans elles, toute lecture d'un serveur échouera en ligne, et la création d'un compte aussi (`email` et `passwordHash` y sont encore obligatoires).
 - [ ] **Clé CurseForge personnelle** (console.curseforge.com) puis `CURSEFORGE_API_KEY` sur Vercel. Les deux clés « trouvées » ont été révoquées.
 - [ ] **Launcher : Fabric et Quilt** ne sont pas gérés (message d'erreur clair pour l'instant) ; NeoForge et Forge fonctionnent.
 - [ ] **Commit** : environ 28 fichiers modifiés ou nouveaux non commités depuis `d53e1ba` (modpacks, correctifs du launcher, `Legal/`). Rien n'est sur `master` tant que tu ne l'as pas demandé.
