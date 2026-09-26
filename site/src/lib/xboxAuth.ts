@@ -84,6 +84,11 @@ async function getMinecraftProfile(minecraftAccessToken: string) {
   const res = await fetchWithTimeout("https://api.minecraftservices.com/minecraft/profile", {
     headers: { Authorization: `Bearer ${minecraftAccessToken}` },
   });
+  if (!res.ok) {
+    // Diagnostic temporaire (connexion OK en local mais "ne possede pas Minecraft"
+    // sur Vercel) : statut, region et corps renvoyes par Mojang — aucun jeton dedans.
+    console.error("[xboxAuth] /minecraft/profile", res.status, "region", process.env.VERCEL_REGION, (await res.clone().text()).slice(0, 300));
+  }
   if (res.status === 403) throw new PendingApprovalError();
   if (res.status === 404) throw new Error("Ce compte Microsoft ne possède pas Minecraft.");
   if (!res.ok) throw new Error("Impossible de récupérer le profil Minecraft");
