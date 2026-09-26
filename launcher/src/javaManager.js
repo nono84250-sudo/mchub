@@ -249,12 +249,19 @@ async function installedJavaMajors() {
   return status;
 }
 
-// Installe d'un coup ceux qui manquent (un par un, les presents sont sautes).
+// Installe d'un coup ceux qui manquent (un par un, les presents sont sautes) :
+// les quatre par defaut, ou seulement `majors`.
 // Renvoie { 8: chemin|null, ... } — null = echec, deja signale par onProgress.
-async function installAllJava(onProgress) {
+async function installAllJava(onProgress, majors = SUPPORTED_JAVA_MAJORS) {
   const paths = {};
-  for (const major of SUPPORTED_JAVA_MAJORS) paths[major] = await ensureJavaForMajor(major, { onProgress });
+  for (const major of majors) paths[major] = await ensureJavaForMajor(major, { onProgress });
   return paths;
+}
+
+// Supprime les Java telecharges par le launcher (runtime/) — jamais ceux installes
+// sur le PC. Echoue si l'un est en cours d'utilisation (Minecraft ouvert).
+function removeManagedJava() {
+  fs.rmSync(RUNTIME_BASE, { recursive: true, force: true, maxRetries: 3, retryDelay: 300 });
 }
 
 module.exports = {
@@ -264,6 +271,7 @@ module.exports = {
   findInstalledJava,
   installedJavaMajors,
   installAllJava,
+  removeManagedJava,
   SUPPORTED_JAVA_MAJORS,
   javaMajorFromFolderName,
   RUNTIME_DIR,

@@ -29,7 +29,7 @@ const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
 const { installModpack, ensureVanillaVersion } = require("./modpack");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
-const { checkMinecraftStatus } = require("./minecraftStatus");
+const { checkServicesStatus } = require("./servicesStatus");
 const javaManager = require("./javaManager");
 const diagnostics = require("./diagnostics");
 const discordPresence = require("./discordPresence");
@@ -692,10 +692,13 @@ ipcMain.handle("java:detect", async () => {
   return { ...result, managed: !!settings.javaPath, installed: await javaManager.installedJavaMajors() };
 });
 
-// Installe les quatre Java que Minecraft demande selon sa version (8, 17, 21, 25) :
-// chaque lancement prend ensuite celui de sa version (voir game:launch).
-ipcMain.handle("java:install", async (event) => {
-  const paths = await javaManager.installAllJava((status) => event.sender.send("java:installProgress", status));
+// Installe les Java que Minecraft demande selon sa version (8, 17, 21, 25) : les
+// quatre depuis les Reglages, seulement le 21 depuis le verrou de demarrage
+// (`majors`) — les autres sont telecharges au lancement d'un serveur qui en a
+// besoin, chaque lancement prenant ensuite celui de sa version (voir game:launch).
+ipcMain.handle("java:install", async (event, majors) => {
+  const wanted = Array.isArray(majors) ? majors.filter((m) => javaManager.SUPPORTED_JAVA_MAJORS.includes(m)) : [];
+  const paths = await javaManager.installAllJava((status) => event.sender.send("java:installProgress", status), wanted.length ? wanted : undefined);
   // Java 21 reste le Java "par defaut" des reglages (ce que le verrou de demarrage controle) ;
   // un autre qui aurait echoue sera retente au lancement du serveur qui en a besoin.
   const done = Object.keys(paths).filter((major) => paths[major]);
@@ -704,19 +707,35 @@ ipcMain.handle("java:install", async (event) => {
   return { ok: true, version: done.join(", ") };
 });
 
+// "Reparer Java" (Reglages) : supprime les Java telecharges par le launcher puis
+// reinstalle les quatre. Les Java installes sur le PC ne sont pas touches.
+ipcMain.handle("java:repair", async (event) => {
+  try {
+    javaManager.removeManagedJava();
+  } catch (error) {
+    return { ok: false, error: `impossible de supprimer l'ancien Java (Minecraft est-il ouvert ?) — ${error instanceof Error ? error.message : "erreur inconnue"}` };
+  }
+  const paths = await javaManager.installAllJava((status) => event.sender.send("java:installProgress", status));
+  const failed = Object.keys(paths).filter((major) => !paths[major]);
+  if (paths[21]) settingsStore.saveSettings({ javaPath: paths[21] });
+  if (failed.length) return { ok: false, error: `Java ${failed.join(", ")} n'a pas pu être réinstallé.` };
+  return { ok: true, version: Object.keys(paths).join(", ") };
+});
+
 // Mis en cache brievement : un clic repete sur le bouton de statut ne doit
-// pas re-solliciter 5 services externes a chaque fois.
+// pas re-solliciter les services externes a chaque fois. Le bouton
+// "Actualiser" du panneau (`force`) passe outre.
 const STATUS_CACHE_MS = 30_000;
 let statusCache = null;
 
-ipcMain.handle("status:getMinecraftStatus", async () => {
+ipcMain.handle("status:getServicesStatus", async (_event, force) => {
   const now = Date.now();
-  if (statusCache && now - statusCache.fetchedAt < STATUS_CACHE_MS) {
-    return statusCache.services;
+  if (!force && statusCache && now - statusCache.fetchedAt < STATUS_CACHE_MS) {
+    return statusCache;
   }
-  const services = await checkMinecraftStatus();
-  statusCache = { fetchedAt: now, services };
-  return services;
+  const groups = await checkServicesStatus();
+  statusCache = { fetchedAt: now, groups };
+  return statusCache;
 });
 
 let gameLaunchInProgress = false;

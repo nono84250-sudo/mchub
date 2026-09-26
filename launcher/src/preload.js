@@ -38,7 +38,7 @@ contextBridge.exposeInMainWorld("mchub", {
     reset: () => ipcRenderer.invoke("settings:reset"),
     openGameFolder: () => ipcRenderer.invoke("settings:openGameFolder"),
   },
-  getMinecraftStatus: () => ipcRenderer.invoke("status:getMinecraftStatus"),
+  getServicesStatus: (force) => ipcRenderer.invoke("status:getServicesStatus", !!force),
   updates: {
     check: () => ipcRenderer.invoke("update:check"),
     onStatus: (callback) => {
@@ -56,7 +56,8 @@ contextBridge.exposeInMainWorld("mchub", {
   },
   java: {
     detect: () => ipcRenderer.invoke("java:detect"),
-    install: () => ipcRenderer.invoke("java:install"),
+    install: (majors) => ipcRenderer.invoke("java:install", majors),
+    repair: () => ipcRenderer.invoke("java:repair"),
   },
   onJavaInstallProgress: (callback) => {
     const listener = (_event, status) => callback(status);

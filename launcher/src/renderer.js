@@ -817,10 +817,10 @@ function wireGate() {
 // debug-console.js, sur le modele de theme.js/i18n.js).
 const wireWindowControls = window.windowControls.wireWindowControls;
 
-// Statut des services Minecraft/Microsoft dont ce launcher depend
-// reellement (voir minecraftStatus.js — Mojang n'a plus d'API de statut
-// officielle depuis 2022). Le point du bouton prend la pire couleur parmi
-// tous les services.
+// Statut des services dont ce launcher depend reellement, par fournisseur
+// (Minecraft, Modrinth, CurseForge — voir servicesStatus.js ; Mojang n'a plus
+// d'API de statut officielle depuis 2022). Le point du bouton prend la pire
+// couleur parmi tous les services ; chaque bloc peut etre replie.
 const mcStatusTrigger = document.getElementById("mc-status-trigger");
 const mcStatusDot = document.getElementById("mc-status-dot");
 const mcStatusPanel = document.getElementById("mc-status-panel");
@@ -828,34 +828,112 @@ const mcStatusList = document.getElementById("mc-status-list");
 
 const MC_STATUS_RANK = { ok: 0, degraded: 1, offline: 2 };
 const MC_STATUS_CLASS = { ok: "online", degraded: "degraded", offline: "offline" };
+const MC_STATUS_TILE = { minecraft: ["MC", "#62b246"], modrinth: ["Mr", "#1bd96a"], curseforge: ["CF", "#f16436"] };
+const MC_STATUS_REFRESH_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>';
+const MC_STATUS_CHEV_SVG = '<svg class="mc-status-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+const mcStatusCollapsed = new Set();
+let mcStatusData = null; // derniere reponse { fetchedAt, groups }
+let mcStatusLoading = false;
+
 function mcStatusLabel(state) {
   return t(`mcStatus.${state}`);
 }
 
-function renderMcStatus(services) {
-  const worst = services.reduce(
-    (acc, s) => (MC_STATUS_RANK[s.state] > MC_STATUS_RANK[acc] ? s.state : acc),
-    "ok",
-  );
-  mcStatusDot.className = `status-dot ${MC_STATUS_CLASS[worst]}`;
-
-  mcStatusList.innerHTML = services
-    .map(
-      (s) => `
-      <div class="mc-status-row">
-        <span class="mc-status-row-label">
-          <span class="status-dot ${MC_STATUS_CLASS[s.state]}"></span>${escapeHtml(s.name)}
-        </span>
-        <span class="mc-status-row-latency">${s.latencyMs !== null ? `${s.latencyMs} ms` : mcStatusLabel(s.state)}</span>
-      </div>`,
-    )
-    .join("");
+function worstMcState(states) {
+  return states.reduce((acc, s) => (MC_STATUS_RANK[s] > MC_STATUS_RANK[acc] ? s : acc), "ok");
 }
 
-async function loadMcStatus() {
-  mcStatusList.innerHTML = `<div class="mc-status-row">${t("common.checking")}</div>`;
-  const services = await window.mchub.getMinecraftStatus();
-  renderMcStatus(services);
+// "Tous les services fonctionnent" / "1 service ralenti" / "2 services hors ligne · 1 ralenti"
+function mcStatusSummary(states) {
+  const slow = states.filter((s) => s === "degraded").length;
+  const offline = states.filter((s) => s === "offline").length;
+  const count = (n, oneKey, manyKey) => (n === 1 ? t(oneKey) : t(manyKey, { n }));
+  if (!offline && !slow) return t("serviceStatus.allOk");
+  if (!offline) return count(slow, "serviceStatus.slowOne", "serviceStatus.slowMany");
+  const offlineText = count(offline, "serviceStatus.offlineOne", "serviceStatus.offlineMany");
+  return slow ? `${offlineText} · ${count(slow, "serviceStatus.slowShortOne", "serviceStatus.slowShortMany")}` : offlineText;
+}
+
+function mcStatusCheckedText(fetchedAt) {
+  const seconds = Math.max(0, Math.round((Date.now() - fetchedAt) / 1000));
+  if (seconds < 5) return t("serviceStatus.checkedNow");
+  if (seconds < 60) return t("serviceStatus.checkedSeconds", { n: seconds });
+  return t("serviceStatus.checkedMinutes", { n: Math.round(seconds / 60) });
+}
+
+function mcStatusRowHtml(service) {
+  const latency =
+    service.state === "offline"
+      ? mcStatusLabel("offline")
+      : service.state === "degraded"
+        ? t("serviceStatus.slowLatency", { ms: service.latencyMs })
+        : `${service.latencyMs} ms`;
+  return `
+    <div class="mc-status-row ${service.state}">
+      <span class="mc-status-row-label"><span class="status-dot ${MC_STATUS_CLASS[service.state]}"></span>${escapeHtml(t(`serviceStatus.svc.${service.id}`))}</span>
+      <span class="mc-status-row-latency">${latency}</span>
+    </div>`;
+}
+
+function renderMcStatus(data) {
+  mcStatusData = data;
+  const { groups, fetchedAt } = data;
+  const states = groups.flatMap((g) => g.services.map((s) => s.state));
+  const worst = worstMcState(states);
+  mcStatusDot.className = `status-dot ${MC_STATUS_CLASS[worst]}`;
+
+  const groupsHtml = groups
+    .map((group) => {
+      const [letters, color] = MC_STATUS_TILE[group.id] || [group.name.slice(0, 2), "#9184d9"];
+      const collapsed = mcStatusCollapsed.has(group.id);
+      const groupWorst = worstMcState(group.services.map((s) => s.state));
+      const okCount = group.services.filter((s) => s.state === "ok").length;
+      return `
+        <section class="mc-status-group${collapsed ? " collapsed" : ""}">
+          <button class="mc-status-group-head" type="button" data-group="${escapeHtml(group.id)}" aria-expanded="${!collapsed}">
+            <span class="mc-status-tile" style="background: ${color};">${letters}</span>
+            <span class="mc-status-group-name">${escapeHtml(group.name)}</span>
+            <span class="mc-status-count"><span class="status-dot ${MC_STATUS_CLASS[groupWorst]}"></span>${okCount}/${group.services.length}</span>
+            ${MC_STATUS_CHEV_SVG}
+          </button>
+          ${collapsed ? "" : `<div class="mc-status-rows">${group.services.map(mcStatusRowHtml).join("")}</div>`}
+        </section>`;
+    })
+    .join("");
+
+  mcStatusList.innerHTML = `
+    <div class="mc-status-head">
+      <div>
+        <div class="mc-status-title">${t("serviceStatus.title")}</div>
+        <div class="mc-status-summary"><span class="status-dot ${MC_STATUS_CLASS[worst]}"></span><span>${escapeHtml(mcStatusSummary(states))}</span></div>
+      </div>
+      <button class="mc-status-refresh" id="mc-status-refresh" type="button" title="${t("serviceStatus.refresh")}" aria-label="${t("serviceStatus.refresh")}">${MC_STATUS_REFRESH_SVG}</button>
+    </div>
+    <div class="mc-status-groups">${groupsHtml}</div>
+    <div class="mc-status-foot"><span>${mcStatusCheckedText(fetchedAt)}</span><span>${t("serviceStatus.measured")}</span></div>`;
+
+  mcStatusList.querySelectorAll(".mc-status-group-head").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.group;
+      if (mcStatusCollapsed.has(id)) mcStatusCollapsed.delete(id);
+      else mcStatusCollapsed.add(id);
+      renderMcStatus(mcStatusData);
+    });
+  });
+  document.getElementById("mc-status-refresh").addEventListener("click", () => loadMcStatus(true));
+}
+
+// `force` : "Actualiser" — repasse outre le cache de 30 s du processus principal.
+async function loadMcStatus(force = false) {
+  if (mcStatusLoading) return;
+  mcStatusLoading = true;
+  if (mcStatusData) document.getElementById("mc-status-refresh")?.classList.add("spinning");
+  else mcStatusList.innerHTML = `<div class="mc-status-row" style="padding: 14px;">${t("common.checking")}</div>`;
+  try {
+    renderMcStatus(await window.mchub.getServicesStatus(force));
+  } finally {
+    mcStatusLoading = false;
+  }
 }
 
 // Ferme un panneau deroulant a l'appui sur Echap et rend le focus a son
@@ -878,6 +956,8 @@ function wireMcStatus() {
     mcStatusPanel.hidden = !mcStatusPanel.hidden;
     if (wasHidden) loadMcStatus();
   });
+  // Un clic DANS le panneau (replier un bloc, actualiser) ne doit pas le fermer.
+  mcStatusPanel.addEventListener("click", (event) => event.stopPropagation());
   document.addEventListener("click", () => {
     mcStatusPanel.hidden = true;
   });
@@ -1822,7 +1902,10 @@ function renderMiscTab(contentEl, settings) {
       <div>
         <div class="settings-row-label">${t("settings.javaLabel")}</div>
         <p class="join-note" id="settings-java-status" style="margin-top: 6px;">${t("common.checking")}</p>
-        <button id="settings-java-install" class="btn-secondary" type="button" hidden style="margin-top: 8px;">${t("java.installAuto")}</button>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+          <button id="settings-java-install" class="btn-secondary" type="button" hidden>${t("java.installAuto")}</button>
+          <button id="settings-java-repair" class="btn-danger" type="button">${t("java.repair")}</button>
+        </div>
       </div>
       <div class="settings-divider"></div>
       <div>
@@ -1845,6 +1928,25 @@ function renderMiscTab(contentEl, settings) {
     window.mchub.settings.openGameFolder();
   });
   refreshJavaStatus("settings-java-status", "settings-java-install");
+
+  // "Reparer Java" : supprime les Java du launcher puis reinstalle les quatre.
+  const javaStatusEl = document.getElementById("settings-java-status");
+  const javaInstallBtn = document.getElementById("settings-java-install");
+  const javaRepairBtn = document.getElementById("settings-java-repair");
+  javaRepairBtn.addEventListener("click", async () => {
+    javaRepairBtn.disabled = true;
+    javaInstallBtn.disabled = true;
+    const stopListening = window.mchub.onJavaInstallProgress((status) => {
+      javaStatusEl.textContent = status;
+    });
+    javaStatusEl.textContent = t("common.checking");
+    const result = await window.mchub.java.repair();
+    stopListening();
+    javaRepairBtn.disabled = false;
+    javaInstallBtn.disabled = false;
+    if (result.ok) refreshJavaStatus("settings-java-status", "settings-java-install");
+    else javaStatusEl.textContent = t("java.repairFailed", { error: result.error });
+  });
 }
 
 // Partagé entre le verrou Java obligatoire et les paramètres : verifie Java
@@ -1852,7 +1954,9 @@ function renderMiscTab(contentEl, settings) {
 // affiche un bouton d'installation automatique si besoin. `onReady` est
 // appelé dès que Java est détecté OK (tout de suite, ou juste après une
 // installation réussie) — utilisé par le verrou pour débloquer le launcher.
-async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
+// `defaultOnly` (verrou de demarrage) : ne concerne que le Java 21 par defaut, les
+// autres versions se telechargent au lancement d'un serveur qui en a besoin.
+async function refreshJavaStatus(statusElId, installBtnId, { onReady, defaultOnly = false } = {}) {
   const statusEl2 = document.getElementById(statusElId);
   const installBtn = document.getElementById(installBtnId);
   statusEl2.textContent = t("common.checking");
@@ -1861,7 +1965,7 @@ async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
   const java = await window.mchub.java.detect();
   // Minecraft utilise un Java different selon sa version (8, 17, 21, 25) : on signale
   // ceux qui manquent, meme si le Java par defaut est bon, avec le bouton pour les installer.
-  const missing = [8, 17, 21, 25].filter((major) => java.installed && !java.installed[major]);
+  const missing = defaultOnly ? [] : [8, 17, 21, 25].filter((major) => java.installed && !java.installed[major]);
   if (java.found && java.is64Bit && java.meetsMinimum) {
     const detected = java.version ? t("java.detectedWithVersion", { version: java.version }) : t("java.detectedNoVersion");
     statusEl2.textContent = missing.length ? `${detected} ${t("java.missingOthers", { list: missing.join(", ") })}` : detected;
@@ -1885,7 +1989,7 @@ async function refreshJavaStatus(statusElId, installBtnId, { onReady } = {}) {
     const stopListening = window.mchub.onJavaInstallProgress((status) => {
       statusEl2.textContent = status;
     });
-    const result = await window.mchub.java.install();
+    const result = await window.mchub.java.install(defaultOnly ? [21] : undefined);
     stopListening();
     installBtn.disabled = false;
     if (result.ok) {
@@ -1917,6 +2021,7 @@ async function ensureJavaAvailable() {
   javaGateEl.hidden = false;
   await new Promise((resolve) => {
     refreshJavaStatus("java-gate-status", "java-gate-install", {
+      defaultOnly: true,
       onReady: () => {
         javaGateEl.hidden = true;
         resolve();

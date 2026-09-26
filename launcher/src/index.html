@@ -582,6 +582,7 @@
     cursor: pointer;
   }
   button.btn-danger:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+  button.btn-danger:disabled { opacity: 0.5; cursor: default; }
 
   .system-info-grid { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 8px 16px; font-size: 12.5px; font-family: ui-monospace, Consolas, Menlo, monospace; }
   .system-info-grid .label { color: var(--muted); }
@@ -793,25 +794,61 @@
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
+    width: 348px;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 8px;
-    min-width: 230px;
+    border-radius: 12px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     z-index: 20;
   }
+  .mc-status-panel .status-dot { width: 8px; height: 8px; margin: 0; }
+  .mc-status-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 14px 14px 12px; border-bottom: 1px solid var(--border); }
+  .mc-status-title { font-size: 14px; font-weight: 600; letter-spacing: .01em; }
+  .mc-status-summary { display: flex; align-items: center; gap: 7px; margin-top: 5px; font-size: 12px; color: var(--muted); }
+  .mc-status-refresh {
+    width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: transparent;
+    color: var(--muted); cursor: pointer; display: grid; place-items: center; flex-shrink: 0; padding: 0;
+  }
+  .mc-status-refresh:hover { color: var(--foreground); border-color: var(--accent); }
+  .mc-status-refresh.spinning svg { animation: mc-status-spin 0.7s linear infinite; }
+  @keyframes mc-status-spin { to { transform: rotate(360deg); } }
+
+  .mc-status-groups { padding: 6px 8px 4px; }
+  .mc-status-group + .mc-status-group { border-top: 1px solid var(--border); }
+  .mc-status-group-head {
+    width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 6px; background: transparent;
+    border: 0; color: var(--foreground); font: inherit; cursor: pointer; text-align: left; border-radius: 8px;
+  }
+  .mc-status-group-head:hover { background: color-mix(in srgb, var(--foreground) 4%, transparent); }
+  .mc-status-tile {
+    width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; flex-shrink: 0;
+    font-size: 10.5px; font-weight: 700; letter-spacing: -0.02em; color: #0d0e17;
+  }
+  .mc-status-group-name { font-weight: 600; font-size: 13px; flex: 1; }
+  .mc-status-count { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+  .mc-status-chev { color: var(--muted); transition: transform 0.15s; }
+  .mc-status-group.collapsed .mc-status-chev { transform: rotate(-90deg); }
+
+  .mc-status-rows { margin: 0 0 8px 18px; padding-left: 14px; border-left: 1px solid var(--border); }
   .mc-status-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 7px 6px;
+    padding: 6px 4px;
     font-size: 12.5px;
   }
-  .mc-status-row-label { display: flex; align-items: center; }
-  .mc-status-row-label .status-dot { margin-right: 8px; }
-  .mc-status-row-latency { color: var(--muted); font-size: 11px; }
+  .mc-status-row-label { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .mc-status-row-latency { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mc-status-row.degraded .mc-status-row-latency { color: var(--warn); }
+  .mc-status-row.offline .mc-status-row-latency { color: var(--danger); font-weight: 600; }
+  .mc-status-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 14px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted);
+  }
   .status-dot.degraded { background: #f5b942; box-shadow: 0 0 6px rgba(245, 185, 66, 0.8); }
   .status-dot.offline { background: var(--danger); box-shadow: 0 0 6px rgba(224, 138, 138, 0.8); }
 
@@ -1113,7 +1150,7 @@
     <div class="mc-status-menu">
       <button class="mc-status-trigger" id="mc-status-trigger" type="button">
         <span class="status-dot" id="mc-status-dot"></span>
-        <span data-i18n="titlebar.mcStatus">Minecraft Status</span>
+        <span data-i18n="titlebar.mcStatus">Statut des services</span>
       </button>
       <div class="mc-status-panel" id="mc-status-panel" hidden>
         <div id="mc-status-list"></div>
@@ -1175,7 +1212,7 @@
 
     <div class="onboarding-box">
       <p class="join-note" id="java-gate-status" data-i18n="common.checking">Vérification…</p>
-      <button id="java-gate-install" class="join-btn" type="button" hidden style="margin-top: 8px;" data-i18n="java.installAuto">Installer Java 8, 17, 21 et 25</button>
+      <button id="java-gate-install" class="join-btn" type="button" hidden style="margin-top: 8px;" data-i18n="java.installDefault">Installer Java 21</button>
     </div>
   </div>
 
