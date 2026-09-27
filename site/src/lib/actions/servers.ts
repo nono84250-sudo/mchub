@@ -139,7 +139,13 @@ export async function updateServer(
   // inviteCode dans contract.prisma).
   const inviteCode = parsed.isPrivate && !owned.inviteCode ? await generateUniqueInviteCode() : owned.inviteCode;
 
-  await db.orm.public.Server.where({ id: serverId }).update({ ...parsed, inviteCode });
+  // Nouvelle adresse : le statut enregistré ne vaut plus rien, on la re-mesure à la prochaine visite
+  // (sans ça, un serveur resté « hors ligne » attendrait jusqu'à 5 minutes).
+  await db.orm.public.Server.where({ id: serverId }).update({
+    ...parsed,
+    inviteCode,
+    ...(parsed.ip !== owned.ip ? { lastPingedAt: null, playerCount: null, playerCapacity: null } : {}),
+  });
 
   revalidatePath("/servers");
   revalidatePath(`/servers/${owned.slug}`);

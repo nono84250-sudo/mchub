@@ -1,5 +1,5 @@
 import { db } from "@/prisma/db";
-import { getServerStatus } from "@/lib/server-status";
+import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
 
 // Point d'accès unique aux données "publiques" d'un serveur (annuaire du
 // site ET API publique consommée par le launcher, cf. section 3 du cahier
@@ -81,24 +81,23 @@ export async function listPublicServers(options: ListPublicServersOptions = {}):
     return b.createdAt.localeCompare(a.createdAt);
   });
 
-  return Promise.all(
-    sorted.map(async (row) => {
-      const status = await getServerStatus(row.id, row.ip, row);
-      return {
-        slug: row.slug,
-        name: row.name,
-        description: row.description,
-        bannerUrl: row.bannerUrl,
-        iconUrl: row.iconUrl,
-        type: row.type,
-        playerCount: status.playerCount,
-        playerCapacity: status.playerCapacity,
-        createdAt: row.createdAt,
-        viewCount: row.viewCount,
-        ownerMinecraftUuid: row.owner?.minecraftUuid ?? null,
-      };
-    }),
-  );
+  // L'affichage montre le dernier chiffre enregistré ; les statuts périmés sont
+  // re-mesurés après l'envoi de la page (voir server-status.ts).
+  scheduleStatusRefresh(sorted);
+
+  return sorted.map((row) => ({
+    slug: row.slug,
+    name: row.name,
+    description: row.description,
+    bannerUrl: row.bannerUrl,
+    iconUrl: row.iconUrl,
+    type: row.type,
+    playerCount: row.playerCount,
+    playerCapacity: row.playerCapacity,
+    createdAt: row.createdAt,
+    viewCount: row.viewCount,
+    ownerMinecraftUuid: row.owner?.minecraftUuid ?? null,
+  }));
 }
 
 export type LauncherServerDetail = {
