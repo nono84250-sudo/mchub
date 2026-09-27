@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
 import { db } from "@/prisma/db";
 import { createReport, type ReportIssue } from "@/lib/reports";
+import { rateLimitResponse } from "@/lib/rateLimit";
 
 const VALID_ISSUES: ReportIssue[] = ["cant_connect", "wrong_version", "modpack_download", "crash", "other"];
 
@@ -13,6 +14,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
+  // Un signalement écrit en base : au plus 10 par minute et par adresse.
+  const limited = rateLimitResponse(request, "report", 10);
+  if (limited) return limited;
 
   const { slug } = await ctx.params;
   const server = await db.orm.public.Server.select("id").where({ slug }).first();

@@ -1,5 +1,16 @@
+import { unstable_cache } from "next/cache";
 import { db } from "@/prisma/db";
 import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
+
+// Etiquette du cache des donnees publiques des serveurs : les actions du site
+// (creer, modifier, publier, mettre en pause, supprimer) l'invalident avec
+// updateTag(SERVERS_CACHE_TAG), donc un changement du proprietaire est visible
+// tout de suite. Sans changement, la base n'est lue qu'une fois par minute (la
+// minute laisse aussi aux chiffres de joueurs en ligne le temps d'arriver).
+export const SERVERS_CACHE_TAG = "servers";
+const SERVERS_CACHE_SECONDS = 60;
+// Annuaire : nombre de serveurs par page.
+export const SERVERS_PAGE_SIZE = 24;
 
 // Point d'accès unique aux données "publiques" d'un serveur (annuaire du
 // site ET API publique consommée par le launcher, cf. section 3 du cahier
@@ -47,45 +58,54 @@ export type PublicServerDetail = PublicServerSummary & {
 // et evite d'apprendre la syntaxe "contains" du lane ORM Prisma 8 pour un
 // gain de performance qui ne se verrait pas ici (meme raisonnement que le
 // bucketing de la page Activite, voir server-activity.ts).
-export async function listPublicServers(options: ListPublicServersOptions = {}): Promise<PublicServerSummary[]> {
-  const { q, sort = "recent" } = options;
+// Tous les serveurs publies et publics, lus en base au plus une fois par minute
+// (et des qu'un proprietaire change quelque chose : SERVERS_CACHE_TAG). Contient
+// `id`, `ip` et `lastPingedAt` pour la mesure des joueurs en ligne — cote serveur
+// uniquement : jamais renvoyes par les fonctions publiques ci-dessous. Limite : le
+// cache de donnees de Vercel accepte 2 Mo par entree, soit environ 3 000 serveurs ;
+// au-dela il faudra paginer dans la requete SQL.
+const loadPublishedServers = unstable_cache(
+  async () =>
+    db.orm.public.Server.select(
+      "id",
+      "slug",
+      "name",
+      "description",
+      "bannerUrl",
+      "iconUrl",
+      "type",
+      "ip",
+      "playerCount",
+      "playerCapacity",
+      "lastPingedAt",
+      "createdAt",
+      "viewCount",
+    )
+      .include("owner", (o) => o.select("minecraftUuid"))
+      .where({ published: true, isPrivate: false })
+      .orderBy((s) => s.createdAt.desc())
+      .all(),
+  ["published-servers"],
+  { revalidate: SERVERS_CACHE_SECONDS, tags: [SERVERS_CACHE_TAG] },
+);
 
-  const rows = await db.orm.public.Server.select(
-    "id",
-    "slug",
-    "name",
-    "description",
-    "bannerUrl",
-    "iconUrl",
-    "type",
-    "ip",
-    "playerCount",
-    "playerCapacity",
-    "lastPingedAt",
-    "createdAt",
-    "viewCount",
-  )
-    .include("owner", (o) => o.select("minecraftUuid"))
-    .where({ published: true, isPrivate: false })
-    .orderBy((s) => s.createdAt.desc())
-    .all();
+type PublishedServerRow = Awaited<ReturnType<typeof loadPublishedServers>>[number];
 
+function filterAndSort(rows: PublishedServerRow[], { q, sort = "recent" }: ListPublicServersOptions): PublishedServerRow[] {
   const needle = q?.trim().toLowerCase();
   const filtered = needle
     ? rows.filter((row) => row.name.toLowerCase().includes(needle) || row.description.toLowerCase().includes(needle))
     : rows;
 
-  const sorted = [...filtered].sort((a, b) => {
+  return [...filtered].sort((a, b) => {
     if (sort === "popular") return b.viewCount - a.viewCount;
     if (sort === "az") return a.name.localeCompare(b.name);
     return b.createdAt.localeCompare(a.createdAt);
   });
+}
 
-  // L'affichage montre le dernier chiffre enregistré ; les statuts périmés sont
-  // re-mesurés après l'envoi de la page (voir server-status.ts).
-  scheduleStatusRefresh(sorted);
-
-  return sorted.map((row) => ({
+function toSummary(row: PublishedServerRow): PublicServerSummary {
+  return {
     slug: row.slug,
     name: row.name,
     description: row.description,
@@ -97,7 +117,38 @@ export async function listPublicServers(options: ListPublicServersOptions = {}):
     createdAt: row.createdAt,
     viewCount: row.viewCount,
     ownerMinecraftUuid: row.owner?.minecraftUuid ?? null,
-  }));
+  };
+}
+
+// Liste complete (API publique consommee par le launcher).
+export async function listPublicServers(options: ListPublicServersOptions = {}): Promise<PublicServerSummary[]> {
+  const sorted = filterAndSort(await loadPublishedServers(), options);
+
+  // L'affichage montre le dernier chiffre enregistré ; les statuts périmés sont
+  // re-mesurés après l'envoi de la page (voir server-status.ts).
+  scheduleStatusRefresh(sorted);
+  return sorted.map(toSummary);
+}
+
+export type PublicServersPage = {
+  servers: PublicServerSummary[];
+  total: number;
+  page: number;
+  pageCount: number;
+};
+
+// Une page de l'annuaire (SERVERS_PAGE_SIZE serveurs) : evite d'envoyer et de
+// construire des centaines de cartes a chaque visite. `page` est ramenee dans
+// les bornes (une page trop grande donne la derniere).
+export async function listPublicServersPage(options: ListPublicServersOptions & { page?: number }): Promise<PublicServersPage> {
+  const sorted = filterAndSort(await loadPublishedServers(), options);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / SERVERS_PAGE_SIZE));
+  const page = Math.min(Math.max(1, Math.floor(options.page ?? 1) || 1), pageCount);
+  const slice = sorted.slice((page - 1) * SERVERS_PAGE_SIZE, page * SERVERS_PAGE_SIZE);
+
+  // Seuls les serveurs affiches sont re-mesures en priorite.
+  scheduleStatusRefresh(slice);
+  return { servers: slice.map(toSummary), total: sorted.length, page, pageCount };
 }
 
 export type LauncherServerDetail = {
@@ -140,28 +191,37 @@ export async function getServerWithIpBySlug(slug: string): Promise<LauncherServe
 // le rendu de la page : la fiche est revalidee au plus toutes les 60s
 // (ISR), donc incrementer ce compteur pendant le rendu sous-compterait
 // enormement les vues reelles (une seule execution par fenetre de 60s, tous
-// visiteurs confondus). Lecture-puis-ecriture (pas d'increment atomique cote
-// ORM Prisma 8) : suffisant pour un compteur indicatif, pas une donnee
-// critique — une collision concurrente ferait perdre une vue au pire.
+// visiteurs confondus). Une seule instruction SQL atomique : le compteur est
+// augmente dans la base (`viewCount + 1`), pas lu puis reecrit — avec la lecture
+// puis l'ecriture, deux visites simultanees perdaient une vue — et l'evenement
+// est enregistre dans la meme instruction (ni ligne orpheline, ni compteur sans evenement).
 export async function recordServerView(slug: string): Promise<void> {
-  const row = await db.orm.public.Server.select("id", "viewCount").where({ slug }).first();
-  if (!row) return;
-  await db.orm.public.Server.where({ id: row.id }).update({ viewCount: row.viewCount + 1 });
-  await db.orm.public.ServerEvent.create({ serverId: row.id, kind: "view" });
+  const plan = db.raw.sql`WITH bumped AS (
+      UPDATE "server" SET "viewCount" = "viewCount" + 1 WHERE "slug" = ${slug} RETURNING "id"
+    )
+    INSERT INTO "serverEvent" ("id", "serverId", "kind") SELECT gen_random_uuid()::text, "id", 'view' FROM bumped`
+    .affectedCount()
+    .build();
+  await db.runtime().execute(plan);
 }
 
 // Appelee par le launcher (route /api/launcher/servers/[slug]/launch) a
-// chaque lancement reussi — meme logique lecture-puis-ecriture que
-// recordServerView, meme tolerance pour un compteur indicatif.
+// chaque lancement reussi — meme instruction atomique que recordServerView.
 export async function recordServerLaunch(slug: string): Promise<void> {
-  const row = await db.orm.public.Server.select("id", "launchCount").where({ slug }).first();
-  if (!row) return;
-  await db.orm.public.Server.where({ id: row.id }).update({ launchCount: row.launchCount + 1 });
-  await db.orm.public.ServerEvent.create({ serverId: row.id, kind: "launch" });
+  const plan = db.raw.sql`WITH bumped AS (
+      UPDATE "server" SET "launchCount" = "launchCount" + 1 WHERE "slug" = ${slug} RETURNING "id"
+    )
+    INSERT INTO "serverEvent" ("id", "serverId", "kind") SELECT gen_random_uuid()::text, "id", 'launch' FROM bumped`
+    .affectedCount()
+    .build();
+  await db.runtime().execute(plan);
 }
 
-export async function getPublicServerBySlug(slug: string): Promise<PublicServerDetail | null> {
-  const row = await db.orm.public.Server.select(
+// Fiche publique lue en cache, comme la liste (meme etiquette : voir SERVERS_CACHE_TAG).
+// Le slug est un argument de la fonction, donc il fait partie de la cle du cache.
+const loadPublishedServerBySlug = unstable_cache(
+  async (slug: string) =>
+    (await db.orm.public.Server.select(
     "id",
     "slug",
     "name",
@@ -183,8 +243,13 @@ export async function getPublicServerBySlug(slug: string): Promise<PublicServerD
   )
     .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug, published: true })
-    .first();
+    .first()) ?? null,
+  ["published-server-by-slug"],
+  { revalidate: SERVERS_CACHE_SECONDS, tags: [SERVERS_CACHE_TAG] },
+);
 
+export async function getPublicServerBySlug(slug: string): Promise<PublicServerDetail | null> {
+  const row = await loadPublishedServerBySlug(slug);
   if (!row) return null;
 
   const status = await getServerStatus(row.id, row.ip, row);

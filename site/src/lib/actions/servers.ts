@@ -1,9 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/prisma/db";
+import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { slugify } from "@/lib/slug";
 import { generateUniqueInviteCode } from "@/lib/inviteCode";
 import type { ModpackSource } from "@/lib/modpack-types";
@@ -114,6 +115,7 @@ export async function createServer(_prevState: ServerActionState, formData: Form
     ownerId: session.user.id,
   });
 
+  updateTag(SERVERS_CACHE_TAG); // visible tout de suite dans l'annuaire et l'API du launcher
   revalidatePath("/servers");
   revalidatePath("/dashboard");
   redirect(`/manage/${server.id}`);
@@ -147,6 +149,7 @@ export async function updateServer(
     ...(parsed.ip !== owned.ip ? { lastPingedAt: null, playerCount: null, playerCapacity: null } : {}),
   });
 
+  updateTag(SERVERS_CACHE_TAG);
   revalidatePath("/servers");
   revalidatePath(`/servers/${owned.slug}`);
   revalidatePath("/dashboard");
@@ -164,6 +167,7 @@ export async function deleteServer(serverId: string) {
 
   await db.orm.public.Server.where({ id: serverId }).delete();
 
+  updateTag(SERVERS_CACHE_TAG);
   revalidatePath("/servers");
   revalidatePath("/dashboard");
   redirect("/dashboard");
@@ -181,6 +185,7 @@ export async function toggleServerPublished(serverId: string) {
 
   await db.orm.public.Server.where({ id: serverId }).update({ published: !owned.published });
 
+  updateTag(SERVERS_CACHE_TAG); // pause / republication : effet immediat pour tout le monde
   revalidatePath("/servers");
   revalidatePath(`/servers/${owned.slug}`);
   revalidatePath("/dashboard");
@@ -225,6 +230,7 @@ export async function duplicateServer(serverId: string) {
     ownerId: session.user.id,
   });
 
+  updateTag(SERVERS_CACHE_TAG);
   revalidatePath("/dashboard");
   redirect(`/manage/${copy.id}`);
 }

@@ -2,15 +2,11 @@ import Link from "next/link";
 import { MagnifyingGlass } from "@phosphor-icons/react/ssr";
 import { ServerCard } from "@/components/ServerCard";
 import { AutoRefresh } from "@/components/AutoRefresh";
-import { listPublicServers, type ServerListSort } from "@/lib/public-servers";
+import { listPublicServersPage, type ServerListSort } from "@/lib/public-servers";
 import { getT } from "@/i18n/getDictionary";
 import { t } from "@/i18n/t";
 
 export const metadata = { title: "Serveurs — Omniscient" };
-
-// Régénère la page au plus toutes les 60s : aligné sur la fraîcheur du
-// ping (voir SERVER_STATUS_TTL_MS) plutôt que de rester figé en cache.
-export const revalidate = 60;
 
 export default async function ServersPage({ searchParams }: PageProps<"/servers">) {
   const query = await searchParams;
@@ -25,14 +21,25 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
   ];
   const sort: ServerListSort = SORTS.some((s) => s.value === sortParam) ? (sortParam as ServerListSort) : "recent";
 
-  const servers = await listPublicServers({ q, sort });
+  const pageParam = typeof query.page === "string" ? Number.parseInt(query.page, 10) : 1;
+  const { servers, total, page, pageCount } = await listPublicServersPage({ q, sort, page: pageParam });
+
+  // Lien vers une autre page en gardant la recherche et le tri.
+  const pageHref = (p: number) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (sort !== "recent") params.set("sort", sort);
+    if (p > 1) params.set("page", String(p));
+    const qs = params.toString();
+    return qs ? `/servers?${qs}` : "/servers";
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-12">
       <AutoRefresh intervalMs={30_000} />
       <h1 className="text-3xl font-bold tracking-tight text-foreground">{dict.servers.title}</h1>
       <p className="mt-1 text-muted">
-        {t(dict, servers.length === 1 ? "servers.count" : "servers.countPlural", { count: servers.length })}
+        {t(dict, total === 1 ? "servers.count" : "servers.countPlural", { count: total })}
       </p>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -77,6 +84,26 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
           ))}
         </div>
       )}
+
+      {pageCount > 1 ? (
+        <nav className="mt-8 flex items-center justify-between gap-3" aria-label={t(dict, "servers.pageOf", { page, pageCount })}>
+          {page > 1 ? (
+            <Link href={pageHref(page - 1)} className="btn-secondary text-sm" rel="prev">
+              {dict.servers.pagePrevious}
+            </Link>
+          ) : (
+            <span />
+          )}
+          <span className="text-sm text-muted">{t(dict, "servers.pageOf", { page, pageCount })}</span>
+          {page < pageCount ? (
+            <Link href={pageHref(page + 1)} className="btn-secondary text-sm" rel="next">
+              {dict.servers.pageNext}
+            </Link>
+          ) : (
+            <span />
+          )}
+        </nav>
+      ) : null}
     </div>
   );
 }

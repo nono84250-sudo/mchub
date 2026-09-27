@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { recordServerLaunch } from "@/lib/public-servers";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Appelee par le launcher juste apres un lancement reussi (voir main.js) —
 // meme secret partage que /api/launcher/servers/[slug], simple compteur
@@ -9,6 +10,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
+  const limited = rateLimitResponse(request, "launch", 60);
+  if (limited) return limited;
 
   const { slug } = await ctx.params;
   await recordServerLaunch(slug);

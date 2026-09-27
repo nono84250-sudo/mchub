@@ -38,6 +38,12 @@ export function isStatusStale(lastPingedAt: string | null): boolean {
 // visiteurs simultanés déclenchent dix fois la même mesure.
 const inFlight = new Set<string>();
 
+// Les listes viennent d'un cache (voir public-servers.ts) : leur `lastPingedAt`
+// peut rester périmé jusqu'à une minute. Sans ceci, chaque visite reprogrammerait
+// la même mesure (une requête de réservation par serveur et par visite, pour rien).
+const RESCHEDULE_AFTER_MS = 15_000;
+const recentlyScheduled = new Map<string, number>();
+
 let running = 0;
 const waiting: Array<() => void> = [];
 async function withSlot<T>(work: () => Promise<T>): Promise<T> {
@@ -90,13 +96,20 @@ async function refreshOne(id: string, ip: string): Promise<void> {
  * n'est jamais renvoyée à l'appelant.
  */
 export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; lastPingedAt: string | null }>): void {
+  const now = Date.now();
   const todo = servers
-    .filter((s) => isStatusStale(s.lastPingedAt) && !inFlight.has(s.id))
+    .filter((s) => isStatusStale(s.lastPingedAt) && !inFlight.has(s.id) && now - (recentlyScheduled.get(s.id) ?? 0) > RESCHEDULE_AFTER_MS)
     .sort((a, b) => (a.lastPingedAt ?? "").localeCompare(b.lastPingedAt ?? ""))
     .slice(0, MAX_SERVERS_PER_SCHEDULE);
   if (!todo.length) return;
 
-  for (const s of todo) inFlight.add(s.id);
+  if (recentlyScheduled.size > 2000) {
+    for (const [id, at] of recentlyScheduled) if (now - at > RESCHEDULE_AFTER_MS) recentlyScheduled.delete(id);
+  }
+  for (const s of todo) {
+    inFlight.add(s.id);
+    recentlyScheduled.set(s.id, now);
+  }
   const work = Promise.all(todo.map((s) => refreshOne(s.id, s.ip)));
   try {
     after(() => work);
