@@ -100,7 +100,8 @@
     "modded": "Moddé",
     "onlinePlayers": "{count} joueur en ligne",
     "onlinePlayersPlural": "{count} joueurs en ligne",
-    "unknownStatus": "Statut inconnu"
+    "unknownStatus": "Statut inconnu",
+    "joinTooManyAttempts": "Trop de tentatives — réessaie dans une minute."
   },
   "serverDetail": {
     "version": "Version",

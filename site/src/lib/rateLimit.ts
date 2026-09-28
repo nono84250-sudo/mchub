@@ -11,10 +11,44 @@ type Bucket = { count: number; resetAt: number };
 const buckets = new Map<string, Bucket>();
 const MAX_BUCKETS = 10_000;
 
+type RateLimitCheck = { limited: boolean; retryAfterSeconds: number };
+
+// Coeur de la limitation, sans dependance a un objet Request : incremente le
+// compteur de `key` et dit si `limit` requetes par `windowMs` sont depassees.
+// Partage entre rateLimitResponse (routes API, ci-dessous) et les Server
+// Components qui n'ont pas de Request (voir app/join/[code]/page.tsx, qui lit
+// l'adresse via next/headers puis appelle ceci directement).
+export function checkRateLimit(key: string, limit: number, windowMs = 60_000): RateLimitCheck {
+  const now = Date.now();
+
+  if (buckets.size > MAX_BUCKETS) {
+    for (const [k, bucket] of buckets) if (bucket.resetAt <= now) buckets.delete(k);
+  }
+
+  const current = buckets.get(key);
+  const bucket = current && current.resetAt > now ? current : { count: 0, resetAt: now + windowMs };
+  bucket.count++;
+  buckets.set(key, bucket);
+
+  return { limited: bucket.count > limit, retryAfterSeconds: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)) };
+}
+
 // Adresse du visiteur : Vercel place la vraie adresse en tête de x-forwarded-for.
+// `getHeader` est soit `request.headers.get` (route API), soit le resultat de
+// `await headers()` de next/headers (Server Component, voir clientIpFromHeadersList).
+function extractClientIp(getHeader: (name: string) => string | null): string {
+  const forwarded = getHeader("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || getHeader("x-real-ip")?.trim() || "inconnue";
+}
+
 function clientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || request.headers.get("x-real-ip")?.trim() || "inconnue";
+  return extractClientIp((name) => request.headers.get(name));
+}
+
+// Pour un Server Component (pas de Request disponible) : `headersList` est le
+// resultat de `await headers()`.
+export function clientIpFromHeadersList(headersList: { get(name: string): string | null }): string {
+  return extractClientIp((name) => headersList.get(name));
 }
 
 /**
@@ -27,21 +61,10 @@ export function rateLimitResponse(
   limit: number,
   { windowMs = 60_000, headers }: { windowMs?: number; headers?: Record<string, string> } = {},
 ): NextResponse | null {
-  const now = Date.now();
-
-  if (buckets.size > MAX_BUCKETS) {
-    for (const [key, bucket] of buckets) if (bucket.resetAt <= now) buckets.delete(key);
-  }
-
-  const key = `${name}:${clientIp(request)}`;
-  const current = buckets.get(key);
-  const bucket = current && current.resetAt > now ? current : { count: 0, resetAt: now + windowMs };
-  bucket.count++;
-  buckets.set(key, bucket);
-
-  if (bucket.count <= limit) return null;
+  const { limited, retryAfterSeconds } = checkRateLimit(`${name}:${clientIp(request)}`, limit, windowMs);
+  if (!limited) return null;
   return NextResponse.json(
     { error: "Trop de requêtes, réessaie dans un instant." },
-    { status: 429, headers: { ...headers, "Retry-After": String(Math.max(1, Math.ceil((bucket.resetAt - now) / 1000))) } },
+    { status: 429, headers: { ...headers, "Retry-After": String(retryAfterSeconds) } },
   );
 }
