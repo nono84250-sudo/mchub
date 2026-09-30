@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { listServersOwnedByMinecraftUuid } from "@/lib/public-servers";
 
 // Alimente la vue "Mes instances" du launcher : tous les serveurs du joueur
@@ -16,6 +16,9 @@ export async function GET(request: Request) {
   const minecraftUuid = searchParams.get("minecraftUuid");
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
+  }
+  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
+    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
   }
 
   const servers = await listServersOwnedByMinecraftUuid(minecraftUuid);

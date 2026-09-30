@@ -62,6 +62,18 @@ const LAUNCHER_API_KEY = process.env.LAUNCHER_API_KEY || generatedEnv.LAUNCHER_A
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || generatedEnv.DISCORD_CLIENT_ID;
 const REQUEST_TIMEOUT_MS = 8000;
 
+// En-tetes des routes /api/launcher/* qui agissent au nom du joueur connecte
+// (Mes instances, notifications, signalement) : LAUNCHER_API_KEY prouve que
+// c'est ce launcher, X-Minecraft-Token (le vrai jeton d'acces Mojang de la
+// session, verifie cote site aupres de Mojang) prouve QUI joue — avant, le
+// site croyait sur parole le minecraftUuid envoye en parametre (faille IDOR,
+// audit de securite du 2026-09-28). Les deux se cumulent, l'un ne remplace
+// pas l'autre. Pas de session => pas de jeton a envoyer (les appelants
+// verifient deja currentSession avant d'appeler ceci).
+function launcherAuthHeaders() {
+  return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Minecraft-Token": currentSession.authorization.access_token };
+}
+
 // Session du joueur connecté (compte Microsoft/Minecraft), en mémoire.
 // Le refresh_token est en plus sauvegardé chiffré sur disque si le joueur a
 // coché "se souvenir de moi" (voir sessionStore.js).
@@ -334,7 +346,7 @@ ipcMain.handle("servers:mine", async () => {
   try {
     const data = await fetchJson(
       `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
-      { headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` } },
+      { headers: launcherAuthHeaders() },
     );
     return { ok: true, servers: data.servers };
   } catch (error) {
@@ -359,7 +371,7 @@ ipcMain.handle("reports:submit", async (_event, { slug, issue, message, clientVe
   try {
     const res = await fetch(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/report`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      headers: { "Content-Type": "application/json", ...launcherAuthHeaders() },
       body: JSON.stringify({
         reporterMinecraftUuid: currentSession.profile.id,
         reporterMinecraftUsername: currentSession.profile.name,
@@ -384,7 +396,7 @@ ipcMain.handle("notifications:list", async () => {
   try {
     const data = await fetchJson(
       `${SITE_URL}/api/launcher/notifications?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
-      { headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` } },
+      { headers: launcherAuthHeaders() },
     );
     return { ok: true, notifications: data.notifications };
   } catch (error) {
@@ -397,7 +409,7 @@ ipcMain.handle("notifications:markRead", async () => {
   try {
     const res = await fetch(`${SITE_URL}/api/launcher/notifications/read`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      headers: { "Content-Type": "application/json", ...launcherAuthHeaders() },
       body: JSON.stringify({ minecraftUuid: currentSession.profile.id }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -412,7 +424,7 @@ ipcMain.handle("notifications:delete", async (_event, id) => {
   try {
     const res = await fetch(`${SITE_URL}/api/launcher/notifications/delete`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      headers: { "Content-Type": "application/json", ...launcherAuthHeaders() },
       body: JSON.stringify({ minecraftUuid: currentSession.profile.id, id }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -427,7 +439,7 @@ ipcMain.handle("notifications:clearRead", async () => {
   try {
     const res = await fetch(`${SITE_URL}/api/launcher/notifications/clear-read`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      headers: { "Content-Type": "application/json", ...launcherAuthHeaders() },
       body: JSON.stringify({ minecraftUuid: currentSession.profile.id }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -755,7 +767,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   logStore.pushLog({ source: "launcher", message: `Demande de lancement pour "${slug}"` });
   try {
     const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
-      headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      headers: launcherAuthHeaders(),
     });
     const server = data.server;
     const settings = settingsStore.loadSettings();
@@ -830,7 +842,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     // doit jamais faire echouer un lancement par ailleurs reussi.
     fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/launch`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      headers: launcherAuthHeaders(),
     }).catch((error) => console.debug("[game:launch] suivi du lancement echoue :", error));
 
     return { ok: true };

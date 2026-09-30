@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { deleteNotification } from "@/lib/notifications";
 
 // Supprime une notification individuelle (croix sur une ligne du panneau) —
@@ -15,6 +15,9 @@ export async function POST(request: Request) {
   const id = String(body.id ?? "").trim();
   if (!minecraftUuid || !id) {
     return NextResponse.json({ error: "Champs manquants" }, { status: 400 });
+  }
+  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
+    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
   }
 
   await deleteNotification(id, minecraftUuid);

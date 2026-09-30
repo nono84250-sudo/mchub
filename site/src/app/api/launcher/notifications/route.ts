@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { listNotificationsForRecipient } from "@/lib/notifications";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
@@ -20,6 +20,9 @@ export async function GET(request: Request) {
   const minecraftUuid = searchParams.get("minecraftUuid");
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
+  }
+  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
+    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
   }
 
   const notifications = await listNotificationsForRecipient(minecraftUuid);

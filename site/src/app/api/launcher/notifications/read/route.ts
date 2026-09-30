@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { markNotificationsRead } from "@/lib/notifications";
 
 // Appelee quand le joueur ouvre le panneau de notifications dans le launcher :
@@ -13,6 +13,9 @@ export async function POST(request: Request) {
   const minecraftUuid = String(body.minecraftUuid ?? "").trim();
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
+  }
+  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
+    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
   }
 
   await markNotificationsRead(minecraftUuid);
