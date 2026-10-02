@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
 import { db } from "@/prisma/db";
+import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getModpackInstallFile } from "@/lib/curseforge";
 import { getModrinthModpackInstallFile } from "@/lib/modrinth";
 
@@ -14,6 +16,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
 
   const { slug } = await ctx.params;
   const server = await db.orm.public.Server.select(
+    "id",
     "type",
     "minecraftVersion",
     "curseforgeModpackId",
@@ -31,16 +34,23 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   }
 
   try {
+    // Toujours la derniere version (jamais un numero fige, voir curseforge.ts/
+    // modrinth.ts) : l'auteur du modpack peut la changer a tout moment, le
+    // serveur doit suivre automatiquement, sans que son proprietaire n'ait a
+    // revenir corriger quoi que ce soit dans ses parametres.
     const { modpack, file } =
       server.modpackSource === "modrinth"
-        ? await getModrinthModpackInstallFile(server.curseforgeModpackId, {
-            version: server.curseforgeModpackVersion,
-            minecraftVersion: server.minecraftVersion,
-          })
-        : await getModpackInstallFile(server.curseforgeModpackId, {
-            name: server.curseforgeModpackName,
-            version: server.curseforgeModpackVersion,
-          });
+        ? await getModrinthModpackInstallFile(server.curseforgeModpackId, { minecraftVersion: server.minecraftVersion })
+        : await getModpackInstallFile(server.curseforgeModpackId, { name: server.curseforgeModpackName });
+
+    // Met a jour l'affichage (fiche publique, Parametres) avec la version
+    // reellement resolue, seulement quand elle a change — evite une ecriture
+    // en base a chaque lancement alors que rien n'a bouge la plupart du temps.
+    if (file.displayName !== server.curseforgeModpackVersion) {
+      await db.orm.public.Server.where({ id: server.id }).update({ curseforgeModpackVersion: file.displayName });
+      revalidateTag(SERVERS_CACHE_TAG, { expire: 0 });
+    }
+
     return NextResponse.json({ source: server.modpackSource, modpack, file, minecraftVersion: server.minecraftVersion });
   } catch (error) {
     if (error instanceof CurseforgeNotConfiguredError) {

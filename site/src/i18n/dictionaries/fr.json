@@ -101,7 +101,12 @@
     "onlinePlayers": "{count} joueur en ligne",
     "onlinePlayersPlural": "{count} joueurs en ligne",
     "unknownStatus": "Statut inconnu",
-    "joinTooManyAttempts": "Trop de tentatives — réessaie dans une minute."
+    "joinTooManyAttempts": "Trop de tentatives — réessaie dans une minute.",
+    "joinTitle": "Rejoindre {name}",
+    "joinSubtitle": "Ouvre Omniscient Launcher pour ajouter ce serveur privé à tes instances.",
+    "joinOpenInLauncher": "Ouvrir dans le launcher Omniscient",
+    "joinFallback": "Pas encore le launcher, ou sur un autre appareil ?",
+    "joinFallbackLink": "Voir la fiche du serveur sur le site"
   },
   "serverDetail": {
     "version": "Version",
@@ -159,6 +164,7 @@
     "detailStatus": "Statut",
     "detailVisibility": "Visibilité",
     "detailAddress": "Adresse de connexion",
+    "detailVersion": "Version de Minecraft",
     "detailInviteCode": "Code d'invitation",
     "detailCreated": "Créé le",
     "activityTitle": "Activité",
@@ -249,8 +255,7 @@
     "modpackSection": "Modpack CurseForge",
     "modpackId": "Identifiant du modpack",
     "modpackName": "Nom du modpack",
-    "modpackVersion": "Version du modpack",
-    "modpackNote": "Les joueurs téléchargent ce modpack automatiquement au premier lancement — aucune configuration manuelle."
+    "modpackNote": "Les joueurs téléchargent ce modpack automatiquement au premier lancement, et restent toujours sur sa dernière version — aucune configuration manuelle."
   },
   "imageUpload": {
     "failed": "Envoi de l'image impossible — vérifie le format et la taille indiqués au-dessus."

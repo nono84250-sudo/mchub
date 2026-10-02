@@ -2,11 +2,11 @@
 
 import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { GlobeHemisphereWest, LockSimple, Copy, ArrowsClockwise, Image, Cube, ImageSquare } from "@phosphor-icons/react";
+import { GlobeHemisphereWest, LockSimple, Copy, ArrowsClockwise, Image, Cube, ImageSquare, Info } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
 import { resetInviteCode } from "@/lib/actions/servers";
 import { ImageDropzone } from "@/components/ImageDropzone";
-import { ModpackPicker } from "@/components/ModpackPicker";
+import { ModpackPicker, type ModpackValue } from "@/components/ModpackPicker";
 import { MinecraftVersionField } from "@/components/MinecraftVersionField";
 import { DEFAULT_MODPACK_SOURCE, type ModpackSource } from "@/lib/modpack-types";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -70,6 +70,24 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
   const [type, setType] = useState<"vanilla" | "modded">(values.type);
   const [visibility, setVisibility] = useState<"public" | "private">(values.isPrivate ? "private" : "public");
   const [resettingCode, setResettingCode] = useState(false);
+
+  // minecraftVersion/loader du modpack : connus seulement si le proprietaire
+  // le reselectionne via la recherche (ModpackPicker.onChange) — jamais
+  // persistes (voir ModpackPicker). En repli, affiche la version deja
+  // enregistree en base (values.minecraftVersion) : voir NewServerWizard pour
+  // la meme logique côté creation.
+  const [modpack, setModpack] = useState<ModpackValue>({
+    id: values.curseforgeModpackId,
+    name: values.curseforgeModpackName,
+    version: values.curseforgeModpackVersion,
+    source: values.modpackSource,
+  });
+  const effectiveMcVersion = modpack.minecraftVersion || values.minecraftVersion;
+  const modpackDetails =
+    type === "modded"
+      ? [effectiveMcVersion ? `Minecraft ${effectiveMcVersion}` : null, modpack.loader].filter(Boolean).join(" · ")
+      : "";
+  const showManualVersion = type !== "modded" || !effectiveMcVersion;
 
   // Lu apres le montage seulement (jamais pendant le rendu serveur, ou
   // location n'existe pas) — un state vide au premier rendu evite tout
@@ -252,7 +270,21 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
         </div>
       </div>
 
-      <MinecraftVersionField versions={versions} defaultValue={values.minecraftVersion} />
+      {showManualVersion ? (
+        <MinecraftVersionField versions={versions} defaultValue={values.minecraftVersion} />
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <span className="field-label">{t("serverForm.version")}</span>
+          <input type="hidden" name="minecraftVersion" value={effectiveMcVersion} />
+          <div className="flex items-start gap-1.5 text-xs text-foreground">
+            <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-accent" />
+            <div className="flex flex-col gap-0.5">
+              <span>{t("wizard.modpackChosen", { name: modpack.name })}</span>
+              <span>{modpackDetails}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="ip" className="field-label">
@@ -299,6 +331,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
             version: values.curseforgeModpackVersion,
             source: values.modpackSource,
           }}
+          onChange={setModpack}
         />
       ) : null}
 

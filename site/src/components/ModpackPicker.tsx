@@ -52,7 +52,7 @@ export function ModpackPicker({
   const [results, setResults] = useState<ModpackSearchResult[]>([]);
   const [searchState, setSearchState] = useState<"idle" | "searching" | "error" | "not-configured">("idle");
   const [manualEntry, setManualEntry] = useState(false);
-  const [manual, setManual] = useState<{ id: string; name: string; version: string }>({ id: "", name: "", version: "" });
+  const [manual, setManual] = useState<{ id: string; name: string }>({ id: "", name: "" });
   const sourceLabel = SOURCE_LABELS[source];
 
   useEffect(() => {
@@ -76,7 +76,7 @@ export function ModpackPicker({
   }, [query, source, manualEntry, chosen]);
 
   const value: ModpackValue = manualEntry
-    ? { ...manual, source }
+    ? { ...manual, version: "", source }
     : chosen
       ? chosen
       : { id: "", name: "", version: "", source };
@@ -94,17 +94,13 @@ export function ModpackPicker({
     setResults([]);
     setSearchState("idle");
     setManualEntry(false);
-    setManual({ id: "", name: "", version: "" });
+    setManual({ id: "", name: "" });
   }
 
   function startManualEntry() {
     // Repart de ce qui est déjà choisi plutôt que de champs vides (utile en
-    // Paramètres, où l'on corrige souvent juste la version du modpack).
-    setManual((current) =>
-      current.id || current.name || current.version
-        ? current
-        : { id: chosen?.id ?? "", name: chosen?.name ?? "", version: chosen?.version ?? "" },
-    );
+    // Paramètres, pour corriger l'identifiant sans tout ressaisir).
+    setManual((current) => (current.id || current.name ? current : { id: chosen?.id ?? "", name: chosen?.name ?? "" }));
     setManualEntry(true);
   }
 
@@ -156,15 +152,6 @@ export function ModpackPicker({
               id="manualModpackName" type="text"
               value={manual.name}
               onChange={(e) => setManual((m) => ({ ...m, name: e.target.value }))}
-              className="field-input"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="manualModpackVersion" className="field-label">{t("serverForm.modpackVersion")}</label>
-            <input
-              id="manualModpackVersion" type="text"
-              value={manual.version}
-              onChange={(e) => setManual((m) => ({ ...m, version: e.target.value }))}
               className="field-input"
             />
           </div>

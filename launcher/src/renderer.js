@@ -1328,6 +1328,33 @@ async function renderRecentList() {
 // sur le site — voir la note "manageNote" — jamais depuis une carte ici.
 let myInstancesServers = [];
 let myInstancesFilter = "all";
+// Pour le bouton "copier le lien d'invitation" (voir instanceStatusLineHtml) —
+// resolu une fois au demarrage, largement avant qu'on affiche "Mes instances".
+let siteUrl = "";
+window.mchub.getSiteUrl().then((url) => { siteUrl = url; });
+
+// Onglet "Rejoint" : serveurs prives rejoints via le code/lien de quelqu'un
+// d'autre (voir settingsStore.joinedServers / servers:listJoined cote main) —
+// une liste independante de myInstancesServers (les serveurs POSSEDES),
+// jamais fusionnee avec elle ni comptee dans le filtre "Tout".
+let myJoinedServers = [];
+// Un seul passage sur "joined" apres un join reussi (deep link) — remis a
+// false des que renderMyInstancesList() l'a consomme, pour que rouvrir "Mes
+// instances" depuis la sidebar retombe normalement sur "Tout".
+let focusJoinedTabOnce = false;
+// Message d'erreur d'un join par deep link rate (code invalide/expire) —
+// affiche une fois au sommet du panneau puis efface, meme idee que
+// focusJoinedTabOnce.
+let joinErrorNote = null;
+
+// Pousse par main.js quand un lien omniscient://join/<CODE> vient d'etre
+// traite (lancement a froid ou launcher deja ouvert) — jamais demande par ce
+// script, voir onGameProgress pour le meme mecanisme de push main -> renderer.
+window.mchub.onServerJoined((result) => {
+  focusJoinedTabOnce = true;
+  if (!result.ok) joinErrorNote = result.error;
+  showMyInstancesView();
+});
 
 function instanceStatus(server) {
   if (!server.published) return "paused";
@@ -1342,11 +1369,14 @@ function instanceBadgeKey(status) {
 // l'accueil (voir homeInstanceRowHtml) — le seul endroit qui decide quoi
 // afficher a la place du nombre de joueurs pour un serveur prive/en pause.
 function instanceStatusLineHtml(server, status) {
-  return status === "paused"
-    ? `<span class="status-dot"></span>${t("myInstances.hiddenNote")}`
-    : status === "private"
-      ? t("myInstances.inviteCodeLabel", { code: `<code>${escapeHtml(server.inviteCode || "")}</code>` })
-      : playersLabel(server);
+  if (status === "paused") return `<span class="status-dot"></span>${t("myInstances.hiddenNote")}`;
+  if (status !== "private") return playersLabel(server);
+  const label = t("myInstances.inviteCodeLabel", { code: `<code>${escapeHtml(server.inviteCode || "")}</code>` });
+  return `${label} <button type="button" class="icon-btn copy-invite-link" data-code="${escapeHtml(server.inviteCode || "")}" title="${t("myInstances.copyInviteLink")}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  </button>`;
 }
 
 function instanceCardHtml(server) {
@@ -1372,15 +1402,45 @@ function instanceCardHtml(server) {
     </div>`;
 }
 
+// Carte d'un serveur prive rejoint via le code/lien de quelqu'un d'autre
+// (onglet "Rejoint") — fiche PUBLIQUE seulement (meme forme que servers:get,
+// voir site/src/lib/public-servers.ts/getPublicServerBySlug) : pas d'id, pas
+// d'ip, pas de published/isPrivate a lire comme sur les cartes "Mes
+// instances" possedees (instanceCardHtml, voir instanceStatus) — ce joueur
+// n'est pas proprietaire, donc jamais de bouton "Gerer" ; "Quitter" a la
+// place, qui retire juste l'entree locale (voir settingsStore.joinedServers).
+function joinedCardHtml(server) {
+  return `
+    <div class="instance-card" data-slug="${escapeHtml(server.slug)}">
+      <div class="instance-card-banner">
+        <span class="instance-card-icon">${serverIconInner(server)}</span>
+        <span class="instance-badge private">${t("myInstances.badgeJoined")}</span>
+      </div>
+      <div class="instance-card-body">
+        <h3>${escapeHtml(server.name)}</h3>
+        <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)}</p>
+        <div class="instance-card-status">${playersLabel(server)}</div>
+        <div class="instance-card-actions">
+          <button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("serverDetail.joinBtn")}</button>
+          <button type="button" class="btn-secondary my-instance-leave" data-slug="${escapeHtml(server.slug)}">${t("myInstances.leave")}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 const INSTANCE_FILTERS = ["all", "public", "private", "paused"];
 
-function instancesToolbarHtml(servers) {
+function instancesToolbarHtml(servers, joinedCount) {
   const counts = { all: servers.length, public: 0, private: 0, paused: 0 };
   servers.forEach((server) => counts[instanceStatus(server)]++);
-  const chips = INSTANCE_FILTERS.map((filter) => {
+  const chipHtml = (filter, count) => {
     const labelKey = `filter${filter.charAt(0).toUpperCase()}${filter.slice(1)}`;
-    return `<button type="button" class="sort-chip${filter === myInstancesFilter ? " active" : ""}" data-filter="${filter}">${t(`myInstances.${labelKey}`)}<span class="count">${counts[filter]}</span></button>`;
-  }).join("");
+    return `<button type="button" class="sort-chip${filter === myInstancesFilter ? " active" : ""}" data-filter="${filter}">${t(`myInstances.${labelKey}`)}<span class="count">${count}</span></button>`;
+  };
+
+  // "Rejoint" s'intercale entre "Tout" et "Public" — jamais compte dans
+  // counts.all, qui reste uniquement les serveurs que ce joueur POSSEDE.
+  const chips = [chipHtml("all", counts.all), chipHtml("joined", joinedCount), ...INSTANCE_FILTERS.slice(1).map((f) => chipHtml(f, counts[f]))].join("");
 
   return `
     <div class="instances-toolbar">
@@ -1391,7 +1451,15 @@ function instancesToolbarHtml(servers) {
 
 function renderMyInstancesGrid() {
   const filtered =
-    myInstancesFilter === "all" ? myInstancesServers : myInstancesServers.filter((server) => instanceStatus(server) === myInstancesFilter);
+    myInstancesFilter === "joined"
+      ? myJoinedServers
+      : myInstancesFilter === "all"
+        ? myInstancesServers
+        : myInstancesServers.filter((server) => instanceStatus(server) === myInstancesFilter);
+
+  // N'affiche l'erreur de join (deep link rate) qu'une seule fois.
+  const errorNote = joinErrorNote;
+  joinErrorNote = null;
 
   myInstancesPanelEl.innerHTML = `
     <div class="instances-header">
@@ -1401,11 +1469,12 @@ function renderMyInstancesGrid() {
       </div>
       <button type="button" class="btn-secondary" id="my-instances-new">+ ${t("myInstances.newInstance")}</button>
     </div>
-    ${instancesToolbarHtml(myInstancesServers)}
+    ${errorNote ? `<p class="join-note">${escapeHtml(errorNote)}</p>` : ""}
+    ${instancesToolbarHtml(myInstancesServers, myJoinedServers.length)}
     ${
       filtered.length === 0
         ? `<p class="join-note">${t("myInstances.filterEmpty")}</p>`
-        : `<div class="instance-grid">${filtered.map(instanceCardHtml).join("")}</div>`
+        : `<div class="instance-grid">${filtered.map((server) => (myInstancesFilter === "joined" ? joinedCardHtml(server) : instanceCardHtml(server))).join("")}</div>`
     }
   `;
 
@@ -1421,8 +1490,16 @@ function renderMyInstancesGrid() {
   myInstancesPanelEl.querySelectorAll(".my-instance-play").forEach((btn) => {
     btn.addEventListener("click", (event) => {
       event.stopPropagation();
-      const server = myInstancesServers.find((s) => s.slug === btn.dataset.slug);
+      const pool = myInstancesFilter === "joined" ? myJoinedServers : myInstancesServers;
+      const server = pool.find((s) => s.slug === btn.dataset.slug);
       if (server) launchServer(server);
+    });
+  });
+
+  myInstancesPanelEl.querySelectorAll(".copy-invite-link").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      navigator.clipboard?.writeText(`${siteUrl}/join/${btn.dataset.code}`);
     });
   });
 
@@ -1430,6 +1507,16 @@ function renderMyInstancesGrid() {
     btn.addEventListener("click", (event) => {
       event.stopPropagation();
       window.mchub.openManageServer(btn.dataset.id);
+    });
+  });
+
+  myInstancesPanelEl.querySelectorAll(".my-instance-leave").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (!window.confirm(t("myInstances.leaveConfirm"))) return;
+      await window.mchub.leaveJoinedServer(btn.dataset.slug);
+      myJoinedServers = myJoinedServers.filter((s) => s.slug !== btn.dataset.slug);
+      renderMyInstancesGrid();
     });
   });
 }
@@ -1464,19 +1551,23 @@ async function renderMyInstancesList() {
     return;
   }
 
-  const result = await window.mchub.listMyServers();
-  myInstancesServers = result.ok ? result.servers : [];
+  const [ownedResult, joinedResult] = await Promise.all([window.mchub.listMyServers(), window.mchub.listJoinedServers()]);
+  myInstancesServers = ownedResult.ok ? ownedResult.servers : [];
+  myJoinedServers = joinedResult.ok ? joinedResult.servers : [];
 
-  if (myInstancesServers.length === 0) {
+  if (myInstancesServers.length === 0 && myJoinedServers.length === 0) {
     myInstancesPanelEl.className = "detail";
     myInstancesPanelEl.innerHTML = `
       <h2>${t("nav.myInstances")}</h2>
-      <p class="join-note">${result.ok ? t("myInstances.empty") : t("myInstances.loginRequired")}</p>
+      <p class="join-note">${ownedResult.ok ? t("myInstances.empty") : t("myInstances.loginRequired")}</p>
     `;
     return;
   }
 
-  myInstancesFilter = "all";
+  // Un join par deep link reussi (ou rate) demande a atterrir directement
+  // sur "Rejoint" — sinon, ouvrir "Mes instances" retombe toujours sur "Tout".
+  myInstancesFilter = focusJoinedTabOnce ? "joined" : "all";
+  focusJoinedTabOnce = false;
   myInstancesPanelEl.className = "instances-view";
   renderMyInstancesGrid();
 }

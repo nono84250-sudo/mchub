@@ -29,6 +29,12 @@ const DEFAULTS = {
   favoriteServers: [],
   lastPlayedSlug: null,
   playCounts: {},
+  // Serveurs prives rejoints via le code/lien d'invitation de quelqu'un
+  // d'autre (onglet "Rejoint" de "Mes instances", voir renderer.js) — tableau
+  // de { slug, joinedAt }, deduplique par slug. Stockage 100% local comme
+  // favoriteServers ci-dessus : le site ne sait jamais qui a rejoint quel
+  // serveur prive, pas de table dediee (voir main.js/addJoinedServer).
+  joinedServers: [],
   // Historique des derniers serveurs reellement lances, du plus recent au
   // plus ancien (page "Recents" de la barre laterale) — deja limite en
   // taille par renderer.js avant d'etre enregistre.

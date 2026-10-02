@@ -40,6 +40,11 @@ model Server {
 
   curseforgeModpackId      String?
   curseforgeModpackName    String?
+  // Jamais choisie par le proprietaire, jamais un numero fige : juste la
+  // derniere version reellement resolue a l'installation (voir getModpackInstallFile/
+  // getModrinthModpackInstallFile), remise a jour toute seule a chaque lancement
+  // quand l'auteur du modpack en publie une nouvelle (route .../modpack).
+  // Purement informatif pour l'affichage (fiche publique, Parametres).
   curseforgeModpackVersion String?
 
   // Plateforme d'ou vient le modpack. Les trois colonnes curseforgeModpack*

@@ -1,5 +1,18 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
 const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut } = require("electron");
+
+// Lien d'invitation (omniscient://join/<CODE>, voir plus bas) : Windows doit
+// retrouver l'instance DEJA ouverte au lieu d'en lancer une seconde quand on
+// clique un lien pendant que le launcher tourne deja — a demander avant tout
+// le reste, Electron l'exige en tout premier (avant app.whenReady() et la
+// moindre fenetre). L'instance perdante s'arrete ici, avant meme de charger
+// les modules plus bas (msAuth, mcLaunch...) : `return` au niveau racine est
+// valide, Node enveloppe chaque module dans sa propre fonction.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  return;
+}
+
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
@@ -84,6 +97,12 @@ function setSession(profile, authorization) {
   return profile;
 }
 
+// Fenetre principale (hors console de debug) — gardee a part de son usage
+// local dans createWindow() pour que le lien d'invitation (deep link) et
+// l'evenement "second-instance" puissent lui envoyer des choses sans la
+// recreer (focus, IPC "servers:joined", voir plus bas).
+let mainWindow = null;
+
 async function fetchJson(url, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -127,6 +146,10 @@ function createWindow() {
       sandbox: true,
     },
   });
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+  });
 
   // Sans barre de titre native (frame: false), l'etat maximise/restaure
   // n'est visible nulle part ailleurs : le renderer doit le connaitre pour
@@ -138,6 +161,17 @@ function createWindow() {
   win.on("unmaximize", sendMaximizedState);
 
   win.loadFile(path.join(__dirname, "index.html"));
+
+  // Lancement a froid via un lien omniscient://join/<CODE> (voir extraction
+  // plus bas) : attend que la fenetre ait fini de charger avant d'envoyer
+  // "servers:joined", sinon l'IPC part dans le vide (aucun listener encore
+  // attache cote renderer).
+  if (pendingJoinCode) {
+    const code = pendingJoinCode;
+    pendingJoinCode = null;
+    win.webContents.once("did-finish-load", () => handleJoinDeepLink(code));
+  }
+
   wireAutoUpdater(win);
 }
 
@@ -361,6 +395,79 @@ ipcMain.handle("servers:openManage", (_event, serverId) => {
   if (typeof serverId === "string" && serverId) shell.openExternal(`${SITE_URL}/manage/${encodeURIComponent(serverId)}`);
 });
 ipcMain.handle("servers:openNewInstance", () => shell.openExternal(`${SITE_URL}/dashboard/servers/new`));
+// Pour construire le lien d'invitation (copie dans le presse-papier depuis
+// "Mes instances") sans dupliquer la logique SITE_URL cote renderer.
+ipcMain.handle("app:getSiteUrl", () => SITE_URL);
+
+// Onglet "Rejoint" de "Mes instances" (voir renderer.js) : serveurs prives
+// rejoints via le code/lien d'invitation de quelqu'un d'autre — jamais ceux
+// que ce joueur possede (voir servers:mine ci-dessus, une liste separee).
+// Stockage 100% local (settingsStore.joinedServers), le site ne sait jamais
+// qui a rejoint quel serveur prive : resoudre un code ne fait que prouver
+// qu'on a le droit de voir une fiche, comme /join/[code] cote site.
+function addJoinedServer(slug) {
+  const current = settingsStore.loadSettings().joinedServers || [];
+  const joinedServers = [...current.filter((j) => j.slug !== slug), { slug, joinedAt: Date.now() }];
+  settingsStore.saveSettings({ joinedServers });
+}
+
+function removeJoinedServer(slug) {
+  const current = settingsStore.loadSettings().joinedServers || [];
+  const joinedServers = current.filter((j) => j.slug !== slug);
+  settingsStore.saveSettings({ joinedServers });
+  return joinedServers;
+}
+
+// Resout un code d'invitation (voir site/src/app/api/launcher/servers/join/
+// [code]/route.ts) puis l'ajoute aux serveurs rejoints localement. Pas besoin
+// de session Minecraft : resoudre un code est volontairement anonyme, comme
+// la page /join/[code] du site — seul LAUNCHER_API_KEY prouve que c'est bien
+// ce launcher qui demande. Appelee par ipcMain ("servers:joinByCode") ET
+// directement par le traitement du deep link (handleJoinDeepLink plus bas).
+async function joinServerByCode(code) {
+  const trimmed = (code || "").trim().toUpperCase();
+  if (!trimmed) return { ok: false, error: "Code d'invitation manquant." };
+
+  try {
+    const resolveRes = await fetch(`${SITE_URL}/api/launcher/servers/join/${encodeURIComponent(trimmed)}`, {
+      headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+    });
+    if (resolveRes.status === 404) return { ok: false, error: "Ce code d'invitation est invalide." };
+    if (!resolveRes.ok) throw new Error(`HTTP ${resolveRes.status}`);
+    const { slug } = await resolveRes.json();
+
+    const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`);
+    addJoinedServer(slug);
+    return { ok: true, server: data.server };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+}
+
+ipcMain.handle("servers:joinByCode", (_event, code) => joinServerByCode(code));
+
+ipcMain.handle("servers:leaveJoined", (_event, slug) => {
+  removeJoinedServer(slug);
+  return { ok: true };
+});
+
+// Fiches des serveurs rejoints, triees du plus recemment rejoint au plus
+// ancien. Une entree dont la fiche a disparu (serveur supprime, ou republie
+// autrement) est simplement ignoree plutot que de casser tout l'onglet.
+ipcMain.handle("servers:listJoined", async () => {
+  const joined = [...(settingsStore.loadSettings().joinedServers || [])].sort((a, b) => b.joinedAt - a.joinedAt);
+  const servers = await Promise.all(
+    joined.map(async (j) => {
+      try {
+        const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(j.slug)}`);
+        return data.server;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return { ok: true, servers: servers.filter(Boolean) };
+});
 
 // Signalement "Probleme technique" depuis la fiche d'un serveur (voir
 // renderer.js/openReportDialog et site/src/app/api/launcher/servers/[slug]/
@@ -853,6 +960,69 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   } finally {
     gameLaunchInProgress = false;
   }
+});
+
+// Lien d'invitation omniscient://join/<CODE> (voir site/src/app/join/[code]/
+// page.tsx, bouton "Ouvrir dans le launcher") : Windows passe l'URL comme un
+// argument de ligne de commande, que ce soit au premier lancement
+// (process.argv, lu une seule fois ci-dessous) ou relaye a l'instance deja
+// ouverte via l'evenement "second-instance" (voir requestSingleInstanceLock
+// en haut de ce fichier). Un schema personnalise suit les memes regles de
+// parsing qu'une URL http pour `new URL()` : "join" atterrit dans .hostname
+// (le segment juste apres "://"), le CODE dans .pathname.
+function extractJoinCodeFromArgv(argv) {
+  for (const arg of argv) {
+    if (!arg.startsWith("omniscient://")) continue;
+    try {
+      const url = new URL(arg);
+      if (url.hostname !== "join") continue;
+      const code = decodeURIComponent(url.pathname.replace(/^\//, "")).trim();
+      if (code) return code;
+    } catch {
+      // Argument malforme (improbable, Windows ne passe que ce que
+      // setAsDefaultProtocolClient a enregistre) — ignore et continue.
+    }
+  }
+  return null;
+}
+
+// Lu une seule fois au demarrage (lancement a froid depuis un lien) ;
+// consomme par createWindow() des que sa fenetre a fini de charger.
+let pendingJoinCode = extractJoinCodeFromArgv(process.argv);
+
+// Resout le code puis previent le renderer par le meme mecanisme que
+// game:progress/java:installProgress (push depuis le processus principal,
+// jamais l'inverse ici : rien dans le renderer n'a demande ce join).
+async function handleJoinDeepLink(code) {
+  const result = await joinServerByCode(code);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("servers:joined", result);
+  }
+}
+
+// En dev (`electron .`), l'executable enregistre serait electron.exe tout nu
+// — il lui faut le chemin de l'appli en argument pour recharger CE projet au
+// clic sur un lien, sinon Windows relance electron.exe sans rien ouvrir.
+// process.defaultApp est le flag qu'Electron documente pour detecter ce cas
+// (vrai seulement via `electron .`, jamais sur le .exe empaquete).
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient("omniscient", process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient("omniscient");
+}
+
+// Le launcher tournait deja : Windows a relance un second processus sur le
+// lien, qui s'arrete tout de suite (voir requestSingleInstanceLock) mais
+// relaie d'abord son argv ici, sur l'instance d'origine.
+app.on("second-instance", (_event, argv) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+  const code = extractJoinCodeFromArgv(argv);
+  if (code) handleJoinDeepLink(code);
 });
 
 app.whenReady().then(() => {

@@ -85,6 +85,9 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
         <DetailRow label={dict.manage.detailAddress}>
           <span className="font-mono text-[12.5px] text-foreground">{server.ip}</span>
         </DetailRow>
+        <DetailRow label={dict.manage.detailVersion}>
+          <span className="text-[13.5px] text-foreground">{server.minecraftVersion}</span>
+        </DetailRow>
         {server.isPrivate && server.inviteCode ? (
           <DetailRow label={dict.manage.detailInviteCode}>
             <span className="font-mono text-[12.5px] text-foreground">{server.inviteCode}</span>

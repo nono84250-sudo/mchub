@@ -83,14 +83,15 @@ export async function searchModrinthModpacks(query: string): Promise<ModpackSear
 }
 
 /**
- * Fichier .mrpack a installer pour un serveur : la version enregistree sur sa
- * fiche (numero ou nom de version) si elle existe toujours, sinon la plus
- * recente compatible avec sa version de Minecraft, sinon la plus recente.
- * Les versions stables passent avant les beta/alpha.
+ * Fichier .mrpack le plus recent compatible avec la version de Minecraft du
+ * serveur (sinon le plus recent tout court) — jamais une version figee :
+ * l'auteur du modpack peut la changer a tout moment cote Modrinth, le serveur
+ * doit toujours suivre (voir le commentaire sur curseforgeModpackVersion dans
+ * contract.prisma). Les versions stables passent avant les beta/alpha.
  */
 export async function getModrinthModpackInstallFile(
   projectIdOrSlug: string,
-  hints: { version?: string | null; minecraftVersion?: string | null },
+  hints: { minecraftVersion?: string | null },
 ): Promise<{ modpack: { id: string; name: string }; file: ModpackInstallFile }> {
   const id = encodeURIComponent(projectIdOrSlug);
   const [project, versions] = await Promise.all([
@@ -99,12 +100,9 @@ export async function getModrinthModpackInstallFile(
   ]);
 
   const byNewest = [...versions].sort((a, b) => b.date_published.localeCompare(a.date_published));
-  const pinned = hints.version
-    ? byNewest.find((v) => v.version_number === hints.version || v.name === hints.version)
-    : undefined;
   const compatible = hints.minecraftVersion ? byNewest.filter((v) => v.game_versions.includes(hints.minecraftVersion!)) : byNewest;
   const pool = compatible.length ? compatible : byNewest;
-  const chosen = pinned ?? pool.find((v) => v.version_type === "release") ?? pool[0];
+  const chosen = pool.find((v) => v.version_type === "release") ?? pool[0];
   if (!chosen) throw new Error("Ce modpack Modrinth n'a aucune version publiée.");
 
   const file = chosen.files.find((f) => f.primary) ?? chosen.files[0];

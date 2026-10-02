@@ -157,13 +157,14 @@ function toFileInfo(file: CurseforgeFileRaw): CurseforgeFileInfo {
 }
 
 /**
- * Fichier du modpack a installer : celui dont le nom correspond a la version
- * enregistree sur la fiche du serveur (ce que le proprietaire a choisi), sinon
- * le plus recent. `hints.name` sert de repli : avec une cle limitee a la
- * recherche, le detail d'un modpack par identifiant est refuse, alors on le
- * retrouve par son nom dans les resultats de recherche.
+ * Fichier le plus recent du modpack a installer — jamais une version figee :
+ * l'auteur du modpack peut la changer a tout moment cote CurseForge, le
+ * serveur doit toujours suivre (voir le commentaire sur curseforgeModpackVersion
+ * dans contract.prisma). `hints.name` sert de repli pour retrouver le modpack
+ * par son nom dans la recherche : avec une cle limitee a la recherche, le
+ * detail d'un modpack par identifiant est refuse.
  */
-export async function getModpackInstallFile(modpackId: string, hints: { name?: string | null; version?: string | null }) {
+export async function getModpackInstallFile(modpackId: string, hints: { name?: string | null }) {
   type Mod = { id: number; name: string; latestFiles: CurseforgeFileRaw[] };
 
   let mod: Mod | undefined;
@@ -183,11 +184,7 @@ export async function getModpackInstallFile(modpackId: string, hints: { name?: s
   }
 
   const candidates = mod.latestFiles.filter((f) => f.downloadUrl);
-  const pinned = hints.version
-    ? candidates.find((f) => f.displayName === hints.version || f.fileName === hints.version)
-    : undefined;
-  const newest = [...candidates].sort((a, b) => (b.fileDate ?? "").localeCompare(a.fileDate ?? ""))[0];
-  const file = pinned ?? newest;
+  const file = [...candidates].sort((a, b) => (b.fileDate ?? "").localeCompare(a.fileDate ?? ""))[0];
   if (!file) {
     throw new Error("Aucun fichier téléchargeable pour ce modpack (son auteur a peut-être interdit la redistribution).");
   }

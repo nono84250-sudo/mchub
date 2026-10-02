@@ -1,9 +1,13 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("mchub", {
+  getSiteUrl: () => ipcRenderer.invoke("app:getSiteUrl"),
   listServers: () => ipcRenderer.invoke("servers:list"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
   listMyServers: () => ipcRenderer.invoke("servers:mine"),
+  listJoinedServers: () => ipcRenderer.invoke("servers:listJoined"),
+  joinServerByCode: (code) => ipcRenderer.invoke("servers:joinByCode", code),
+  leaveJoinedServer: (slug) => ipcRenderer.invoke("servers:leaveJoined", slug),
   openManageServer: (serverId) => ipcRenderer.invoke("servers:openManage", serverId),
   openNewInstance: () => ipcRenderer.invoke("servers:openNewInstance"),
   submitReport: (report) => ipcRenderer.invoke("reports:submit", report),
@@ -19,6 +23,14 @@ contextBridge.exposeInMainWorld("mchub", {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on("game:progress", listener);
     return () => ipcRenderer.removeListener("game:progress", listener);
+  },
+  // Pousse depuis main.js quand un lien omniscient://join/<CODE> vient d'etre
+  // traite (lancement a froid ou launcher deja ouvert, voir second-instance)
+  // — rien dans le renderer ne l'a demande, meme mecanisme que onGameProgress.
+  onServerJoined: (callback) => {
+    const listener = (_event, result) => callback(result);
+    ipcRenderer.on("servers:joined", listener);
+    return () => ipcRenderer.removeListener("servers:joined", listener);
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke("window:minimize"),

@@ -24,3 +24,5 @@ Thumbs.db
 .claude/
 .cursor/
 .devin/
+/CLAUDE.md
+graphify-out/

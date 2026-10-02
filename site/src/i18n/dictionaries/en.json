@@ -101,7 +101,12 @@
     "onlinePlayers": "{count} player online",
     "onlinePlayersPlural": "{count} players online",
     "unknownStatus": "Status unknown",
-    "joinTooManyAttempts": "Too many attempts — try again in a minute."
+    "joinTooManyAttempts": "Too many attempts — try again in a minute.",
+    "joinTitle": "Join {name}",
+    "joinSubtitle": "Open Omniscient Launcher to add this private server to your instances.",
+    "joinOpenInLauncher": "Open in Omniscient Launcher",
+    "joinFallback": "Don't have the launcher yet, or on another device?",
+    "joinFallbackLink": "View the server page on the website"
   },
   "serverDetail": {
     "version": "Version",
@@ -159,6 +164,7 @@
     "detailStatus": "Status",
     "detailVisibility": "Visibility",
     "detailAddress": "Connection address",
+    "detailVersion": "Minecraft version",
     "detailInviteCode": "Invite code",
     "detailCreated": "Created",
     "activityTitle": "Activity",
@@ -249,8 +255,7 @@
     "modpackSection": "CurseForge modpack",
     "modpackId": "Modpack ID",
     "modpackName": "Modpack name",
-    "modpackVersion": "Modpack version",
-    "modpackNote": "Players download this modpack automatically on first launch — no manual setup."
+    "modpackNote": "Players download this modpack automatically on first launch, and always stay on its latest version — no manual setup."
   },
   "imageUpload": {
     "failed": "Couldn't upload the image — check the format and size shown above."

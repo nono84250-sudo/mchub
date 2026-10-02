@@ -52,6 +52,12 @@ export function NewServerWizard({ action, versions }: Props) {
     type === "modded"
       ? [modpack.minecraftVersion ? `Minecraft ${modpack.minecraftVersion}` : null, modpack.loader].filter(Boolean).join(" · ")
       : "";
+  // Moddé + modpack vérifié par la recherche (CurseForge/Modrinth) : la version
+  // Minecraft vient du modpack, impossible à ressaisir à la main (voir
+  // decouverte du 2026-10-02 : un modpack peut changer de version MC). Reste
+  // éditable seulement en saisie manuelle du modpack (pas de version connue).
+  const showManualVersion = type !== "modded" || !modpack.minecraftVersion;
+  const effectiveVersion = showManualVersion ? minecraftVersion : modpack.minecraftVersion!;
 
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
@@ -220,8 +226,22 @@ export function NewServerWizard({ action, versions }: Props) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <MinecraftVersionField versions={versions} defaultValue={minecraftVersion} onChange={setMinecraftVersion}>
-            {modpackDetails ? (
+          {showManualVersion ? (
+            <MinecraftVersionField versions={versions} defaultValue={minecraftVersion} onChange={setMinecraftVersion}>
+              {modpackDetails ? (
+                <div className="flex items-start gap-1.5 text-xs text-foreground">
+                  <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-accent" />
+                  <div className="flex flex-col gap-0.5">
+                    <span>{t("wizard.modpackChosen", { name: modpack.name })}</span>
+                    <span>{modpackDetails}</span>
+                  </div>
+                </div>
+              ) : null}
+            </MinecraftVersionField>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <span className="field-label">{t("serverForm.version")}</span>
+              <input type="hidden" name="minecraftVersion" value={effectiveVersion} />
               <div className="flex items-start gap-1.5 text-xs text-foreground">
                 <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-accent" />
                 <div className="flex flex-col gap-0.5">
@@ -229,8 +249,8 @@ export function NewServerWizard({ action, versions }: Props) {
                   <span>{modpackDetails}</span>
                 </div>
               </div>
-            ) : null}
-          </MinecraftVersionField>
+            </div>
+          )}
           <div className="flex flex-col gap-1.5">
             <label htmlFor="recommendedRamGB" className="field-label">{t("serverForm.ram")}</label>
             <input
@@ -245,7 +265,7 @@ export function NewServerWizard({ action, versions }: Props) {
           <button type="button" onClick={back} className="btn-secondary">
             {t("wizard.back")}
           </button>
-          <button type="button" onClick={next} disabled={!ip || !minecraftVersion} className="btn-primary">
+          <button type="button" onClick={next} disabled={!ip || !effectiveVersion} className="btn-primary">
             {t("wizard.continue")} <ArrowRight className="h-4 w-4" />
           </button>
         </div>
@@ -275,7 +295,7 @@ export function NewServerWizard({ action, versions }: Props) {
           </div>
           <div className="flex justify-between px-4 py-3 text-sm">
             <span className="text-muted">{t("wizard.reviewVersion")}</span>
-            <span className="font-medium text-foreground">{minecraftVersion || "—"}</span>
+            <span className="font-medium text-foreground">{effectiveVersion || "—"}</span>
           </div>
           <div className="flex justify-between px-4 py-3 text-sm">
             <span className="text-muted">{t("wizard.reviewAddress")}</span>
