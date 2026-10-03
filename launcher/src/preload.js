@@ -24,14 +24,6 @@ contextBridge.exposeInMainWorld("mchub", {
     ipcRenderer.on("game:progress", listener);
     return () => ipcRenderer.removeListener("game:progress", listener);
   },
-  // Pousse depuis main.js quand un lien omniscient://join/<CODE> vient d'etre
-  // traite (lancement a froid ou launcher deja ouvert, voir second-instance)
-  // — rien dans le renderer ne l'a demande, meme mecanisme que onGameProgress.
-  onServerJoined: (callback) => {
-    const listener = (_event, result) => callback(result);
-    ipcRenderer.on("servers:joined", listener);
-    return () => ipcRenderer.removeListener("servers:joined", listener);
-  },
   windowControls: {
     minimize: () => ipcRenderer.invoke("window:minimize"),
     toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),

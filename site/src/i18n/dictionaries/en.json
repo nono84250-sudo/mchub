@@ -101,12 +101,7 @@
     "onlinePlayers": "{count} player online",
     "onlinePlayersPlural": "{count} players online",
     "unknownStatus": "Status unknown",
-    "joinTooManyAttempts": "Too many attempts — try again in a minute.",
-    "joinTitle": "Join {name}",
-    "joinSubtitle": "Open Omniscient Launcher to add this private server to your instances.",
-    "joinOpenInLauncher": "Open in Omniscient Launcher",
-    "joinFallback": "Don't have the launcher yet, or on another device?",
-    "joinFallbackLink": "View the server page on the website"
+    "joinTooManyAttempts": "Too many attempts — try again in a minute."
   },
   "serverDetail": {
     "version": "Version",

@@ -490,6 +490,11 @@
   .icon-btn:hover { color: var(--accent); background: var(--accent-fill); }
   .instance-card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+  /* Formulaire "Rejoindre via un code" (onglet "Rejoint" de "Mes instances") */
+  .join-by-code { margin-bottom: 16px; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); max-width: 420px; }
+  .join-by-code-row { display: flex; gap: 8px; margin-top: 6px; }
+  .join-by-code-row .settings-input { flex: 1 1 auto; }
+
   /* Accueil (voir renderer.js/renderHomeView) : carte "continuer" + sections
      compactes reutilisant les .row deja stylees ailleurs (favoris, mes
      instances) plutot que d'inventer un nouveau composant. */

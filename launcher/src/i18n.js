@@ -159,7 +159,6 @@ const DICTIONARIES = {
       empty: "Aucun serveur joué pour l'instant — les derniers serveurs lancés apparaîtront ici.",
     },
     myInstances: {
-      empty: "Aucun serveur pour le moment — publie-en un depuis le site Omniscient.",
       manage: "Gérer",
       loginRequired: "Connecte-toi avec ton compte Minecraft pour voir tes serveurs ici.",
       published: "Publié",
@@ -182,6 +181,9 @@ const DICTIONARIES = {
       badgeJoined: "Rejoint",
       leave: "Quitter",
       leaveConfirm: "Quitter ce serveur ? Il sera retiré de ton onglet \"Rejoint\" (le propriétaire n'est pas prévenu).",
+      joinByCodeLabel: "Rejoindre via un code d'invitation",
+      joinByCodePlaceholder: "Code d'invitation",
+      joinByCodeSubmit: "Ajouter",
     },
     settings: {
       title: "Paramètres",
@@ -512,7 +514,6 @@ const DICTIONARIES = {
       empty: "No server played yet — recently launched servers will appear here.",
     },
     myInstances: {
-      empty: "No server yet — publish one from the Omniscient site.",
       manage: "Manage",
       loginRequired: "Sign in with your Minecraft account to see your servers here.",
       published: "Published",
@@ -535,6 +536,9 @@ const DICTIONARIES = {
       badgeJoined: "Joined",
       leave: "Leave",
       leaveConfirm: "Leave this server? It will be removed from your \"Joined\" tab (the owner isn't notified).",
+      joinByCodeLabel: "Join via an invite code",
+      joinByCodePlaceholder: "Invite code",
+      joinByCodeSubmit: "Add",
     },
     settings: {
       title: "Settings",

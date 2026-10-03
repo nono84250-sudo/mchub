@@ -1338,23 +1338,12 @@ window.mchub.getSiteUrl().then((url) => { siteUrl = url; });
 // une liste independante de myInstancesServers (les serveurs POSSEDES),
 // jamais fusionnee avec elle ni comptee dans le filtre "Tout".
 let myJoinedServers = [];
-// Un seul passage sur "joined" apres un join reussi (deep link) — remis a
-// false des que renderMyInstancesList() l'a consomme, pour que rouvrir "Mes
-// instances" depuis la sidebar retombe normalement sur "Tout".
-let focusJoinedTabOnce = false;
-// Message d'erreur d'un join par deep link rate (code invalide/expire) —
-// affiche une fois au sommet du panneau puis efface, meme idee que
-// focusJoinedTabOnce.
-let joinErrorNote = null;
-
-// Pousse par main.js quand un lien omniscient://join/<CODE> vient d'etre
-// traite (lancement a froid ou launcher deja ouvert) — jamais demande par ce
-// script, voir onGameProgress pour le meme mecanisme de push main -> renderer.
-window.mchub.onServerJoined((result) => {
-  focusJoinedTabOnce = true;
-  if (!result.ok) joinErrorNote = result.error;
-  showMyInstancesView();
-});
+// Erreur du formulaire "Rejoindre via un code" (code invalide, deja rejoint
+// sans fiche, etc.) — affichee sous le formulaire jusqu'au prochain essai.
+let joinFormError = null;
+// Desactive le bouton "Ajouter" pendant la resolution du code, pour eviter un
+// double envoi si le joueur reclique avant la reponse du site.
+let joinFormBusy = false;
 
 function instanceStatus(server) {
   if (!server.published) return "paused";
@@ -1449,6 +1438,22 @@ function instancesToolbarHtml(servers, joinedCount) {
     </div>`;
 }
 
+// Formulaire "Rejoindre via un code" — affiche uniquement sur l'onglet
+// "Rejoint" (au-dessus de la liste, meme quand elle n'est pas vide, pour en
+// ajouter d'autres ensuite). Resout le code cote site (voir joinServerByCode
+// dans main.js) puis l'ajoute aux serveurs rejoints localement.
+function joinByCodeFormHtml() {
+  return `
+    <div class="join-by-code">
+      <label for="join-code-input" class="field-label">${t("myInstances.joinByCodeLabel")}</label>
+      <div class="join-by-code-row">
+        <input type="text" id="join-code-input" class="settings-input" placeholder="${t("myInstances.joinByCodePlaceholder")}" ${joinFormBusy ? "disabled" : ""} />
+        <button type="button" class="join-btn" id="join-code-submit" ${joinFormBusy ? "disabled" : ""}>${t("myInstances.joinByCodeSubmit")}</button>
+      </div>
+      ${joinFormError ? `<p class="join-note" style="color: var(--danger);">${escapeHtml(joinFormError)}</p>` : ""}
+    </div>`;
+}
+
 function renderMyInstancesGrid() {
   const filtered =
     myInstancesFilter === "joined"
@@ -1456,10 +1461,6 @@ function renderMyInstancesGrid() {
       : myInstancesFilter === "all"
         ? myInstancesServers
         : myInstancesServers.filter((server) => instanceStatus(server) === myInstancesFilter);
-
-  // N'affiche l'erreur de join (deep link rate) qu'une seule fois.
-  const errorNote = joinErrorNote;
-  joinErrorNote = null;
 
   myInstancesPanelEl.innerHTML = `
     <div class="instances-header">
@@ -1469,8 +1470,8 @@ function renderMyInstancesGrid() {
       </div>
       <button type="button" class="btn-secondary" id="my-instances-new">+ ${t("myInstances.newInstance")}</button>
     </div>
-    ${errorNote ? `<p class="join-note">${escapeHtml(errorNote)}</p>` : ""}
     ${instancesToolbarHtml(myInstancesServers, myJoinedServers.length)}
+    ${myInstancesFilter === "joined" ? joinByCodeFormHtml() : ""}
     ${
       filtered.length === 0
         ? `<p class="join-note">${t("myInstances.filterEmpty")}</p>`
@@ -1479,6 +1480,32 @@ function renderMyInstancesGrid() {
   `;
 
   document.getElementById("my-instances-new").addEventListener("click", () => window.mchub.openNewInstance());
+
+  const joinCodeSubmit = document.getElementById("join-code-submit");
+  if (joinCodeSubmit) {
+    const submitJoinCode = async () => {
+      const input = document.getElementById("join-code-input");
+      const code = input.value.trim();
+      if (!code) return;
+      joinFormBusy = true;
+      joinFormError = null;
+      renderMyInstancesGrid();
+      const result = await window.mchub.joinServerByCode(code);
+      joinFormBusy = false;
+      if (!result.ok) {
+        joinFormError = result.error;
+        renderMyInstancesGrid();
+        return;
+      }
+      const listed = await window.mchub.listJoinedServers();
+      myJoinedServers = listed.ok ? listed.servers : myJoinedServers;
+      renderMyInstancesGrid();
+    };
+    joinCodeSubmit.addEventListener("click", submitJoinCode);
+    document.getElementById("join-code-input").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") submitJoinCode();
+    });
+  }
 
   myInstancesPanelEl.querySelectorAll(".instances-filters .sort-chip").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1552,22 +1579,20 @@ async function renderMyInstancesList() {
   }
 
   const [ownedResult, joinedResult] = await Promise.all([window.mchub.listMyServers(), window.mchub.listJoinedServers()]);
-  myInstancesServers = ownedResult.ok ? ownedResult.servers : [];
-  myJoinedServers = joinedResult.ok ? joinedResult.servers : [];
-
-  if (myInstancesServers.length === 0 && myJoinedServers.length === 0) {
+  if (!ownedResult.ok) {
     myInstancesPanelEl.className = "detail";
     myInstancesPanelEl.innerHTML = `
       <h2>${t("nav.myInstances")}</h2>
-      <p class="join-note">${ownedResult.ok ? t("myInstances.empty") : t("myInstances.loginRequired")}</p>
+      <p class="join-note">${t("myInstances.loginRequired")}</p>
     `;
     return;
   }
+  myInstancesServers = ownedResult.servers;
+  myJoinedServers = joinedResult.ok ? joinedResult.servers : [];
 
-  // Un join par deep link reussi (ou rate) demande a atterrir directement
-  // sur "Rejoint" — sinon, ouvrir "Mes instances" retombe toujours sur "Tout".
-  myInstancesFilter = focusJoinedTabOnce ? "joined" : "all";
-  focusJoinedTabOnce = false;
+  // Toujours "Tout" a l'ouverture (meme sans aucun serveur possede ni rejoint
+  // : l'onglet "Rejoint" doit rester atteignable pour entrer un code).
+  myInstancesFilter = "all";
   myInstancesPanelEl.className = "instances-view";
   renderMyInstancesGrid();
 }
