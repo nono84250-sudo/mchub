@@ -98,7 +98,11 @@ function scheduleLauncherSessionRenewal() {
   launcherSessionTimer = null;
   if (!launcherSession) return;
   const delay = Math.max(0, launcherSession.expiresAt - LAUNCHER_SESSION_RENEW_BEFORE_MS - Date.now());
-  launcherSessionTimer = setTimeout(() => requestLauncherSession(), delay);
+  logStore.pushLog({ source: "launcher", message: `Session launcher : renouvellement programmé à ${new Date(Date.now() + delay).toLocaleTimeString("fr-FR")}` });
+  launcherSessionTimer = setTimeout(() => {
+    logStore.pushLog({ source: "launcher", message: "Session launcher : renouvellement en cours" });
+    requestLauncherSession();
+  }, delay);
 }
 
 function requestLauncherSession() {
@@ -117,14 +121,19 @@ function requestLauncherSession() {
         body: JSON.stringify({ minecraftUuid: uuid }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        logStore.pushLog({ level: "warn", source: "launcher", message: `Session launcher : échange refusé (HTTP ${res.status}), repli sur le jeton Mojang` });
+        return;
+      }
       const data = await res.json();
       // Joueur deconnecte pendant l'echange : on ne garde pas sa session.
       if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
+      logStore.pushLog({ source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
       scheduleLauncherSessionRenewal();
-    } catch {
+    } catch (error) {
       // Sans importance : les requetes continuent avec le jeton Mojang.
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Session launcher : échange impossible (${error.message}), repli sur le jeton Mojang` });
     } finally {
       launcherSessionRequest = null;
     }
@@ -140,13 +149,16 @@ async function revokeLauncherSession() {
   launcherSession = null;
   if (!session || session.expiresAt <= Date.now()) return;
   try {
-    await fetch(`${SITE_URL}/api/launcher/session/revoke`, {
+    const res = await fetch(`${SITE_URL}/api/launcher/session/revoke`, {
       method: "POST",
       headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": session.token },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
+    if (res.ok) logStore.pushLog({ source: "launcher", message: "Session launcher : révoquée à la déconnexion" });
+    else logStore.pushLog({ level: "warn", source: "launcher", message: `Session launcher : révocation refusée (HTTP ${res.status})` });
+  } catch (error) {
     // Hors ligne : rien a faire, le jeton expire seul.
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Session launcher : révocation impossible (${error.message}), le jeton expire seul` });
   }
 }
 
@@ -502,7 +514,10 @@ ipcMain.handle("servers:get", async (_event, slug) => {
 // plupart des joueurs (uniquement les proprietaires de serveur ont besoin
 // de cette liaison).
 ipcMain.handle("servers:mine", async () => {
-  if (!currentSession) return { ok: false, status: 401, error: "Pas de compte Microsoft connecté." };
+  if (!currentSession) {
+    logStore.pushLog({ level: "warn", source: "launcher", message: "Mes instances : pas de session Microsoft active" });
+    return { ok: false, status: 401, error: "Pas de compte Microsoft connecté." };
+  }
   try {
     const data = await withSessionRetry(() =>
       fetchJson(
@@ -510,9 +525,12 @@ ipcMain.handle("servers:mine", async () => {
         { headers: launcherAuthHeaders() },
       ),
     );
+    logStore.pushLog({ source: "launcher", message: `Mes instances : ${data.servers?.length ?? 0} serveur(s) chargé(s)` });
     return { ok: true, servers: data.servers };
   } catch (error) {
-    return { ok: false, status: error.status, error: error instanceof Error ? error.message : "Erreur inconnue" };
+    const message = error instanceof Error ? error.message : "Erreur inconnue";
+    logStore.pushLog({ level: "error", source: "launcher", message: `Mes instances : échec (${error.status ?? "pas de réponse"}) : ${message}` });
+    return { ok: false, status: error.status, error: message };
   }
 });
 
