@@ -304,6 +304,10 @@ function createWindow() {
   };
   win.on("maximize", sendMaximizedState);
   win.on("unmaximize", sendMaximizedState);
+  // Fermer le launcher ferme aussi la console de debug, sinon elle garde l'appli ouverte.
+  win.on("closed", () => {
+    if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.close();
+  });
 
   win.loadFile(path.join(__dirname, "index.html"));
 
@@ -368,7 +372,9 @@ function createConsoleWindow() {
 let updateCheckResolve = null;
 
 function wireAutoUpdater(win) {
-  autoUpdater.autoDownload = true;
+  // Pas de telechargement automatique : on ne telecharge qu'une version PLUS
+  // RECENTE que celle qui tourne (voir update-available ci-dessous).
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   const send = (status) => {
@@ -377,8 +383,16 @@ function wireAutoUpdater(win) {
 
   autoUpdater.on("checking-for-update", () => send({ phase: "checking" }));
   autoUpdater.on("update-available", (info) => {
+    // Une version plus ancienne (ex. stable 0.3.3 vue depuis une bêta 0.3.4-beta.2)
+    // n'est jamais téléchargée ni installée : traitée comme "à jour".
+    if (!isNewerVersion(info.version, app.getVersion())) {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Mise à jour ignorée : v${info.version} n'est pas plus récente que v${app.getVersion()}` });
+      autoUpdater.emit("update-not-available", info);
+      return;
+    }
     logStore.pushLog({ source: "launcher", message: `Mise à jour disponible : v${info.version}` });
     send({ phase: "downloading", version: info.version, percent: 0 });
+    autoUpdater.downloadUpdate().catch(() => {});
   });
   autoUpdater.on("download-progress", (progress) => send({ phase: "downloading", percent: Math.round(progress.percent) }));
 
@@ -413,13 +427,32 @@ function wireAutoUpdater(win) {
 // telechargee et prete) — jamais bloque en attente indefinie si
 // electron-updater ne trouve rien a faire. Le bootstrap attend cette
 // promesse avant de passer a l'etape suivante (verification de Java).
+// Compare "x.y.z" et "x.y.z-beta.N" : une version stable (sans suffixe) est
+// plus récente que n'importe quelle bêta de même numéro de base.
+function isNewerVersion(candidate, current) {
+  const parse = (version) => {
+    const [base, pre] = version.split("-");
+    return {
+      nums: base.split(".").map(Number),
+      preNum: pre ? Number((pre.match(/\d+$/) || [0])[0]) : Infinity,
+    };
+  };
+  const a = parse(candidate);
+  const b = parse(current);
+  for (let i = 0; i < 3; i += 1) {
+    if (a.nums[i] !== b.nums[i]) return a.nums[i] > b.nums[i];
+  }
+  return a.preNum > b.preNum;
+}
+
 function checkForUpdates() {
   return new Promise((resolve) => {
     if (!app.isPackaged) {
       resolve();
       return;
     }
-    const betaChannel = settingsStore.loadSettings().betaChannel;
+    // Une version bêta reste sur le canal bêta, même si l'option est décochée.
+    const betaChannel = settingsStore.loadSettings().betaChannel || app.getVersion().includes("-beta");
     autoUpdater.channel = betaChannel ? "beta" : "latest";
     autoUpdater.allowPrerelease = betaChannel;
     updateCheckResolve = resolve;

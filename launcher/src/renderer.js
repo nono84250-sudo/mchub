@@ -2146,7 +2146,11 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
           <span class="settings-row-label">${t("settings.launcherVersion")}</span>
           <p class="settings-row-desc">${t("settings.upToDate")}</p>
         </span>
-        <span class="join-note">${settings.appVersion ? `v${settings.appVersion}` : "—"}</span>
+        <span class="join-note">${settings.appVersion ? `v${settings.appVersion.split("-")[0]}` : "—"}</span>
+      </div>
+      <div class="settings-row">
+        <span class="settings-row-label">${t("settings.betaVersion")}</span>
+        <span class="join-note">${settings.appVersion && settings.appVersion.includes("-beta") ? `v${settings.appVersion}` : "—"}</span>
       </div>
       <div class="settings-divider"></div>
       <div class="settings-row">
