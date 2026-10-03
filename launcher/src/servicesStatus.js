@@ -148,6 +148,9 @@ async function downloadStream(onBytes) {
       signal,
       cache: "no-store",
     });
+    // Une reponse qui n'est pas un succes (ex. 429 : trop de requetes) ne doit
+    // pas compter comme un telechargement de 0 octet.
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const reader = res.body.getReader();
     let received = 0;
     for (;;) {
@@ -183,13 +186,14 @@ async function measureDownload(onProgress) {
 async function uploadStream() {
   const { signal, done } = timedSignal();
   try {
-    await fetch(`${SPEED_HOST}/__up`, {
+    const res = await fetch(`${SPEED_HOST}/__up`, {
       method: "POST",
       headers: { "User-Agent": USER_AGENT, "Content-Type": "application/octet-stream" },
       body: Buffer.alloc(UPLOAD_STREAM_BYTES),
       signal,
       cache: "no-store",
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
   } finally {
     done();
   }
