@@ -28,6 +28,20 @@ type ServerFormValues = {
   recommendedRamGB: number | null;
 };
 
+// Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher :
+// seule une adresse https absolue, sans guillemets, chevrons, espaces ni
+// backticks, est acceptee. Couvre les images deposees (Vercel Blob) comme les
+// valeurs legacy pointant vers des CDN https.
+function isSafeImageUrl(url: string | null): boolean {
+  if (url === null) return true;
+  if (!/^https:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function readForm(formData: FormData): ServerFormValues | { error: string } {
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
@@ -47,6 +61,9 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
 
   if (!name || !description || !minecraftVersion || !ip) {
     return { error: "Nom, description, version et IP sont obligatoires." };
+  }
+  if (!isSafeImageUrl(bannerUrl) || !isSafeImageUrl(iconUrl) || !isSafeImageUrl(backgroundUrl)) {
+    return { error: "Les images (bannière, icône, fond) doivent être des adresses https valides." };
   }
   if (type === "modded" && !curseforgeModpackId) {
     return { error: "Un serveur moddé doit indiquer son modpack (CurseForge ou Modrinth)." };
@@ -249,5 +266,7 @@ export async function resetInviteCode(serverId: string) {
   const inviteCode = await generateUniqueInviteCode();
   await db.orm.public.Server.where({ id: serverId }).update({ inviteCode });
 
+  // L'ancien code doit cesser de marcher tout de suite (fiche en cache sinon 60 s).
+  updateTag(SERVERS_CACHE_TAG);
   revalidatePath(`/manage/${serverId}/settings`);
 }

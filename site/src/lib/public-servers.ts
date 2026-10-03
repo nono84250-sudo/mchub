@@ -1,6 +1,10 @@
+import { timingSafeEqual } from "node:crypto";
+import type { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { db } from "@/prisma/db";
 import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
+import { verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Etiquette du cache des donnees publiques des serveurs : les actions du site
 // (creer, modifier, publier, mettre en pause, supprimer) l'invalident avec
@@ -160,10 +164,49 @@ export type LauncherServerDetail = {
   recommendedRamGB: number | null;
 };
 
+// Preuve qu'un visiteur a le droit de voir un serveur prive. Sans preuve, un
+// serveur prive est traite comme inexistant : jamais de fiche, d'IP ni de
+// modpack par simple slug (le slug se devine a partir du nom). Deux preuves
+// valent, au choix : le code d'invitation (joueur qui a rejoint le serveur, ou
+// page /join/[code]) ; le jeton Mojang du proprietaire (verifie aupres de Mojang).
+export type PrivateServerProof = { inviteCode?: string | null; minecraftToken?: string | null };
+
+// Lit la preuve dans les en-tetes d'une requete API (envoyes par le launcher).
+export function proofFromRequest(request: Request): PrivateServerProof {
+  return {
+    inviteCode: request.headers.get("x-invite-code"),
+    minecraftToken: request.headers.get("x-minecraft-token"),
+  };
+}
+
+// Devinage de codes : une requete qui porte un code d'invitation compte dans
+// une limite dediee (meme esprit que /join/[code]). Sans cela, les routes API
+// acceptant le code seraient un moyen de le deviner plus vite que la page.
+export function limitInviteAttempts(request: Request, headers?: Record<string, string>): NextResponse | null {
+  if (!request.headers.get("x-invite-code")) return null;
+  return rateLimitResponse(request, "invite-proof", 30, { headers });
+}
+
+function sameCode(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+export async function canSeeServer(
+  server: { isPrivate: boolean; inviteCode: string | null; owner: { minecraftUuid: string | null } | null },
+  proof: PrivateServerProof,
+): Promise<boolean> {
+  if (!server.isPrivate) return true;
+  const code = proof.inviteCode?.trim().toUpperCase();
+  if (code && server.inviteCode && sameCode(code, server.inviteCode)) return true;
+  return (await verifyMinecraftIdentity(proof.minecraftToken ?? null, server.owner?.minecraftUuid ?? null)) === "verified";
+}
+
 // Seule fonction du fichier qui renvoie `ip` — réservée à la route
 // /api/launcher/servers/[slug], protégée par LAUNCHER_API_KEY. Ne jamais
 // exposer ce résultat via une route publique.
-export async function getServerWithIpBySlug(slug: string): Promise<LauncherServerDetail | null> {
+export async function getServerWithIpBySlug(slug: string, proof: PrivateServerProof = {}): Promise<LauncherServerDetail | null> {
   const row = await db.orm.public.Server.select(
     "name",
     "type",
@@ -171,11 +214,14 @@ export async function getServerWithIpBySlug(slug: string): Promise<LauncherServe
     "minecraftVersion",
     "curseforgeModpackId",
     "recommendedRamGB",
+    "isPrivate",
+    "inviteCode",
   )
+    .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug, published: true })
     .first();
 
-  if (!row) return null;
+  if (!row || !(await canSeeServer(row, proof))) return null;
 
   return {
     name: row.name,
@@ -240,6 +286,8 @@ const loadPublishedServerBySlug = unstable_cache(
     "recommendedRamGB",
     "createdAt",
     "viewCount",
+    "isPrivate",
+    "inviteCode",
   )
     .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug, published: true })
@@ -248,9 +296,10 @@ const loadPublishedServerBySlug = unstable_cache(
   { revalidate: SERVERS_CACHE_SECONDS, tags: [SERVERS_CACHE_TAG] },
 );
 
-export async function getPublicServerBySlug(slug: string): Promise<PublicServerDetail | null> {
+// `proof` : sans preuve (site, annuaire), un serveur prive renvoie null.
+export async function getPublicServerBySlug(slug: string, proof: PrivateServerProof = {}): Promise<PublicServerDetail | null> {
   const row = await loadPublishedServerBySlug(slug);
-  if (!row) return null;
+  if (!row || !(await canSeeServer(row, proof))) return null;
 
   const status = await getServerStatus(row.id, row.ip, row);
 

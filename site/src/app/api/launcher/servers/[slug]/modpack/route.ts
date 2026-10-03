@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/prisma/db";
-import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
+import { SERVERS_CACHE_TAG, canSeeServer, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getModpackInstallFile } from "@/lib/curseforge";
 import { getModrinthModpackInstallFile } from "@/lib/modrinth";
 
@@ -13,6 +14,10 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
+  // Chaque appel interroge CurseForge/Modrinth avec notre cle : frein par adresse,
+  // plus un frein renforce quand une preuve (code d'invitation) est presentee.
+  const limited = rateLimitResponse(request, "launcher-modpack", 60) ?? limitInviteAttempts(request);
+  if (limited) return limited;
 
   const { slug } = await ctx.params;
   const server = await db.orm.public.Server.select(
@@ -23,10 +28,14 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
     "curseforgeModpackName",
     "curseforgeModpackVersion",
     "modpackSource",
+    "isPrivate",
+    "inviteCode",
   )
+    .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug })
     .first();
-  if (!server) {
+  // Serveur prive : meme preuve que /api/launcher/servers/[slug] (voir canSeeServer).
+  if (!server || !(await canSeeServer(server, proofFromRequest(request)))) {
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
   }
   if (server.type !== "modded" || !server.curseforgeModpackId) {

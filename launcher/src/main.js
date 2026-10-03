@@ -78,10 +78,79 @@ function launcherAuthHeaders() {
 // Le refresh_token est en plus sauvegardé chiffré sur disque si le joueur a
 // coché "se souvenir de moi" (voir sessionStore.js).
 let currentSession = null;
+// Vrai seulement si la session courante a un refresh_token mémorisé : sans
+// lui, pas de renouvellement silencieux (comportement d'avant).
+let sessionRemembered = false;
 
 function setSession(profile, authorization) {
   currentSession = { profile, authorization };
   return profile;
+}
+
+// Le jeton Minecraft expire au bout d'environ 24 h. Quand le site renvoie 401
+// sur un appel authentifié, on renouvelle la session via le refresh_token
+// mémorisé (relu chiffré depuis sessionStore à chaque fois, jamais gardé en
+// mémoire) puis on relance l'appel une seule fois (voir withSessionRetry).
+let sessionRefresh = null;
+let lastSessionRefreshAt = 0;
+const SESSION_REFRESH_COOLDOWN_MS = 5 * 60_000;
+
+async function doRefreshSession() {
+  const { accounts } = sessionStore.loadAccounts();
+  const account = accounts.find((a) => a.id === currentSession?.profile.id);
+  if (!account) return false;
+  try {
+    const { profile, authorization, refreshToken } = await msAuth.refreshSession(account.refreshToken);
+    setSession(profile, authorization);
+    try {
+      sessionStore.rememberAccount(profile.id, profile.name, refreshToken);
+    } catch {
+      // Session valide en mémoire pour cette fois ; seule la mémorisation est perdue.
+    }
+    return true;
+  } catch (error) {
+    // Microsoft a pu renouveler (et donc invalider l'ancien) le refresh_token
+    // avant l'échec : on garde le nouveau, comme auth:tryRestore.
+    if (error.rotatedRefreshToken) {
+      try {
+        sessionStore.rememberAccount(account.id, account.name, error.rotatedRefreshToken);
+      } catch {
+        // tant pis pour cette fois
+      }
+    }
+    return false;
+  }
+}
+
+// Un seul renouvellement à la fois, pas plus d'un toutes les 5 min. Un jeton
+// tout juste renouvelé n'est pas expiré : un 401 juste après ne vient donc pas
+// de l'expiration (refus côté site) et ne doit pas relancer Microsoft à chaque
+// appel (notifications:list tourne toutes les 30 s).
+function refreshSessionOnce(staleToken) {
+  if (!sessionRemembered) return Promise.resolve(false);
+  // Un autre appel a déjà renouvelé le jeton entre-temps : on relance avec.
+  if (currentSession?.authorization.access_token !== staleToken) return Promise.resolve(true);
+  if (sessionRefresh) return sessionRefresh;
+  if (Date.now() - lastSessionRefreshAt < SESSION_REFRESH_COOLDOWN_MS) return Promise.resolve(false);
+  lastSessionRefreshAt = Date.now();
+  sessionRefresh = doRefreshSession().finally(() => {
+    sessionRefresh = null;
+  });
+  return sessionRefresh;
+}
+
+// Appelle le site avec la session courante ; sur 401, renouvelle la session
+// puis relance l'appel UNE seule fois. Pas de boucle : si la relance échoue
+// encore, son erreur (401 inclus) remonte telle quelle.
+async function withSessionRetry(send) {
+  const staleToken = currentSession?.authorization.access_token;
+  try {
+    return await send();
+  } catch (error) {
+    if (error.status !== 401 || !currentSession) throw error;
+    if (!(await refreshSessionOnce(staleToken)) || !currentSession) throw error;
+    return send();
+  }
 }
 
 async function fetchJson(url, options = {}) {
@@ -349,9 +418,11 @@ ipcMain.handle("servers:get", async (_event, slug) => {
 ipcMain.handle("servers:mine", async () => {
   if (!currentSession) return { ok: false, status: 401, error: "Pas de compte Microsoft connecté." };
   try {
-    const data = await fetchJson(
-      `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
-      { headers: launcherAuthHeaders() },
+    const data = await withSessionRetry(() =>
+      fetchJson(
+        `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
+        { headers: launcherAuthHeaders() },
+      ),
     );
     return { ok: true, servers: data.servers };
   } catch (error) {
@@ -377,12 +448,13 @@ ipcMain.handle("app:restart", () => {
 // Onglet "Rejoint" de "Mes instances" (voir renderer.js) : serveurs prives
 // rejoints via le code/lien d'invitation de quelqu'un d'autre — jamais ceux
 // que ce joueur possede (voir servers:mine ci-dessus, une liste separee).
-// Stockage 100% local (settingsStore.joinedServers), le site ne sait jamais
-// qui a rejoint quel serveur prive : resoudre un code ne fait que prouver
-// qu'on a le droit de voir une fiche, comme /join/[code] cote site.
-function addJoinedServer(slug) {
+// Stockage 100% local (settingsStore.joinedServers). Le code d'invitation est
+// garde avec le serveur : c'est la preuve que le site demande pour donner la
+// fiche et l'IP d'un serveur prive (voir canSeeServer cote site). Si le
+// proprietaire regenere le code, le serveur disparait de cet onglet.
+function addJoinedServer(slug, inviteCode) {
   const current = settingsStore.loadSettings().joinedServers || [];
-  const joinedServers = [...current.filter((j) => j.slug !== slug), { slug, joinedAt: Date.now() }];
+  const joinedServers = [...current.filter((j) => j.slug !== slug), { slug, inviteCode, joinedAt: Date.now() }];
   settingsStore.saveSettings({ joinedServers });
 }
 
@@ -391,6 +463,14 @@ function removeJoinedServer(slug) {
   const joinedServers = current.filter((j) => j.slug !== slug);
   settingsStore.saveSettings({ joinedServers });
   return joinedServers;
+}
+
+// En-tete de preuve pour un serveur prive rejoint (vide sinon). Les serveurs
+// rejoints avant cette version n'ont pas de code garde : ils ne se lisent plus
+// avant d'etre rajoutes avec leur code.
+function inviteHeaders(slug) {
+  const joined = (settingsStore.loadSettings().joinedServers || []).find((j) => j.slug === slug);
+  return joined?.inviteCode ? { "X-Invite-Code": joined.inviteCode } : {};
 }
 
 // Resout un code d'invitation (voir site/src/app/api/launcher/servers/join/
@@ -410,8 +490,10 @@ async function joinServerByCode(code) {
     if (!resolveRes.ok) throw new Error(`HTTP ${resolveRes.status}`);
     const { slug } = await resolveRes.json();
 
-    const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`);
-    addJoinedServer(slug);
+    const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, {
+      headers: { "X-Invite-Code": trimmed },
+    });
+    addJoinedServer(slug, trimmed);
     return { ok: true, server: data.server };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -433,7 +515,9 @@ ipcMain.handle("servers:listJoined", async () => {
   const servers = await Promise.all(
     joined.map(async (j) => {
       try {
-        const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(j.slug)}`);
+        const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(j.slug)}`, {
+          headers: inviteHeaders(j.slug),
+        });
         return data.server;
       } catch {
         return null;
@@ -475,9 +559,11 @@ ipcMain.handle("reports:submit", async (_event, { slug, issue, message, clientVe
 ipcMain.handle("notifications:list", async () => {
   if (!currentSession) return { ok: true, notifications: [] };
   try {
-    const data = await fetchJson(
-      `${SITE_URL}/api/launcher/notifications?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
-      { headers: launcherAuthHeaders() },
+    const data = await withSessionRetry(() =>
+      fetchJson(
+        `${SITE_URL}/api/launcher/notifications?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
+        { headers: launcherAuthHeaders() },
+      ),
     );
     return { ok: true, notifications: data.notifications };
   } catch (error) {
@@ -546,6 +632,7 @@ ipcMain.handle("auth:signIn", async (_event, remember) => {
         remembered = false;
       }
     }
+    sessionRemembered = remembered;
     // Pas de "se souvenir de moi" : on ne touche plus aux AUTRES comptes
     // déjà mémorisés (multi-compte) — juste cette session-ci ne survivra
     // pas au redémarrage.
@@ -571,6 +658,7 @@ ipcMain.handle("auth:tryRestore", async () => {
       active.refreshToken,
     );
     setSession(profile, authorization);
+    sessionRemembered = true;
     try {
       sessionStore.rememberAccount(profile.id, profile.name, newRefreshToken);
     } catch {
@@ -638,6 +726,7 @@ ipcMain.handle("account:switch", async (_event, id) => {
       account.refreshToken,
     );
     setSession(profile, authorization);
+    sessionRemembered = true;
     sessionStore.rememberAccount(profile.id, profile.name, newRefreshToken);
     return { ok: true, profile };
   } catch (error) {
@@ -847,8 +936,10 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
 
   logStore.pushLog({ source: "launcher", message: `Demande de lancement pour "${slug}"` });
   try {
+    // Serveur prive : le site exige la preuve (jeton du proprietaire, ou code
+    // d'invitation du serveur rejoint), voir canSeeServer cote site.
     const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
-      headers: launcherAuthHeaders(),
+      headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
     });
     const server = data.server;
     const settings = settingsStore.loadSettings();
@@ -867,7 +958,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     let modded = null;
     if (server.type === "modded" && server.curseforgeModpackId) {
       modded = await installModpack({
-        config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY },
+        config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) } },
         slug,
         gameRoot: GAME_ROOT,
         javaPath: settings.javaPath || undefined,

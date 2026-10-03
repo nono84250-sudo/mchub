@@ -70,10 +70,12 @@ function playersLabel(server) {
   return `<span class="status-dot${online ? " online" : ""}"></span>${playersText(server)}`;
 }
 
+// Echappe aussi les guillemets : utilisee dans des attributs ("...") comme dans
+// du texte, donc un guillemet non echappe pourrait fermer l'attribut et en
+// injecter un nouveau (textContent->innerHTML ne touche pas aux guillemets).
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 function escapeHtml(value) {
-  const div = document.createElement("div");
-  div.textContent = value ?? "";
-  return div.innerHTML;
+  return String(value ?? "").replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 }
 
 function serverInitial(name) {
@@ -695,7 +697,11 @@ function skinUrlFor(profile) {
   // L'API Mojang renvoie ces URLs en http:// même si le CDN sert aussi en
   // https — notre CSP (img-src 'self' https: data:) bloquerait silencieusement
   // l'image sinon.
-  return url.replace(/^http:/, "https:");
+  const secured = url.replace(/^http:/, "https:");
+  // Cette URL finit dans un url('...') CSS a l'interieur d'un style="...":
+  // l'echappement HTML ne suffit pas pour la partie CSS, on refuse donc
+  // plutot que d'injecter une valeur qui sortirait de la chaine.
+  return /^https:\/\/[^\s"'()<>\\`]+$/.test(secured) ? secured : "";
 }
 
 function renderAccountHeader(profile, { rememberFailed } = {}) {

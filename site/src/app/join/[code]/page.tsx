@@ -1,13 +1,13 @@
 import { headers } from "next/headers";
-import { notFound, redirect } from "next/navigation";
-import { getSlugByInviteCode } from "@/lib/public-servers";
+import { notFound } from "next/navigation";
+import { getPublicServerBySlug, getSlugByInviteCode } from "@/lib/public-servers";
 import { checkRateLimit, clientIpFromHeadersList } from "@/lib/rateLimit";
 import { getT } from "@/i18n/getDictionary";
+import { ServerDetailView } from "@/components/ServerDetailView";
 
-// Destination du lien/code d'invitation affiche dans les reglages d'un
-// serveur prive (voir ServerForm.tsx) — un simple redirect vers la fiche
-// publique habituelle : le code ne fait que prouver qu'on a le droit de
-// voir une fiche que l'annuaire ne liste jamais (voir listPublicServers).
+// Fiche du serveur prive rejoint par ce code : le code lui-meme est la preuve
+// (voir canSeeServer dans public-servers.ts), donc on affiche la fiche ici au
+// lieu de rediriger vers /servers/[slug], qui ne montre pas les serveurs prives.
 //
 // Limitation de débit (voir audit de sécurité du 2026-09-28) : c'était la
 // seule route publique du projet sans frein contre le devinage — l'alphabet
@@ -27,5 +27,7 @@ export default async function JoinByInviteCodePage({ params }: PageProps<"/join/
 
   const slug = await getSlugByInviteCode(code.toUpperCase());
   if (!slug) notFound();
-  redirect(`/servers/${slug}`);
+  const server = await getPublicServerBySlug(slug, { inviteCode: code });
+  if (!server) notFound();
+  return <ServerDetailView slug={slug} server={server} />;
 }

@@ -45,6 +45,7 @@ async function siteJson(config, pathname, init = {}) {
   const res = await fetch(`${config.siteUrl}${pathname}`, {
     ...init,
     headers: {
+      ...init.headers,
       Authorization: `Bearer ${config.apiKey}`,
       ...(init.body ? { "Content-Type": "application/json" } : {}),
     },
@@ -519,7 +520,8 @@ async function prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersio
  */
 async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, onProgress = () => {} }) {
   onProgress({ text: "Recherche du modpack…" });
-  const info = await siteJson(config, `/api/launcher/servers/${encodeURIComponent(slug)}/modpack`);
+  // Serveur prive : preuve d'acces (voir config.headers dans main.js, game:launch).
+  const info = await siteJson(config, `/api/launcher/servers/${encodeURIComponent(slug)}/modpack`, { headers: config.headers });
   const source = info.source === "modrinth" ? "modrinth" : "curseforge";
   const { file } = info;
   if (!file?.downloadUrl) throw new ModpackError("Ce modpack n'a pas de lien de téléchargement.", { code: "no_download_url" });

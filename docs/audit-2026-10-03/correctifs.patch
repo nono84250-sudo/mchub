@@ -1,0 +1,1070 @@
+diff --git a/launcher/src/main.js b/launcher/src/main.js
+index aafcf0f..bb20bc5 100644
+--- a/launcher/src/main.js
++++ b/launcher/src/main.js
+@@ -78,12 +78,81 @@ function launcherAuthHeaders() {
+ // Le refresh_token est en plus sauvegardé chiffré sur disque si le joueur a
+ // coché "se souvenir de moi" (voir sessionStore.js).
+ let currentSession = null;
++// Vrai seulement si la session courante a un refresh_token mémorisé : sans
++// lui, pas de renouvellement silencieux (comportement d'avant).
++let sessionRemembered = false;
+ 
+ function setSession(profile, authorization) {
+   currentSession = { profile, authorization };
+   return profile;
+ }
+ 
++// Le jeton Minecraft expire au bout d'environ 24 h. Quand le site renvoie 401
++// sur un appel authentifié, on renouvelle la session via le refresh_token
++// mémorisé (relu chiffré depuis sessionStore à chaque fois, jamais gardé en
++// mémoire) puis on relance l'appel une seule fois (voir withSessionRetry).
++let sessionRefresh = null;
++let lastSessionRefreshAt = 0;
++const SESSION_REFRESH_COOLDOWN_MS = 5 * 60_000;
++
++async function doRefreshSession() {
++  const { accounts } = sessionStore.loadAccounts();
++  const account = accounts.find((a) => a.id === currentSession?.profile.id);
++  if (!account) return false;
++  try {
++    const { profile, authorization, refreshToken } = await msAuth.refreshSession(account.refreshToken);
++    setSession(profile, authorization);
++    try {
++      sessionStore.rememberAccount(profile.id, profile.name, refreshToken);
++    } catch {
++      // Session valide en mémoire pour cette fois ; seule la mémorisation est perdue.
++    }
++    return true;
++  } catch (error) {
++    // Microsoft a pu renouveler (et donc invalider l'ancien) le refresh_token
++    // avant l'échec : on garde le nouveau, comme auth:tryRestore.
++    if (error.rotatedRefreshToken) {
++      try {
++        sessionStore.rememberAccount(account.id, account.name, error.rotatedRefreshToken);
++      } catch {
++        // tant pis pour cette fois
++      }
++    }
++    return false;
++  }
++}
++
++// Un seul renouvellement à la fois, pas plus d'un toutes les 5 min. Un jeton
++// tout juste renouvelé n'est pas expiré : un 401 juste après ne vient donc pas
++// de l'expiration (refus côté site) et ne doit pas relancer Microsoft à chaque
++// appel (notifications:list tourne toutes les 30 s).
++function refreshSessionOnce(staleToken) {
++  if (!sessionRemembered) return Promise.resolve(false);
++  // Un autre appel a déjà renouvelé le jeton entre-temps : on relance avec.
++  if (currentSession?.authorization.access_token !== staleToken) return Promise.resolve(true);
++  if (sessionRefresh) return sessionRefresh;
++  if (Date.now() - lastSessionRefreshAt < SESSION_REFRESH_COOLDOWN_MS) return Promise.resolve(false);
++  lastSessionRefreshAt = Date.now();
++  sessionRefresh = doRefreshSession().finally(() => {
++    sessionRefresh = null;
++  });
++  return sessionRefresh;
++}
++
++// Appelle le site avec la session courante ; sur 401, renouvelle la session
++// puis relance l'appel UNE seule fois. Pas de boucle : si la relance échoue
++// encore, son erreur (401 inclus) remonte telle quelle.
++async function withSessionRetry(send) {
++  const staleToken = currentSession?.authorization.access_token;
++  try {
++    return await send();
++  } catch (error) {
++    if (error.status !== 401 || !currentSession) throw error;
++    if (!(await refreshSessionOnce(staleToken)) || !currentSession) throw error;
++    return send();
++  }
++}
++
+ async function fetchJson(url, options = {}) {
+   const controller = new AbortController();
+   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+@@ -349,9 +418,11 @@ ipcMain.handle("servers:get", async (_event, slug) => {
+ ipcMain.handle("servers:mine", async () => {
+   if (!currentSession) return { ok: false, status: 401, error: "Pas de compte Microsoft connecté." };
+   try {
+-    const data = await fetchJson(
+-      `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
+-      { headers: launcherAuthHeaders() },
++    const data = await withSessionRetry(() =>
++      fetchJson(
++        `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
++        { headers: launcherAuthHeaders() },
++      ),
+     );
+     return { ok: true, servers: data.servers };
+   } catch (error) {
+@@ -377,12 +448,13 @@ ipcMain.handle("app:restart", () => {
+ // Onglet "Rejoint" de "Mes instances" (voir renderer.js) : serveurs prives
+ // rejoints via le code/lien d'invitation de quelqu'un d'autre — jamais ceux
+ // que ce joueur possede (voir servers:mine ci-dessus, une liste separee).
+-// Stockage 100% local (settingsStore.joinedServers), le site ne sait jamais
+-// qui a rejoint quel serveur prive : resoudre un code ne fait que prouver
+-// qu'on a le droit de voir une fiche, comme /join/[code] cote site.
+-function addJoinedServer(slug) {
++// Stockage 100% local (settingsStore.joinedServers). Le code d'invitation est
++// garde avec le serveur : c'est la preuve que le site demande pour donner la
++// fiche et l'IP d'un serveur prive (voir canSeeServer cote site). Si le
++// proprietaire regenere le code, le serveur disparait de cet onglet.
++function addJoinedServer(slug, inviteCode) {
+   const current = settingsStore.loadSettings().joinedServers || [];
+-  const joinedServers = [...current.filter((j) => j.slug !== slug), { slug, joinedAt: Date.now() }];
++  const joinedServers = [...current.filter((j) => j.slug !== slug), { slug, inviteCode, joinedAt: Date.now() }];
+   settingsStore.saveSettings({ joinedServers });
+ }
+ 
+@@ -393,6 +465,14 @@ function removeJoinedServer(slug) {
+   return joinedServers;
+ }
+ 
++// En-tete de preuve pour un serveur prive rejoint (vide sinon). Les serveurs
++// rejoints avant cette version n'ont pas de code garde : ils ne se lisent plus
++// avant d'etre rajoutes avec leur code.
++function inviteHeaders(slug) {
++  const joined = (settingsStore.loadSettings().joinedServers || []).find((j) => j.slug === slug);
++  return joined?.inviteCode ? { "X-Invite-Code": joined.inviteCode } : {};
++}
++
+ // Resout un code d'invitation (voir site/src/app/api/launcher/servers/join/
+ // [code]/route.ts) puis l'ajoute aux serveurs rejoints localement. Pas besoin
+ // de session Minecraft : resoudre un code est volontairement anonyme, comme
+@@ -410,8 +490,10 @@ async function joinServerByCode(code) {
+     if (!resolveRes.ok) throw new Error(`HTTP ${resolveRes.status}`);
+     const { slug } = await resolveRes.json();
+ 
+-    const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`);
+-    addJoinedServer(slug);
++    const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, {
++      headers: { "X-Invite-Code": trimmed },
++    });
++    addJoinedServer(slug, trimmed);
+     return { ok: true, server: data.server };
+   } catch (error) {
+     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+@@ -433,7 +515,9 @@ ipcMain.handle("servers:listJoined", async () => {
+   const servers = await Promise.all(
+     joined.map(async (j) => {
+       try {
+-        const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(j.slug)}`);
++        const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(j.slug)}`, {
++          headers: inviteHeaders(j.slug),
++        });
+         return data.server;
+       } catch {
+         return null;
+@@ -475,9 +559,11 @@ ipcMain.handle("reports:submit", async (_event, { slug, issue, message, clientVe
+ ipcMain.handle("notifications:list", async () => {
+   if (!currentSession) return { ok: true, notifications: [] };
+   try {
+-    const data = await fetchJson(
+-      `${SITE_URL}/api/launcher/notifications?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
+-      { headers: launcherAuthHeaders() },
++    const data = await withSessionRetry(() =>
++      fetchJson(
++        `${SITE_URL}/api/launcher/notifications?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
++        { headers: launcherAuthHeaders() },
++      ),
+     );
+     return { ok: true, notifications: data.notifications };
+   } catch (error) {
+@@ -546,6 +632,7 @@ ipcMain.handle("auth:signIn", async (_event, remember) => {
+         remembered = false;
+       }
+     }
++    sessionRemembered = remembered;
+     // Pas de "se souvenir de moi" : on ne touche plus aux AUTRES comptes
+     // déjà mémorisés (multi-compte) — juste cette session-ci ne survivra
+     // pas au redémarrage.
+@@ -571,6 +658,7 @@ ipcMain.handle("auth:tryRestore", async () => {
+       active.refreshToken,
+     );
+     setSession(profile, authorization);
++    sessionRemembered = true;
+     try {
+       sessionStore.rememberAccount(profile.id, profile.name, newRefreshToken);
+     } catch {
+@@ -638,6 +726,7 @@ ipcMain.handle("account:switch", async (_event, id) => {
+       account.refreshToken,
+     );
+     setSession(profile, authorization);
++    sessionRemembered = true;
+     sessionStore.rememberAccount(profile.id, profile.name, newRefreshToken);
+     return { ok: true, profile };
+   } catch (error) {
+@@ -847,8 +936,10 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
+ 
+   logStore.pushLog({ source: "launcher", message: `Demande de lancement pour "${slug}"` });
+   try {
++    // Serveur prive : le site exige la preuve (jeton du proprietaire, ou code
++    // d'invitation du serveur rejoint), voir canSeeServer cote site.
+     const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
+-      headers: launcherAuthHeaders(),
++      headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+     });
+     const server = data.server;
+     const settings = settingsStore.loadSettings();
+@@ -867,7 +958,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
+     let modded = null;
+     if (server.type === "modded" && server.curseforgeModpackId) {
+       modded = await installModpack({
+-        config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY },
++        config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) } },
+         slug,
+         gameRoot: GAME_ROOT,
+         javaPath: settings.javaPath || undefined,
+diff --git a/launcher/src/modpack.js b/launcher/src/modpack.js
+index 123b7d8..72670de 100644
+--- a/launcher/src/modpack.js
++++ b/launcher/src/modpack.js
+@@ -45,6 +45,7 @@ async function siteJson(config, pathname, init = {}) {
+   const res = await fetch(`${config.siteUrl}${pathname}`, {
+     ...init,
+     headers: {
++      ...init.headers,
+       Authorization: `Bearer ${config.apiKey}`,
+       ...(init.body ? { "Content-Type": "application/json" } : {}),
+     },
+@@ -519,7 +520,8 @@ async function prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersio
+  */
+ async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, onProgress = () => {} }) {
+   onProgress({ text: "Recherche du modpack…" });
+-  const info = await siteJson(config, `/api/launcher/servers/${encodeURIComponent(slug)}/modpack`);
++  // Serveur prive : preuve d'acces (voir config.headers dans main.js, game:launch).
++  const info = await siteJson(config, `/api/launcher/servers/${encodeURIComponent(slug)}/modpack`, { headers: config.headers });
+   const source = info.source === "modrinth" ? "modrinth" : "curseforge";
+   const { file } = info;
+   if (!file?.downloadUrl) throw new ModpackError("Ce modpack n'a pas de lien de téléchargement.", { code: "no_download_url" });
+diff --git a/launcher/src/renderer.js b/launcher/src/renderer.js
+index 7e99a54..c34f738 100644
+--- a/launcher/src/renderer.js
++++ b/launcher/src/renderer.js
+@@ -70,10 +70,12 @@ function playersLabel(server) {
+   return `<span class="status-dot${online ? " online" : ""}"></span>${playersText(server)}`;
+ }
+ 
++// Echappe aussi les guillemets : utilisee dans des attributs ("...") comme dans
++// du texte, donc un guillemet non echappe pourrait fermer l'attribut et en
++// injecter un nouveau (textContent->innerHTML ne touche pas aux guillemets).
++const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+ function escapeHtml(value) {
+-  const div = document.createElement("div");
+-  div.textContent = value ?? "";
+-  return div.innerHTML;
++  return String(value ?? "").replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+ }
+ 
+ function serverInitial(name) {
+@@ -695,7 +697,11 @@ function skinUrlFor(profile) {
+   // L'API Mojang renvoie ces URLs en http:// même si le CDN sert aussi en
+   // https — notre CSP (img-src 'self' https: data:) bloquerait silencieusement
+   // l'image sinon.
+-  return url.replace(/^http:/, "https:");
++  const secured = url.replace(/^http:/, "https:");
++  // Cette URL finit dans un url('...') CSS a l'interieur d'un style="...":
++  // l'echappement HTML ne suffit pas pour la partie CSS, on refuse donc
++  // plutot que d'injecter une valeur qui sortirait de la chaine.
++  return /^https:\/\/[^\s"'()<>\\`]+$/.test(secured) ? secured : "";
+ }
+ 
+ function renderAccountHeader(profile, { rememberFailed } = {}) {
+diff --git a/site/src/app/api/launcher/curseforge/files/route.ts b/site/src/app/api/launcher/curseforge/files/route.ts
+index 829de64..d3fee87 100644
+--- a/site/src/app/api/launcher/curseforge/files/route.ts
++++ b/site/src/app/api/launcher/curseforge/files/route.ts
+@@ -1,6 +1,7 @@
+ import { NextResponse } from "next/server";
+ import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+ import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getFilesInfo } from "@/lib/curseforge";
++import { rateLimitResponse } from "@/lib/rateLimit";
+ 
+ // Nombre maximum de fichiers par appel : un gros modpack en compte quelques
+ // centaines, mais ca borne aussi l'usage de cette route comme relais vers
+@@ -13,6 +14,9 @@ export async function POST(request: Request) {
+   if (!isAuthorizedLauncherRequest(request)) {
+     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+   }
++  // Cette route consomme le quota CurseForge de NOTRE cle : frein par adresse.
++  const limited = rateLimitResponse(request, "launcher-curseforge-files", 60);
++  if (limited) return limited;
+ 
+   const body = await request.json().catch(() => null);
+   const fileIds: unknown = body?.fileIds;
+diff --git a/site/src/app/api/launcher/notifications/clear-read/route.ts b/site/src/app/api/launcher/notifications/clear-read/route.ts
+index b8974eb..0fb00ee 100644
+--- a/site/src/app/api/launcher/notifications/clear-read/route.ts
++++ b/site/src/app/api/launcher/notifications/clear-read/route.ts
+@@ -1,6 +1,7 @@
+ import { NextResponse } from "next/server";
+-import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
++import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+ import { deleteReadNotifications } from "@/lib/notifications";
++import { rateLimitResponse } from "@/lib/rateLimit";
+ 
+ // Bouton "Effacer les lues" du panneau : supprime toutes les notifications
+ // deja lues pour ce joueur.
+@@ -8,15 +9,16 @@ export async function POST(request: Request) {
+   if (!isAuthorizedLauncherRequest(request)) {
+     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+   }
++  const limited = rateLimitResponse(request, "launcher-notif-clear", 60);
++  if (limited) return limited;
+ 
+   const body = await request.json();
+   const minecraftUuid = String(body.minecraftUuid ?? "").trim();
+   if (!minecraftUuid) {
+     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
+   }
+-  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
+-    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+-  }
++  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
++  if (identity !== "verified") return identityErrorResponse(identity);
+ 
+   await deleteReadNotifications(minecraftUuid);
+   return NextResponse.json({ ok: true });
+diff --git a/site/src/app/api/launcher/notifications/delete/route.ts b/site/src/app/api/launcher/notifications/delete/route.ts
+index 6f02bfe..9f8e983 100644
+--- a/site/src/app/api/launcher/notifications/delete/route.ts
++++ b/site/src/app/api/launcher/notifications/delete/route.ts
+@@ -1,6 +1,7 @@
+ import { NextResponse } from "next/server";
+-import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
++import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+ import { deleteNotification } from "@/lib/notifications";
++import { rateLimitResponse } from "@/lib/rateLimit";
+ 
+ // Supprime une notification individuelle (croix sur une ligne du panneau) —
+ // scope par minecraftUuid cote lib pour qu'un joueur ne puisse pas supprimer
+@@ -9,6 +10,8 @@ export async function POST(request: Request) {
+   if (!isAuthorizedLauncherRequest(request)) {
+     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+   }
++  const limited = rateLimitResponse(request, "launcher-notif-delete", 60);
++  if (limited) return limited;
+ 
+   const body = await request.json();
+   const minecraftUuid = String(body.minecraftUuid ?? "").trim();
+@@ -16,9 +19,8 @@ export async function POST(request: Request) {
+   if (!minecraftUuid || !id) {
+     return NextResponse.json({ error: "Champs manquants" }, { status: 400 });
+   }
+-  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
+-    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+-  }
++  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
++  if (identity !== "verified") return identityErrorResponse(identity);
+ 
+   await deleteNotification(id, minecraftUuid);
+   return NextResponse.json({ ok: true });
+diff --git a/site/src/app/api/launcher/notifications/read/route.ts b/site/src/app/api/launcher/notifications/read/route.ts
+index 27947d0..3dbf3b5 100644
+--- a/site/src/app/api/launcher/notifications/read/route.ts
++++ b/site/src/app/api/launcher/notifications/read/route.ts
+@@ -1,6 +1,7 @@
+ import { NextResponse } from "next/server";
+-import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
++import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+ import { markNotificationsRead } from "@/lib/notifications";
++import { rateLimitResponse } from "@/lib/rateLimit";
+ 
+ // Appelee quand le joueur ouvre le panneau de notifications dans le launcher :
+ // marque tout comme lu pour ce compte, pour que le badge disparaisse.
+@@ -8,15 +9,16 @@ export async function POST(request: Request) {
+   if (!isAuthorizedLauncherRequest(request)) {
+     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+   }
++  const limited = rateLimitResponse(request, "launcher-notif-read", 60);
++  if (limited) return limited;
+ 
+   const body = await request.json();
+   const minecraftUuid = String(body.minecraftUuid ?? "").trim();
+   if (!minecraftUuid) {
+     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
+   }
+-  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
+-    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+-  }
++  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
++  if (identity !== "verified") return identityErrorResponse(identity);
+ 
+   await markNotificationsRead(minecraftUuid);
+   return NextResponse.json({ ok: true });
+diff --git a/site/src/app/api/launcher/notifications/route.ts b/site/src/app/api/launcher/notifications/route.ts
+index 42aaad9..51692f5 100644
+--- a/site/src/app/api/launcher/notifications/route.ts
++++ b/site/src/app/api/launcher/notifications/route.ts
+@@ -1,5 +1,5 @@
+ import { NextResponse } from "next/server";
+-import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
++import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+ import { listNotificationsForRecipient } from "@/lib/notifications";
+ import { rateLimitResponse } from "@/lib/rateLimit";
+ 
+@@ -21,9 +21,8 @@ export async function GET(request: Request) {
+   if (!minecraftUuid) {
+     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
+   }
+-  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
+-    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+-  }
++  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
++  if (identity !== "verified") return identityErrorResponse(identity);
+ 
+   const notifications = await listNotificationsForRecipient(minecraftUuid);
+   return NextResponse.json({ notifications });
+diff --git a/site/src/app/api/launcher/servers/[slug]/modpack/route.ts b/site/src/app/api/launcher/servers/[slug]/modpack/route.ts
+index 50836a3..c06bb7e 100644
+--- a/site/src/app/api/launcher/servers/[slug]/modpack/route.ts
++++ b/site/src/app/api/launcher/servers/[slug]/modpack/route.ts
+@@ -1,8 +1,9 @@
+ import { NextResponse } from "next/server";
+ import { revalidateTag } from "next/cache";
+ import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
++import { rateLimitResponse } from "@/lib/rateLimit";
+ import { db } from "@/prisma/db";
+-import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
++import { SERVERS_CACHE_TAG, canSeeServer, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
+ import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getModpackInstallFile } from "@/lib/curseforge";
+ import { getModrinthModpackInstallFile } from "@/lib/modrinth";
+ 
+@@ -13,6 +14,10 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
+   if (!isAuthorizedLauncherRequest(request)) {
+     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+   }
++  // Chaque appel interroge CurseForge/Modrinth avec notre cle : frein par adresse,
++  // plus un frein renforce quand une preuve (code d'invitation) est presentee.
++  const limited = rateLimitResponse(request, "launcher-modpack", 60) ?? limitInviteAttempts(request);
++  if (limited) return limited;
+ 
+   const { slug } = await ctx.params;
+   const server = await db.orm.public.Server.select(
+@@ -23,10 +28,14 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
+     "curseforgeModpackName",
+     "curseforgeModpackVersion",
+     "modpackSource",
++    "isPrivate",
++    "inviteCode",
+   )
++    .include("owner", (o) => o.select("minecraftUuid"))
+     .where({ slug })
+     .first();
+-  if (!server) {
++  // Serveur prive : meme preuve que /api/launcher/servers/[slug] (voir canSeeServer).
++  if (!server || !(await canSeeServer(server, proofFromRequest(request)))) {
+     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
+   }
+   if (server.type !== "modded" || !server.curseforgeModpackId) {
+diff --git a/site/src/app/api/launcher/servers/[slug]/report/route.ts b/site/src/app/api/launcher/servers/[slug]/report/route.ts
+index cef0dd8..e1a88bd 100644
+--- a/site/src/app/api/launcher/servers/[slug]/report/route.ts
++++ b/site/src/app/api/launcher/servers/[slug]/report/route.ts
+@@ -1,5 +1,5 @@
+ import { NextResponse } from "next/server";
+-import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
++import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+ import { db } from "@/prisma/db";
+ import { createReport, type ReportIssue } from "@/lib/reports";
+ import { rateLimitResponse } from "@/lib/rateLimit";
+@@ -33,9 +33,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
+   if (!reporterMinecraftUuid || !reporterMinecraftUsername || !message || !issue) {
+     return NextResponse.json({ error: "Champs manquants ou invalides" }, { status: 400 });
+   }
+-  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), reporterMinecraftUuid))) {
+-    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+-  }
++  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), reporterMinecraftUuid);
++  if (identity !== "verified") return identityErrorResponse(identity);
+ 
+   await createReport({
+     serverId: server.id,
+diff --git a/site/src/app/api/launcher/servers/[slug]/route.ts b/site/src/app/api/launcher/servers/[slug]/route.ts
+index c338a87..d82be8a 100644
+--- a/site/src/app/api/launcher/servers/[slug]/route.ts
++++ b/site/src/app/api/launcher/servers/[slug]/route.ts
+@@ -1,6 +1,7 @@
+ import { NextResponse } from "next/server";
+-import { getServerWithIpBySlug } from "@/lib/public-servers";
++import { getServerWithIpBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
+ import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
++import { rateLimitResponse } from "@/lib/rateLimit";
+ 
+ // Route reservee au launcher (jamais au site public) : c'est la SEULE
+ // route qui renvoie l'IP d'un serveur. Protegee par un secret partage
+@@ -8,13 +9,19 @@ import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+ // l'identite du joueur (le launcher gere sa propre auth Microsoft
+ // separement). Voir cahier des charges : deterrent, pas garantie absolue
+ // (un joueur qui a deja rejoint connait ensuite l'IP).
++// Serveur prive : l'IP n'est donnee qu'avec une preuve (code d'invitation
++// du serveur rejoint, ou jeton Mojang du proprietaire), voir canSeeServer.
+ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]">) {
+   if (!isAuthorizedLauncherRequest(request)) {
+     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+   }
++  // Cette route renvoie l'IP du serveur : frein par adresse, plus un frein renforce
++  // quand une preuve (code d'invitation) est presentee.
++  const limited = rateLimitResponse(request, "launcher-server-ip", 60) ?? limitInviteAttempts(request);
++  if (limited) return limited;
+ 
+   const { slug } = await ctx.params;
+-  const server = await getServerWithIpBySlug(slug);
++  const server = await getServerWithIpBySlug(slug, proofFromRequest(request));
+ 
+   if (!server) {
+     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
+diff --git a/site/src/app/api/launcher/servers/mine/route.ts b/site/src/app/api/launcher/servers/mine/route.ts
+index ccbccce..02ff2fa 100644
+--- a/site/src/app/api/launcher/servers/mine/route.ts
++++ b/site/src/app/api/launcher/servers/mine/route.ts
+@@ -1,6 +1,7 @@
+ import { NextResponse } from "next/server";
+-import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
++import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+ import { listServersOwnedByMinecraftUuid } from "@/lib/public-servers";
++import { rateLimitResponse } from "@/lib/rateLimit";
+ 
+ // Alimente la vue "Mes instances" du launcher : tous les serveurs du joueur
+ // actuellement connecte (publies ou en pause), retrouves via son UUID Minecraft
+@@ -11,15 +12,16 @@ export async function GET(request: Request) {
+   if (!isAuthorizedLauncherRequest(request)) {
+     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+   }
++  const limited = rateLimitResponse(request, "launcher-mine", 60);
++  if (limited) return limited;
+ 
+   const { searchParams } = new URL(request.url);
+   const minecraftUuid = searchParams.get("minecraftUuid");
+   if (!minecraftUuid) {
+     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
+   }
+-  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
+-    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+-  }
++  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
++  if (identity !== "verified") return identityErrorResponse(identity);
+ 
+   const servers = await listServersOwnedByMinecraftUuid(minecraftUuid);
+   return NextResponse.json({ servers });
+diff --git a/site/src/app/api/public/servers/[slug]/route.ts b/site/src/app/api/public/servers/[slug]/route.ts
+index aae8370..a24b5b3 100644
+--- a/site/src/app/api/public/servers/[slug]/route.ts
++++ b/site/src/app/api/public/servers/[slug]/route.ts
+@@ -1,17 +1,21 @@
+ import { NextResponse } from "next/server";
+-import { getPublicServerBySlug } from "@/lib/public-servers";
++import { getPublicServerBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
+ import { rateLimitResponse } from "@/lib/rateLimit";
+ 
+ export const revalidate = 60;
+ 
+ const CORS_HEADERS = { "Access-Control-Allow-Origin": "*" };
+ 
++// Un serveur prive n'est renvoye qu'avec sa preuve (X-Invite-Code, voir
++// canSeeServer) : le launcher l'envoie pour les serveurs qu'il a rejoints.
+ export async function GET(request: Request, ctx: RouteContext<"/api/public/servers/[slug]">) {
+   const limited = rateLimitResponse(request, "public-server", 120, { headers: CORS_HEADERS });
+   if (limited) return limited;
++  const inviteLimited = limitInviteAttempts(request, CORS_HEADERS);
++  if (inviteLimited) return inviteLimited;
+ 
+   const { slug } = await ctx.params;
+-  const server = await getPublicServerBySlug(slug);
++  const server = await getPublicServerBySlug(slug, proofFromRequest(request));
+ 
+   if (!server) {
+     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404, headers: CORS_HEADERS });
+diff --git a/site/src/app/join/[code]/page.tsx b/site/src/app/join/[code]/page.tsx
+index a22d19a..417937f 100644
+--- a/site/src/app/join/[code]/page.tsx
++++ b/site/src/app/join/[code]/page.tsx
+@@ -1,13 +1,13 @@
+ import { headers } from "next/headers";
+-import { notFound, redirect } from "next/navigation";
+-import { getSlugByInviteCode } from "@/lib/public-servers";
++import { notFound } from "next/navigation";
++import { getPublicServerBySlug, getSlugByInviteCode } from "@/lib/public-servers";
+ import { checkRateLimit, clientIpFromHeadersList } from "@/lib/rateLimit";
+ import { getT } from "@/i18n/getDictionary";
++import { ServerDetailView } from "@/components/ServerDetailView";
+ 
+-// Destination du lien/code d'invitation affiche dans les reglages d'un
+-// serveur prive (voir ServerForm.tsx) — un simple redirect vers la fiche
+-// publique habituelle : le code ne fait que prouver qu'on a le droit de
+-// voir une fiche que l'annuaire ne liste jamais (voir listPublicServers).
++// Fiche du serveur prive rejoint par ce code : le code lui-meme est la preuve
++// (voir canSeeServer dans public-servers.ts), donc on affiche la fiche ici au
++// lieu de rediriger vers /servers/[slug], qui ne montre pas les serveurs prives.
+ //
+ // Limitation de débit (voir audit de sécurité du 2026-09-28) : c'était la
+ // seule route publique du projet sans frein contre le devinage — l'alphabet
+@@ -27,5 +27,7 @@ export default async function JoinByInviteCodePage({ params }: PageProps<"/join/
+ 
+   const slug = await getSlugByInviteCode(code.toUpperCase());
+   if (!slug) notFound();
+-  redirect(`/servers/${slug}`);
++  const server = await getPublicServerBySlug(slug, { inviteCode: code });
++  if (!server) notFound();
++  return <ServerDetailView slug={slug} server={server} />;
+ }
+diff --git a/site/src/app/servers/[slug]/page.tsx b/site/src/app/servers/[slug]/page.tsx
+index defdb3c..9f1c3ab 100644
+--- a/site/src/app/servers/[slug]/page.tsx
++++ b/site/src/app/servers/[slug]/page.tsx
+@@ -1,9 +1,6 @@
+ import { notFound } from "next/navigation";
+ import { getPublicServerBySlug } from "@/lib/public-servers";
+-import { ServerStatus } from "@/components/ServerStatus";
+-import { AutoRefresh } from "@/components/AutoRefresh";
+-import { ViewTracker } from "@/components/ViewTracker";
+-import { getT } from "@/i18n/getDictionary";
++import { ServerDetailView } from "@/components/ServerDetailView";
+ 
+ export async function generateMetadata({ params }: PageProps<"/servers/[slug]">) {
+   const { slug } = await params;
+@@ -15,84 +12,12 @@ export async function generateMetadata({ params }: PageProps<"/servers/[slug]">)
+ // ping (voir SERVER_STATUS_TTL_MS) plutôt que de rester figé en cache.
+ export const revalidate = 60;
+ 
++// Sans preuve : un serveur prive n'a pas de fiche ici (404).
+ export default async function ServerDetailPage({ params }: PageProps<"/servers/[slug]">) {
+   const { slug } = await params;
+ 
+   const server = await getPublicServerBySlug(slug);
+   if (!server) notFound();
+-  const { dict } = await getT();
+ 
+-  return (
+-    <div className="relative">
+-      {server.backgroundUrl ? (
+-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] overflow-hidden">
+-          {/* eslint-disable-next-line @next/next/no-img-element */}
+-          <img src={server.backgroundUrl} alt="" className="h-full w-full object-cover opacity-20" />
+-          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background" />
+-        </div>
+-      ) : null}
+-
+-      <div className="relative mx-auto max-w-3xl px-4 sm:px-6 py-12">
+-        <AutoRefresh intervalMs={30_000} />
+-        <ViewTracker slug={slug} />
+-        <div className="relative h-48 w-full mb-9">
+-        <div className="absolute inset-0 overflow-hidden rounded-xl banner-placeholder">
+-          {server.bannerUrl ? (
+-            // eslint-disable-next-line @next/next/no-img-element
+-            <img src={server.bannerUrl} alt="" className="h-full w-full object-cover" />
+-          ) : null}
+-        </div>
+-        <span className="server-icon absolute -bottom-6 left-5 h-14 w-14 overflow-hidden border-4 border-background text-2xl">
+-          {server.iconUrl ? (
+-            // eslint-disable-next-line @next/next/no-img-element
+-            <img src={server.iconUrl} alt="" className="h-full w-full object-cover" />
+-          ) : (
+-            server.name.trim().charAt(0).toUpperCase() || "?"
+-          )}
+-        </span>
+-      </div>
+-
+-      <div className="pl-[72px] min-h-[34px]">
+-        <h1 className="text-3xl font-heading font-bold tracking-tight text-foreground">{server.name}</h1>
+-        <div className="mt-1">
+-          <ServerStatus playerCount={server.playerCount} playerCapacity={server.playerCapacity} />
+-        </div>
+-      </div>
+-
+-      <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-3">
+-        <div className="stat-tile">
+-          <div className="stat-label">{dict.serverDetail.version}</div>
+-          <div className="stat-value">Minecraft {server.minecraftVersion}</div>
+-        </div>
+-        <div className="stat-tile">
+-          <div className="stat-label">{dict.serverDetail.type}</div>
+-          <div className="stat-value">{server.type === "modded" ? dict.servers.modded : dict.servers.vanilla}</div>
+-        </div>
+-        {server.recommendedRamGB ? (
+-          <div className="stat-tile">
+-            <div className="stat-label">{dict.serverDetail.recommendedRam}</div>
+-            <div className="stat-value">
+-              {server.recommendedRamGB} {dict.serverDetail.ramUnit}
+-            </div>
+-          </div>
+-        ) : null}
+-      </div>
+-
+-      {server.type === "modded" && server.curseforgeModpackName ? (
+-        <div className="mt-4 flex flex-wrap gap-2">
+-          <span className="tag-chip">
+-            {server.curseforgeModpackName}
+-            {server.curseforgeModpackVersion ? ` — ${server.curseforgeModpackVersion}` : ""}
+-          </span>
+-        </div>
+-      ) : null}
+-
+-      <p className="mt-6 text-foreground whitespace-pre-wrap">{server.description}</p>
+-
+-      <div className="mt-8 rounded-lg border border-dashed border-border p-4 text-sm text-muted">
+-        {dict.serverDetail.joinNote}
+-      </div>
+-      </div>
+-    </div>
+-  );
++  return <ServerDetailView slug={slug} server={server} />;
+ }
+diff --git a/site/src/components/ServerDetailView.tsx b/site/src/components/ServerDetailView.tsx
+new file mode 100644
+index 0000000..6fed353
+--- /dev/null
++++ b/site/src/components/ServerDetailView.tsx
+@@ -0,0 +1,86 @@
++import { ServerStatus } from "@/components/ServerStatus";
++import { AutoRefresh } from "@/components/AutoRefresh";
++import { ViewTracker } from "@/components/ViewTracker";
++import { getT } from "@/i18n/getDictionary";
++import type { PublicServerDetail } from "@/lib/public-servers";
++
++// Fiche d'un serveur, partagee entre /servers/[slug] (serveur public) et
++// /join/[code] (serveur prive, affiche grace au code d'invitation : voir
++// canSeeServer dans public-servers.ts). Le rendu ne change pas.
++export async function ServerDetailView({ slug, server }: { slug: string; server: PublicServerDetail }) {
++  const { dict } = await getT();
++
++  return (
++    <div className="relative">
++      {server.backgroundUrl ? (
++        <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] overflow-hidden">
++          {/* eslint-disable-next-line @next/next/no-img-element */}
++          <img src={server.backgroundUrl} alt="" className="h-full w-full object-cover opacity-20" />
++          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background" />
++        </div>
++      ) : null}
++
++      <div className="relative mx-auto max-w-3xl px-4 sm:px-6 py-12">
++        <AutoRefresh intervalMs={30_000} />
++        <ViewTracker slug={slug} />
++        <div className="relative h-48 w-full mb-9">
++        <div className="absolute inset-0 overflow-hidden rounded-xl banner-placeholder">
++          {server.bannerUrl ? (
++            // eslint-disable-next-line @next/next/no-img-element
++            <img src={server.bannerUrl} alt="" className="h-full w-full object-cover" />
++          ) : null}
++        </div>
++        <span className="server-icon absolute -bottom-6 left-5 h-14 w-14 overflow-hidden border-4 border-background text-2xl">
++          {server.iconUrl ? (
++            // eslint-disable-next-line @next/next/no-img-element
++            <img src={server.iconUrl} alt="" className="h-full w-full object-cover" />
++          ) : (
++            server.name.trim().charAt(0).toUpperCase() || "?"
++          )}
++        </span>
++      </div>
++
++      <div className="pl-[72px] min-h-[34px]">
++        <h1 className="text-3xl font-heading font-bold tracking-tight text-foreground">{server.name}</h1>
++        <div className="mt-1">
++          <ServerStatus playerCount={server.playerCount} playerCapacity={server.playerCapacity} />
++        </div>
++      </div>
++
++      <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-3">
++        <div className="stat-tile">
++          <div className="stat-label">{dict.serverDetail.version}</div>
++          <div className="stat-value">Minecraft {server.minecraftVersion}</div>
++        </div>
++        <div className="stat-tile">
++          <div className="stat-label">{dict.serverDetail.type}</div>
++          <div className="stat-value">{server.type === "modded" ? dict.servers.modded : dict.servers.vanilla}</div>
++        </div>
++        {server.recommendedRamGB ? (
++          <div className="stat-tile">
++            <div className="stat-label">{dict.serverDetail.recommendedRam}</div>
++            <div className="stat-value">
++              {server.recommendedRamGB} {dict.serverDetail.ramUnit}
++            </div>
++          </div>
++        ) : null}
++      </div>
++
++      {server.type === "modded" && server.curseforgeModpackName ? (
++        <div className="mt-4 flex flex-wrap gap-2">
++          <span className="tag-chip">
++            {server.curseforgeModpackName}
++            {server.curseforgeModpackVersion ? ` — ${server.curseforgeModpackVersion}` : ""}
++          </span>
++        </div>
++      ) : null}
++
++      <p className="mt-6 text-foreground whitespace-pre-wrap">{server.description}</p>
++
++      <div className="mt-8 rounded-lg border border-dashed border-border p-4 text-sm text-muted">
++        {dict.serverDetail.joinNote}
++      </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/site/src/lib/actions/servers.ts b/site/src/lib/actions/servers.ts
+index 28505fe..b595908 100644
+--- a/site/src/lib/actions/servers.ts
++++ b/site/src/lib/actions/servers.ts
+@@ -28,6 +28,20 @@ type ServerFormValues = {
+   recommendedRamGB: number | null;
+ };
+ 
++// Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher :
++// seule une adresse https absolue, sans guillemets, chevrons, espaces ni
++// backticks, est acceptee. Couvre les images deposees (Vercel Blob) comme les
++// valeurs legacy pointant vers des CDN https.
++function isSafeImageUrl(url: string | null): boolean {
++  if (url === null) return true;
++  if (!/^https:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
++  try {
++    return new URL(url).protocol === "https:";
++  } catch {
++    return false;
++  }
++}
++
+ function readForm(formData: FormData): ServerFormValues | { error: string } {
+   const name = String(formData.get("name") ?? "").trim();
+   const description = String(formData.get("description") ?? "").trim();
+@@ -48,6 +62,9 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
+   if (!name || !description || !minecraftVersion || !ip) {
+     return { error: "Nom, description, version et IP sont obligatoires." };
+   }
++  if (!isSafeImageUrl(bannerUrl) || !isSafeImageUrl(iconUrl) || !isSafeImageUrl(backgroundUrl)) {
++    return { error: "Les images (bannière, icône, fond) doivent être des adresses https valides." };
++  }
+   if (type === "modded" && !curseforgeModpackId) {
+     return { error: "Un serveur moddé doit indiquer son modpack (CurseForge ou Modrinth)." };
+   }
+@@ -249,5 +266,7 @@ export async function resetInviteCode(serverId: string) {
+   const inviteCode = await generateUniqueInviteCode();
+   await db.orm.public.Server.where({ id: serverId }).update({ inviteCode });
+ 
++  // L'ancien code doit cesser de marcher tout de suite (fiche en cache sinon 60 s).
++  updateTag(SERVERS_CACHE_TAG);
+   revalidatePath(`/manage/${serverId}/settings`);
+ }
+diff --git a/site/src/lib/launcherAuth.ts b/site/src/lib/launcherAuth.ts
+index d27dc44..c342b80 100644
+--- a/site/src/lib/launcherAuth.ts
++++ b/site/src/lib/launcherAuth.ts
+@@ -1,4 +1,5 @@
+ import { timingSafeEqual } from "node:crypto";
++import { NextResponse } from "next/server";
+ 
+ // Comparaison en temps constant du secret partage avec le launcher — une
+ // comparaison de chaine standard (`===`) fuit un signal temporel exploitable
+@@ -30,36 +31,51 @@ export function isAuthorizedLauncherRequest(request: Request): boolean {
+ //
+ // Mis en cache quelques minutes (le launcher sonde les notifications toutes
+ // les 30 s, voir REFRESH_INTERVAL_MS dans launcher/src/renderer.js) pour ne
+-// pas rappeler Mojang a chaque sondage. Echoue TOUJOURS ferme (false) si le
+-// jeton manque, si Mojang le refuse, ou si Mojang est injoignable — jamais de
+-// repli sur l'ancien comportement "je te crois sur parole".
++// pas rappeler Mojang a chaque sondage. Seule l'identite CONFIRMEE est mise en
++// cache : ni les refus ni les pannes (un hoquet ne doit pas durer 5 min).
+ const IDENTITY_CACHE_TTL_MS = 5 * 60_000;
+ type CachedIdentity = { uuid: string; expiresAt: number };
+ const identityCache = new Map<string, CachedIdentity>();
+ const MAX_IDENTITY_CACHE_ENTRIES = 10_000;
+ 
++// Trois issues distinctes, pour que le launcher ne dise pas "Connecte-toi" a un
++// joueur dont la connexion est en parfait etat :
++//  - "verified"    : Mojang confirme que le jeton appartient a cet UUID.
++//  - "refused"     : le jeton manque, Mojang le rejette (401/403), le compte n'a
++//                    pas de profil Minecraft (404), ou l'UUID ne correspond pas.
++//  - "unavailable" : Mojang ne se prononce pas (timeout, reseau, 429, 5xx...).
++export type IdentityCheck = "verified" | "refused" | "unavailable";
++
++// Une requete normale vers Mojang repond en quelques centaines de ms. 5 s laisse
++// une grosse marge aux pointes de charge sans bloquer le sondage du launcher
++// (toutes les 30 s) ni depasser la limite de duree des fonctions serverless.
++const MOJANG_TIMEOUT_MS = 5_000;
++
+ function normalizeUuid(uuid: string): string {
+   return uuid.toLowerCase().replaceAll("-", "");
+ }
+ 
+-export async function verifyMinecraftIdentity(token: string | null, claimedUuid: string | null): Promise<boolean> {
+-  if (!token || !claimedUuid) return false;
++export async function verifyMinecraftIdentity(token: string | null, claimedUuid: string | null): Promise<IdentityCheck> {
++  if (!token || !claimedUuid) return "refused";
+   const normalizedClaim = normalizeUuid(claimedUuid);
+ 
+   const cached = identityCache.get(token);
+-  if (cached && cached.expiresAt > Date.now()) return cached.uuid === normalizedClaim;
++  if (cached && cached.expiresAt > Date.now()) return cached.uuid === normalizedClaim ? "verified" : "refused";
+ 
+   let verifiedUuid: string;
+   try {
+     const res = await fetch("https://api.minecraftservices.com/minecraft/profile", {
+       headers: { Authorization: `Bearer ${token}` },
++      signal: AbortSignal.timeout(MOJANG_TIMEOUT_MS),
+     });
+-    if (!res.ok) return false;
++    if (res.status === 401 || res.status === 403 || res.status === 404) return "refused";
++    if (!res.ok) return "unavailable";
+     const profile: { id?: string } = await res.json();
+-    if (!profile.id) return false;
++    if (!profile.id) return "unavailable";
+     verifiedUuid = normalizeUuid(profile.id);
+   } catch {
+-    return false;
++    // Timeout, coupure reseau, reponse non JSON : Mojang injoignable ou degrade.
++    return "unavailable";
+   }
+ 
+   if (identityCache.size > MAX_IDENTITY_CACHE_ENTRIES) {
+@@ -68,5 +84,15 @@ export async function verifyMinecraftIdentity(token: string | null, claimedUuid:
+   }
+   identityCache.set(token, { uuid: verifiedUuid, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS });
+ 
+-  return verifiedUuid === normalizedClaim;
++  return verifiedUuid === normalizedClaim ? "verified" : "refused";
++}
++
++// Reponse d'erreur pour une identite non confirmee. 401 : le launcher demande
++// une reconnexion (jeton refuse). 503 : Mojang est en panne, rien a faire pour
++// le joueur, donc pas de faux "Connecte-toi" cote launcher.
++export function identityErrorResponse(check: Exclude<IdentityCheck, "verified">): NextResponse {
++  if (check === "unavailable") {
++    return NextResponse.json({ error: "Service de vérification indisponible, réessaie dans un instant" }, { status: 503 });
++  }
++  return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+ }
+diff --git a/site/src/lib/public-servers.ts b/site/src/lib/public-servers.ts
+index b9db9de..24e83aa 100644
+--- a/site/src/lib/public-servers.ts
++++ b/site/src/lib/public-servers.ts
+@@ -1,6 +1,10 @@
++import { timingSafeEqual } from "node:crypto";
++import type { NextResponse } from "next/server";
+ import { unstable_cache } from "next/cache";
+ import { db } from "@/prisma/db";
+ import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
++import { verifyMinecraftIdentity } from "@/lib/launcherAuth";
++import { rateLimitResponse } from "@/lib/rateLimit";
+ 
+ // Etiquette du cache des donnees publiques des serveurs : les actions du site
+ // (creer, modifier, publier, mettre en pause, supprimer) l'invalident avec
+@@ -160,10 +164,49 @@ export type LauncherServerDetail = {
+   recommendedRamGB: number | null;
+ };
+ 
++// Preuve qu'un visiteur a le droit de voir un serveur prive. Sans preuve, un
++// serveur prive est traite comme inexistant : jamais de fiche, d'IP ni de
++// modpack par simple slug (le slug se devine a partir du nom). Deux preuves
++// valent, au choix : le code d'invitation (joueur qui a rejoint le serveur, ou
++// page /join/[code]) ; le jeton Mojang du proprietaire (verifie aupres de Mojang).
++export type PrivateServerProof = { inviteCode?: string | null; minecraftToken?: string | null };
++
++// Lit la preuve dans les en-tetes d'une requete API (envoyes par le launcher).
++export function proofFromRequest(request: Request): PrivateServerProof {
++  return {
++    inviteCode: request.headers.get("x-invite-code"),
++    minecraftToken: request.headers.get("x-minecraft-token"),
++  };
++}
++
++// Devinage de codes : une requete qui porte un code d'invitation compte dans
++// une limite dediee (meme esprit que /join/[code]). Sans cela, les routes API
++// acceptant le code seraient un moyen de le deviner plus vite que la page.
++export function limitInviteAttempts(request: Request, headers?: Record<string, string>): NextResponse | null {
++  if (!request.headers.get("x-invite-code")) return null;
++  return rateLimitResponse(request, "invite-proof", 30, { headers });
++}
++
++function sameCode(a: string, b: string): boolean {
++  const left = Buffer.from(a);
++  const right = Buffer.from(b);
++  return left.length === right.length && timingSafeEqual(left, right);
++}
++
++export async function canSeeServer(
++  server: { isPrivate: boolean; inviteCode: string | null; owner: { minecraftUuid: string | null } | null },
++  proof: PrivateServerProof,
++): Promise<boolean> {
++  if (!server.isPrivate) return true;
++  const code = proof.inviteCode?.trim().toUpperCase();
++  if (code && server.inviteCode && sameCode(code, server.inviteCode)) return true;
++  return (await verifyMinecraftIdentity(proof.minecraftToken ?? null, server.owner?.minecraftUuid ?? null)) === "verified";
++}
++
+ // Seule fonction du fichier qui renvoie `ip` — réservée à la route
+ // /api/launcher/servers/[slug], protégée par LAUNCHER_API_KEY. Ne jamais
+ // exposer ce résultat via une route publique.
+-export async function getServerWithIpBySlug(slug: string): Promise<LauncherServerDetail | null> {
++export async function getServerWithIpBySlug(slug: string, proof: PrivateServerProof = {}): Promise<LauncherServerDetail | null> {
+   const row = await db.orm.public.Server.select(
+     "name",
+     "type",
+@@ -171,11 +214,14 @@ export async function getServerWithIpBySlug(slug: string): Promise<LauncherServe
+     "minecraftVersion",
+     "curseforgeModpackId",
+     "recommendedRamGB",
++    "isPrivate",
++    "inviteCode",
+   )
++    .include("owner", (o) => o.select("minecraftUuid"))
+     .where({ slug, published: true })
+     .first();
+ 
+-  if (!row) return null;
++  if (!row || !(await canSeeServer(row, proof))) return null;
+ 
+   return {
+     name: row.name,
+@@ -240,6 +286,8 @@ const loadPublishedServerBySlug = unstable_cache(
+     "recommendedRamGB",
+     "createdAt",
+     "viewCount",
++    "isPrivate",
++    "inviteCode",
+   )
+     .include("owner", (o) => o.select("minecraftUuid"))
+     .where({ slug, published: true })
+@@ -248,9 +296,10 @@ const loadPublishedServerBySlug = unstable_cache(
+   { revalidate: SERVERS_CACHE_SECONDS, tags: [SERVERS_CACHE_TAG] },
+ );
+ 
+-export async function getPublicServerBySlug(slug: string): Promise<PublicServerDetail | null> {
++// `proof` : sans preuve (site, annuaire), un serveur prive renvoie null.
++export async function getPublicServerBySlug(slug: string, proof: PrivateServerProof = {}): Promise<PublicServerDetail | null> {
+   const row = await loadPublishedServerBySlug(slug);
+-  if (!row) return null;
++  if (!row || !(await canSeeServer(row, proof))) return null;
+ 
+   const status = await getServerStatus(row.id, row.ip, row);
+ 
+diff --git a/site/src/lib/rateLimit.ts b/site/src/lib/rateLimit.ts
+index 2a356fc..770ab1a 100644
+--- a/site/src/lib/rateLimit.ts
++++ b/site/src/lib/rateLimit.ts
+@@ -33,12 +33,19 @@ export function checkRateLimit(key: string, limit: number, windowMs = 60_000): R
+   return { limited: bucket.count > limit, retryAfterSeconds: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)) };
+ }
+ 
+-// Adresse du visiteur : Vercel place la vraie adresse en tête de x-forwarded-for.
+-// `getHeader` est soit `request.headers.get` (route API), soit le resultat de
+-// `await headers()` de next/headers (Server Component, voir clientIpFromHeadersList).
++// Adresse du visiteur. On ne fait confiance qu'a un en-tete ecrit par la
++// plateforme, jamais a la premiere valeur de x-forwarded-for (un client peut
++// l'inventer). Vercel documente x-vercel-forwarded-for et x-real-ip comme copies
++// de l'IP reelle du client, ecrites par la plateforme ; x-forwarded-for est
++// reecrit par Vercel. Hors Vercel (proxy devant le site), le dernier element de
++// x-forwarded-for est celui ajoute par le proxy le plus proche : le premier vient
++// du client. `getHeader` est soit `request.headers.get` (route API), soit le
++// resultat de `await headers()` de next/headers (voir clientIpFromHeadersList).
+ function extractClientIp(getHeader: (name: string) => string | null): string {
+-  const forwarded = getHeader("x-forwarded-for")?.split(",")[0]?.trim();
+-  return forwarded || getHeader("x-real-ip")?.trim() || "inconnue";
++  const platformIp = getHeader("x-vercel-forwarded-for")?.trim() || getHeader("x-real-ip")?.trim();
++  if (platformIp) return platformIp;
++  const chain = getHeader("x-forwarded-for")?.split(",").map((ip) => ip.trim()).filter(Boolean) ?? [];
++  return chain[chain.length - 1] || "inconnue";
+ }
+ 
+ function clientIp(request: Request): string {

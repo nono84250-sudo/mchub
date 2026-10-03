@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
 import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getFilesInfo } from "@/lib/curseforge";
+import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Nombre maximum de fichiers par appel : un gros modpack en compte quelques
 // centaines, mais ca borne aussi l'usage de cette route comme relais vers
@@ -13,6 +14,9 @@ export async function POST(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
+  // Cette route consomme le quota CurseForge de NOTRE cle : frein par adresse.
+  const limited = rateLimitResponse(request, "launcher-curseforge-files", 60);
+  if (limited) return limited;
 
   const body = await request.json().catch(() => null);
   const fileIds: unknown = body?.fileIds;

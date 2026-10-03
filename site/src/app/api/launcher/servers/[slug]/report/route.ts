@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { db } from "@/prisma/db";
 import { createReport, type ReportIssue } from "@/lib/reports";
 import { rateLimitResponse } from "@/lib/rateLimit";
@@ -33,9 +33,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
   if (!reporterMinecraftUuid || !reporterMinecraftUsername || !message || !issue) {
     return NextResponse.json({ error: "Champs manquants ou invalides" }, { status: 400 });
   }
-  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), reporterMinecraftUuid))) {
-    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
-  }
+  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), reporterMinecraftUuid);
+  if (identity !== "verified") return identityErrorResponse(identity);
 
   await createReport({
     serverId: server.id,

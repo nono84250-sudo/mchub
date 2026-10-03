@@ -33,12 +33,19 @@ export function checkRateLimit(key: string, limit: number, windowMs = 60_000): R
   return { limited: bucket.count > limit, retryAfterSeconds: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)) };
 }
 
-// Adresse du visiteur : Vercel place la vraie adresse en tête de x-forwarded-for.
-// `getHeader` est soit `request.headers.get` (route API), soit le resultat de
-// `await headers()` de next/headers (Server Component, voir clientIpFromHeadersList).
+// Adresse du visiteur. On ne fait confiance qu'a un en-tete ecrit par la
+// plateforme, jamais a la premiere valeur de x-forwarded-for (un client peut
+// l'inventer). Vercel documente x-vercel-forwarded-for et x-real-ip comme copies
+// de l'IP reelle du client, ecrites par la plateforme ; x-forwarded-for est
+// reecrit par Vercel. Hors Vercel (proxy devant le site), le dernier element de
+// x-forwarded-for est celui ajoute par le proxy le plus proche : le premier vient
+// du client. `getHeader` est soit `request.headers.get` (route API), soit le
+// resultat de `await headers()` de next/headers (voir clientIpFromHeadersList).
 function extractClientIp(getHeader: (name: string) => string | null): string {
-  const forwarded = getHeader("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || getHeader("x-real-ip")?.trim() || "inconnue";
+  const platformIp = getHeader("x-vercel-forwarded-for")?.trim() || getHeader("x-real-ip")?.trim();
+  if (platformIp) return platformIp;
+  const chain = getHeader("x-forwarded-for")?.split(",").map((ip) => ip.trim()).filter(Boolean) ?? [];
+  return chain[chain.length - 1] || "inconnue";
 }
 
 function clientIp(request: Request): string {

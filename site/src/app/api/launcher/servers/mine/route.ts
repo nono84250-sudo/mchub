@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { listServersOwnedByMinecraftUuid } from "@/lib/public-servers";
+import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Alimente la vue "Mes instances" du launcher : tous les serveurs du joueur
 // actuellement connecte (publies ou en pause), retrouves via son UUID Minecraft
@@ -11,15 +12,16 @@ export async function GET(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
+  const limited = rateLimitResponse(request, "launcher-mine", 60);
+  if (limited) return limited;
 
   const { searchParams } = new URL(request.url);
   const minecraftUuid = searchParams.get("minecraftUuid");
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
   }
-  if (!(await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid))) {
-    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
-  }
+  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
+  if (identity !== "verified") return identityErrorResponse(identity);
 
   const servers = await listServersOwnedByMinecraftUuid(minecraftUuid);
   return NextResponse.json({ servers });
