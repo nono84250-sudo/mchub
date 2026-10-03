@@ -90,7 +90,9 @@ async function fetchJson(url, options = {}) {
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     if (!res.ok) {
-      throw new Error(`Réponse ${res.status} du site Omniscient`);
+      const error = new Error(`Réponse ${res.status} du site Omniscient`);
+      error.status = res.status;
+      throw error;
     }
     return await res.json();
   } catch (error) {
@@ -250,6 +252,9 @@ function checkForUpdates() {
       resolve();
       return;
     }
+    const betaChannel = settingsStore.loadSettings().betaChannel;
+    autoUpdater.channel = betaChannel ? "beta" : "latest";
+    autoUpdater.allowPrerelease = betaChannel;
     updateCheckResolve = resolve;
     autoUpdater.checkForUpdates().catch(() => resolve());
   });
@@ -342,7 +347,7 @@ ipcMain.handle("servers:get", async (_event, slug) => {
 // plupart des joueurs (uniquement les proprietaires de serveur ont besoin
 // de cette liaison).
 ipcMain.handle("servers:mine", async () => {
-  if (!currentSession) return { ok: true, servers: [] };
+  if (!currentSession) return { ok: false, status: 401, error: "Pas de compte Microsoft connecté." };
   try {
     const data = await fetchJson(
       `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
@@ -350,7 +355,7 @@ ipcMain.handle("servers:mine", async () => {
     );
     return { ok: true, servers: data.servers };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+    return { ok: false, status: error.status, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
 
@@ -364,6 +369,10 @@ ipcMain.handle("servers:openNewInstance", () => shell.openExternal(`${SITE_URL}/
 // Pour construire le lien d'invitation (copie dans le presse-papier depuis
 // "Mes instances") sans dupliquer la logique SITE_URL cote renderer.
 ipcMain.handle("app:getSiteUrl", () => SITE_URL);
+ipcMain.handle("app:restart", () => {
+  app.relaunch();
+  app.exit(0);
+});
 
 // Onglet "Rejoint" de "Mes instances" (voir renderer.js) : serveurs prives
 // rejoints via le code/lien d'invitation de quelqu'un d'autre — jamais ceux

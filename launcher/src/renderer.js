@@ -1580,11 +1580,14 @@ async function renderMyInstancesList() {
 
   const [ownedResult, joinedResult] = await Promise.all([window.mchub.listMyServers(), window.mchub.listJoinedServers()]);
   if (!ownedResult.ok) {
+    const authFailed = ownedResult.status === 401;
     myInstancesPanelEl.className = "detail";
     myInstancesPanelEl.innerHTML = `
       <h2>${t("nav.myInstances")}</h2>
-      <p class="join-note">${t("myInstances.loginRequired")}</p>
+      <p class="join-note">${t(authFailed ? "myInstances.loginRequired" : "myInstances.loadError")}</p>
+      ${authFailed ? "" : `<button type="button" class="join-btn" id="my-instances-retry">${t("myInstances.retry")}</button>`}
     `;
+    document.getElementById("my-instances-retry")?.addEventListener("click", () => renderMyInstancesList());
     return;
   }
   myInstancesServers = ownedResult.servers;
@@ -1912,7 +1915,7 @@ function renderAppearanceTab(contentEl, settings) {
   });
 }
 
-function renderLanguageTab(contentEl, settings) {
+function renderLanguageTab(contentEl, settings, { restartPending = false } = {}) {
   const locales = window.i18n.LOCALES;
   const currentLabel = locales[settings.locale]?.label || locales.fr.label;
   contentEl.innerHTML = `
@@ -1937,7 +1940,7 @@ function renderLanguageTab(contentEl, settings) {
             .join("")}
         </div>
       </div>
-      <p class="join-note" id="settings-lang-status"></p>
+      ${restartPending ? `<p class="join-note">${t("language.restartNeeded")}</p><button type="button" class="join-btn" id="settings-restart-btn">${t("language.restartButton")}</button>` : ""}
     </section>
   `;
 
@@ -1946,10 +1949,11 @@ function renderLanguageTab(contentEl, settings) {
       const locale = row.dataset.locale;
       if (locale === settings.locale) return;
       await window.mchub.settings.set({ locale });
-      document.getElementById("settings-lang-status").textContent = t("language.restartNeeded");
-      renderLanguageTab(contentEl, { ...settings, locale });
+      renderLanguageTab(contentEl, { ...settings, locale }, { restartPending: true });
     });
   });
+
+  document.getElementById("settings-restart-btn")?.addEventListener("click", () => window.mchub.restartApp());
 }
 
 function renderMemoryTab(contentEl, settings) {
@@ -2012,7 +2016,7 @@ function renderMemoryTab(contentEl, settings) {
   });
 }
 
-function renderMiscTab(contentEl, settings) {
+function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
   contentEl.innerHTML = `
     <section class="settings-section">
       <div>
@@ -2037,12 +2041,26 @@ function renderMiscTab(contentEl, settings) {
         </span>
         <span class="join-note">${settings.appVersion ? `v${settings.appVersion}` : "—"}</span>
       </div>
+      <div class="settings-divider"></div>
+      <div class="settings-row">
+        <span>
+          <span class="settings-row-label">${t("settings.betaChannel")}</span>
+          <p class="settings-row-desc">${t("settings.betaChannelDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-beta-channel" ${settings.betaChannel ? "checked" : ""} />
+      </div>
+      ${betaPending ? `<p class="join-note">${t("settings.betaRestartNote")}</p><button type="button" class="join-btn" id="settings-beta-restart-btn">${t("language.restartButton")}</button>` : ""}
     </section>
   `;
 
   document.getElementById("settings-open-folder").addEventListener("click", () => {
     window.mchub.settings.openGameFolder();
   });
+  document.getElementById("settings-beta-channel").addEventListener("change", async (event) => {
+    await window.mchub.settings.set({ betaChannel: event.target.checked });
+    renderMiscTab(contentEl, { ...settings, betaChannel: event.target.checked }, { betaPending: true });
+  });
+  document.getElementById("settings-beta-restart-btn")?.addEventListener("click", () => window.mchub.restartApp());
   refreshJavaStatus("settings-java-status", "settings-java-install");
 
   // "Reparer Java" : supprime les Java du launcher puis reinstalle les quatre.

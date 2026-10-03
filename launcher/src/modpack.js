@@ -130,46 +130,6 @@ async function readInstalledState(instanceDir) {
   return null;
 }
 
-// --- Nettoyage : evite que les anciennes versions d'un modpack ou d'un
-// chargeur, qui ne servent plus a aucune instance, s'accumulent pour rien sur
-// le disque a chaque mise a jour (zip en cache, dossier du chargeur avec ses
-// bibliotheques — plusieurs dizaines a centaines de Mo a chaque fois). -------
-
-// Etat de toutes les AUTRES instances existantes, pour ne jamais supprimer une
-// ressource partagee (cache des modpacks, dossiers de chargeur) qu'une autre
-// instance utilise peut-etre encore.
-async function readOtherInstanceStates(gameRoot, exceptSlug) {
-  let slugs;
-  try {
-    slugs = await fsp.readdir(path.join(gameRoot, "instances"));
-  } catch {
-    return [];
-  }
-  const states = [];
-  for (const slug of slugs) {
-    if (slug === exceptSlug) continue;
-    const state = await readInstalledState(path.join(gameRoot, "instances", slug));
-    if (state) states.push(state);
-  }
-  return states;
-}
-
-async function cleanupOldModpackCache(gameRoot, slug, previousState, newCacheName) {
-  if (!previousState?.cacheName || previousState.cacheName === newCacheName) return;
-  const others = await readOtherInstanceStates(gameRoot, slug);
-  if (others.some((s) => s.cacheName === previousState.cacheName)) return;
-  await fsp.rm(path.join(gameRoot, "cache", "modpacks", previousState.cacheName), { force: true });
-}
-
-async function cleanupOldLoaderVersion(gameRoot, slug, previousState, newLoaderVersionId) {
-  if (!previousState?.loaderVersionId || previousState.loaderVersionId === newLoaderVersionId) return;
-  const others = await readOtherInstanceStates(gameRoot, slug);
-  if (others.some((s) => s.loaderVersionId === previousState.loaderVersionId)) return;
-  const versionsDir = path.join(gameRoot, "versions");
-  await fsp.rm(path.join(versionsDir, previousState.loaderVersionId), { recursive: true, force: true });
-  await fsp.rm(path.join(versionsDir, `${previousState.loaderVersionId}-omniscient`), { recursive: true, force: true });
-}
-
 // --- Formats de modpack -----------------------------------------------------
 
 // Un "pack" decrit ce qu'il faut installer, quel que soit le format d'origine :
@@ -617,28 +577,14 @@ async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, o
       {
         source,
         modpackFileId: file.id,
-        cacheName,
         minecraftVersion: pack.minecraftVersion,
         loaderId: pack.loaderId,
-        loaderVersionId,
         files: [...installedFiles, ...overrideJars],
       },
       null,
       2,
     ),
   );
-
-  // Mise a jour vers une nouvelle version (desormais automatique, voir le
-  // commentaire sur hints.version cote site) : jamais pendant l'installation
-  // (une etape qui echoue ne doit jamais laisser le joueur sans l'ancienne
-  // version QUI MARCHAIT), seulement une fois la nouvelle confirmee complete.
-  // Une erreur de nettoyage ne doit jamais faire echouer un lancement reussi.
-  try {
-    await cleanupOldModpackCache(gameRoot, slug, previousState, cacheName);
-    await cleanupOldLoaderVersion(gameRoot, slug, previousState, loaderVersionId);
-  } catch (error) {
-    onProgress({ text: `Nettoyage de l'ancienne version ignoré : ${error instanceof Error ? error.message : error}` });
-  }
 
   const { customVersion, jvmArgs } = await prepareLaunchVersion({
     gameRoot,
@@ -663,9 +609,4 @@ module.exports = {
   prepareLaunchVersion,
   ensureVanillaVersion,
   ModpackError,
-  // Exportes pour les tests (voir scratchpad) : logique de nettoyage des
-  // anciennes versions, pas un point d'entree utilise ailleurs.
-  readInstalledState,
-  cleanupOldModpackCache,
-  cleanupOldLoaderVersion,
 };

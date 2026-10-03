@@ -15,9 +15,6 @@
 const LOCALES = {
   fr: { label: "Français", enabled: true },
   en: { label: "English (US)", enabled: true },
-  es: { label: "Español", enabled: false },
-  de: { label: "Deutsch", enabled: false },
-  pt: { label: "Português (BR)", enabled: false },
 };
 
 const DICTIONARIES = {
@@ -181,6 +178,8 @@ const DICTIONARIES = {
       badgeJoined: "Rejoint",
       leave: "Quitter",
       leaveConfirm: "Quitter ce serveur ? Il sera retiré de ton onglet \"Rejoint\" (le propriétaire n'est pas prévenu).",
+      loadError: "Impossible de charger tes serveurs pour le moment.",
+      retry: "Réessayer",
       joinByCodeLabel: "Rejoindre via un code d'invitation",
       joinByCodePlaceholder: "Code d'invitation",
       joinByCodeSubmit: "Ajouter",
@@ -207,6 +206,9 @@ const DICTIONARIES = {
       openFolder: "Ouvrir le dossier",
       changeFolder: "Changer d'emplacement",
       launcherVersion: "Version du launcher",
+      betaChannel: "Canal bêta",
+      betaChannelDesc: "Reçois les versions de test avant tout le monde. Appliqué au prochain démarrage.",
+      betaRestartNote: "Redémarre le launcher pour appliquer le canal.",
       upToDate: "À jour.",
     },
     appearance: {
@@ -230,6 +232,7 @@ const DICTIONARIES = {
       restartNote: "Le changement prend effet au redémarrage du launcher.",
       available: "Langues disponibles",
       restartNeeded: "Redémarre le launcher pour appliquer.",
+      restartButton: "Redémarrer le launcher",
     },
     debug: {
       title: "Débogage",
@@ -536,6 +539,8 @@ const DICTIONARIES = {
       badgeJoined: "Joined",
       leave: "Leave",
       leaveConfirm: "Leave this server? It will be removed from your \"Joined\" tab (the owner isn't notified).",
+      loadError: "Couldn't load your servers right now.",
+      retry: "Retry",
       joinByCodeLabel: "Join via an invite code",
       joinByCodePlaceholder: "Invite code",
       joinByCodeSubmit: "Add",
@@ -562,6 +567,9 @@ const DICTIONARIES = {
       openFolder: "Open folder",
       changeFolder: "Change location",
       launcherVersion: "Launcher version",
+      betaChannel: "Beta channel",
+      betaChannelDesc: "Get test versions before everyone else. Applied on next start.",
+      betaRestartNote: "Restart the launcher to apply the channel.",
       upToDate: "You're up to date.",
     },
     appearance: {
@@ -585,6 +593,7 @@ const DICTIONARIES = {
       restartNote: "Changes take effect after restarting the launcher.",
       available: "Available languages",
       restartNeeded: "Restart the launcher to apply.",
+      restartButton: "Restart launcher",
     },
     debug: {
       title: "Debug",

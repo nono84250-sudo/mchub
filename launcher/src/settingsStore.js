@@ -52,6 +52,10 @@ const DEFAULTS = {
   logLevel: "info",
   openConsoleOnLaunch: false,
   keepLauncherOpenWhilePlaying: true,
+  // Canal de mise a jour "beta" (versions pre-release de omniscient-launcher).
+  // Applique au prochain demarrage : checkForUpdates() lit ce reglage a chaque
+  // verification du bootstrap.
+  betaChannel: false,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -101,6 +105,7 @@ function saveSettings(partial) {
   if (partial.logLevel !== undefined) next.logLevel = ["error", "warn", "info", "debug"].includes(partial.logLevel) ? partial.logLevel : current.logLevel;
   if (partial.openConsoleOnLaunch !== undefined) next.openConsoleOnLaunch = !!partial.openConsoleOnLaunch;
   if (partial.keepLauncherOpenWhilePlaying !== undefined) next.keepLauncherOpenWhilePlaying = !!partial.keepLauncherOpenWhilePlaying;
+  if (partial.betaChannel !== undefined) next.betaChannel = !!partial.betaChannel;
 
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2));
   return next;
