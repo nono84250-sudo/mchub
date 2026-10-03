@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/prisma/db";
 import { SERVERS_CACHE_TAG, canSeeServer, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
@@ -18,6 +18,10 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   // plus un frein renforce quand une preuve (code d'invitation) est presentee.
   const limited = rateLimitResponse(request, "launcher-modpack", 60) ?? limitInviteAttempts(request);
   if (limited) return limited;
+  // Point 3 : le modpack (quota CurseForge de notre cle) reserve a un joueur identifie.
+  if (!(await launcherIdentityUuid(request))) {
+    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+  }
 
   const { slug } = await ctx.params;
   const server = await db.orm.public.Server.select(

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerWithIpBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
-import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Route reservee au launcher (jamais au site public) : c'est la SEULE
@@ -19,6 +19,11 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   // quand une preuve (code d'invitation) est presentee.
   const limited = rateLimitResponse(request, "launcher-server-ip", 60) ?? limitInviteAttempts(request);
   if (limited) return limited;
+  // Point 3 : la cle seule ne suffit plus, il faut aussi un joueur identifie
+  // (jeton de session, ou jeton Mojang pour les launchers 0.3.2).
+  if (!(await launcherIdentityUuid(request))) {
+    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+  }
 
   const { slug } = await ctx.params;
   const server = await getServerWithIpBySlug(slug, proofFromRequest(request));

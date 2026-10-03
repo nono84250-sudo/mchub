@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { proofFromRequest, recordServerLaunch, visibleServerIdBySlug } from "@/lib/public-servers";
-import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Appelee par le launcher juste apres un lancement reussi (voir main.js) —
@@ -12,6 +12,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
   }
   const limited = rateLimitResponse(request, "launch", 60);
   if (limited) return limited;
+  // Point 3 : compteur de lancements reserve a un joueur identifie (sinon la cle seule le gonfle).
+  if (!(await launcherIdentityUuid(request))) {
+    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+  }
 
   const { slug } = await ctx.params;
   if (!(await visibleServerIdBySlug(slug, proofFromRequest(request)))) {

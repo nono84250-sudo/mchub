@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
 import { deleteNotification } from "@/lib/notifications";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   if (!minecraftUuid || !id) {
     return NextResponse.json({ error: "Champs manquants" }, { status: 400 });
   }
-  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
+  const identity = await verifyLauncherIdentity(request, minecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
 
   await deleteNotification(id, minecraftUuid);

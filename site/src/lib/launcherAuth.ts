@@ -1,5 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, readLauncherSession } from "./launcherSession";
+
+export { createLauncherSession, LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, readLauncherSession } from "./launcherSession";
 
 // Comparaison en temps constant du secret partage avec le launcher — une
 // comparaison de chaine standard (`===`) fuit un signal temporel exploitable
@@ -51,16 +54,10 @@ export type IdentityCheck = "verified" | "refused" | "unavailable";
 // (toutes les 30 s) ni depasser la limite de duree des fonctions serverless.
 const MOJANG_TIMEOUT_MS = 5_000;
 
-function normalizeUuid(uuid: string): string {
-  return uuid.toLowerCase().replaceAll("-", "");
-}
-
-export async function verifyMinecraftIdentity(token: string | null, claimedUuid: string | null): Promise<IdentityCheck> {
-  if (!token || !claimedUuid) return "refused";
-  const normalizedClaim = normalizeUuid(claimedUuid);
-
+// Interroge Mojang pour un jeton : renvoie l'UUID confirme, ou la raison du refus.
+async function lookupMojangProfile(token: string): Promise<{ uuid: string } | { check: "refused" | "unavailable" }> {
   const cached = identityCache.get(token);
-  if (cached && cached.expiresAt > Date.now()) return cached.uuid === normalizedClaim ? "verified" : "refused";
+  if (cached && cached.expiresAt > Date.now()) return { uuid: cached.uuid };
 
   let verifiedUuid: string;
   try {
@@ -68,14 +65,14 @@ export async function verifyMinecraftIdentity(token: string | null, claimedUuid:
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(MOJANG_TIMEOUT_MS),
     });
-    if (res.status === 401 || res.status === 403 || res.status === 404) return "refused";
-    if (!res.ok) return "unavailable";
+    if (res.status === 401 || res.status === 403 || res.status === 404) return { check: "refused" };
+    if (!res.ok) return { check: "unavailable" };
     const profile: { id?: string } = await res.json();
-    if (!profile.id) return "unavailable";
-    verifiedUuid = normalizeUuid(profile.id);
+    if (!profile.id) return { check: "unavailable" };
+    verifiedUuid = normalizeMinecraftUuid(profile.id);
   } catch {
     // Timeout, coupure reseau, reponse non JSON : Mojang injoignable ou degrade.
-    return "unavailable";
+    return { check: "unavailable" };
   }
 
   if (identityCache.size > MAX_IDENTITY_CACHE_ENTRIES) {
@@ -83,8 +80,41 @@ export async function verifyMinecraftIdentity(token: string | null, claimedUuid:
     for (const [key, entry] of identityCache) if (entry.expiresAt <= now) identityCache.delete(key);
   }
   identityCache.set(token, { uuid: verifiedUuid, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS });
+  return { uuid: verifiedUuid };
+}
 
-  return verifiedUuid === normalizedClaim ? "verified" : "refused";
+export async function verifyMinecraftIdentity(token: string | null, claimedUuid: string | null): Promise<IdentityCheck> {
+  if (!token || !claimedUuid) return "refused";
+  const result = await lookupMojangProfile(token);
+  if ("check" in result) return result.check === "refused" ? "refused" : "unavailable";
+  return result.uuid === normalizeMinecraftUuid(claimedUuid) ? "verified" : "refused";
+}
+
+// Identite du joueur pour une requete launcher qui le designe par `claimedUuid`.
+// Si l'en-tete X-Launcher-Session est present, il decide SEUL (pas de repli sur
+// le jeton Mojang : un jeton de session expire ou falsifie donne donc 401, meme
+// si un jeton Mojang valide accompagne la requete). Sinon, comportement d'avant
+// (X-Minecraft-Token verifie chez Mojang), pour que les launchers 0.3.2 marchent encore.
+export async function verifyLauncherIdentity(request: Request, claimedUuid: string | null): Promise<IdentityCheck> {
+  const session = request.headers.get(LAUNCHER_SESSION_HEADER);
+  if (session !== null) {
+    const uuid = readLauncherSession(session);
+    if (!uuid || !claimedUuid) return "refused";
+    return uuid === normalizeMinecraftUuid(claimedUuid) ? "verified" : "refused";
+  }
+  return verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), claimedUuid);
+}
+
+// Joueur identifie par la requete, sans UUID de reference (routes qui ne lisent
+// pas de donnee propre a un joueur mais exigent un launcher connecte). Renvoie
+// l'UUID verifie, ou null.
+export async function launcherIdentityUuid(request: Request): Promise<string | null> {
+  const session = request.headers.get(LAUNCHER_SESSION_HEADER);
+  if (session !== null) return readLauncherSession(session);
+  const token = request.headers.get("x-minecraft-token");
+  if (!token) return null;
+  const result = await lookupMojangProfile(token);
+  return "uuid" in result ? result.uuid : null;
 }
 
 // Reponse d'erreur pour une identite non confirmee. 401 : le launcher demande

@@ -70,7 +70,56 @@ const REQUEST_TIMEOUT_MS = 8000;
 // audit de securite du 2026-09-28). Les deux se cumulent, l'un ne remplace
 // pas l'autre. Pas de session => pas de jeton a envoyer (les appelants
 // verifient deja currentSession avant d'appeler ceci).
+// Jeton de session (point 3) : le site echange le jeton Mojang contre un jeton
+// signe valable 24 h (POST /api/launcher/session). Quand il est utilisable, on
+// l'envoie dans X-Launcher-Session a la place de X-Minecraft-Token, qui n'est
+// alors plus transmis a chaque requete. Tant qu'il n'y en a pas (premier appel,
+// expire, echange en echec), on envoie le jeton Mojang comme avant.
+// En memoire seulement : un redemarrage refait l'echange.
+let launcherSession = null; // { uuid, token, expiresAt (ms) }
+let launcherSessionRequest = null;
+const LAUNCHER_SESSION_MARGIN_MS = 5 * 60_000;
+
+function usableLauncherSessionToken() {
+  if (!currentSession || !launcherSession) return null;
+  if (launcherSession.uuid !== currentSession.profile.id) return null;
+  if (launcherSession.expiresAt - LAUNCHER_SESSION_MARGIN_MS <= Date.now()) return null;
+  return launcherSession.token;
+}
+
+function requestLauncherSession() {
+  if (!currentSession || launcherSessionRequest) return;
+  const uuid = currentSession.profile.id;
+  const mojangToken = currentSession.authorization.access_token;
+  launcherSessionRequest = (async () => {
+    try {
+      const res = await fetch(`${SITE_URL}/api/launcher/session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${LAUNCHER_API_KEY}`,
+          "X-Minecraft-Token": mojangToken,
+        },
+        body: JSON.stringify({ minecraftUuid: uuid }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
+    } catch {
+      // Sans importance : les requetes continuent avec le jeton Mojang.
+    } finally {
+      launcherSessionRequest = null;
+    }
+  })();
+}
+
 function launcherAuthHeaders() {
+  const sessionToken = usableLauncherSessionToken();
+  if (sessionToken) {
+    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": sessionToken };
+  }
+  requestLauncherSession();
   return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Minecraft-Token": currentSession.authorization.access_token };
 }
 
@@ -84,6 +133,7 @@ let sessionRemembered = false;
 
 function setSession(profile, authorization) {
   currentSession = { profile, authorization };
+  requestLauncherSession();
   return profile;
 }
 
@@ -704,6 +754,7 @@ ipcMain.handle("auth:signOut", () => {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
   currentSession = null;
+  launcherSession = null;
   return { ok: true };
 });
 
@@ -741,7 +792,10 @@ ipcMain.handle("account:switch", async (_event, id) => {
 
 ipcMain.handle("account:remove", (_event, id) => {
   sessionStore.forgetAccount(id);
-  if (currentSession?.profile?.id === id) currentSession = null;
+  if (currentSession?.profile?.id === id) {
+    currentSession = null;
+    launcherSession = null;
+  }
   return { ok: true };
 });
 

@@ -3,7 +3,7 @@ import type { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { db } from "@/prisma/db";
 import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
-import { verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, readLauncherSession, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Etiquette du cache des donnees publiques des serveurs : les actions du site
@@ -169,13 +169,14 @@ export type LauncherServerDetail = {
 // modpack par simple slug (le slug se devine a partir du nom). Deux preuves
 // valent, au choix : le code d'invitation (joueur qui a rejoint le serveur, ou
 // page /join/[code]) ; le jeton Mojang du proprietaire (verifie aupres de Mojang).
-export type PrivateServerProof = { inviteCode?: string | null; minecraftToken?: string | null };
+export type PrivateServerProof = { inviteCode?: string | null; minecraftToken?: string | null; launcherSession?: string | null };
 
 // Lit la preuve dans les en-tetes d'une requete API (envoyes par le launcher).
 export function proofFromRequest(request: Request): PrivateServerProof {
   return {
     inviteCode: request.headers.get("x-invite-code"),
     minecraftToken: request.headers.get("x-minecraft-token"),
+    launcherSession: request.headers.get(LAUNCHER_SESSION_HEADER),
   };
 }
 
@@ -200,6 +201,12 @@ export async function canSeeServer(
   if (!server.isPrivate) return true;
   const code = proof.inviteCode?.trim().toUpperCase();
   if (code && server.inviteCode && sameCode(code, server.inviteCode)) return true;
+  // Jeton de session present : il decide seul (proprietaire = UUID du jeton).
+  if (proof.launcherSession != null) {
+    const uuid = readLauncherSession(proof.launcherSession);
+    const owner = server.owner?.minecraftUuid;
+    return !!uuid && !!owner && uuid === normalizeMinecraftUuid(owner);
+  }
   return (await verifyMinecraftIdentity(proof.minecraftToken ?? null, server.owner?.minecraftUuid ?? null)) === "verified";
 }
 

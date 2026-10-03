@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
 import { proofFromRequest, visibleServerIdBySlug } from "@/lib/public-servers";
 import { createReport, type ReportIssue } from "@/lib/reports";
 import { rateLimitResponse } from "@/lib/rateLimit";
@@ -34,7 +34,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
   if (!reporterMinecraftUuid || !reporterMinecraftUsername || !message || !issue) {
     return NextResponse.json({ error: "Champs manquants ou invalides" }, { status: 400 });
   }
-  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), reporterMinecraftUuid);
+  const identity = await verifyLauncherIdentity(request, reporterMinecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
 
   await createReport({

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
 import { listServersOwnedByMinecraftUuid } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
   }
-  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
+  const identity = await verifyLauncherIdentity(request, minecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
 
   const servers = await listServersOwnedByMinecraftUuid(minecraftUuid);
