@@ -29,7 +29,7 @@ const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
 const { installModpack, ensureVanillaVersion } = require("./modpack");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
-const { checkServicesStatus } = require("./servicesStatus");
+const { checkServicesStatus, measureConnection } = require("./servicesStatus");
 const javaManager = require("./javaManager");
 const diagnostics = require("./diagnostics");
 const discordPresence = require("./discordPresence");
@@ -1025,6 +1025,31 @@ ipcMain.handle("status:getServicesStatus", async (_event, force) => {
   const groups = await checkServicesStatus();
   statusCache = { fetchedAt: now, groups };
   return statusCache;
+});
+
+// Test de debit : une seule mesure a la fois, gardee 5 min. La progression est
+// envoyee a la fenetre qui l'a demandee (barre dans le panneau).
+const CONNECTION_CACHE_MS = 5 * 60_000;
+let connectionCache = null;
+let connectionRun = null;
+
+ipcMain.handle("status:getConnection", (event, force) => {
+  if (!force && connectionCache && Date.now() - connectionCache.fetchedAt < CONNECTION_CACHE_MS) {
+    return connectionCache;
+  }
+  if (connectionRun) return connectionRun;
+  connectionRun = measureConnection((progress) => {
+    if (!event.sender.isDestroyed()) event.sender.send("status:connectionProgress", progress);
+  })
+    .then((result) => {
+      connectionCache = result;
+      return result;
+    })
+    .catch((error) => ({ error: error.message }))
+    .finally(() => {
+      connectionRun = null;
+    });
+  return connectionRun;
 });
 
 let gameLaunchInProgress = false;

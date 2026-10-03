@@ -846,6 +846,50 @@ const MC_STATUS_CHEV_SVG = '<svg class="mc-status-chev" width="14" height="14" v
 const mcStatusCollapsed = new Set();
 let mcStatusData = null; // derniere reponse { fetchedAt, groups }
 let mcStatusLoading = false;
+// Test de debit de CE PC : state "idle" | "running" | "done" | "error" (voir main.js status:getConnection).
+let mcConnection = { state: "idle", phase: "", percent: 0, result: null };
+
+function mcConnectionProgressText() {
+  if (mcConnection.phase === "download") return t("serviceStatus.connDownloading", { p: mcConnection.percent });
+  if (mcConnection.phase === "upload") return t("serviceStatus.connUploading", { p: mcConnection.percent });
+  return t("serviceStatus.connPinging");
+}
+
+function mcConnectionHtml() {
+  const rows = (items) =>
+    `<div class="mc-status-rows">${items
+      .map(([label, value]) => `<div class="mc-status-row"><span class="mc-status-row-label">${escapeHtml(label)}</span><span class="mc-status-row-latency">${escapeHtml(value)}</span></div>`)
+      .join("")}</div>`;
+  let body;
+  if (mcConnection.state === "running") {
+    body = `<div class="mc-status-rows"><div class="mc-status-row"><span class="mc-status-row-label">${escapeHtml(mcConnectionProgressText())}</span></div>
+      <div style="height:4px;margin:6px 12px 10px;border-radius:2px;background:var(--surface-2);overflow:hidden"><div style="width:${mcConnection.percent}%;height:100%;background:var(--accent)"></div></div></div>`;
+  } else if (mcConnection.state === "done") {
+    const r = mcConnection.result;
+    body = rows([
+      [t("serviceStatus.connPing"), r.pingMs == null ? "—" : `${r.pingMs} ms`],
+      [t("serviceStatus.connDown"), r.downloadMbps == null ? "—" : `${r.downloadMbps} Mb/s`],
+      [t("serviceStatus.connUp"), r.uploadMbps == null ? "—" : `${r.uploadMbps} Mb/s`],
+    ]);
+  } else if (mcConnection.state === "error") {
+    body = `<div class="mc-status-rows"><div class="mc-status-row"><span class="mc-status-row-label">${escapeHtml(t("serviceStatus.connError"))}</span></div></div>`;
+  } else {
+    body = `<div class="mc-status-rows"><div class="mc-status-row"><span class="mc-status-row-label">${escapeHtml(t("serviceStatus.connIdle"))}</span></div></div>`;
+  }
+  return `
+    <section class="mc-status-group">
+      <div class="mc-status-group-head" style="cursor: default;">
+        <span class="mc-status-tile" style="background: #9184d9;">Ta</span>
+        <span class="mc-status-group-name">${escapeHtml(t("serviceStatus.connTitle"))}</span>
+      </div>
+      ${body}
+    </section>`;
+}
+
+window.mchub.onConnectionProgress((progress) => {
+  mcConnection = { state: "running", phase: progress.phase, percent: progress.percent, result: null };
+  if (mcStatusData) renderMcStatus(mcStatusData);
+});
 
 function mcStatusLabel(state) {
   return t(`mcStatus.${state}`);
@@ -921,7 +965,7 @@ function renderMcStatus(data) {
       </div>
       <button class="mc-status-refresh" id="mc-status-refresh" type="button" title="${t("serviceStatus.refresh")}" aria-label="${t("serviceStatus.refresh")}">${MC_STATUS_REFRESH_SVG}</button>
     </div>
-    <div class="mc-status-groups">${groupsHtml}</div>
+    <div class="mc-status-groups">${mcConnectionHtml()}${groupsHtml}</div>
     <div class="mc-status-foot"><span>${mcStatusCheckedText(fetchedAt)}</span><span>${t("serviceStatus.measured")}</span></div>`;
 
   mcStatusList.querySelectorAll(".mc-status-group-head").forEach((button) => {
@@ -943,6 +987,11 @@ async function loadMcStatus(force = false) {
   else mcStatusList.innerHTML = `<div class="mc-status-row" style="padding: 14px;">${t("common.checking")}</div>`;
   try {
     renderMcStatus(await window.mchub.getServicesStatus(force));
+    mcConnection = { state: "running", phase: "ping", percent: 0, result: null };
+    renderMcStatus(mcStatusData);
+    const connection = await window.mchub.getConnection(force);
+    mcConnection = connection.error ? { state: "error", phase: "", percent: 0, result: null } : { state: "done", phase: "", percent: 0, result: connection };
+    renderMcStatus(mcStatusData);
   } finally {
     mcStatusLoading = false;
   }
@@ -1381,18 +1430,18 @@ function instanceCardHtml(server) {
 
   return `
     <div class="instance-card" data-slug="${escapeHtml(server.slug)}">
-      <div class="instance-card-banner">
-        <span class="instance-card-icon">${serverIconInner(server)}</span>
-        <span class="instance-badge ${status}">${t(`myInstances.${badgeKey}`)}</span>
-      </div>
+      <span class="instance-card-icon">${serverIconInner(server)}</span>
       <div class="instance-card-body">
-        <h3>${escapeHtml(server.name)}</h3>
+        <div class="instance-card-title">
+          <h3>${escapeHtml(server.name)}</h3>
+          <span class="instance-badge ${status}">${t(`myInstances.${badgeKey}`)}</span>
+        </div>
         <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)} · ${escapeHtml(server.ip)}</p>
         ${status === "public" ? "" : `<div class="instance-card-status">${statusLine}</div>`}
-        <div class="instance-card-actions">
-          ${status !== "paused" ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>` : ""}
-          <button type="button" class="btn-secondary my-instance-manage" data-id="${escapeHtml(server.id)}">${t("myInstances.manage")} ↗</button>
-        </div>
+      </div>
+      <div class="instance-card-actions">
+        ${status !== "paused" ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>` : ""}
+        <button type="button" class="btn-secondary my-instance-manage" data-id="${escapeHtml(server.id)}">${t("myInstances.manage")} ↗</button>
       </div>
     </div>`;
 }
@@ -1407,17 +1456,17 @@ function instanceCardHtml(server) {
 function joinedCardHtml(server) {
   return `
     <div class="instance-card" data-slug="${escapeHtml(server.slug)}">
-      <div class="instance-card-banner">
-        <span class="instance-card-icon">${serverIconInner(server)}</span>
-        <span class="instance-badge private">${t("myInstances.badgeJoined")}</span>
-      </div>
+      <span class="instance-card-icon">${serverIconInner(server)}</span>
       <div class="instance-card-body">
-        <h3>${escapeHtml(server.name)}</h3>
-        <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)}</p>
-        <div class="instance-card-actions">
-          <button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>
-          <button type="button" class="btn-secondary my-instance-leave" data-slug="${escapeHtml(server.slug)}">${t("myInstances.leave")}</button>
+        <div class="instance-card-title">
+          <h3>${escapeHtml(server.name)}</h3>
+          <span class="instance-badge private">${t("myInstances.badgeJoined")}</span>
         </div>
+        <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)}</p>
+      </div>
+      <div class="instance-card-actions">
+        <button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>
+        <button type="button" class="btn-secondary my-instance-leave" data-slug="${escapeHtml(server.slug)}">${t("myInstances.leave")}</button>
       </div>
     </div>`;
 }

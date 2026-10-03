@@ -101,4 +101,93 @@ async function checkServicesStatus() {
   );
 }
 
-module.exports = { checkServicesStatus };
+// Test de connexion de CE PC (ping, telechargement, envoi). Lance seulement
+// a l'ouverture du panneau ou sur "Actualiser", jamais en arriere-plan
+// permanent. Donnees envoyees et recues volontairement grosses (100 Mo en
+// reception, 25 Mo en envoi) pour mesurer un debit reel ; les octets sont des
+// zeros, aucune donnee personnelle n'est transmise.
+const SPEED_HOST = "https://speed.cloudflare.com";
+const PING_SAMPLES = 3;
+const DOWNLOAD_BYTES = 100_000_000;
+const UPLOAD_BYTES = 25_000_000;
+const CONNECTION_STEP_TIMEOUT_MS = 90_000;
+
+function timedSignal() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONNECTION_STEP_TIMEOUT_MS);
+  return { signal: controller.signal, done: () => clearTimeout(timeout) };
+}
+
+async function measurePing() {
+  const samples = [];
+  for (let i = 0; i < PING_SAMPLES; i += 1) {
+    const { signal, done } = timedSignal();
+    const startedAt = performance.now();
+    try {
+      await fetch(`${SPEED_HOST}/__down?bytes=0`, { headers: { "User-Agent": USER_AGENT }, signal, cache: "no-store" });
+      samples.push(performance.now() - startedAt);
+    } finally {
+      done();
+    }
+  }
+  samples.sort((a, b) => a - b);
+  return Math.round(samples[Math.floor(samples.length / 2)]);
+}
+
+async function measureDownload(onProgress) {
+  const { signal, done } = timedSignal();
+  try {
+    const res = await fetch(`${SPEED_HOST}/__down?bytes=${DOWNLOAD_BYTES}`, {
+      headers: { "User-Agent": USER_AGENT },
+      signal,
+      cache: "no-store",
+    });
+    const reader = res.body.getReader();
+    let received = 0;
+    const startedAt = performance.now();
+    for (;;) {
+      const { done: finished, value } = await reader.read();
+      if (finished) break;
+      received += value.length;
+      onProgress(Math.min(100, Math.round((received / DOWNLOAD_BYTES) * 100)));
+    }
+    const seconds = (performance.now() - startedAt) / 1000;
+    return Math.round(((received * 8) / seconds / 1_000_000) * 10) / 10;
+  } finally {
+    done();
+  }
+}
+
+async function measureUpload() {
+  const { signal, done } = timedSignal();
+  try {
+    const body = Buffer.alloc(UPLOAD_BYTES);
+    const startedAt = performance.now();
+    await fetch(`${SPEED_HOST}/__up`, {
+      method: "POST",
+      headers: { "User-Agent": USER_AGENT, "Content-Type": "application/octet-stream" },
+      body,
+      signal,
+      cache: "no-store",
+    });
+    const seconds = (performance.now() - startedAt) / 1000;
+    return Math.round(((UPLOAD_BYTES * 8) / seconds / 1_000_000) * 10) / 10;
+  } finally {
+    done();
+  }
+}
+
+// { pingMs, downloadMbps, uploadMbps, fetchedAt } ; une etape en echec donne null.
+// onProgress({ phase: "ping" | "download" | "upload", percent }) pour la barre.
+async function measureConnection(onProgress) {
+  onProgress({ phase: "ping", percent: 0 });
+  const pingMs = await measurePing().catch(() => null);
+  onProgress({ phase: "download", percent: 0 });
+  const downloadMbps = await measureDownload((percent) => onProgress({ phase: "download", percent })).catch(() => null);
+  onProgress({ phase: "upload", percent: 0 });
+  const uploadMbps = await measureUpload().catch(() => null);
+  onProgress({ phase: "upload", percent: 100 });
+  return { pingMs, downloadMbps, uploadMbps, fetchedAt: Date.now() };
+}
+
+module.exports = { checkServicesStatus, measureConnection };
