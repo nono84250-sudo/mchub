@@ -45,6 +45,9 @@ async function siteJson(config, pathname, init = {}) {
   const res = await fetch(`${config.siteUrl}${pathname}`, {
     ...init,
     headers: {
+      // Identite du joueur (X-Launcher-Session ou X-Minecraft-Token) : exigee par
+      // les routes CurseForge du site depuis le point 3 de la securite.
+      ...config.headers,
       ...init.headers,
       Authorization: `Bearer ${config.apiKey}`,
       ...(init.body ? { "Content-Type": "application/json" } : {}),

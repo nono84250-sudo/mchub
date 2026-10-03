@@ -76,15 +76,29 @@ const REQUEST_TIMEOUT_MS = 8000;
 // alors plus transmis a chaque requete. Tant qu'il n'y en a pas (premier appel,
 // expire, echange en echec), on envoie le jeton Mojang comme avant.
 // En memoire seulement : un redemarrage refait l'echange.
+// Le jeton de session vaut 15 min cote site. Il est renouvele en silence 5 min
+// avant son expiration (donc vers la 10e minute), et reste utilisable jusqu'a
+// sa vraie fin ; le jeton Mojang n'est envoye qu'en repli (pas encore d'echange
+// reussi, ou session expiree).
 let launcherSession = null; // { uuid, token, expiresAt (ms) }
 let launcherSessionRequest = null;
-const LAUNCHER_SESSION_MARGIN_MS = 5 * 60_000;
+let launcherSessionTimer = null;
+const LAUNCHER_SESSION_RENEW_BEFORE_MS = 5 * 60_000;
+const LAUNCHER_SESSION_USABLE_MARGIN_MS = 30_000;
 
 function usableLauncherSessionToken() {
   if (!currentSession || !launcherSession) return null;
   if (launcherSession.uuid !== currentSession.profile.id) return null;
-  if (launcherSession.expiresAt - LAUNCHER_SESSION_MARGIN_MS <= Date.now()) return null;
+  if (launcherSession.expiresAt - LAUNCHER_SESSION_USABLE_MARGIN_MS <= Date.now()) return null;
   return launcherSession.token;
+}
+
+function scheduleLauncherSessionRenewal() {
+  clearTimeout(launcherSessionTimer);
+  launcherSessionTimer = null;
+  if (!launcherSession) return;
+  const delay = Math.max(0, launcherSession.expiresAt - LAUNCHER_SESSION_RENEW_BEFORE_MS - Date.now());
+  launcherSessionTimer = setTimeout(() => requestLauncherSession(), delay);
 }
 
 function requestLauncherSession() {
@@ -105,13 +119,35 @@ function requestLauncherSession() {
       });
       if (!res.ok) return;
       const data = await res.json();
+      // Joueur deconnecte pendant l'echange : on ne garde pas sa session.
+      if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
+      scheduleLauncherSessionRenewal();
     } catch {
       // Sans importance : les requetes continuent avec le jeton Mojang.
     } finally {
       launcherSessionRequest = null;
     }
   })();
+}
+
+// Deconnexion : le site refuse les jetons de session de ce joueur (revocation).
+// Echec silencieux : le jeton expire de toute facon dans 15 min au plus.
+async function revokeLauncherSession() {
+  const session = launcherSession;
+  clearTimeout(launcherSessionTimer);
+  launcherSessionTimer = null;
+  launcherSession = null;
+  if (!session || session.expiresAt <= Date.now()) return;
+  try {
+    await fetch(`${SITE_URL}/api/launcher/session/revoke`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": session.token },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    // Hors ligne : rien a faire, le jeton expire seul.
+  }
 }
 
 function launcherAuthHeaders() {
@@ -744,7 +780,7 @@ ipcMain.handle("auth:tryRestore", async () => {
   }
 });
 
-ipcMain.handle("auth:signOut", () => {
+ipcMain.handle("auth:signOut", async () => {
   // Ne retire pas le compte de la liste mémorisée (juste désactive la
   // reprise automatique) : on peut y rebasculer rapidement depuis la page
   // de gestion du compte sans se reconnecter à Microsoft.
@@ -753,8 +789,8 @@ ipcMain.handle("auth:signOut", () => {
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
+  await revokeLauncherSession();
   currentSession = null;
-  launcherSession = null;
   return { ok: true };
 });
 
@@ -790,11 +826,11 @@ ipcMain.handle("account:switch", async (_event, id) => {
   }
 });
 
-ipcMain.handle("account:remove", (_event, id) => {
+ipcMain.handle("account:remove", async (_event, id) => {
   sessionStore.forgetAccount(id);
   if (currentSession?.profile?.id === id) {
+    await revokeLauncherSession();
     currentSession = null;
-    launcherSession = null;
   }
   return { ok: true };
 });

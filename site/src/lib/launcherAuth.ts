@@ -1,8 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, readLauncherSession } from "./launcherSession";
+import { db } from "@/prisma/db";
+import { isSessionRevoked, LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, readLauncherSession } from "./launcherSession";
 
-export { createLauncherSession, LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, readLauncherSession } from "./launcherSession";
+export { createLauncherSession, LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid } from "./launcherSession";
 
 // Comparaison en temps constant du secret partage avec le launcher — une
 // comparaison de chaine standard (`===`) fuit un signal temporel exploitable
@@ -95,10 +96,28 @@ export async function verifyMinecraftIdentity(token: string | null, claimedUuid:
 // le jeton Mojang : un jeton de session expire ou falsifie donne donc 401, meme
 // si un jeton Mojang valide accompagne la requete). Sinon, comportement d'avant
 // (X-Minecraft-Token verifie chez Mojang), pour que les launchers 0.3.2 marchent encore.
+// Uuid du joueur d'un jeton de session : signature et expiration (15 min) OK,
+// et jeton non revoque (User.sessionsValidAfter, voir route session/revoke).
+export async function sessionIdentity(token: string): Promise<string | null> {
+  const claims = readLauncherSession(token);
+  if (!claims) return null;
+  const user = await db.orm.public.User.select("sessionsValidAfter").where({ minecraftUuid: claims.uuid }).first();
+  if (isSessionRevoked(claims.issuedAt, user?.sessionsValidAfter)) return null;
+  return claims.uuid;
+}
+
+// Deconnexion : refuse desormais tous les jetons de session emis jusqu'a maintenant
+// pour ce joueur. Renvoie false si aucun compte site ne porte cet UUID (le launcher
+// n'en cree pas : voir le rapport, les jetons de ces joueurs expirent seuls en 15 min).
+export async function revokeLauncherSessions(uuid: string): Promise<boolean> {
+  const updated = await db.orm.public.User.where({ minecraftUuid: uuid }).update({ sessionsValidAfter: new Date().toISOString() });
+  return !!updated;
+}
+
 export async function verifyLauncherIdentity(request: Request, claimedUuid: string | null): Promise<IdentityCheck> {
   const session = request.headers.get(LAUNCHER_SESSION_HEADER);
   if (session !== null) {
-    const uuid = readLauncherSession(session);
+    const uuid = await sessionIdentity(session);
     if (!uuid || !claimedUuid) return "refused";
     return uuid === normalizeMinecraftUuid(claimedUuid) ? "verified" : "refused";
   }
@@ -110,7 +129,7 @@ export async function verifyLauncherIdentity(request: Request, claimedUuid: stri
 // l'UUID verifie, ou null.
 export async function launcherIdentityUuid(request: Request): Promise<string | null> {
   const session = request.headers.get(LAUNCHER_SESSION_HEADER);
-  if (session !== null) return readLauncherSession(session);
+  if (session !== null) return sessionIdentity(session);
   const token = request.headers.get("x-minecraft-token");
   if (!token) return null;
   const result = await lookupMojangProfile(token);

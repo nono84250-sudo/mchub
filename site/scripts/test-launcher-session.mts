@@ -3,10 +3,16 @@
 // Le secret est genere en memoire pour le test, jamais lu depuis .env.
 import { createHmac, randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
-import { createLauncherSession, readLauncherSession } from "../src/lib/launcherSession.ts";
+import {
+  createLauncherSession,
+  isSessionRevoked,
+  LAUNCHER_SESSION_TTL_MS,
+  readLauncherSession,
+} from "../src/lib/launcherSession.ts";
 
 const UUID = "0123456789abcdef0123456789abcdef";
-const NOW = Math.floor(Date.now() / 1000);
+const NOW = Date.UTC(2026, 9, 3, 12, 0, 0);
+const MIN = 60_000;
 let passed = 0;
 function check(name: string, fn: () => void) {
   fn();
@@ -19,27 +25,37 @@ process.env.LAUNCHER_SESSION_SECRET = randomBytes(48).toString("base64url");
 const session = createLauncherSession(UUID, NOW)!;
 const [payloadB64, sig] = session.token.split(".");
 
-check("jeton valide -> uuid", () => assert.equal(readLauncherSession(session.token, NOW), UUID));
+check("jeton valide -> uuid et date d'emission", () => {
+  assert.deepEqual(readLauncherSession(session.token, NOW), { uuid: UUID, issuedAt: NOW });
+});
 check("uuid avec tirets normalise a la creation", () => {
   const s = createLauncherSession("01234567-89ab-cdef-0123-456789abcdef", NOW)!;
-  assert.equal(readLauncherSession(s.token, NOW), UUID);
+  assert.equal(readLauncherSession(s.token, NOW)?.uuid, UUID);
 });
-check("expiresAt = creation + 24 h (en ms)", () => assert.equal(session.expiresAt, (NOW + 86400) * 1000));
-check("valide juste avant l'expiration", () => assert.equal(readLauncherSession(session.token, NOW + 86399), UUID));
-check("expire a exp (borne exclue) -> null", () => assert.equal(readLauncherSession(session.token, NOW + 86400), null));
-check("expire depuis longtemps -> null", () => assert.equal(readLauncherSession(session.token, NOW + 90000), null));
+check("duree de vie = 15 minutes", () => {
+  assert.equal(LAUNCHER_SESSION_TTL_MS, 15 * MIN);
+  assert.equal(session.expiresAt, NOW + 15 * MIN);
+});
+check("expiration a 15 min : encore valide 1 ms avant", () => {
+  assert.equal(readLauncherSession(session.token, NOW + 15 * MIN - 1)?.uuid, UUID);
+});
+check("expiration a 15 min : refuse a exactement 15 min (borne exclue)", () => {
+  assert.equal(readLauncherSession(session.token, NOW + 15 * MIN), null);
+});
+check("expire depuis longtemps (24 h apres) -> null", () => {
+  assert.equal(readLauncherSession(session.token, NOW + 24 * 60 * MIN), null);
+});
 check("jeton fabrique deja expire -> null", () => {
-  const old = createLauncherSession(UUID, NOW - 90000)!;
+  const old = createLauncherSession(UUID, NOW - 16 * MIN)!;
   assert.equal(readLauncherSession(old.token, NOW), null);
 });
-
 check("payload modifie (autre uuid) -> null", () => {
-  const forged = Buffer.from(JSON.stringify({ u: "ffffffffffffffffffffffffffffffff", exp: NOW + 86400 })).toString("base64url");
+  const forged = Buffer.from(JSON.stringify({ u: "ffffffffffffffffffffffffffffffff", iat: NOW, exp: NOW + 15 * MIN })).toString("base64url");
   assert.equal(readLauncherSession(`${forged}.${sig}`, NOW), null);
 });
 check("payload modifie (exp prolongee) -> null", () => {
-  const forged = Buffer.from(JSON.stringify({ u: UUID, exp: NOW + 10 * 86400 })).toString("base64url");
-  assert.equal(readLauncherSession(`${forged}.${sig}`, NOW), null);
+  const forged = Buffer.from(JSON.stringify({ u: UUID, iat: NOW, exp: NOW + 10 * 24 * 60 * MIN })).toString("base64url");
+  assert.equal(readLauncherSession(`${forged}.${sig}`, NOW + 20 * MIN), null);
 });
 check("signature modifiee (1 caractere) -> null", () => {
   const flipped = sig.slice(0, -1) + (sig.at(-1) === "A" ? "B" : "A");
@@ -60,7 +76,7 @@ check("formats invalides -> null", () => {
     assert.equal(readLauncherSession(bad, NOW), null, `attendu null pour ${JSON.stringify(bad)}`);
   }
 });
-check("payload signe mais non conforme (u/exp invalides, JSON non objet) -> null", () => {
+check("payload signe mais non conforme -> null (controle positif inclus)", () => {
   // Signature VALIDE (HMAC avec le secret courant) : seul le contenu est en cause.
   const secret = process.env.LAUNCHER_SESSION_SECRET!;
   const signed = (raw: string) => {
@@ -68,18 +84,21 @@ check("payload signe mais non conforme (u/exp invalides, JSON non objet) -> null
     return `${p}.${createHmac("sha256", secret).update(p).digest("base64url")}`;
   };
   for (const raw of [
-    JSON.stringify({ u: 42, exp: NOW + 100 }),
-    JSON.stringify({ u: "XYZ", exp: NOW + 100 }),
-    JSON.stringify({ u: UUID }),
-    JSON.stringify({ u: UUID, exp: "demain" }),
+    JSON.stringify({ u: 42, iat: NOW, exp: NOW + MIN }),
+    JSON.stringify({ u: "XYZ", iat: NOW, exp: NOW + MIN }),
+    JSON.stringify({ u: UUID, exp: NOW + MIN }),
+    JSON.stringify({ u: UUID, iat: NOW }),
+    JSON.stringify({ u: UUID, iat: NOW, exp: "demain" }),
+    JSON.stringify({ u: UUID, iat: NOW + 5 * MIN, exp: NOW + MIN }),
+    // Ancien format (24 h, sans iat) : refuse, il n'a jamais ete distribue.
+    JSON.stringify({ u: UUID, exp: Math.floor(NOW / 1000) + 86400 }),
     "null",
     "[1,2]",
     "pas du json",
   ]) {
     assert.equal(readLauncherSession(signed(raw), NOW), null, `attendu null pour ${raw}`);
   }
-  // Controle positif : meme fabrication avec un contenu correct -> accepte.
-  assert.equal(readLauncherSession(signed(JSON.stringify({ u: UUID, exp: NOW + 100 })), NOW), UUID);
+  assert.equal(readLauncherSession(signed(JSON.stringify({ u: UUID, iat: NOW, exp: NOW + MIN })), NOW)?.uuid, UUID);
 });
 check("sans secret -> creation et lecture refusees", () => {
   const saved = process.env.LAUNCHER_SESSION_SECRET;
@@ -99,6 +118,27 @@ check("secret trop court (< 32) -> refuse", () => {
   } finally {
     process.env.LAUNCHER_SESSION_SECRET = saved;
   }
+});
+
+// Revocation (User.sessionsValidAfter) : decision pure, la lecture en base est dans launcherAuth.ts.
+check("jamais revoque (sessionsValidAfter null) -> pas revoque", () => {
+  assert.equal(isSessionRevoked(NOW, null), false);
+  assert.equal(isSessionRevoked(NOW, undefined), false);
+});
+check("jeton emis AVANT sessionsValidAfter -> revoque (refuse)", () => {
+  const revokedAt = new Date(NOW + 1000).toISOString();
+  assert.equal(isSessionRevoked(NOW, revokedAt), true);
+  assert.equal(readLauncherSession(session.token, NOW) !== null && isSessionRevoked(NOW, revokedAt), true);
+});
+check("jeton emis APRES sessionsValidAfter (reconnexion) -> accepte", () => {
+  const revokedAt = new Date(NOW - 1000).toISOString();
+  assert.equal(isSessionRevoked(NOW, revokedAt), false);
+});
+check("jeton emis a la milliseconde de la revocation -> accepte", () => {
+  assert.equal(isSessionRevoked(NOW, new Date(NOW).toISOString()), false);
+});
+check("sessionsValidAfter illisible -> ignore (pas de revocation silencieuse)", () => {
+  assert.equal(isSessionRevoked(NOW, "pas une date"), false);
 });
 
 console.log(`\n${passed} tests passes`);

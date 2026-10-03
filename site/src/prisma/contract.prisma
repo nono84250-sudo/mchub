@@ -12,6 +12,10 @@ model User {
   minecraftUuid     String? @unique
   minecraftUsername String?
 
+  // Revocation des jetons de session du launcher (voir lib/launcherSession.ts) :
+  // un jeton emis avant cette date est refuse. Rempli a la deconnexion du launcher.
+  sessionsValidAfter TimestamptzString?
+
   createdAt TimestamptzString @default(now())
   updatedAt temporal.updatedAtString()
 }

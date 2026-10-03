@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
+import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getFilesInfo } from "@/lib/curseforge";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
@@ -17,6 +17,10 @@ export async function POST(request: Request) {
   // Cette route consomme le quota CurseForge de NOTRE cle : frein par adresse.
   const limited = rateLimitResponse(request, "launcher-curseforge-files", 60);
   if (limited) return limited;
+  // Point 3 : le quota reserve a un joueur identifie (session ou jeton Mojang). La cle seule ne suffit plus.
+  if (!(await launcherIdentityUuid(request))) {
+    return NextResponse.json({ error: "Identité non vérifiée" }, { status: 401 });
+  }
 
   const body = await request.json().catch(() => null);
   const fileIds: unknown = body?.fileIds;

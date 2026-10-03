@@ -833,6 +833,13 @@
                   "kind": "scalar"
                 }
               },
+              "sessionsValidAfter": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "kind": "scalar"
+                }
+              },
               "updatedAt": {
                 "nullable": false,
                 "type": {
@@ -874,6 +881,9 @@
                 },
                 "name": {
                   "column": "name"
+                },
+                "sessionsValidAfter": {
+                  "column": "sessionsValidAfter"
                 },
                 "updatedAt": {
                   "column": "updatedAt"
@@ -1471,6 +1481,11 @@
                   "nativeType": "text",
                   "nullable": false
                 },
+                "sessionsValidAfter": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true
+                },
                 "updatedAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
@@ -1546,7 +1561,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "355421a7d9a06bea3982b19602853a3d71789df977dfcc63a1441d0ba938165c"
+    "storageHash": "104989e3d975082814f69d570c187d855fe7e225a536b6f55ba0dc1ccc1e2cb6"
   },
   "execution": {
     "executionHash": "a31fabcd35c8c4266e1d069b68792242ae3ee8aec95b079d7b34f161426e12f4",

@@ -3,7 +3,7 @@ import type { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { db } from "@/prisma/db";
 import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
-import { LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, readLauncherSession, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, sessionIdentity, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Etiquette du cache des donnees publiques des serveurs : les actions du site
@@ -203,7 +203,7 @@ export async function canSeeServer(
   if (code && server.inviteCode && sameCode(code, server.inviteCode)) return true;
   // Jeton de session present : il decide seul (proprietaire = UUID du jeton).
   if (proof.launcherSession != null) {
-    const uuid = readLauncherSession(proof.launcherSession);
+    const uuid = await sessionIdentity(proof.launcherSession);
     const owner = server.owner?.minecraftUuid;
     return !!uuid && !!owner && uuid === normalizeMinecraftUuid(owner);
   }
