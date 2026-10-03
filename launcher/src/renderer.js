@@ -705,6 +705,10 @@ function skinUrlFor(profile) {
 }
 
 function renderAccountHeader(profile, { rememberFailed } = {}) {
+  if (currentProfile && currentProfile.id !== profile.id) {
+    myInstancesServers = [];
+    myJoinedServers = [];
+  }
   currentProfile = profile;
   const skinUrl = skinUrlFor(profile);
 
@@ -770,6 +774,8 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
     }
     signedIn = false;
     currentProfile = null;
+    myInstancesServers = [];
+    myJoinedServers = [];
     appEl.hidden = true;
     gateEl.hidden = false;
     gateMessageEl.textContent = "";
@@ -1331,7 +1337,7 @@ async function renderRecentList() {
 // openDetail : contrairement a la liste publique, ces serveurs peuvent etre
 // en pause (donc absents de /api/public/servers/[slug], qui 404 dessus).
 // La configuration (republier, changer la visibilite...) se fait toujours
-// sur le site — voir la note "manageNote" — jamais depuis une carte ici.
+// sur le site — jamais depuis une carte ici.
 let myInstancesServers = [];
 let myInstancesFilter = "all";
 // Pour le bouton "copier le lien d'invitation" (voir instanceStatusLineHtml) —
@@ -1344,12 +1350,6 @@ window.mchub.getSiteUrl().then((url) => { siteUrl = url; });
 // une liste independante de myInstancesServers (les serveurs POSSEDES),
 // jamais fusionnee avec elle ni comptee dans le filtre "Tout".
 let myJoinedServers = [];
-// Erreur du formulaire "Rejoindre via un code" (code invalide, deja rejoint
-// sans fiche, etc.) — affichee sous le formulaire jusqu'au prochain essai.
-let joinFormError = null;
-// Desactive le bouton "Ajouter" pendant la resolution du code, pour eviter un
-// double envoi si le joueur reclique avant la reponse du site.
-let joinFormBusy = false;
 
 function instanceStatus(server) {
   if (!server.published) return "paused";
@@ -1367,7 +1367,7 @@ function instanceStatusLineHtml(server, status) {
   if (status === "paused") return `<span class="status-dot"></span>${t("myInstances.hiddenNote")}`;
   if (status !== "private") return playersLabel(server);
   const label = t("myInstances.inviteCodeLabel", { code: `<code>${escapeHtml(server.inviteCode || "")}</code>` });
-  return `${label} <button type="button" class="icon-btn copy-invite-link" data-code="${escapeHtml(server.inviteCode || "")}" title="${t("myInstances.copyInviteLink")}">
+  return `${label} <button type="button" class="icon-btn copy-invite-link" data-code="${escapeHtml(server.inviteCode || "")}" title="${t("myInstances.copyInviteLink")}" aria-label="${t("myInstances.copyInviteLink")}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </svg>
@@ -1388,9 +1388,9 @@ function instanceCardHtml(server) {
       <div class="instance-card-body">
         <h3>${escapeHtml(server.name)}</h3>
         <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)} · ${escapeHtml(server.ip)}</p>
-        <div class="instance-card-status">${statusLine}</div>
+        ${status === "public" ? "" : `<div class="instance-card-status">${statusLine}</div>`}
         <div class="instance-card-actions">
-          ${status !== "paused" ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("serverDetail.joinBtn")}</button>` : ""}
+          ${status !== "paused" ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>` : ""}
           <button type="button" class="btn-secondary my-instance-manage" data-id="${escapeHtml(server.id)}">${t("myInstances.manage")} ↗</button>
         </div>
       </div>
@@ -1414,9 +1414,8 @@ function joinedCardHtml(server) {
       <div class="instance-card-body">
         <h3>${escapeHtml(server.name)}</h3>
         <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)}</p>
-        <div class="instance-card-status">${playersLabel(server)}</div>
         <div class="instance-card-actions">
-          <button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("serverDetail.joinBtn")}</button>
+          <button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>
           <button type="button" class="btn-secondary my-instance-leave" data-slug="${escapeHtml(server.slug)}">${t("myInstances.leave")}</button>
         </div>
       </div>
@@ -1440,24 +1439,83 @@ function instancesToolbarHtml(servers, joinedCount) {
   return `
     <div class="instances-toolbar">
       <div class="instances-filters">${chips}</div>
-      <span class="instances-note">${t("myInstances.manageNote")}</span>
     </div>`;
 }
 
-// Formulaire "Rejoindre via un code" — affiche uniquement sur l'onglet
-// "Rejoint" (au-dessus de la liste, meme quand elle n'est pas vide, pour en
-// ajouter d'autres ensuite). Resout le code cote site (voir joinServerByCode
-// dans main.js) puis l'ajoute aux serveurs rejoints localement.
-function joinByCodeFormHtml() {
-  return `
-    <div class="join-by-code">
-      <label for="join-code-input" class="field-label">${t("myInstances.joinByCodeLabel")}</label>
-      <div class="join-by-code-row">
-        <input type="text" id="join-code-input" class="settings-input" placeholder="${t("myInstances.joinByCodePlaceholder")}" ${joinFormBusy ? "disabled" : ""} />
-        <button type="button" class="join-btn" id="join-code-submit" ${joinFormBusy ? "disabled" : ""}>${t("myInstances.joinByCodeSubmit")}</button>
-      </div>
-      ${joinFormError ? `<p class="join-note" style="color: var(--danger);">${escapeHtml(joinFormError)}</p>` : ""}
-    </div>`;
+// Petite fenetre "Rejoindre" (reutilise le modal de confirmation) : demande le
+// code, le resout cote site (joinServerByCode dans main.js), puis l'ajoute aux
+// serveurs rejoints. Reste ouverte avec le message d'erreur tant que le code
+// est refuse ; annuler ferme sans rien faire.
+function askJoinCode(errorMessage) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("modal-overlay");
+    const confirmBtn = document.getElementById("modal-confirm");
+    const cancelBtn = document.getElementById("modal-cancel");
+    const checkboxRow = document.getElementById("modal-checkbox-row");
+    const bodyEl = document.getElementById("modal-body");
+
+    document.getElementById("modal-title").textContent = t("myInstances.joinByCodeLabel");
+    bodyEl.textContent = errorMessage || t("myInstances.joinByCodeHelp");
+    bodyEl.style.color = errorMessage ? "var(--danger)" : "";
+    checkboxRow.hidden = true;
+    confirmBtn.textContent = t("myInstances.joinByCodeSubmit");
+    cancelBtn.hidden = false;
+    cancelBtn.textContent = t("common.cancel");
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "settings-input";
+    input.placeholder = t("myInstances.joinByCodePlaceholder");
+    input.style.width = "100%";
+    input.style.marginTop = "12px";
+    bodyEl.after(input);
+    overlay.hidden = false;
+    input.focus();
+
+    const cleanup = () => {
+      overlay.hidden = true;
+      bodyEl.style.color = "";
+      input.remove();
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      input.removeEventListener("keydown", onKey);
+    };
+    const onConfirm = () => {
+      const code = input.value.trim();
+      if (!code) return;
+      cleanup();
+      resolve(code);
+    };
+    const onCancel = () => {
+      cleanup();
+      resolve(null);
+    };
+    const onKey = (event) => {
+      if (event.key === "Enter") onConfirm();
+    };
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+    input.addEventListener("keydown", onKey);
+  });
+}
+
+// Boucle "Rejoindre" : redemande le code tant que le site le refuse, avec le
+// message d'erreur dans la meme fenetre. Un succes met a jour l'onglet Rejoint.
+async function joinByCodeFlow() {
+  let error = null;
+  for (;;) {
+    const code = await askJoinCode(error);
+    if (code === null) return;
+    const result = await window.mchub.joinServerByCode(code);
+    if (result.ok) {
+      const listed = await window.mchub.listJoinedServers();
+      myJoinedServers = listed.ok ? listed.servers : myJoinedServers;
+      myInstancesFilter = "joined";
+      renderMyInstancesGrid();
+      return;
+    }
+    error = result.error;
+  }
 }
 
 function renderMyInstancesGrid() {
@@ -1474,10 +1532,9 @@ function renderMyInstancesGrid() {
         <h2>${t("nav.myInstances")}</h2>
         <p class="join-note">${t("myInstances.subtitle")}</p>
       </div>
-      <button type="button" class="btn-secondary" id="my-instances-new">+ ${t("myInstances.newInstance")}</button>
+      <button type="button" class="btn-secondary" id="my-instances-join">${t("myInstances.joinButton")}</button>
     </div>
     ${instancesToolbarHtml(myInstancesServers, myJoinedServers.length)}
-    ${myInstancesFilter === "joined" ? joinByCodeFormHtml() : ""}
     ${
       filtered.length === 0
         ? `<p class="join-note">${t("myInstances.filterEmpty")}</p>`
@@ -1485,33 +1542,7 @@ function renderMyInstancesGrid() {
     }
   `;
 
-  document.getElementById("my-instances-new").addEventListener("click", () => window.mchub.openNewInstance());
-
-  const joinCodeSubmit = document.getElementById("join-code-submit");
-  if (joinCodeSubmit) {
-    const submitJoinCode = async () => {
-      const input = document.getElementById("join-code-input");
-      const code = input.value.trim();
-      if (!code) return;
-      joinFormBusy = true;
-      joinFormError = null;
-      renderMyInstancesGrid();
-      const result = await window.mchub.joinServerByCode(code);
-      joinFormBusy = false;
-      if (!result.ok) {
-        joinFormError = result.error;
-        renderMyInstancesGrid();
-        return;
-      }
-      const listed = await window.mchub.listJoinedServers();
-      myJoinedServers = listed.ok ? listed.servers : myJoinedServers;
-      renderMyInstancesGrid();
-    };
-    joinCodeSubmit.addEventListener("click", submitJoinCode);
-    document.getElementById("join-code-input").addEventListener("keydown", (event) => {
-      if (event.key === "Enter") submitJoinCode();
-    });
-  }
+  document.getElementById("my-instances-join").addEventListener("click", joinByCodeFlow);
 
   myInstancesPanelEl.querySelectorAll(".instances-filters .sort-chip").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1546,7 +1577,13 @@ function renderMyInstancesGrid() {
   myInstancesPanelEl.querySelectorAll(".my-instance-leave").forEach((btn) => {
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      if (!window.confirm(t("myInstances.leaveConfirm"))) return;
+      const { confirmed } = await showModal({
+        title: t("myInstances.leave"),
+        body: t("myInstances.leaveConfirm"),
+        confirmLabel: t("myInstances.leave"),
+        cancelLabel: t("common.cancel"),
+      });
+      if (!confirmed) return;
       await window.mchub.leaveJoinedServer(btn.dataset.slug);
       myJoinedServers = myJoinedServers.filter((s) => s.slug !== btn.dataset.slug);
       renderMyInstancesGrid();
@@ -1574,6 +1611,18 @@ async function showMyInstancesView() {
   await renderMyInstancesList();
 }
 
+function myInstancesSkeletonHtml() {
+  const card = `<div class="sk-card"><div class="sk-bar"></div><div class="sk-body"><div class="sk-line" style="height:14px;width:60%;"></div><div class="sk-line" style="height:11px;width:80%;"></div><div class="sk-line" style="height:30px;width:100%;margin-top:6px;"></div></div></div>`;
+  return `
+    <div class="instances-header">
+      <div>
+        <h2>${t("nav.myInstances")}</h2>
+        <p class="join-note">${t("myInstances.subtitle")}</p>
+      </div>
+    </div>
+    <div class="instance-grid" aria-busy="true">${card.repeat(3)}</div>`;
+}
+
 async function renderMyInstancesList() {
   if (!currentProfile) {
     myInstancesPanelEl.className = "detail";
@@ -1584,13 +1633,16 @@ async function renderMyInstancesList() {
     return;
   }
 
+  myInstancesPanelEl.className = "instances-view";
+  myInstancesPanelEl.innerHTML = myInstancesSkeletonHtml();
+
   const [ownedResult, joinedResult] = await Promise.all([window.mchub.listMyServers(), window.mchub.listJoinedServers()]);
   if (!ownedResult.ok) {
     const authFailed = ownedResult.status === 401;
     myInstancesPanelEl.className = "detail";
     myInstancesPanelEl.innerHTML = `
       <h2>${t("nav.myInstances")}</h2>
-      <p class="join-note">${t(authFailed ? "myInstances.loginRequired" : "myInstances.loadError")}</p>
+      <p class="join-note" role="alert">${t(authFailed ? "myInstances.loginRequired" : "myInstances.loadError")}</p>
       ${authFailed ? "" : `<button type="button" class="join-btn" id="my-instances-retry">${t("myInstances.retry")}</button>`}
     `;
     document.getElementById("my-instances-retry")?.addEventListener("click", () => renderMyInstancesList());

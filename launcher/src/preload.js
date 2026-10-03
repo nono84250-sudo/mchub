@@ -10,7 +10,6 @@ contextBridge.exposeInMainWorld("mchub", {
   joinServerByCode: (code) => ipcRenderer.invoke("servers:joinByCode", code),
   leaveJoinedServer: (slug) => ipcRenderer.invoke("servers:leaveJoined", slug),
   openManageServer: (serverId) => ipcRenderer.invoke("servers:openManage", serverId),
-  openNewInstance: () => ipcRenderer.invoke("servers:openNewInstance"),
   submitReport: (report) => ipcRenderer.invoke("reports:submit", report),
   listNotifications: () => ipcRenderer.invoke("notifications:list"),
   markNotificationsRead: () => ipcRenderer.invoke("notifications:markRead"),

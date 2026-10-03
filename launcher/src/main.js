@@ -436,7 +436,6 @@ ipcMain.handle("servers:mine", async () => {
 ipcMain.handle("servers:openManage", (_event, serverId) => {
   if (typeof serverId === "string" && serverId) shell.openExternal(`${SITE_URL}/manage/${encodeURIComponent(serverId)}`);
 });
-ipcMain.handle("servers:openNewInstance", () => shell.openExternal(`${SITE_URL}/dashboard/servers/new`));
 // Pour construire le lien d'invitation (copie dans le presse-papier depuis
 // "Mes instances") sans dupliquer la logique SITE_URL cote renderer.
 ipcMain.handle("app:getSiteUrl", () => SITE_URL);

@@ -457,17 +457,16 @@
   .instances-filters .sort-chip { border: none; padding: 5px 11px; border-radius: 7px; }
   .instances-filters .sort-chip.active { background: var(--accent-fill); color: var(--accent-foreground); }
   .instances-filters .sort-chip .count { opacity: 0.7; margin-left: 4px; }
-  .instances-note { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
 
-  .instance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .instance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
   .instance-card { display: flex; flex-direction: column; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); overflow: hidden; }
   .instance-card-banner {
     position: relative;
-    height: 56px;
+    height: 34px;
     background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 35%, transparent), transparent 70%), var(--surface-raised, var(--surface));
   }
   .instance-card-icon {
-    position: absolute; left: 16px; bottom: -18px; width: 40px; height: 40px;
+    position: absolute; left: 12px; bottom: -14px; width: 30px; height: 30px;
     border-radius: 10px; border: 3px solid var(--surface);
     background: var(--accent-fill); color: var(--accent-foreground);
     display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; overflow: hidden;
@@ -477,11 +476,17 @@
   .instance-badge.public { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
   .instance-badge.private { background: var(--accent-fill); color: var(--accent-foreground); }
   .instance-badge.paused { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
-  .instance-card-body { padding: 24px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
-  .instance-card-body h3 { margin: 0; font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .instance-card-body { padding: 18px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .instance-card-body h3 { margin: 0; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .instance-card-body > p { margin: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .instance-card-status { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .instance-card-status code { font-family: ui-monospace, Menlo, monospace; color: var(--foreground); }
+  .sk-card { border-radius: 12px; border: 1px solid var(--border); background: var(--surface); overflow: hidden; }
+  .sk-bar { height: 56px; background: var(--surface-raised, var(--surface)); animation: sk-pulse 1.4s ease-in-out infinite; }
+  .sk-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .sk-line { background: var(--surface-raised, var(--surface)); border-radius: 6px; animation: sk-pulse 1.4s ease-in-out infinite; }
+  @keyframes sk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  @media (prefers-reduced-motion: reduce) { .sk-bar, .sk-line { animation: none; } }
   .icon-btn {
     flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; padding: 0; border: none; background: none; color: var(--muted); cursor: pointer; border-radius: 5px;
@@ -490,10 +495,6 @@
   .icon-btn:hover { color: var(--accent); background: var(--accent-fill); }
   .instance-card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
-  /* Formulaire "Rejoindre via un code" (onglet "Rejoint" de "Mes instances") */
-  .join-by-code { margin-bottom: 16px; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); max-width: 420px; }
-  .join-by-code-row { display: flex; gap: 8px; margin-top: 6px; }
-  .join-by-code-row .settings-input { flex: 1 1 auto; }
 
   /* Accueil (voir renderer.js/renderHomeView) : carte "continuer" + sections
      compactes reutilisant les .row deja stylees ailleurs (favoris, mes
