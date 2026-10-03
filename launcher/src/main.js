@@ -535,7 +535,7 @@ ipcMain.handle("reports:submit", async (_event, { slug, issue, message, clientVe
   try {
     const res = await fetch(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/report`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...launcherAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...launcherAuthHeaders(), ...inviteHeaders(slug) },
       body: JSON.stringify({
         reporterMinecraftUuid: currentSession.profile.id,
         reporterMinecraftUsername: currentSession.profile.name,
@@ -1013,7 +1013,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     // doit jamais faire echouer un lancement par ailleurs reussi.
     fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/launch`, {
       method: "POST",
-      headers: launcherAuthHeaders(),
+      headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
     }).catch((error) => console.debug("[game:launch] suivi du lancement echoue :", error));
 
     return { ok: true };

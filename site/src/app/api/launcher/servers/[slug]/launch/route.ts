@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { recordServerLaunch } from "@/lib/public-servers";
+import { proofFromRequest, recordServerLaunch, visibleServerIdBySlug } from "@/lib/public-servers";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
@@ -14,6 +14,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
   if (limited) return limited;
 
   const { slug } = await ctx.params;
+  if (!(await visibleServerIdBySlug(slug, proofFromRequest(request)))) {
+    return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
+  }
   await recordServerLaunch(slug);
   return NextResponse.json({ ok: true });
 }

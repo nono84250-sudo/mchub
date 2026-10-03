@@ -203,6 +203,18 @@ export async function canSeeServer(
   return (await verifyMinecraftIdentity(proof.minecraftToken ?? null, server.owner?.minecraftUuid ?? null)) === "verified";
 }
 
+// Routes d'ecriture par slug (signalement, compteur de lancements) : un serveur
+// prive sans la preuve renvoie null, comme un slug inconnu — sinon la reponse
+// (200 ou 404) reveleraient qu'un serveur prive existe.
+export async function visibleServerIdBySlug(slug: string, proof: PrivateServerProof): Promise<string | null> {
+  const row = await db.orm.public.Server.select("id", "isPrivate", "inviteCode")
+    .include("owner", (o) => o.select("minecraftUuid"))
+    .where({ slug })
+    .first();
+  if (!row || !(await canSeeServer(row, proof))) return null;
+  return row.id;
+}
+
 // Seule fonction du fichier qui renvoie `ip` — réservée à la route
 // /api/launcher/servers/[slug], protégée par LAUNCHER_API_KEY. Ne jamais
 // exposer ce résultat via une route publique.

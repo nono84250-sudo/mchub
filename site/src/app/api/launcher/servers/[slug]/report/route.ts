@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { identityErrorResponse, isAuthorizedLauncherRequest, verifyMinecraftIdentity } from "@/lib/launcherAuth";
-import { db } from "@/prisma/db";
+import { proofFromRequest, visibleServerIdBySlug } from "@/lib/public-servers";
 import { createReport, type ReportIssue } from "@/lib/reports";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
@@ -19,8 +19,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
   if (limited) return limited;
 
   const { slug } = await ctx.params;
-  const server = await db.orm.public.Server.select("id").where({ slug }).first();
-  if (!server) {
+  // Serveur prive : meme preuve que la fiche (code d'invitation ou jeton du proprietaire).
+  const serverId = await visibleServerIdBySlug(slug, proofFromRequest(request));
+  if (!serverId) {
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
   }
 
@@ -37,7 +38,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
   if (identity !== "verified") return identityErrorResponse(identity);
 
   await createReport({
-    serverId: server.id,
+    serverId,
     reporterMinecraftUuid,
     reporterMinecraftUsername,
     issue,
