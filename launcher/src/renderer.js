@@ -851,28 +851,44 @@ let mcStatusLoading = false;
 // Test de debit de CE PC : state "idle" | "running" | "done" | "error" (voir main.js status:getConnection).
 let mcConnection = { state: "idle", phase: "", percent: 0, result: null };
 
-function mcConnectionProgressText() {
-  if (mcConnection.phase === "download") return t("serviceStatus.connDownloading", { p: mcConnection.percent });
-  if (mcConnection.phase === "upload") return t("serviceStatus.connUploading", { p: mcConnection.percent });
-  return t("serviceStatus.connPinging");
-}
-
 function mcConnectionHtml() {
-  const rows = (items) =>
-    `<div class="mc-status-rows">${items
-      .map(([label, value]) => `<div class="mc-status-row"><span class="mc-status-row-label">${escapeHtml(label)}</span><span class="mc-status-row-latency">${escapeHtml(value)}</span></div>`)
-      .join("")}</div>`;
   let body;
-  if (mcConnection.state === "running") {
-    body = `<div class="mc-status-rows"><div class="mc-status-row"><span class="mc-status-row-label">${escapeHtml(mcConnectionProgressText())}</span></div>
-      <div style="height:4px;margin:6px 12px 10px;border-radius:2px;background:var(--surface-2);overflow:hidden"><div style="width:${mcConnection.percent}%;height:100%;background:var(--accent)"></div></div></div>`;
-  } else if (mcConnection.state === "done") {
-    const r = mcConnection.result;
-    body = rows([
-      [t("serviceStatus.connPing"), r.pingMs == null ? "—" : `${r.pingMs} ms`],
-      [t("serviceStatus.connDown"), r.downloadMbps == null ? "—" : `${r.downloadMbps} Mb/s`],
-      [t("serviceStatus.connUp"), r.uploadMbps == null ? "—" : `${r.uploadMbps} Mb/s`],
-    ]);
+  if (mcConnection.state === "running" || mcConnection.state === "done") {
+    // Etapes : 1 = ping, 2 = telechargement, 3 = envoi (barre animee, pas de progression reelle).
+    const phase = mcConnection.state === "done" ? "finished" : mcConnection.phase;
+    const v = mcConnection.state === "done" ? mcConnection.result : mcConnection.values || {};
+    const pingDone = phase !== "ping";
+    const downDone = phase === "upload" || phase === "finished";
+    const upDone = phase === "finished";
+    const segment = (filled, inner) =>
+      `<div style="flex:1;height:4px;border-radius:2px;background:var(--surface-2);overflow:hidden">${
+        filled ? `<div style="width:100%;height:100%;background:#9184d9"></div>` : inner || ""
+      }</div>`;
+    const downPct = phase === "download" ? mcConnection.percent : 0;
+    const steps = `<div style="display:flex;gap:6px;margin:12px 0 6px">
+      ${segment(pingDone, phase === "ping" ? `<div style="width:30%;height:100%;background:#9184d9;opacity:0.7"></div>` : "")}
+      ${segment(downDone, phase === "download" ? `<div style="width:${downPct}%;height:100%;background:#9184d9"></div>` : "")}
+      ${segment(upDone, phase === "upload" ? `<div class="conn-indeterminate"></div>` : "")}
+    </div>`;
+    const stepLabel = (label, done, active) =>
+      `<span style="${done ? "color: var(--muted);" : active ? "color: var(--accent);" : "color: var(--muted); opacity: 0.6;"}">${escapeHtml(label)}${done ? " ✓" : ""}</span>`;
+    const labels = `<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:12px">
+      ${stepLabel(t("serviceStatus.connPing"), pingDone, phase === "ping")}
+      ${stepLabel(t("serviceStatus.connDown"), downDone, phase === "download")}
+      ${stepLabel(t("serviceStatus.connUp"), upDone, phase === "upload")}
+    </div>`;
+    // Pendant le test : "mesure…" ; une fois fini, "—" si la mesure a echoue.
+    const missing = mcConnection.state === "done" ? "—" : t("serviceStatus.connMeasuring");
+    const tile = (label, value) =>
+      `<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px"><div style="font-size:11px;color:var(--muted)">${escapeHtml(label)}</div><div style="font-size:15px;font-weight:600;margin-top:2px;color:${value ? "var(--foreground)" : "var(--muted)"}">${escapeHtml(value || missing)}</div></div>`;
+    const fmt = (value, unit) => (value == null ? "" : `${value} ${unit}`);
+    const tiles = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      ${tile(t("serviceStatus.connPing"), fmt(v.pingMs, "ms"))}
+      ${tile(t("serviceStatus.connDown"), fmt(v.downloadMbps, "Mb/s"))}
+      ${tile(t("serviceStatus.connUp"), fmt(v.uploadMbps, "Mb/s"))}
+    </div>`;
+    const info = phase === "finished" ? "" : `<p class="join-note" style="margin: 10px 0 0;">${escapeHtml(t("serviceStatus.connInfo"))}</p>`;
+    body = `<div class="mc-status-rows" style="padding: 0 12px 8px;">${steps}${labels}${tiles}${info}</div>`;
   } else if (mcConnection.state === "error") {
     body = `<div class="mc-status-rows"><div class="mc-status-row"><span class="mc-status-row-label">${escapeHtml(t("serviceStatus.connError"))}</span></div></div>`;
   } else {
@@ -889,7 +905,13 @@ function mcConnectionHtml() {
 }
 
 window.mchub.onConnectionProgress((progress) => {
-  mcConnection = { state: "running", phase: progress.phase, percent: progress.percent, result: null };
+  mcConnection = {
+    state: "running",
+    phase: progress.phase,
+    percent: progress.percent,
+    values: { pingMs: progress.pingMs ?? null, downloadMbps: progress.downloadMbps ?? null },
+    result: null,
+  };
   if (mcStatusData) renderMcStatus(mcStatusData);
 });
 
@@ -1341,7 +1363,11 @@ async function renderFavoritesList() {
 
   const favoriteServers = await resolveServersBySlug(favorites);
   favoritesPanelEl.className = "server-list";
-  await renderRowsInto(favoritesPanelEl, favoriteServers, "favorites", renderFavoritesList);
+  favoritesPanelEl.innerHTML = `
+    <h2>${t("nav.favorites")}</h2>
+    <p class="join-note">${t("favorites.header")}</p>
+    <div class="list-rows server-list"></div>`;
+  await renderRowsInto(favoritesPanelEl.querySelector(".list-rows"), favoriteServers, "favorites", renderFavoritesList);
 }
 
 async function showRecentView() {
@@ -1379,7 +1405,11 @@ async function renderRecentList() {
 
   const recentServers = await resolveServersBySlug(recentSlugs);
   recentPanelEl.className = "server-list";
-  await renderRowsInto(recentPanelEl, recentServers, "recent", renderRecentList);
+  recentPanelEl.innerHTML = `
+    <h2>${t("nav.recent")}</h2>
+    <p class="join-note">${t("recent.header")}</p>
+    <div class="list-rows server-list"></div>`;
+  await renderRowsInto(recentPanelEl.querySelector(".list-rows"), recentServers, "recent", renderRecentList);
 }
 
 // "Mes instances" : tous les serveurs du proprietaire connecte (publies OU

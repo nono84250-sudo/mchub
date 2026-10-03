@@ -495,6 +495,9 @@
   .icon-btn:hover { color: var(--accent); background: var(--accent-fill); }
   .instance-card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; flex-shrink: 0; }
   .instance-card-actions button { white-space: nowrap; }
+  .conn-indeterminate { width: 40%; height: 100%; background: #9184d9; animation: conn-slide 1.2s ease-in-out infinite; }
+  @keyframes conn-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  @media (prefers-reduced-motion: reduce) { .conn-indeterminate { animation: none; width: 100%; } }
 
 
   /* Accueil (voir renderer.js/renderHomeView) : carte "continuer" + sections

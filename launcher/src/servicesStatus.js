@@ -212,17 +212,18 @@ async function measureConnection(onProgress) {
     errors.ping = error.message;
     return null;
   });
-  onProgress({ phase: "download", percent: 0 });
-  const down = await measureDownload((percent) => onProgress({ phase: "download", percent })).catch((error) => {
+  onProgress({ phase: "download", percent: 0, pingMs });
+  const down = await measureDownload((percent) => onProgress({ phase: "download", percent, pingMs })).catch((error) => {
     errors.download = error.message;
     return null;
   });
-  onProgress({ phase: "upload", percent: 0 });
+  onProgress({ phase: "upload", percent: 0, pingMs, downloadMbps: down?.mbps ?? null });
+  // L'envoi n'a pas de progression reelle : la barre est animee cote affichage.
   const up = await measureUpload().catch((error) => {
     errors.upload = error.message;
     return null;
   });
-  onProgress({ phase: "upload", percent: 100 });
+  onProgress({ phase: "upload", percent: 100, pingMs, downloadMbps: down?.mbps ?? null });
   return {
     pingMs,
     downloadMbps: down?.mbps ?? null,

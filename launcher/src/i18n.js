@@ -151,9 +151,11 @@ const DICTIONARIES = {
     },
     favorites: {
       empty: "Aucun favori pour l'instant — clique sur l'étoile d'un serveur pour l'ajouter ici.",
+      header: "Les serveurs que tu as mis en favori, prêts à être lancés.",
     },
     recent: {
       empty: "Aucun serveur joué pour l'instant — les derniers serveurs lancés apparaîtront ici.",
+      header: "Les serveurs que tu as lancés récemment.",
     },
     myInstances: {
       manage: "Gérer",
@@ -363,6 +365,8 @@ const DICTIONARIES = {
       connUploading: "Envoi de test {p} %",
       connError: "Test impossible pour le moment",
       connIdle: "Le test se lance à l'ouverture du panneau",
+      connInfo: "Mesure en cours sur 3 connexions en parallèle, environ 20 secondes.",
+      connMeasuring: "mesure…",
       svc: {
         microsoft: "Connexion Microsoft",
         xboxlive: "Xbox Live",
@@ -522,9 +526,11 @@ const DICTIONARIES = {
       deleteOne: "Delete this notification",
     },
     favorites: {
+      header: "The servers you starred, ready to launch.",
       empty: "No favorites yet — click a server's star to add it here.",
     },
     recent: {
+      header: "The servers you launched recently.",
       empty: "No server played yet — recently launched servers will appear here.",
     },
     myInstances: {
@@ -735,6 +741,8 @@ const DICTIONARIES = {
       connUploading: "Test upload {p} %",
       connError: "Test unavailable for now",
       connIdle: "The test starts when the panel opens",
+      connInfo: "Measuring on 3 parallel connections, about 20 seconds.",
+      connMeasuring: "measuring…",
       svc: {
         microsoft: "Microsoft sign-in",
         xboxlive: "Xbox Live",
