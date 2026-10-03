@@ -108,8 +108,11 @@ async function checkServicesStatus() {
 // zeros, aucune donnee personnelle n'est transmise.
 const SPEED_HOST = "https://speed.cloudflare.com";
 const PING_SAMPLES = 3;
-const DOWNLOAD_BYTES = 100_000_000;
-const UPLOAD_BYTES = 25_000_000;
+// Plusieurs flux en parallele (comme Speedtest) pour remplir la ligne :
+// 3 x 34 Mo en reception (~100 Mo), 3 x 8,4 Mo en envoi (~25 Mo).
+const STREAMS = 3;
+const DOWNLOAD_STREAM_BYTES = 34_000_000;
+const UPLOAD_STREAM_BYTES = 8_400_000;
 const CONNECTION_STEP_TIMEOUT_MS = 90_000;
 
 function timedSignal() {
@@ -134,60 +137,99 @@ async function measurePing() {
   return Math.round(samples[Math.floor(samples.length / 2)]);
 }
 
-async function measureDownload(onProgress) {
+const mbps = (bytes, seconds) => Math.round(((bytes * 8) / seconds / 1_000_000) * 10) / 10;
+
+// Un flux de telechargement ; onBytes(n) compte les octets au fil de l'eau.
+async function downloadStream(onBytes) {
   const { signal, done } = timedSignal();
   try {
-    const res = await fetch(`${SPEED_HOST}/__down?bytes=${DOWNLOAD_BYTES}`, {
+    const res = await fetch(`${SPEED_HOST}/__down?bytes=${DOWNLOAD_STREAM_BYTES}`, {
       headers: { "User-Agent": USER_AGENT },
       signal,
       cache: "no-store",
     });
     const reader = res.body.getReader();
     let received = 0;
-    const startedAt = performance.now();
     for (;;) {
       const { done: finished, value } = await reader.read();
       if (finished) break;
       received += value.length;
-      onProgress(Math.min(100, Math.round((received / DOWNLOAD_BYTES) * 100)));
+      onBytes(value.length);
     }
-    const seconds = (performance.now() - startedAt) / 1000;
-    return Math.round(((received * 8) / seconds / 1_000_000) * 10) / 10;
+    return received;
+  } finally {
+    done();
+  }
+}
+
+// Debit = total des octets / duree totale (du debut au dernier flux termine).
+async function measureDownload(onProgress) {
+  const total = STREAMS * DOWNLOAD_STREAM_BYTES;
+  let received = 0;
+  const startedAt = performance.now();
+  const counts = await Promise.all(
+    Array.from({ length: STREAMS }, () =>
+      downloadStream((n) => {
+        received += n;
+        onProgress(Math.min(100, Math.round((received / total) * 100)));
+      }),
+    ),
+  );
+  const seconds = (performance.now() - startedAt) / 1000;
+  const bytes = counts.reduce((sum, n) => sum + n, 0);
+  return { mbps: mbps(bytes, seconds), bytes, seconds: Math.round(seconds * 100) / 100 };
+}
+
+async function uploadStream() {
+  const { signal, done } = timedSignal();
+  try {
+    await fetch(`${SPEED_HOST}/__up`, {
+      method: "POST",
+      headers: { "User-Agent": USER_AGENT, "Content-Type": "application/octet-stream" },
+      body: Buffer.alloc(UPLOAD_STREAM_BYTES),
+      signal,
+      cache: "no-store",
+    });
   } finally {
     done();
   }
 }
 
 async function measureUpload() {
-  const { signal, done } = timedSignal();
-  try {
-    const body = Buffer.alloc(UPLOAD_BYTES);
-    const startedAt = performance.now();
-    await fetch(`${SPEED_HOST}/__up`, {
-      method: "POST",
-      headers: { "User-Agent": USER_AGENT, "Content-Type": "application/octet-stream" },
-      body,
-      signal,
-      cache: "no-store",
-    });
-    const seconds = (performance.now() - startedAt) / 1000;
-    return Math.round(((UPLOAD_BYTES * 8) / seconds / 1_000_000) * 10) / 10;
-  } finally {
-    done();
-  }
+  const startedAt = performance.now();
+  await Promise.all(Array.from({ length: STREAMS }, uploadStream));
+  const seconds = (performance.now() - startedAt) / 1000;
+  const bytes = STREAMS * UPLOAD_STREAM_BYTES;
+  return { mbps: mbps(bytes, seconds), bytes, seconds: Math.round(seconds * 100) / 100 };
 }
 
 // { pingMs, downloadMbps, uploadMbps, fetchedAt } ; une etape en echec donne null.
 // onProgress({ phase: "ping" | "download" | "upload", percent }) pour la barre.
 async function measureConnection(onProgress) {
+  const errors = {};
   onProgress({ phase: "ping", percent: 0 });
-  const pingMs = await measurePing().catch(() => null);
+  const pingMs = await measurePing().catch((error) => {
+    errors.ping = error.message;
+    return null;
+  });
   onProgress({ phase: "download", percent: 0 });
-  const downloadMbps = await measureDownload((percent) => onProgress({ phase: "download", percent })).catch(() => null);
+  const down = await measureDownload((percent) => onProgress({ phase: "download", percent })).catch((error) => {
+    errors.download = error.message;
+    return null;
+  });
   onProgress({ phase: "upload", percent: 0 });
-  const uploadMbps = await measureUpload().catch(() => null);
+  const up = await measureUpload().catch((error) => {
+    errors.upload = error.message;
+    return null;
+  });
   onProgress({ phase: "upload", percent: 100 });
-  return { pingMs, downloadMbps, uploadMbps, fetchedAt: Date.now() };
+  return {
+    pingMs,
+    downloadMbps: down?.mbps ?? null,
+    uploadMbps: up?.mbps ?? null,
+    details: { down, up, errors },
+    fetchedAt: Date.now(),
+  };
 }
 
 module.exports = { checkServicesStatus, measureConnection };

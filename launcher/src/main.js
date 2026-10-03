@@ -383,9 +383,12 @@ function wireAutoUpdater(win) {
 
   autoUpdater.on("checking-for-update", () => send({ phase: "checking" }));
   autoUpdater.on("update-available", (info) => {
-    // Une version plus ancienne (ex. stable 0.3.3 vue depuis une bêta 0.3.4-beta.2)
-    // n'est jamais téléchargée ni installée : traitée comme "à jour".
-    if (!isNewerVersion(info.version, app.getVersion())) {
+    // Canal bêta : la dernière bêta publiée est toujours prise, quel que soit son
+    // numéro (la bêta fait autorité). Canal stable : une version plus ancienne
+    // (ex. 0.3.3 vue depuis une bêta) n'est jamais téléchargée ni installée.
+    const onBeta = autoUpdater.channel === "beta";
+    const isUpdate = onBeta ? info.version !== app.getVersion() : isNewerVersion(info.version, app.getVersion());
+    if (!isUpdate) {
       logStore.pushLog({ level: "warn", source: "launcher", message: `Mise à jour ignorée : v${info.version} n'est pas plus récente que v${app.getVersion()}` });
       autoUpdater.emit("update-not-available", info);
       return;
@@ -1075,6 +1078,12 @@ ipcMain.handle("status:getConnection", (event, force) => {
     if (!event.sender.isDestroyed()) event.sender.send("status:connectionProgress", progress);
   })
     .then((result) => {
+      const { down, up, errors } = result.details;
+      const errorText = Object.keys(errors).length ? ` · erreurs : ${JSON.stringify(errors)}` : "";
+      logStore.pushLog({
+        source: "launcher",
+        message: `Test de connexion : ping ${result.pingMs ?? "—"} ms · téléchargement ${result.downloadMbps ?? "—"} Mb/s (${down ? (down.bytes / 1e6).toFixed(1) : "—"} Mo en ${down?.seconds ?? "—"} s) · envoi ${result.uploadMbps ?? "—"} Mb/s (${up ? (up.bytes / 1e6).toFixed(1) : "—"} Mo en ${up?.seconds ?? "—"} s)${errorText}`,
+      });
       connectionCache = result;
       return result;
     })
