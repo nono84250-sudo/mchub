@@ -5,6 +5,29 @@ const { Client } = require("minecraft-launcher-core");
 const logStore = require("./logStore");
 const discordPresence = require("./discordPresence");
 const { addServerToList } = require("./serversDat");
+const { ensureVanillaVersion } = require("./modpack");
+
+// Options JVM demandees par Mojang pour une version vanilla (arguments.jvm de son
+// JSON). Le lancement passe par minecraft-launcher-core, qui ignore ces options :
+// sans elles, Minecraft 26.3 (Java 25) plante au moment de la connexion. On ne
+// garde que les options independantes du PC (pas de ${...}, pas de -cp) et les
+// regles qui autorisent Windows (ou aucune regle).
+function mojangJvmArgs(vanilla) {
+  const out = [];
+  // Deja fournies par minecraft-launcher-core : on ne les repete pas.
+  const keep = (value) => !value.includes("${") && value !== "-cp" && !value.startsWith("-XX:HeapDumpPath");
+  const allowed = (rules) =>
+    !rules || rules.every((r) => (r.action === "allow" && (!r.os || r.os.name === "windows")) || (r.action === "disallow" && r.os?.name && r.os.name !== "windows"));
+  for (const arg of vanilla.arguments?.jvm || []) {
+    if (typeof arg === "string") {
+      if (keep(arg)) out.push(arg);
+    } else if (arg && allowed(arg.rules) && !arg.rules?.some((r) => r.features)) {
+      const values = Array.isArray(arg.value) ? arg.value : [arg.value];
+      for (const value of values) if (typeof value === "string" && keep(value)) out.push(value);
+    }
+  }
+  return out;
+}
 
 // Repertoire de jeu local : Java, Minecraft (vanilla) et ses assets sont
 // telecharges ici au premier lancement, puis reutilises. Les serveurs moddes
@@ -46,6 +69,7 @@ async function launchMinecraft({
   gameDirectory,
   customVersion,
   customJvmArgs,
+  onGameState,
 }) {
   await ensureJavaAvailable(javaPath);
 
@@ -70,6 +94,24 @@ async function launchMinecraft({
     }
   });
 
+  // Vanilla uniquement (un chargeur de modpack garde ses propres options) :
+  // on ajoute les options JVM de Mojang pour cette version, et on les journalise.
+  let jvmArgs = customJvmArgs || [];
+  if (!customVersion) {
+    try {
+      const vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), version);
+      const mojangArgs = mojangJvmArgs(vanilla);
+      logStore.pushLog({
+        source: "launcher",
+        message: `Mojang demande Java ${vanilla.javaVersion?.majorVersion ?? "?"} (runtime ${vanilla.javaVersion?.component ?? "?"}) pour ${version}`,
+      });
+      logStore.pushLog({ source: "launcher", message: `Options JVM de Mojang ajoutées : ${mojangArgs.join(" ")}` });
+      jvmArgs = [...mojangArgs, ...jvmArgs];
+    } catch (error) {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Options Mojang non récupérées (${error.message}), lancement sans elles` });
+    }
+  }
+
   const opts = {
     authorization,
     root: GAME_ROOT,
@@ -78,7 +120,7 @@ async function launchMinecraft({
   };
   if (javaPath) opts.javaPath = javaPath;
   if (gameDirectory) opts.overrides = { gameDirectory };
-  if (customJvmArgs?.length) opts.customArgs = customJvmArgs;
+  if (jvmArgs.length) opts.customArgs = jvmArgs;
 
   if (serverIp) {
     // Le lancement rapide connecte le joueur mais n'ajoute rien a la liste
@@ -107,6 +149,7 @@ async function launchMinecraft({
       // serveurs" cote Discord) d'un lancement qui n'a jamais reellement
       // demarre — jamais eu de presence "en jeu" a annuler dans ce cas.
       if (started) discordPresence.setBrowsingActivity();
+      if (started) onGameState?.(false);
       if (!started) reject(new Error(`Le jeu s'est fermé avant de démarrer (code ${code}).`));
     });
     onProgress?.({ text: "Lancement du jeu…" });
@@ -125,6 +168,7 @@ async function launchMinecraft({
         }
         started = true;
         logStore.pushLog({ source: "game", message: `Jeu démarré (PID ${proc.pid}).` });
+        onGameState?.(true);
         resolve(proc);
       })
       .catch((error) => {

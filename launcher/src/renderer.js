@@ -2838,5 +2838,21 @@ async function silentRefreshList() {
   if (result.ok) renderList(result.servers);
 }
 
-setInterval(silentRefreshList, REFRESH_INTERVAL_MS);
-setInterval(refreshNotifications, REFRESH_INTERVAL_MS);
+// Pendant une partie, on interroge moins souvent (le launcher reste ouvert pour
+// la console de debug). Le delai est relu a chaque tour.
+const REFRESH_PLAYING_INTERVAL_MS = 300_000;
+let gamePlaying = false;
+window.mchub.onGameState((running) => {
+  gamePlaying = running;
+});
+
+function scheduleRefresh(task) {
+  const tick = async () => {
+    await task();
+    setTimeout(tick, gamePlaying ? REFRESH_PLAYING_INTERVAL_MS : REFRESH_INTERVAL_MS);
+  };
+  setTimeout(tick, REFRESH_INTERVAL_MS);
+}
+
+scheduleRefresh(silentRefreshList);
+scheduleRefresh(refreshNotifications);

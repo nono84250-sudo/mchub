@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld("mchub", {
   getServicesStatus: (force) => ipcRenderer.invoke("status:getServicesStatus", !!force),
   getConnection: (force) => ipcRenderer.invoke("status:getConnection", !!force),
   onConnectionProgress: (callback) => ipcRenderer.on("status:connectionProgress", (_event, progress) => callback(progress)),
+  onGameState: (callback) => ipcRenderer.on("game:state", (_event, running) => callback(running)),
   updates: {
     check: () => ipcRenderer.invoke("update:check"),
     onStatus: (callback) => {

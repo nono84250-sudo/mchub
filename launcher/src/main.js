@@ -82,8 +82,6 @@ const REQUEST_TIMEOUT_MS = 8000;
 // reussi, ou session expiree).
 let launcherSession = null; // { uuid, token, expiresAt (ms) }
 let launcherSessionRequest = null;
-let launcherSessionTimer = null;
-const LAUNCHER_SESSION_RENEW_BEFORE_MS = 5 * 60_000;
 const LAUNCHER_SESSION_USABLE_MARGIN_MS = 30_000;
 
 function usableLauncherSessionToken() {
@@ -93,17 +91,6 @@ function usableLauncherSessionToken() {
   return launcherSession.token;
 }
 
-function scheduleLauncherSessionRenewal() {
-  clearTimeout(launcherSessionTimer);
-  launcherSessionTimer = null;
-  if (!launcherSession) return;
-  const delay = Math.max(0, launcherSession.expiresAt - LAUNCHER_SESSION_RENEW_BEFORE_MS - Date.now());
-  logStore.pushLog({ source: "launcher", message: `Session launcher : renouvellement programmé à ${new Date(Date.now() + delay).toLocaleTimeString("fr-FR")}` });
-  launcherSessionTimer = setTimeout(() => {
-    logStore.pushLog({ source: "launcher", message: "Session launcher : renouvellement en cours" });
-    requestLauncherSession();
-  }, delay);
-}
 
 function requestLauncherSession() {
   if (!currentSession || launcherSessionRequest) return;
@@ -130,7 +117,6 @@ function requestLauncherSession() {
       if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
       logStore.pushLog({ source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
-      scheduleLauncherSessionRenewal();
     } catch (error) {
       // Sans importance : les requetes continuent avec le jeton Mojang.
       logStore.pushLog({ level: "warn", source: "launcher", message: `Session launcher : échange impossible (${error.message}), repli sur le jeton Mojang` });
@@ -144,8 +130,6 @@ function requestLauncherSession() {
 // Echec silencieux : le jeton expire de toute facon dans 15 min au plus.
 async function revokeLauncherSession() {
   const session = launcherSession;
-  clearTimeout(launcherSessionTimer);
-  launcherSessionTimer = null;
   launcherSession = null;
   if (!session || session.expiresAt <= Date.now()) return;
   try {
@@ -1168,6 +1152,12 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     }
 
     await launchMinecraft({
+      // Jeu lance / ferme : les fenetres ralentissent leurs interrogations pendant la partie.
+      onGameState: (running) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send("game:state", running);
+        }
+      },
       authorization: currentSession.authorization,
       version: modded?.minecraftVersion ?? server.minecraftVersion,
       serverIp: server.ip,
