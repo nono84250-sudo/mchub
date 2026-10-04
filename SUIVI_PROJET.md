@@ -158,6 +158,25 @@ Tout le backlog mineur listé précédemment (nettoyage de `Design/`, thème cla
   - **Paiement côté joueur** : rien n'est payant aujourd'hui et il n'y a pas de raison évidente d'en ajouter. Si un jour : cosmétique ou badge "supporter" uniquement, jamais d'avantage en jeu — et à vérifier avec les règles de monétisation de Mojang/Microsoft avant tout.
 - **Domaine personnalisé, signature de code Windows, builds macOS/Linux, clé CurseForge réelle** — toujours en attente, voir §5 (pas des idées nouvelles, juste pas oubliées).
 
+### Lobby entre amis, packs curés et page Amis (à designer, rien codé)
+
+Décisions (2026-10-04) :
+- Le lobby en temps réel (voir qui est en ligne, rejoindre le même serveur d'un clic) est voulu, mais plus tard : d'abord les packs curés, qui servent aux solo et aux amis.
+- **Packs curés** : l'admin crée des packs préconfigurés (ex. « Entre amis » avec le mod Essential, « PvP optimisé »). Chaque pack est visible en solo, pour les amis, ou les deux. Le launcher les installe comme les modpacks actuels.
+- **Essential** (mod client Modrinth, pair à pair, Fabric/Forge/NeoForge, Minecraft 1.20 à 26.3) : son réseau et ses comptes sont ceux d'Essential, pas les nôtres. Avant de l'inclure dans un pack, vérifier sa licence et ses conditions.
+- **Pages à designer** : (1) panel admin « Packs curés », (2) panel admin « Amis », (3) launcher « Amis ».
+
+Prompts pour le designer (copier-coller, un par page) :
+
+**Prompt 1 : Panel admin, page Packs curés**
+> Dessine la page « Packs curés » d'un panel d'administration pour Omniscient, un launcher Minecraft avec un site web. L'administrateur crée des packs de mods préconfigurés (ex. « Entre amis » avec Essential, « PvP optimisé »). Chaque pack a un nom, une description courte, une version de Minecraft, un chargeur (Fabric, Forge, NeoForge), une liste de mods et une visibilité : « Solo », « Solo + amis » ou les deux. Affiche : le menu latéral du panel (Vue d'ensemble, Serveurs, Signalements, Packs curés, Amis, Utilisateurs), la liste des packs en cartes, un bouton « + Nouveau pack curé », et un panneau d'édition (nom, description, Minecraft, chargeur, mods, visibilité). Style sombre, plat, couleurs sobres, accent violet (#9184d9), texte en français, sans emoji. Propose les états : vide, avec packs, erreur.
+
+**Prompt 2 : Panel admin, page Amis**
+> Dessine la page « Amis » du panel d'administration d'Omniscient. L'administrateur voit les groupes d'amis, leurs serveurs partagés et le pack curé associé. Il n'y a pas encore de lobby en temps réel : affiche le texte « Bientôt : lobby en temps réel ». Affiche : la liste des groupes (nom, nombre de membres, serveurs partagés, pack associé), le détail d'un groupe (membres, serveur, pack) et un bouton « Créer un groupe ». Même menu latéral que le panel. Style sombre, plat, accent violet (#9184d9), texte en français. Propose les états : vide, avec données.
+
+**Prompt 3 : Launcher, page Amis**
+> Dessine la page « Amis » du launcher Omniscient, une application de bureau Electron (fenêtre compacte, navigation latérale à icônes, 1 200 × 800 px). Le joueur voit ses amis Omniscient, leur statut, les serveurs qu'ils ont en commun, et peut en ajouter un par code. Pour l'instant pas de lobby en temps réel : affiche le bandeau « Bientôt : rejoindre les amis en ligne ». Affiche : une barre de recherche, la liste d'amis (avatar, pseudo, statut), une section « Serveurs partagés », un bouton « Ajouter un ami » (par code). Même style que les pages Mes instances, Favoris et Récents : titre et une ligne de description en haut, puis la liste. Style sombre, plat, accent violet (#9184d9), texte en français.
+
 ## 8. Système d'abonnements — proposition (rien construit, à valider)
 
 Personne n'avait encore posé de grille précise — jusqu'ici, chaque fonctionnalité premium (page builder, launcher préconfiguré, mise en avant) avait été notée séparément comme "probablement payant" sans dire par rapport à quoi. Ce qui suit est **une proposition à trancher**, pas une décision prise : à ajuster, renommer, refuser en partie.

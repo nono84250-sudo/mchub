@@ -1042,6 +1042,8 @@ ipcMain.handle("status:getServicesStatus", async (_event, force) => {
   if (!force && statusCache && now - statusCache.fetchedAt < STATUS_CACHE_MS) {
     return statusCache;
   }
+  // Un test de debit en cours fausserait les pings : on attend qu'il soit fini.
+  if (connectionRun) await connectionRun;
   const groups = await checkServicesStatus();
   statusCache = { fetchedAt: now, groups };
   return statusCache;
