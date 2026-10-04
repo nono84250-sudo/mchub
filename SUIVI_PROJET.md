@@ -168,7 +168,7 @@ Décisions (2026-10-04) :
 
 Prompts pour le designer (copier-coller, un par page) :
 
-**Prompt 1 : Panel admin, page Packs curés**
+**Prompt 1 : Panel admin, page Packs curés** (design déjà fait par l'utilisateur, ne pas le redemander)
 > Dessine la page « Packs curés » d'un panel d'administration pour Omniscient, un launcher Minecraft avec un site web. L'administrateur crée des packs de mods préconfigurés (ex. « Entre amis » avec Essential, « PvP optimisé »). Chaque pack a un nom, une description courte, une version de Minecraft, un chargeur (Fabric, Forge, NeoForge), une liste de mods et une visibilité : « Solo », « Solo + amis » ou les deux. Affiche : le menu latéral du panel (Vue d'ensemble, Serveurs, Signalements, Packs curés, Amis, Utilisateurs), la liste des packs en cartes, un bouton « + Nouveau pack curé », et un panneau d'édition (nom, description, Minecraft, chargeur, mods, visibilité). Style sombre, plat, couleurs sobres, accent violet (#9184d9), texte en français, sans emoji. Propose les états : vide, avec packs, erreur.
 
 **Prompt 2 : Panel admin, page Amis**
@@ -176,6 +176,28 @@ Prompts pour le designer (copier-coller, un par page) :
 
 **Prompt 3 : Launcher, page Amis**
 > Dessine la page « Amis » du launcher Omniscient, une application de bureau Electron (fenêtre compacte, navigation latérale à icônes, 1 200 × 800 px). Le joueur voit ses amis Omniscient, leur statut, les serveurs qu'ils ont en commun, et peut en ajouter un par code. Pour l'instant pas de lobby en temps réel : affiche le bandeau « Bientôt : rejoindre les amis en ligne ». Affiche : une barre de recherche, la liste d'amis (avatar, pseudo, statut), une section « Serveurs partagés », un bouton « Ajouter un ami » (par code). Même style que les pages Mes instances, Favoris et Récents : titre et une ligne de description en haut, puis la liste. Style sombre, plat, accent violet (#9184d9), texte en français.
+
+**Prompt 4 : Panel admin, page Vérification des serveurs**
+> Dessine la page « Vérification des serveurs » du panel d'administration d'Omniscient, un launcher Minecraft avec un site web. Contexte : quand un propriétaire ajoute un serveur, le système automatique le vérifie (adresse joignable, version Minecraft, modpack, nom et icône). Quand il a un doute, il ne publie pas le serveur et le place dans une file d'attente. Un administrateur ou un modérateur du site décide ensuite : Valider (publication), Refuser (avec un motif choisi dans une liste), ou Demander des informations au propriétaire. Affiche : le menu latéral du panel (Vue d'ensemble, Serveurs, Vérification, Signalements, Packs curés, Amis, Utilisateurs), avec « Vérification » et un badge du nombre de serveurs en attente ; une liste de cartes pour la file (nom du serveur, propriétaire, date, raison du doute en une phrase, statut) ; un panneau de détail avec les résultats des vérifications automatiques (adresse joignable oui ou non, version détectée, modpack, nom et icône), l'historique de la demande, et trois boutons : Valider, Refuser (avec un motif), Demander des infos ; des filtres En attente, Validés, Refusés ; un état vide « Aucun serveur en attente ». Style sombre, plat, accent violet (#9184d9), texte en français, sans emoji. Propose les états : vide, en attente, erreur de vérification.
+
+À trancher avant de l'utiliser : les critères qui déclenchent le doute, et la liste des motifs de refus.
+
+**Prompt 5 : Console de gestion du serveur, page Fichiers du serveur**
+> Dessine la page « Fichiers du serveur » de la console de gestion d'un serveur sur Omniscient, un launcher Minecraft avec un site web. Contexte : au lancement, le launcher synchronise les mods, resource packs et configurations avec ceux du serveur. Le créateur du serveur choisit les règles appliquées aux fichiers ajoutés ou modifiés par les joueurs. Par défaut, rien n'est bloqué.
+>
+> **Ce que le joueur ne peut pas faire** (case cochée = interdit, le fichier est supprimé au lancement) :
+> - Changer les mods
+> - Changer les shaders
+> - Changer les resource packs
+> - Modifier les fichiers de configuration du pack
+>
+> Tout ce qui n'est pas coché reste autorisé. Les exceptions (par exemple des shaders personnels alors que les shaders sont interdits) se gèrent dans la liste d'exceptions ci-dessous.
+>
+> Et un réglage par défaut : « Conserver les fichiers retirés du pack au lieu de les supprimer », et « Avertir le joueur quand un fichier est supprimé au lancement ».
+>
+> Affiche aussi : une liste d'exceptions par nom de fichier (champ de recherche et liste ajoutée), un aperçu « Ce qui sera supprimé au prochain lancement » (liste de fichiers avec leur type), un bouton Enregistrer avec la note « Appliqué au prochain lancement ». Un lien vers la page Packs curés. Précise que ces règles ne concernent que le dossier du serveur, jamais les fichiers du PC du joueur.
+>
+> Style sombre, plat, accent violet (#9184d9), texte en français, sans emoji. Propose les états : règles par défaut, règles modifiées non enregistrées, aperçu vide.
 
 ## 8. Système d'abonnements — proposition (rien construit, à valider)
 
