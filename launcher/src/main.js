@@ -51,7 +51,27 @@ try {
 
 // URL du site Omniscient, source de vérité (voir cahier des charges, section
 // "modèle de synchronisation").
-const SITE_URL = process.env.MCHUB_SITE_URL || generatedEnv.MCHUB_SITE_URL || "http://localhost:3000";
+let SITE_URL = process.env.MCHUB_SITE_URL || generatedEnv.MCHUB_SITE_URL || "http://localhost:3000";
+// Adresses de secours du site de production : si l'adresse principale ne
+// répond pas au démarrage, le launcher prend la première qui répond. Pas
+// utilisées pour le développement en local (localhost).
+const FALLBACK_SITE_URLS = ["https://omniscient-theta.vercel.app", "https://omniscientlauncher.com"];
+
+async function pickSiteUrl() {
+  if (!SITE_URL.startsWith("https://")) return;
+  const candidates = [SITE_URL, ...FALLBACK_SITE_URLS.filter((url) => url !== SITE_URL)];
+  for (const url of candidates) {
+    try {
+      const res = await fetch(`${url.replace(/\/$/, "")}/api/public/servers`, { signal: AbortSignal.timeout(4000) });
+      if (res.status < 500) {
+        SITE_URL = url.replace(/\/$/, "");
+        return;
+      }
+    } catch {
+      // Pas de réponse : on essaie l'adresse suivante.
+    }
+  }
+}
 // Secret partage avec la route /api/launcher/servers/[slug] du site : c'est
 // la SEULE route qui renvoie l'IP d'un serveur, jamais l'API publique. Jamais
 // de valeur par défaut en dur ici, une ancienne clé a fuité dans le dépôt
@@ -1193,7 +1213,8 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await pickSiteUrl();
   if (!LAUNCHER_API_KEY) {
     // Erreur visible (dialog) plutôt qu'un throw silencieux avant toute
     // fenêtre : sinon l'app quitte sans qu'on sache pourquoi.
