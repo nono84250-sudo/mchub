@@ -180,7 +180,22 @@ Prompts pour le designer (copier-coller, un par page) :
 **Prompt 4 : Panel admin, page Vérification des serveurs**
 > Dessine la page « Vérification des serveurs » du panel d'administration d'Omniscient, un launcher Minecraft avec un site web. Contexte : quand un propriétaire ajoute un serveur, le système automatique le vérifie (adresse joignable, version Minecraft, modpack, nom et icône). Quand il a un doute, il ne publie pas le serveur et le place dans une file d'attente. Un administrateur ou un modérateur du site décide ensuite : Valider (publication), Refuser (avec un motif choisi dans une liste), ou Demander des informations au propriétaire. Affiche : le menu latéral du panel (Vue d'ensemble, Serveurs, Vérification, Signalements, Packs curés, Amis, Utilisateurs), avec « Vérification » et un badge du nombre de serveurs en attente ; une liste de cartes pour la file (nom du serveur, propriétaire, date, raison du doute en une phrase, statut) ; un panneau de détail avec les résultats des vérifications automatiques (adresse joignable oui ou non, version détectée, modpack, nom et icône), l'historique de la demande, et trois boutons : Valider, Refuser (avec un motif), Demander des infos ; des filtres En attente, Validés, Refusés ; un état vide « Aucun serveur en attente ». Style sombre, plat, accent violet (#9184d9), texte en français, sans emoji. Propose les états : vide, en attente, erreur de vérification.
 
-À trancher avant de l'utiliser : les critères qui déclenchent le doute, et la liste des motifs de refus.
+Décision (2026-10-04) : un robot fait les contrôles automatiques.
+- Tous les contrôles sont OK : publication automatique.
+- Un contrôle est en doute (version différente, modpack proche d'un serveur existant, adresse injoignable) : le serveur va dans la file, et un admin ou un modérateur décide.
+- Si le motif de refus est clair (ex. adresse inexistante, serveur hors ligne depuis longtemps) : le robot refuse seul, avec le motif correspondant.
+- Si le motif n'est pas clair : le serveur part dans la file, et un humain décide.
+- Un humain garde le dernier mot et peut annuler une décision du robot.
+
+À trancher encore : la liste des motifs de refus.
+
+Retours sur la première maquette (à transmettre au designer) :
+- Menu en deux langues (Overview, News, Players, Administration en anglais) : tout en français.
+- Un seul style pour l'action principale ; Refuser doit avoir un style cohérent avec Valider et Demander des infos.
+- Retirer le texte technique « A11B · VÉRIFICATION — VIDE » en bas de l'écran.
+- Remplacer les lettres dans des cercles par l'icône réelle du serveur.
+- Mettre en valeur les résultats des contrôles (vert pour OK, orange pour un écart).
+- Placer le menu « Motif de refus » à côté du bouton Refuser.
 
 **Prompt 5 : Console de gestion du serveur, page Fichiers du serveur**
 > Dessine la page « Fichiers du serveur » de la console de gestion d'un serveur sur Omniscient, un launcher Minecraft avec un site web. Contexte : au lancement, le launcher synchronise les mods, resource packs et configurations avec ceux du serveur. Le créateur du serveur choisit les règles appliquées aux fichiers ajoutés ou modifiés par les joueurs. Par défaut, rien n'est bloqué.
