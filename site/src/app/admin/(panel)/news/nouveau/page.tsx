@@ -3,7 +3,7 @@ import { requireAdmin } from "@/app/admin/design/guard";
 
 export const dynamic = "force-dynamic";
 
-export default async function Packs() {
+export default async function NewsEditor() {
   await requireAdmin();
-  return <DesignScreen name="packs" />;
+  return <DesignScreen name="news-editor" />;
 }

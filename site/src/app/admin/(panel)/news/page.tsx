@@ -1,11 +1,9 @@
-export const dynamic = "force-dynamic";
-export const metadata = { title: "Actualités — Admin Omniscient" };
+import { DesignScreen } from "@/components/admin/DesignScreen";
+import { requireAdmin } from "@/app/admin/design/guard";
 
-export default function Page() {
-  return (
-    <section>
-      <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 12 }}>Actualités</h1>
-      <p style={{ color: "#9ca3af", maxWidth: 640 }}>Les annonces visibles par tous les joueurs seront publiées ici. Pas encore branché.</p>
-    </section>
-  );
+export const dynamic = "force-dynamic";
+
+export default async function News() {
+  await requireAdmin();
+  return <DesignScreen name="news" />;
 }
