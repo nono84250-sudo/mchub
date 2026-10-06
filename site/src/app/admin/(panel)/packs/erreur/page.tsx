@@ -5,5 +5,5 @@ export const dynamic = "force-dynamic";
 
 export default async function PacksErreur() {
   await requireAdmin();
-  return <DesignScreen name="packs-erreur" />;
+  return <DesignScreen name="packs-erreur" markAll />;
 }

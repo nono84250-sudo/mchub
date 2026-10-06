@@ -120,3 +120,18 @@ export function serversHtml(data: {
   html = markLabel(html, "Next");
   return html;
 }
+
+// Met en surbrillance chaque section d une page non encore branchee.
+export function markAllSections(html: string): string {
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const start = html.indexOf("<section", i);
+    if (start < 0) break;
+    const end = balancedEnd(html, start, "section");
+    if (end < 0) break;
+    out += html.slice(i, start) + `<div class="nb-block"><span class="nb-tag">Non branché</span>${html.slice(start, end)}</div>`;
+    i = end;
+  }
+  return out + html.slice(i);
+}

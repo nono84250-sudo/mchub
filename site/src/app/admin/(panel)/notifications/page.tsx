@@ -5,5 +5,5 @@ export const dynamic = "force-dynamic";
 
 export default async function Notifications() {
   await requireAdmin();
-  return <DesignScreen name="notifications" />;
+  return <DesignScreen name="notifications" markAll />;
 }

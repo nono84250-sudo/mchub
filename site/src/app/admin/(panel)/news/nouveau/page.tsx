@@ -5,5 +5,5 @@ export const dynamic = "force-dynamic";
 
 export default async function NewsEditor() {
   await requireAdmin();
-  return <DesignScreen name="news-editor" />;
+  return <DesignScreen name="news-editor" markAll />;
 }

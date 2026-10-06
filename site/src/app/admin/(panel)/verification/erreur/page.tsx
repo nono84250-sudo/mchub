@@ -5,5 +5,5 @@ export const dynamic = "force-dynamic";
 
 export default async function VerificationErreur() {
   await requireAdmin();
-  return <DesignScreen name="verification-erreur" />;
+  return <DesignScreen name="verification-erreur" markAll />;
 }
