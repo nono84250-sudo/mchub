@@ -1,4 +1,30 @@
 /* "Non branché" : contour pointillé orange autour de ce qui n'existe pas encore dans le projet. */
-.nb { outline: 1px dashed #e0a458; outline-offset: 3px; border-radius: 4px; position: relative; }
-.nb-block { position: relative; outline: 1px dashed #e0a458; outline-offset: 6px; border-radius: 12px; }
-.nb-tag { position: absolute; top: -10px; right: 10px; z-index: 1; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: #e0a458; color: #161826; }
+.nb { outline: 1px dashed #e5484d; outline-offset: 3px; border-radius: 4px; position: relative; }
+.nb-block { position: relative; outline: 1px dashed #e5484d; outline-offset: 6px; border-radius: 12px; }
+.nb-tag { position: absolute; top: -10px; right: 10px; z-index: 1; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: #e5484d; color: #ffffff; }
+
+/* Panel : le menu reste visible en permanence, seul le contenu défile. Le cadre de la
+   maquette fait au moins 760 px et étire le menu sur toute sa hauteur ; ici le menu
+   reste collé en haut à la hauteur de l'écran, et le cadre ne coupe plus le défilement. */
+div[style*="min-height:760px"] { min-height: 100vh !important; overflow: visible !important; }
+nav[style*="width:232px"] { position: sticky !important; top: 0; height: 100vh; align-self: flex-start; overflow-y: auto; }
+
+/* "Proposition" : contour jaune autour de ce que je propose de coder en premier. */
+.pr-block { position: relative; outline: 1px dashed #e8c547; outline-offset: 6px; border-radius: 12px; }
+.pr-tag { position: absolute; top: -10px; right: 10px; z-index: 1; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: #e8c547; color: #161826; }
+
+/* "Proposition" sur un élément seul (dans un menu, par exemple). */
+.pr { outline: 1px dashed #e8c547; outline-offset: 3px; border-radius: 4px; position: relative; }
+
+/* Tableau des serveurs : défilement horizontal sur petit écran seulement, pour que le menu « ... » ne soit pas coupé sur grand écran. */
+.srv-table { overflow-x: auto; }
+@media (min-width: 1000px) { .srv-table { overflow: visible; } }
+
+/* Ligne serveur cliquable : le lien couvre toute la ligne (voir serversHtml). */
+.srv-cover { position: absolute; inset: 0; border-radius: 6px; }
+.srv-cover:hover { background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
+.srv-cover:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+
+/* Colonnes Online et Open reports centrées, en-tête compris. */
+.srv-row > :nth-child(5), .srv-row > :nth-child(6),
+.srv-head > :nth-child(5), .srv-head > :nth-child(6) { justify-self: center; text-align: center; }

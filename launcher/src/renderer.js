@@ -62,11 +62,16 @@ function playersText(server) {
   const capacity = server.playerCapacity !== null && server.playerCapacity !== undefined
     ? ` / ${server.playerCapacity}`
     : "";
-  return t("serverCard.playersOnline", { count: server.playerCount, capacity });
+  // Juste le nombre : « 16170 / 200000 » (le libellé est donné par le titre de la case).
+  return `${server.playerCount}${capacity}`;
 }
 
 function playersLabel(server) {
   const online = server.playerCount !== null && server.playerCount !== undefined;
+  // Contacté mais sans réponse : serveur fermé, en rouge (et non « statut inconnu »).
+  if (!online && server.pinged) {
+    return `<span class="status-dot" style="background:#e5484d"></span><span style="color:#e5484d">${t("serverCard.offline")}</span>`;
+  }
   return `<span class="status-dot${online ? " online" : ""}"></span>${playersText(server)}`;
 }
 
@@ -215,6 +220,33 @@ listSearchInputEl.addEventListener("input", () => {
   listSearchQuery = listSearchInputEl.value;
   renderFilteredList();
 });
+const listRefreshBtn = document.getElementById("list-refresh");
+const LIST_REFRESH_COOLDOWN_S = 30;
+let listRefreshTimer = null;
+listRefreshBtn.addEventListener("click", () => {
+  if (listRefreshTimer) return;
+  let left = LIST_REFRESH_COOLDOWN_S;
+  const label = t("serverList.refresh");
+  listRefreshBtn.disabled = true;
+  // Pendant le compte à rebours, le bouton n'a plus l'apparence « actif » (comme Plus récents).
+  listRefreshBtn.classList.remove("active");
+  listRefreshBtn.style.opacity = "0.5";
+  const tick = () => {
+    listRefreshBtn.textContent = left > 0 ? `${label} (${left} s)` : label;
+    left -= 1;
+    if (left < 0) {
+      clearInterval(listRefreshTimer);
+      listRefreshTimer = null;
+      listRefreshBtn.disabled = false;
+      listRefreshBtn.classList.add("active");
+      listRefreshBtn.style.opacity = "";
+    }
+  };
+  tick();
+  listRefreshTimer = setInterval(tick, 1000);
+  loadServers();
+});
+
 [sortRecentBtn, sortPlayersBtn].forEach((btn) => {
   btn.addEventListener("click", () => {
     listSortMode = btn.dataset.sort;
@@ -223,6 +255,25 @@ listSearchInputEl.addEventListener("input", () => {
     renderFilteredList();
   });
 });
+
+// Serveur gelé par l'équipe : même fiche, avec « Serveur gelé » à la place de « Rejoindre ».
+function renderFrozenDetail(slug) {
+  listEl.hidden = true;
+  statusEl.hidden = true;
+  detailEl.hidden = false;
+  detailEl.innerHTML = `
+    <button class="back">${t("serverDetail.back")}</button>
+    <h2 style="margin: 16px 0 8px 0;">${escapeHtml(slug)}</h2>
+    <p style="color: #8ac3e0; margin: 0 0 16px 0;">${t("serverDetail.frozenText")}</p>
+    <button class="join-btn" disabled style="color: #8ac3e0; border-color: #8ac3e0;">${t("serverDetail.frozenBtn")}</button>
+  `;
+  detailEl.querySelector(".back").addEventListener("click", () => {
+    if (detailOrigin === "favorites") showFavoritesView();
+    else if (detailOrigin === "recent") showRecentView();
+    else if (detailOrigin === "home") showHomeView();
+    else loadServers();
+  });
+}
 
 async function renderDetail(server) {
   listEl.hidden = true;
@@ -253,10 +304,10 @@ async function renderDetail(server) {
       <div class="detail-banner">
         ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
       </div>
-      <div class="detail-icon">${serverIconInner(server)}</div>
     </div>
     <div class="detail-header">
-      <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div class="detail-icon detail-icon-inline">${serverIconInner(server)}</div>
         <h2 style="margin: 0;">${escapeHtml(server.name)}</h2>
         ${favoriteBtnHtml(server.slug, isFav, "detail-favorite-btn")}
         ${
@@ -265,7 +316,7 @@ async function renderDetail(server) {
             : ""
         }
       </div>
-      <p class="meta">${playersLabel(server)}</p>
+      ${server.playerCount == null && server.pinged ? `<p class="meta">${playersLabel(server)}</p>` : ""}
     </div>
     <div class="stat-row">
       <div class="stat-tile">
@@ -390,6 +441,65 @@ reportOverlayEl.addEventListener("click", (event) => {
   if (event.target === reportOverlayEl) closeReportDialog();
 });
 
+// Fenêtre du choix de RAM : deux boutons (lancer avec la RAM du serveur / garder mes paramètres)
+// et deux cases indépendantes qui retiennent le choix pour les prochains lancements. Les boutons
+// ne valent que pour la partie en cours.
+function showRamChoiceModal({ recommended, configured, warning }) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("ram-choice-overlay");
+    const autoBox = document.getElementById("ram-choice-auto");
+    const manualBox = document.getElementById("ram-choice-manual");
+    const serverBtn = document.getElementById("ram-choice-server");
+    const mineBtn = document.getElementById("ram-choice-mine");
+    const closeBtn = document.getElementById("ram-choice-close");
+
+    document.getElementById("ram-choice-title").textContent = t("modal.ramRecommendedTitle");
+    document.getElementById("ram-choice-body").textContent = t("modal.ramChoiceBody", { recommended, configured });
+    const warnEl = document.getElementById("ram-choice-warning");
+    warnEl.textContent = warning || "";
+    warnEl.hidden = !warning;
+    // Mêmes phrases que dans Paramètres > Mémoire.
+    document.getElementById("ram-choice-auto-label").textContent = t("settings.alwaysRecommended");
+    document.getElementById("ram-choice-manual-label").textContent = t("settings.alwaysCustom");
+    serverBtn.textContent = t("modal.ramChoiceServerBtn", { recommended });
+    mineBtn.textContent = t("modal.ramChoiceMineBtn", { configured });
+    autoBox.checked = false;
+    manualBox.checked = false;
+    overlay.querySelector(".modal-box").classList.add("pop-in");
+    overlay.hidden = false;
+
+    // Les deux cases s'excluent : une seule préférence à la fois.
+    const onAuto = () => {
+      if (autoBox.checked) manualBox.checked = false;
+    };
+    const onManual = () => {
+      if (manualBox.checked) autoBox.checked = false;
+    };
+    const cleanup = () => {
+      overlay.hidden = true;
+      autoBox.removeEventListener("change", onAuto);
+      manualBox.removeEventListener("change", onManual);
+      serverBtn.removeEventListener("click", onServer);
+      mineBtn.removeEventListener("click", onMine);
+      closeBtn.removeEventListener("click", onClose);
+    };
+    const finish = (useServer, close) => {
+      const always = autoBox.checked ? "auto" : manualBox.checked ? "manual" : null;
+      cleanup();
+      resolve({ close, useServer, always });
+    };
+    const onServer = () => finish(true, false);
+    const onMine = () => finish(false, false);
+    const onClose = () => finish(false, true);
+
+    autoBox.addEventListener("change", onAuto);
+    manualBox.addEventListener("change", onManual);
+    serverBtn.addEventListener("click", onServer);
+    mineBtn.addEventListener("click", onMine);
+    closeBtn.addEventListener("click", onClose);
+  });
+}
+
 // Un serveur peut suggérer une RAM (voir ServerForm côté site) — comparée à
 // la RAM totale de la machine avant de lancer, avec un vrai avertissement
 // de sécurité si la valeur demandée est irréaliste pour ce PC (voir cahier
@@ -405,19 +515,9 @@ async function applyRecommendedRamIfNeeded(server) {
   const recommended = server.recommendedRamGB;
   const configured = settings.memoryMaxGB;
 
-  if (settings.alwaysUseCustomRam) {
-    // Le joueur veut toujours sa propre RAM : celle du serveur n'est jamais
-    // appliquee (donc pas de controle de securite ici), il est seulement
-    // prevenu quand la sienne est en dessous de la recommandation.
-    if (recommended <= configured) return { proceed: true, memoryOverride: null };
-    const warning = await showModal({
-      title: t("modal.ramBelowRecommendedTitle"),
-      body: t("modal.ramBelowRecommendedBody", { recommended, configured }),
-      confirmLabel: t("modal.continueAnyway"),
-      cancelLabel: t("common.cancel"),
-    });
-    return { proceed: warning.confirmed, memoryOverride: null };
-  }
+  // « Toujours avec ma RAM » : si la mienne suffit, on lance sans rien demander. Sinon le joueur
+  // est prévenu et revoit les deux boutons (voir la fenêtre plus bas, avec l'avertissement).
+  if (settings.alwaysUseCustomRam && recommended <= configured) return { proceed: true, memoryOverride: null };
 
   // Au-dela de 80% de la RAM totale, il ne resterait quasiment rien pour
   // l'OS et le reste du systeme — on refuse d'appliquer la valeur telle
@@ -428,6 +528,7 @@ async function applyRecommendedRamIfNeeded(server) {
     const fallbackMaxGB = Math.max(1, Math.floor(settings.totalGB / 2));
     const fallbackMinGB = Math.max(1, Math.floor(fallbackMaxGB / 2));
     const result = await showModal({
+      tone: "danger",
       title: t("modal.ramTooHighTitle"),
       body: t("modal.ramTooHighBody", { recommended, total: settings.totalGB, fallback: fallbackMaxGB }),
       confirmLabel: t("modal.continueAnyway"),
@@ -448,31 +549,19 @@ async function applyRecommendedRamIfNeeded(server) {
     return { proceed: true, memoryOverride: null };
   }
 
-  const result = await showModal({
-    title: t("modal.ramRecommendedTitle"),
-    body: t("modal.ramRecommendedBody", { recommended, configured }),
-    confirmLabel: t("modal.launchWith", { recommended }),
-    cancelLabel: t("modal.keepCurrentSettings", { configured }),
-    checkboxLabel: t("modal.rememberChoice"),
-  });
+  const warning = recommended > configured ? t("modal.ramChoiceWarning", { recommended, configured }) : null;
+  const choice = await showRamChoiceModal({ recommended, configured, warning });
+  if (choice.close) return { proceed: false, memoryOverride: null };
 
-  if (!result.confirmed) {
-    // "Garder mes Go" : la case "toujours" en fait le choix permanent.
-    if (result.checked) await window.mchub.settings.set({ alwaysUseCustomRam: true });
-    return { proceed: true, memoryOverride: null };
+  // Les cases retiennent le choix pour les prochains lancements ; les boutons ne valent que pour cette partie.
+  const halfGB = Math.max(1, Math.floor(recommended / 2));
+  if (choice.always === "auto") {
+    await window.mchub.settings.set({ memoryMinGB: halfGB, memoryMaxGB: recommended, alwaysUseRecommendedRam: true, alwaysUseCustomRam: false });
+  } else if (choice.always === "manual") {
+    await window.mchub.settings.set({ alwaysUseCustomRam: true, alwaysUseRecommendedRam: false });
   }
-
-  const memoryMinGB = Math.max(1, Math.floor(recommended / 2));
-  if (result.checked) {
-    // "Toujours" coché en même temps que "lancer maintenant" : devient le
-    // nouveau défaut, pas juste ce lancement.
-    await window.mchub.settings.set({ memoryMinGB, memoryMaxGB: recommended, alwaysUseRecommendedRam: true });
-    return { proceed: true, memoryOverride: null };
-  }
-  // Confirmé sans cocher "toujours" : uniquement pour ce lancement — ne
-  // touche pas aux paramètres par défaut du joueur (c'était le bug :
-  // l'ancien code persistait quand même memoryMinGB/memoryMaxGB ici).
-  return { proceed: true, memoryOverride: { minGB: memoryMinGB, maxGB: recommended } };
+  if (!choice.useServer) return { proceed: true, memoryOverride: null };
+  return { proceed: true, memoryOverride: { minGB: halfGB, maxGB: recommended } };
 }
 
 // Orchestration partagee du lancement, quel que soit le point d'entree
@@ -484,6 +573,24 @@ let launchInProgress = false;
 function setPlaybarBusy(busy) {
   document.getElementById("playbar-idle").hidden = busy;
   document.getElementById("playbar-progress").hidden = !busy;
+}
+
+// Bouton « Jouer » : pendant le démarrage ou pendant que Minecraft tourne, il affiche l'état
+// (et clignote) au lieu de « Jouer » — on ne peut pas lancer deux Minecraft à la fois.
+function syncPlaybarWithGame() {
+  const playBtn = document.getElementById("playbar-play");
+  const running = gamePlaying || launchStarting;
+  playBtn.classList.toggle("playing", running);
+  if (gamePlaying) {
+    playBtn.textContent = t("playbar.minecraftRunning");
+    playBtn.disabled = true;
+  } else if (launchStarting) {
+    playBtn.textContent = t("playbar.minecraftStarting");
+    playBtn.disabled = true;
+  } else {
+    playBtn.textContent = t("playbar.play");
+    playBtn.disabled = !selectedFavoriteSlug || launchInProgress;
+  }
 }
 
 async function launchServer(server) {
@@ -532,6 +639,7 @@ async function launchServer(server) {
     playCounts[server.slug] = (playCounts[server.slug] || 0) + 1;
     const recentlyPlayed = [server.slug, ...(settings.recentlyPlayed || []).filter((s) => s !== server.slug)].slice(0, 10);
     await window.mchub.settings.set({ playCounts, lastPlayedSlug: server.slug, recentlyPlayed });
+    selectedFavoriteSlug = server.slug;
     await refreshPlaybarFavorites();
 
     // Parametres > Debogage (voir renderDebugTab) — deux reglages qui
@@ -541,11 +649,24 @@ async function launchServer(server) {
 
     setTimeout(() => {
       setPlaybarBusy(false);
-      playBtn.disabled = !selectedFavoriteSlug;
+      launchStarting = true;
+      syncPlaybarWithGame();
+      // Sécurité : si le jeu ne s'annonce jamais, le bouton reprend son état normal.
+      setTimeout(() => {
+        launchStarting = false;
+        syncPlaybarWithGame();
+      }, 60_000);
     }, 1800);
   } else {
     fill.classList.add("error");
     label.textContent = result.error;
+    if (result.frozen) {
+      await showModal({
+        title: t("modal.frozenTitle"),
+        body: t("modal.frozenBody", { name: server.name }),
+        confirmLabel: t("modal.frozenClose"),
+      });
+    }
     playBtn.disabled = !selectedFavoriteSlug;
     // Meme mecanisme que le succes (setPlaybarBusy(false) different) —
     // sinon la barre reste bloquee sur l'erreur pour toujours, le bouton
@@ -583,6 +704,10 @@ async function openDetail(slug) {
   statusEl.textContent = t("serverList.loadingDetail");
 
   const result = await window.mchub.getServer(slug);
+  if (!result.ok && result.frozen) {
+    renderFrozenDetail(slug);
+    return;
+  }
   if (!result.ok) {
     statusEl.classList.add("error");
     statusEl.textContent = t("serverList.errorDetailPrefix", { error: result.error });
@@ -1004,6 +1129,8 @@ function renderMcStatus(data) {
 }
 
 // `force` : "Actualiser" — repasse outre le cache de 30 s du processus principal.
+const CONNECTION_TEST_ENABLED = false;
+
 async function loadMcStatus(force = false) {
   if (mcStatusLoading) return;
   mcStatusLoading = true;
@@ -1011,11 +1138,15 @@ async function loadMcStatus(force = false) {
   else mcStatusList.innerHTML = `<div class="mc-status-row" style="padding: 14px;">${t("common.checking")}</div>`;
   try {
     renderMcStatus(await window.mchub.getServicesStatus(force));
-    mcConnection = { state: "running", phase: "ping", percent: 0, result: null };
-    renderMcStatus(mcStatusData);
-    const connection = await window.mchub.getConnection(force);
-    mcConnection = connection.error ? { state: "error", phase: "", percent: 0, result: null } : { state: "done", phase: "", percent: 0, result: connection };
-    renderMcStatus(mcStatusData);
+    // Test de connexion (ping + envoi/téléchargement de fichiers vers le site) : désactivé pour le moment,
+    // il charge le site et ralentit tout le reste. Remettre à true pour le réactiver.
+    if (CONNECTION_TEST_ENABLED) {
+      mcConnection = { state: "running", phase: "ping", percent: 0, result: null };
+      renderMcStatus(mcStatusData);
+      const connection = await window.mchub.getConnection(force);
+      mcConnection = connection.error ? { state: "error", phase: "", percent: 0, result: null } : { state: "done", phase: "", percent: 0, result: connection };
+      renderMcStatus(mcStatusData);
+    }
   } finally {
     mcStatusLoading = false;
   }
@@ -1070,16 +1201,30 @@ function notifTimeLabel(iso) {
   return t("notifications.daysAgo", { count: String(days) });
 }
 
+// Couleur par type de notification : gel en bleu, messages de l'équipe selon leur type.
+const NOTIF_COLORS = { server_frozen: "#8ac3e0", admin_info: "#9184d9", admin_warning: "#e8c547", admin_error: "#e5484d" };
+
 function notifItemHtml(notif) {
-  const title =
-    notif.type === "report_resolved"
-      ? t("notifications.reportResolvedTitle", { server: notif.serverName })
-      : t("notifications.reportRepliedTitle", { server: notif.serverName });
-  const message = notif.message ? `<div class="notif-item-message">${escapeHtml(notif.message)}</div>` : "";
+  const color = NOTIF_COLORS[notif.type];
+  const colorStyle = color ? ` style="color:${color};overflow-wrap:anywhere"` : "";
+  const isAdmin = notif.type.startsWith("admin_");
+  const title = notif.type === "server_frozen"
+    ? t("notifications.serverFrozenTitle", { server: notif.serverName })
+    : isAdmin
+      ? t("notifications.adminMessageTitle", { server: notif.serverName })
+      : notif.type === "report_resolved"
+        ? t("notifications.reportResolvedTitle", { server: notif.serverName })
+        : t("notifications.reportRepliedTitle", { server: notif.serverName });
+  let message = "";
+  if (notif.type === "server_frozen") {
+    message = `<div class="notif-item-message" style="color:${color};overflow-wrap:anywhere">${t("notifications.serverFrozenBody")}</div>`;
+  } else if (notif.message) {
+    message = `<div class="notif-item-message"${colorStyle}>${escapeHtml(notif.message)}</div>`;
+  }
   return `
     <div class="notif-item${notif.read ? "" : " unread"}" data-id="${escapeHtml(notif.id)}">
       <button type="button" class="notif-item-delete" data-id="${escapeHtml(notif.id)}" title="${t("notifications.deleteOne")}">×</button>
-      <div class="notif-item-title">${escapeHtml(title)}</div>
+      <div class="notif-item-title"${colorStyle}>${escapeHtml(title)}</div>
       ${message}
       <div class="notif-item-time">${notifTimeLabel(notif.createdAt)}</div>
     </div>
@@ -1198,7 +1343,7 @@ function homeInstanceRowHtml(server) {
       <div class="row-body">
         <div class="row-title-line">
           <h3>${escapeHtml(server.name)}</h3>
-          <span class="badge">${t(`myInstances.${instanceBadgeKey(status)}`)}</span>
+          <span class="badge"${server.frozenAt ? " style=\"color:#8ac3e0;border-color:#8ac3e0\"" : ""}>${t(`myInstances.${instanceBadgeKey(status, server)}`)}</span>
         </div>
         <p>${instanceStatusLineHtml(server, status)}</p>
       </div>
@@ -1437,7 +1582,8 @@ function instanceStatus(server) {
   return server.isPrivate ? "private" : "public";
 }
 
-function instanceBadgeKey(status) {
+function instanceBadgeKey(status, server) {
+  if (server.frozenAt) return "badgeFrozen";
   return status === "public" ? "badgePublic" : status === "private" ? "badgePrivate" : "badgePaused";
 }
 
@@ -1445,6 +1591,9 @@ function instanceBadgeKey(status) {
 // l'accueil (voir homeInstanceRowHtml) — le seul endroit qui decide quoi
 // afficher a la place du nombre de joueurs pour un serveur prive/en pause.
 function instanceStatusLineHtml(server, status) {
+  if (status === "paused" && server.frozenAt) {
+    return `<span class="status-dot" style="background:#8ac3e0"></span><span style="color:#8ac3e0">${t("myInstances.frozenLine")}</span>`;
+  }
   if (status === "paused") return `<span class="status-dot"></span>${t("myInstances.hiddenNote")}`;
   if (status !== "private") return playersLabel(server);
   const label = t("myInstances.inviteCodeLabel", { code: `<code>${escapeHtml(server.inviteCode || "")}</code>` });
@@ -1457,7 +1606,7 @@ function instanceStatusLineHtml(server, status) {
 
 function instanceCardHtml(server) {
   const status = instanceStatus(server);
-  const badgeKey = instanceBadgeKey(status);
+  const badgeKey = instanceBadgeKey(status, server);
   const statusLine = instanceStatusLineHtml(server, status);
 
   return `
@@ -1466,7 +1615,7 @@ function instanceCardHtml(server) {
       <div class="instance-card-body">
         <div class="instance-card-title">
           <h3>${escapeHtml(server.name)}</h3>
-          <span class="instance-badge ${status}">${t(`myInstances.${badgeKey}`)}</span>
+          <span class="instance-badge ${server.frozenAt ? "frozen" : status}">${t(`myInstances.${badgeKey}`)}</span>
         </div>
         <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)} · ${escapeHtml(server.ip)}</p>
         ${status === "public" ? "" : `<div class="instance-card-status">${statusLine}</div>`}
@@ -2152,7 +2301,24 @@ function renderMemoryTab(contentEl, settings) {
     settingsStatusEl.classList.remove("ms-error");
     settingsStatusEl.textContent = t("settings.saved");
     renderMemoryTab(contentEl, { ...settings, ...updated });
+    flashSavedButton(document.getElementById("settings-save-memory"));
   });
+}
+
+// Confirmation visuelle : le bouton passe au vert « Enregistré ✓ » pendant un instant.
+function flashSavedButton(btn) {
+  if (!btn) return;
+  const label = btn.textContent;
+  btn.textContent = t("settings.savedButton");
+  btn.style.background = "color-mix(in srgb, #5fd3a0 22%, transparent)";
+  btn.style.borderColor = "#5fd3a0";
+  btn.style.color = "#5fd3a0";
+  setTimeout(() => {
+    btn.textContent = label;
+    btn.style.background = "";
+    btn.style.borderColor = "";
+    btn.style.color = "";
+  }, 1800);
 }
 
 function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
@@ -2563,7 +2729,7 @@ async function refreshPlaybarFavorites() {
 
   const selected = resolve(selectedFavoriteSlug);
   favTrigger.disabled = false;
-  if (!launchInProgress) playBtn.disabled = false;
+  if (!launchInProgress && !gamePlaying && !launchStarting) playBtn.disabled = false;
   favIcon.innerHTML = `<span class="server-icon" style="width: 22px; height: 22px; font-size: 10px;">${serverIconInner(selected)}</span>`;
   favName.textContent = selected.name;
 
@@ -2630,11 +2796,9 @@ function wirePlaybar() {
   playBtn.addEventListener("click", async () => {
     if (!selectedFavoriteSlug) return;
     const result = await window.mchub.getServer(selectedFavoriteSlug);
-    if (!result.ok) return;
-    // launchServer() enregistre deja lastPlayedSlug en cas de succes — cet
-    // appel ecrivait une cle differente (lastPlayedFavoriteSlug, jamais lue
-    // nulle part) qui n'avait donc aucun effet.
-    await launchServer(result.server);
+    // Si la fiche ne charge pas (serveur gelé, par exemple), on tente quand même : le launcher
+    // affichera la raison exacte renvoyée par le site au lieu de ne rien faire.
+    await launchServer(result.ok ? result.server : { slug: selectedFavoriteSlug, name: selectedFavoriteSlug });
   });
 }
 
@@ -2652,7 +2816,7 @@ function wireSidebar() {
 // bloquant futur. Résout avec { confirmed, checked } plutôt que de bloquer
 // le thread comme un confirm() natif, pour rester cohérent avec le reste de
 // l'UI (pas de fenêtre système grise dans une appli aussi personnalisée).
-function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel }) {
+function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel, tone }) {
   return new Promise((resolve) => {
     const overlay = document.getElementById("modal-overlay");
     const confirmBtn = document.getElementById("modal-confirm");
@@ -2661,6 +2825,8 @@ function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel }) {
     const checkbox = document.getElementById("modal-checkbox");
 
     document.getElementById("modal-title").textContent = title;
+    // Alerte critique (ex. RAM au-delà de 80 % de la machine) : titre en rouge.
+    document.getElementById("modal-title").style.color = tone === "danger" ? "#e5484d" : "";
     document.getElementById("modal-body").textContent = body;
     confirmBtn.textContent = confirmLabel;
     cancelBtn.hidden = !cancelLabel;
@@ -2669,6 +2835,7 @@ function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel }) {
     document.getElementById("modal-checkbox-label").textContent = checkboxLabel || "";
     checkbox.checked = false;
 
+    overlay.querySelector(".modal-box").classList.add("pop-in");
     overlay.hidden = false;
 
     const cleanup = () => {
@@ -2830,7 +2997,7 @@ boot();
 // Ne touche à rien si le joueur est sur une page de détail, et reste
 // silencieux en cas d'échec (on ne veut pas interrompre l'utilisateur
 // pour un ping raté en tâche de fond).
-const REFRESH_INTERVAL_MS = 30_000;
+const REFRESH_INTERVAL_MS = 60_000;
 
 async function silentRefreshList() {
   if (!signedIn || listEl.hidden) return;
@@ -2842,17 +3009,22 @@ async function silentRefreshList() {
 // la console de debug). Le delai est relu a chaque tour.
 const REFRESH_PLAYING_INTERVAL_MS = 300_000;
 let gamePlaying = false;
+let launchStarting = false;
 window.mchub.onGameState((running) => {
   gamePlaying = running;
+  if (running) launchStarting = false;
+  if (!running) launchStarting = false;
+  syncPlaybarWithGame();
 });
 
-function scheduleRefresh(task) {
+function scheduleRefresh(task, baseMs = REFRESH_INTERVAL_MS) {
   const tick = async () => {
     await task();
-    setTimeout(tick, gamePlaying ? REFRESH_PLAYING_INTERVAL_MS : REFRESH_INTERVAL_MS);
+    setTimeout(tick, gamePlaying ? REFRESH_PLAYING_INTERVAL_MS : baseMs);
   };
-  setTimeout(tick, REFRESH_INTERVAL_MS);
+  setTimeout(tick, baseMs);
 }
 
 scheduleRefresh(silentRefreshList);
-scheduleRefresh(refreshNotifications);
+// Notifications : toutes les 5 minutes (chaque appel interroge la base du site).
+scheduleRefresh(refreshNotifications, 300_000);

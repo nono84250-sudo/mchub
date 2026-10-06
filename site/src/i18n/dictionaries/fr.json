@@ -80,7 +80,8 @@
     "notificationsEmpty": "Aucune notification pour le moment.",
     "categoryAnnouncements": "Annonces",
     "categoryServers": "Serveurs",
-    "categoryAccount": "Compte"
+    "categoryAccount": "Compte",
+    "frozen": "Gelé"
   },
   "servers": {
     "title": "Annuaire des serveurs",
@@ -175,7 +176,11 @@
     "activityNote": "Le nombre de joueurs en ligne n'est pas encore suivi dans le temps — seule la dernière valeur connue est affichée ci-dessus. Un historique demanderait un ping régulier en arrière-plan, qui n'existe pas encore pour ce projet.",
     "settingsTitle": "Paramètres",
     "saveChanges": "Enregistrer les modifications",
-    "saving": "Enregistrement..."
+    "saving": "Enregistrement...",
+    "frozen": "Gelé",
+    "frozenBy": "Gelé par l'équipe Omniscient",
+    "detailFrozenReason": "Motif du gel",
+    "frozenHint": "Ce serveur est gelé : il ne peut pas être remis en ligne par le propriétaire."
   },
   "reports": {
     "title": "Signalements",

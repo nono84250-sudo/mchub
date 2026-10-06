@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPublicServerBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { db } from "@/prisma/db";
 
 export const revalidate = 60;
 
@@ -18,6 +19,11 @@ export async function GET(request: Request, ctx: RouteContext<"/api/public/serve
   const server = await getPublicServerBySlug(slug, proofFromRequest(request));
 
   if (!server) {
+    // Serveur gelé par l'équipe : le launcher l'affiche comme « gelé », pas comme « introuvable ».
+    const frozen = await db.orm.public.Server.select("frozenAt").where({ slug }).first();
+    if (frozen?.frozenAt) {
+      return NextResponse.json({ error: "Serveur gelé", code: "frozen" }, { status: 404, headers: CORS_HEADERS });
+    }
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404, headers: CORS_HEADERS });
   }
 

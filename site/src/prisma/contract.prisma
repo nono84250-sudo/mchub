@@ -73,6 +73,12 @@ model Server {
   // simples compteurs incrementes cote site (vue de la fiche publique) et
   // par le launcher (lancement reussi) - pas d'historique dans le temps.
   published   Boolean @default(true)
+
+  // Gel par l'equipe (panel admin) : serveur retire de l'annuaire, lancement refuse par le site.
+  // Vide = pas gele. Seul un admin degele (voir /api/admin/servers/[id]/unfreeze).
+  frozenAt     TimestamptzString?
+  frozenReason String?
+  frozenBy     String?
   viewCount   Int     @default(0)
   launchCount Int     @default(0)
 
@@ -193,6 +199,10 @@ enum notification_type {
   @@type("pg/text@1")
   report_replied  = "report_replied"
   report_resolved = "report_resolved"
+  server_frozen   = "server_frozen"
+  admin_info      = "admin_info"
+  admin_warning   = "admin_warning"
+  admin_error     = "admin_error"
 }
 
 // Alerte personnelle pour un joueur (cloche du launcher, voir memoire

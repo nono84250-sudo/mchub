@@ -32,6 +32,8 @@ export type PublicServerSummary = {
   type: "vanilla" | "modded";
   playerCount: number | null;
   playerCapacity: number | null;
+  // Vrai une fois le serveur contacté : sans réponse (playerCount null), il est « fermé ».
+  pinged: boolean;
   createdAt: string;
   viewCount: number;
   // UUID Minecraft du proprietaire (toujours renseigne desormais : voir
@@ -118,6 +120,7 @@ function toSummary(row: PublishedServerRow): PublicServerSummary {
     type: row.type,
     playerCount: row.playerCount,
     playerCapacity: row.playerCapacity,
+    pinged: row.lastPingedAt != null,
     createdAt: row.createdAt,
     viewCount: row.viewCount,
     ownerMinecraftUuid: row.owner?.minecraftUuid ?? null,
@@ -336,6 +339,7 @@ export async function getPublicServerBySlug(slug: string, proof: PrivateServerPr
     curseforgeModpackVersion: row.curseforgeModpackVersion,
     playerCount: status.playerCount,
     playerCapacity: status.playerCapacity,
+    pinged: row.lastPingedAt != null,
     recommendedRamGB: row.recommendedRamGB,
     createdAt: row.createdAt,
     viewCount: row.viewCount,
@@ -352,9 +356,12 @@ export type OwnedServerSummary = {
   ip: string;
   published: boolean;
   isPrivate: boolean;
+  frozenAt: string | null;
+  frozenReason: string | null;
   inviteCode: string | null;
   playerCount: number | null;
   playerCapacity: number | null;
+  recommendedRamGB: number | null;
 };
 
 // Sert la vue "Mes instances" du launcher (route /api/launcher/servers/mine,
@@ -364,7 +371,7 @@ export type OwnedServerSummary = {
 // listPublicServers() qui ne montre que les serveurs publies ET publics.
 // Inclut `ip` : le proprietaire connait deja sa propre adresse de connexion
 // (meme raisonnement que getServerWithIpBySlug).
-export async function listServersOwnedByMinecraftUuid(minecraftUuid: string): Promise<OwnedServerSummary[]> {
+async function loadOwnedServersByMinecraftUuid(minecraftUuid: string): Promise<OwnedServerSummary[]> {
   const owner = await db.orm.public.User.select("id").where({ minecraftUuid }).first();
   if (!owner) return [];
 
@@ -378,9 +385,12 @@ export async function listServersOwnedByMinecraftUuid(minecraftUuid: string): Pr
     "ip",
     "published",
     "isPrivate",
+    "frozenAt",
+    "frozenReason",
     "inviteCode",
     "playerCount",
     "playerCapacity",
+    "recommendedRamGB",
   )
     .where({ ownerId: owner.id })
     .orderBy((s) => s.createdAt.desc())
@@ -388,6 +398,12 @@ export async function listServersOwnedByMinecraftUuid(minecraftUuid: string): Pr
 
   return rows;
 }
+
+// « Mes instances » : résultat gardé 60 secondes par compte (vidé aussi par les actions admin).
+export const listServersOwnedByMinecraftUuid = unstable_cache(loadOwnedServersByMinecraftUuid, ["owned-servers"], {
+  revalidate: 60,
+  tags: [SERVERS_CACHE_TAG],
+});
 
 // Resout un code d'invitation vers la fiche du serveur prive correspondant
 // (voir /join/[code]) — jamais expose autrement qu'ici, puisque

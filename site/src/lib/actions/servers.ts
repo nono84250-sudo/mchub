@@ -200,6 +200,8 @@ export async function toggleServerPublished(serverId: string) {
   const owned = await getOwnedServer(serverId, session.user.id);
   if (!owned) redirect("/dashboard");
 
+  // Un serveur gelé par l'équipe ne se republie pas tout seul : seul un admin le dégèle.
+  if (owned.frozenAt) return;
   await db.orm.public.Server.where({ id: serverId }).update({ published: !owned.published });
 
   updateTag(SERVERS_CACHE_TAG); // pause / republication : effet immediat pour tout le monde

@@ -6,6 +6,7 @@ import { db } from "@/prisma/db";
 import { getServerActivity } from "@/lib/server-activity";
 import { getServerStatus } from "@/lib/server-status";
 import { getT } from "@/i18n/getDictionary";
+import { FROZEN_CHIP_STYLE } from "@/lib/frozen";
 
 export const metadata = { title: "Vue d'ensemble — Omniscient" };
 
@@ -72,10 +73,24 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
 
       <div className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
         <DetailRow label={dict.manage.detailStatus}>
-          <span className={server.published ? "tag-chip tag-chip-accent" : "tag-chip"}>
-            {server.published ? dict.manage.published : dict.manage.paused}
+          <span
+            className={server.frozenAt || !server.published ? "tag-chip" : "tag-chip tag-chip-accent"}
+            style={server.frozenAt ? FROZEN_CHIP_STYLE : undefined}
+          >
+            {server.frozenAt ? dict.manage.frozen : server.published ? dict.manage.published : dict.manage.paused}
           </span>
         </DetailRow>
+        {server.frozenAt ? (
+          <div className="flex flex-col gap-1.5 px-4 py-3">
+            <span className="whitespace-nowrap text-[13px] text-muted">{dict.manage.detailFrozenReason}</span>
+            <span className="text-[13.5px]" style={{ color: "#8ac3e0" }}>
+              {dict.manage.frozenBy}
+            </span>
+            {server.frozenReason ? (
+              <span className="whitespace-pre-wrap break-words text-[13.5px] text-foreground">{server.frozenReason}</span>
+            ) : null}
+          </div>
+        ) : null}
         <DetailRow label={dict.manage.detailVisibility}>
           <span className="inline-flex items-center gap-1.5 text-[13.5px] font-medium text-foreground">
             {server.isPrivate ? <LockSimple className="h-4 w-4" /> : <GlobeHemisphereWest className="h-4 w-4" />}

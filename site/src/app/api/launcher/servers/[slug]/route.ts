@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { db } from "@/prisma/db";
 import { getServerWithIpBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
@@ -26,6 +27,11 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   }
 
   const { slug } = await ctx.params;
+  // Serveur gelé par l'équipe : le launcher reçoit un message clair, pas un simple « introuvable ».
+  const frozen = await db.orm.public.Server.select("frozenAt").where({ slug }).first();
+  if (frozen?.frozenAt) {
+    return NextResponse.json({ error: "Ce serveur est gelé par l'équipe Omniscient.", code: "frozen" }, { status: 403 });
+  }
   const server = await getServerWithIpBySlug(slug, proofFromRequest(request));
 
   if (!server) {

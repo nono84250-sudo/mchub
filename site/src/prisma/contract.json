@@ -60,6 +60,22 @@
               {
                 "name": "report_resolved",
                 "value": "report_resolved"
+              },
+              {
+                "name": "server_frozen",
+                "value": "server_frozen"
+              },
+              {
+                "name": "admin_info",
+                "value": "admin_info"
+              },
+              {
+                "name": "admin_warning",
+                "value": "admin_warning"
+              },
+              {
+                "name": "admin_error",
+                "value": "admin_error"
               }
             ]
           },
@@ -550,6 +566,27 @@
                   "kind": "scalar"
                 }
               },
+              "frozenAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "kind": "scalar"
+                }
+              },
+              "frozenBy": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "frozenReason": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "iconUrl": {
                 "nullable": true,
                 "type": {
@@ -776,6 +813,15 @@
                 },
                 "discordUrl": {
                   "column": "discordUrl"
+                },
+                "frozenAt": {
+                  "column": "frozenAt"
+                },
+                "frozenBy": {
+                  "column": "frozenBy"
+                },
+                "frozenReason": {
+                  "column": "frozenReason"
                 },
                 "iconUrl": {
                   "column": "iconUrl"
@@ -1081,8 +1127,8 @@
             "notification": {
               "checks": [
                 {
-                  "expression": "\"type\" IN ('report_replied', 'report_resolved')",
-                  "name": "notification_type_check_e748acba",
+                  "expression": "\"type\" IN ('report_replied', 'report_resolved', 'server_frozen', 'admin_info', 'admin_warning', 'admin_error')",
+                  "name": "notification_type_check_1e65cfab",
                   "prefix": "notification_type_check"
                 }
               ],
@@ -1383,6 +1429,21 @@
                   "nullable": false
                 },
                 "discordUrl": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "frozenAt": {
+                  "codecId": "pg/timestamptz-string@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true
+                },
+                "frozenBy": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "frozenReason": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
                   "nullable": true
@@ -1727,7 +1788,11 @@
               "kind": "valueSet",
               "values": [
                 "report_replied",
-                "report_resolved"
+                "report_resolved",
+                "server_frozen",
+                "admin_info",
+                "admin_warning",
+                "admin_error"
               ]
             },
             "report_issue": {
@@ -1768,7 +1833,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "6c6403673b24bb8e043ace212ba1738710f5048a590ea4ea39fd1b414c587343"
+    "storageHash": "d7d7315a4fdaf199396e809bbbb981c84dfafcce5b907078abdf7a2a727fef1c"
   },
   "execution": {
     "executionHash": "3de40463f2f763852947a9ae55ccb9696beadf728520cb9fba8d245aa4dc2e0c",

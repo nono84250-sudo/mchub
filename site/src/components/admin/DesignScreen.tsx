@@ -38,9 +38,9 @@ function linkNav(html: string): string {
   });
 }
 
-export function DesignScreen({ name, html, markAll }: { name: keyof typeof SCREENS; html?: string; markAll?: boolean }) {
+export function DesignScreen({ name, html, markAll }: { name: keyof typeof SCREENS; html?: string; markAll?: boolean | "proposal" }) {
   let content = linkNav(html ?? SCREENS[name]);
-  if (markAll) content = markAllSections(content);
+  if (markAll) content = markAllSections(content, markAll === "proposal" ? "pr" : "nb");
   return (
     <>
       <link rel="stylesheet" href="/admin/nocturne.css" />

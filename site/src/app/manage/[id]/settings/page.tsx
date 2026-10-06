@@ -69,6 +69,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
             <ManageActions
               slug={server.slug}
               published={server.published}
+              frozen={server.frozenAt !== null}
               onTogglePublished={boundTogglePublished}
               onDuplicate={boundDuplicate}
               onDelete={boundDelete}

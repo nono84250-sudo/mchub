@@ -261,8 +261,11 @@ async function fetchJson(url, options = {}) {
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     if (!res.ok) {
-      const error = new Error(`Réponse ${res.status} du site Omniscient`);
+      // Le site renvoie un message et parfois un code (ex. « frozen ») : on les garde.
+      const body = await res.json().catch(() => null);
+      const error = new Error(body?.error || `Réponse ${res.status} du site Omniscient`);
       error.status = res.status;
+      error.code = body?.code;
       throw error;
     }
     return await res.json();
@@ -540,10 +543,12 @@ ipcMain.handle("servers:list", async () => {
 
 ipcMain.handle("servers:get", async (_event, slug) => {
   try {
-    const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`);
+    // Serveur privé rejoint : le code d'invitation est nécessaire pour voir la fiche.
+    const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, { headers: inviteHeaders(slug) });
     return { ok: true, server: data.server };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+    // Serveur gelé : signalé pour afficher « gelé » plutôt que « introuvable ».
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue", frozen: error?.code === "frozen" };
   }
 });
 
@@ -553,22 +558,37 @@ ipcMain.handle("servers:get", async (_event, slug) => {
 // aucun compte n'est encore lie, plutot qu'une erreur — cas normal pour la
 // plupart des joueurs (uniquement les proprietaires de serveur ont besoin
 // de cette liaison).
+// Résultat gardé 60 secondes par compte : évite de redemander le site à chaque ouverture.
+let mineCache = null;
+const MINE_CACHE_MS = 60_000;
+
 ipcMain.handle("servers:mine", async () => {
   if (!currentSession) {
     logStore.pushLog({ level: "warn", source: "launcher", message: "Mes instances : pas de session Microsoft active" });
     return { ok: false, status: 401, error: "Pas de compte Microsoft connecté." };
   }
+  const uuid = currentSession.profile.id;
+  if (mineCache && mineCache.uuid === uuid && Date.now() - mineCache.at < MINE_CACHE_MS) {
+    logStore.pushLog({ source: "launcher", message: "[debug] Mes instances : réponse en cache" });
+    return { ok: true, servers: mineCache.servers };
+  }
+  // DEBUG TEMPORAIRE
+  const debugStart = Date.now();
+  logStore.pushLog({ source: "launcher", message: "[debug] Mes instances : demande au site lancée" });
   try {
     const data = await withSessionRetry(() =>
       fetchJson(
-        `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
+        `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(uuid)}`,
         { headers: launcherAuthHeaders() },
       ),
     );
+    mineCache = { uuid, at: Date.now(), servers: data.servers };
+    logStore.pushLog({ source: "launcher", message: `[debug] Mes instances : réponse en ${Date.now() - debugStart} ms` });
     logStore.pushLog({ source: "launcher", message: `Mes instances : ${data.servers?.length ?? 0} serveur(s) chargé(s)` });
     return { ok: true, servers: data.servers };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
+    logStore.pushLog({ level: "error", source: "launcher", message: `[debug] Mes instances : échec après ${Date.now() - debugStart} ms` });
     logStore.pushLog({ level: "error", source: "launcher", message: `Mes instances : échec (${error.status ?? "pas de réponse"}) : ${message}` });
     return { ok: false, status: error.status, error: message };
   }
@@ -1179,6 +1199,16 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) win.webContents.send("game:state", running);
         }
+        // Le launcher s'était caché pendant la partie (réglage « garder le launcher ouvert » décoché) :
+        // il se réaffiche tout seul quand le jeu se ferme.
+        if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (win.isDestroyed()) continue;
+            if (win.isMinimized()) win.restore();
+            win.show();
+            win.focus();
+          }
+        }
       },
       authorization: currentSession.authorization,
       version: modded?.minecraftVersion ?? server.minecraftVersion,
@@ -1207,7 +1237,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement de "${slug}" : ${message}` });
-    return { ok: false, error: message };
+    return { ok: false, error: message, frozen: error?.code === "frozen" };
   } finally {
     gameLaunchInProgress = false;
   }

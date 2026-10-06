@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Pause, Play, Copy, Trash, ArrowSquareOut } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
+import { FROZEN_CHIP_STYLE } from "@/lib/frozen";
 
 // Boutons d'action de "Paramètres" (voir maquette "05 · Settings") — avec confirmation avant toute
 // action destructive/impactante (l'utilisateur a signale que le formulaire
@@ -14,12 +15,14 @@ import { useI18n } from "@/i18n/I18nProvider";
 export function ManageActions({
   slug,
   published,
+  frozen,
   onTogglePublished,
   onDuplicate,
   onDelete,
 }: {
   slug: string;
   published: boolean;
+  frozen: boolean;
   onTogglePublished: () => Promise<void>;
   onDuplicate: () => Promise<void>;
   onDelete: () => Promise<void>;
@@ -54,19 +57,28 @@ export function ManageActions({
     <div className="flex flex-col gap-4">
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-        <span className="tag-chip tag-chip-accent self-start">{published ? t("manage.published") : t("manage.paused")}</span>
-
-        <button
-          type="button"
-          disabled={pending !== null}
-          onClick={() =>
-            run("toggle", published ? t("manage.confirmToggleOff") : t("manage.confirmToggleOn"), onTogglePublished)
-          }
-          className="btn-secondary text-sm"
+        <span
+          className={frozen ? "tag-chip self-start" : "tag-chip tag-chip-accent self-start"}
+          style={frozen ? FROZEN_CHIP_STYLE : undefined}
         >
-          {published ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          {pending === "toggle" ? "..." : published ? t("manage.pause") : t("manage.republish")}
-        </button>
+          {frozen ? t("manage.frozen") : published ? t("manage.published") : t("manage.paused")}
+        </span>
+
+        {frozen ? (
+          <p className="text-sm text-muted">{t("manage.frozenHint")}</p>
+        ) : (
+          <button
+            type="button"
+            disabled={pending !== null}
+            onClick={() =>
+              run("toggle", published ? t("manage.confirmToggleOff") : t("manage.confirmToggleOn"), onTogglePublished)
+            }
+            className="btn-secondary text-sm"
+          >
+            {published ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            {pending === "toggle" ? "..." : published ? t("manage.pause") : t("manage.republish")}
+          </button>
+        )}
 
         {published ? (
           <Link href={`/servers/${slug}`} className="btn-secondary text-sm">

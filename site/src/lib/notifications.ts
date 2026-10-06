@@ -5,7 +5,7 @@ import { db } from "@/prisma/db";
 // commentaire sur le modele Notification dans contract.prisma pour pourquoi
 // le destinataire est un minecraftUuid brut plutot qu'une relation User.
 
-export type NotificationType = "report_replied" | "report_resolved";
+export type NotificationType = "report_replied" | "report_resolved" | "server_frozen" | "admin_info" | "admin_warning" | "admin_error";
 
 export type NotificationSummary = {
   id: string;

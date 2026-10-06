@@ -4,6 +4,7 @@ import { Plus, ArrowRight, Globe, LockSimple } from "@phosphor-icons/react/ssr";
 import { auth } from "@/auth";
 import { db } from "@/prisma/db";
 import { getT } from "@/i18n/getDictionary";
+import { FROZEN_CHIP_STYLE } from "@/lib/frozen";
 
 export const metadata = { title: "Mon espace — Omniscient" };
 
@@ -12,7 +13,7 @@ export default async function DashboardPage() {
   if (!session?.user?.id) redirect("/login");
   const { dict } = await getT();
 
-  const servers = await db.orm.public.Server.select("id", "slug", "name", "type", "published", "isPrivate", "createdAt")
+  const servers = await db.orm.public.Server.select("id", "slug", "name", "type", "published", "isPrivate", "frozenAt", "createdAt")
     .where({ ownerId: session.user.id })
     .orderBy((s) => s.createdAt.desc())
     .all();
@@ -52,12 +53,15 @@ export default async function DashboardPage() {
                   <div className="flex items-center gap-2">
                     <span
                       className={
-                        server.published
-                          ? "tag-chip tag-chip-accent px-[9px] py-[3px] text-[11px]"
-                          : "tag-chip border-transparent px-[9px] py-[3px] text-[11px] text-muted"
+                        server.frozenAt
+                          ? "tag-chip px-[9px] py-[3px] text-[11px]"
+                          : server.published
+                            ? "tag-chip tag-chip-accent px-[9px] py-[3px] text-[11px]"
+                            : "tag-chip border-transparent px-[9px] py-[3px] text-[11px] text-muted"
                       }
+                      style={server.frozenAt ? FROZEN_CHIP_STYLE : undefined}
                     >
-                      {server.published ? dict.dashboard.published : dict.dashboard.paused}
+                      {server.frozenAt ? dict.dashboard.frozen : server.published ? dict.dashboard.published : dict.dashboard.paused}
                     </span>
                     <span className="hidden items-center gap-[5px] text-[12.5px] text-muted sm:inline-flex">
                       {server.isPrivate ? <LockSimple className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}

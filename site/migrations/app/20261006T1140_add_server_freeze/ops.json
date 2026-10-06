@@ -1,0 +1,128 @@
+[
+  {
+    "id": "column.public.server.frozenAt",
+    "label": "Add column \"frozenAt\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "frozenAt",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"frozenAt\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "frozenAt"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"frozenAt\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"frozenAt\" timestamptz"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"frozenAt\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "frozenAt"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.frozenBy",
+    "label": "Add column \"frozenBy\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "frozenBy",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"frozenBy\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "frozenBy"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"frozenBy\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"frozenBy\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"frozenBy\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "frozenBy"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.server.frozenReason",
+    "label": "Add column \"frozenReason\" to \"server\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "frozenReason",
+        "table": "server"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"frozenReason\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "frozenReason"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"frozenReason\"",
+        "sql": "ALTER TABLE \"public\".\"server\" ADD COLUMN \"frozenReason\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"frozenReason\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "server",
+          "frozenReason"
+        ]
+      }
+    ]
+  }
+]

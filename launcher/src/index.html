@@ -476,6 +476,7 @@
   .instance-badge.public { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
   .instance-badge.private { background: var(--accent-fill); color: var(--accent-foreground); }
   .instance-badge.paused { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
+  .instance-badge.frozen { background: color-mix(in srgb, #8ac3e0 16%, transparent); color: #8ac3e0; }
   .instance-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
   .instance-card-body h3 { margin: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .instance-card-body > p { margin: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -674,7 +675,7 @@
      est rognee), donc en frere du bandeau plutot qu'a l'interieur. */
   .detail-hero {
     position: relative;
-    margin-bottom: 36px;
+    margin-bottom: 16px;
   }
   .detail-banner {
     position: relative;
@@ -701,7 +702,9 @@
     font-size: 22px;
     border: 3px solid var(--background);
   }
-  .detail-header { padding-left: 88px; min-height: 34px; }
+  .detail-header { padding-left: 0; min-height: 34px; margin-bottom: 14px; }
+  /* Icône du serveur à côté du titre (et non en surimpression sur la bannière). */
+  .detail-icon.detail-icon-inline { position: static; width: 44px; height: 44px; border-radius: 12px; border: none; font-size: 18px; flex: 0 0 auto; }
   .detail h2 { margin: 0 0 4px 0; }
   .detail .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
   .detail .desc { line-height: 1.6; margin-bottom: 20px; }
@@ -964,6 +967,8 @@
 
   /* Modale generique (confirmation/avertissement RAM) : fond assombri +
      boite centree, reutilisable pour n'importe quel prompt bloquant. */
+  .modal-box.pop-in { animation: modal-pop 0.25s ease-out; }
+  @keyframes modal-pop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   .modal-overlay {
     position: fixed;
     inset: 0;
@@ -1097,6 +1102,8 @@
   }
   .playbar-play-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .playbar-play-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .playbar-play-btn.playing { opacity: 1; animation: playbar-pulse 1.6s ease-in-out infinite; cursor: progress; }
+  @keyframes playbar-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
   #playbar-progress.playbar-row { flex-direction: column; align-items: stretch; gap: 6px; }
   .playbar-progress-info { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
@@ -1314,6 +1321,27 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="ram-choice-overlay" hidden>
+    <div class="modal-box" style="position: relative; max-width: 480px;">
+      <button id="ram-choice-close" type="button" aria-label="Fermer" style="position: absolute; top: 10px; right: 12px; width: 30px; height: 30px; border: 0; background: transparent; color: var(--muted); font-size: 20px; cursor: pointer;">×</button>
+      <h3 id="ram-choice-title"></h3>
+      <p id="ram-choice-body" style="white-space: pre-line;"></p>
+      <p id="ram-choice-warning" hidden style="margin: 10px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: #e8c547; background: color-mix(in srgb, #e8c547 14%, transparent);"></p>
+      <label class="gate-remember" style="margin-top: 12px;">
+        <input type="checkbox" id="ram-choice-auto" />
+        <span id="ram-choice-auto-label"></span>
+      </label>
+      <label class="gate-remember" style="margin-top: 8px;">
+        <input type="checkbox" id="ram-choice-manual" />
+        <span id="ram-choice-manual-label"></span>
+      </label>
+      <div class="modal-actions" style="display: flex; gap: 10px;">
+        <button id="ram-choice-mine" class="btn-secondary" type="button" style="flex: 1 1 0; min-width: 0; min-height: 44px; height: auto; padding: 10px 12px; line-height: 1.25; white-space: normal; text-align: center; justify-content: center;"></button>
+        <button id="ram-choice-server" class="join-btn" type="button" style="flex: 1 1 0; min-width: 0; min-height: 44px; height: auto; padding: 10px 12px; line-height: 1.25; white-space: normal; text-align: center; justify-content: center;"></button>
+      </div>
+    </div>
+  </div>
+
   <div id="app" hidden style="flex: 1 1 auto; display: flex; min-height: 0;">
     <nav id="sidebar">
       <button id="nav-home" class="sidebar-btn active" data-i18n-title="nav.home">
@@ -1359,6 +1387,7 @@
         </div>
         <button type="button" class="sort-chip active" id="sort-recent" data-sort="recent" data-i18n="serverList.sortRecent">Plus récents</button>
         <button type="button" class="sort-chip" id="sort-players" data-sort="players" data-i18n="serverList.sortPlayers">Plus de joueurs</button>
+        <button type="button" class="sort-chip active" id="list-refresh" data-i18n="serverList.refresh" style="margin-left: auto;">Actualiser</button>
       </div>
       <div id="list" class="server-list" hidden></div>
       <div id="detail" class="detail" hidden></div>

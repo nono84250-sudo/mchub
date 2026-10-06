@@ -80,7 +80,8 @@
     "notificationsEmpty": "No notifications for now.",
     "categoryAnnouncements": "Announcements",
     "categoryServers": "Servers",
-    "categoryAccount": "Account"
+    "categoryAccount": "Account",
+    "frozen": "Frozen"
   },
   "servers": {
     "title": "Server directory",
@@ -175,7 +176,11 @@
     "activityNote": "Player count isn't tracked over time yet — only the latest known value is shown above. A history would need a periodic background ping, which doesn't exist yet for this project.",
     "settingsTitle": "Settings",
     "saveChanges": "Save changes",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "frozen": "Frozen",
+    "frozenBy": "Frozen by the Omniscient team",
+    "detailFrozenReason": "Freeze reason",
+    "frozenHint": "This server is frozen: the owner cannot put it back online."
   },
   "reports": {
     "title": "Reports",
