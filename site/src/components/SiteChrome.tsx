@@ -12,6 +12,6 @@ import { usePathname } from "next/navigation";
 // decider s'il faut les monter, a partir du chemin courant.
 export function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (pathname?.startsWith("/manage/") || pathname === "/dashboard/servers/new") return null;
+  if (pathname?.startsWith("/manage/") || pathname === "/dashboard/servers/new" || pathname?.startsWith("/admin")) return null;
   return <>{children}</>;
 }
