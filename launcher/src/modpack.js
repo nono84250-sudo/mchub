@@ -239,22 +239,49 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress }) {
 // Renvoie { count, jars } : `jars` = les mods (.jar sous mods/) livres dans
 // l'archive elle-meme, a suivre comme les mods telecharges — sinon, en
 // changeant de modpack ou de version, ils resteraient orphelins dans mods/.
-async function extractOverrides(zip, dirName, instanceDir) {
+// Fichiers du pack (configs, options, mods livrés dans les overrides). Règles :
+// - absent : copié ;
+// - options.txt existant : jamais réécrit ;
+// - modifié par le joueur (son empreinte ne correspond plus à celle installée),
+//   ou inconnu de l'installation précédente : gardé tel quel ;
+// - non modifié et changé dans le pack : mis à jour.
+// `previousHashes` / `nextHashes` : empreintes (SHA-1) des fichiers installés.
+async function extractOverrides(zip, dirName, instanceDir, previousHashes, nextHashes) {
   const prefix = `${dirName}/`;
   let count = 0;
   const jars = [];
+  const kept = [];
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory || !entry.entryName.startsWith(prefix)) continue;
     const relative = entry.entryName.slice(prefix.length);
     if (!relative) continue;
     const target = safeJoin(instanceDir, relative);
-    if (relative === "options.txt" && fs.existsSync(target)) continue;
+    const isJar = /^mods\/.+\.jar$/i.test(relative);
+    if (isJar) jars.push(relative);
+    const data = entry.getData();
+    const packHash = crypto.createHash("sha1").update(data).digest("hex");
+
+    if (fs.existsSync(target)) {
+      const currentHash = await sha1File(target);
+      const installedHash = previousHashes[relative];
+      const untouched = installedHash && currentHash === installedHash;
+      if (relative === "options.txt" || !untouched) {
+        if (installedHash) nextHashes[relative] = installedHash;
+        if (relative !== "options.txt" && installedHash) kept.push(relative);
+        continue;
+      }
+      if (currentHash === packHash) {
+        nextHashes[relative] = packHash;
+        continue;
+      }
+    }
+
     await fsp.mkdir(path.dirname(target), { recursive: true });
-    await fsp.writeFile(target, entry.getData());
+    await fsp.writeFile(target, data);
+    nextHashes[relative] = packHash;
     count++;
-    if (/^mods\/.+\.jar$/i.test(relative)) jars.push(relative);
   }
-  return { count, jars };
+  return { count, jars, kept };
 }
 
 // --- Fichiers du modpack (mods, packs de ressources...) ---------------------
@@ -559,12 +586,19 @@ async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, o
   const previousFiles = previousState?.files ?? [];
   let overrides = 0;
   const overrideJars = [];
+  const overrideKept = [];
+  const previousHashes = previousState?.overrideHashes ?? {};
+  const overrideHashes = {};
   for (const dirName of pack.overrideDirs) {
-    const extracted = await extractOverrides(zip, dirName, instanceDir);
+    const extracted = await extractOverrides(zip, dirName, instanceDir, previousHashes, overrideHashes);
     overrides += extracted.count;
     overrideJars.push(...extracted.jars);
+    overrideKept.push(...extracted.kept);
   }
   onProgress({ text: `Configuration du modpack copiée (${overrides} fichiers).` });
+  if (overrideKept.length) {
+    onProgress({ text: `${overrideKept.length} fichier(s) modifié(s) par toi conservé(s) : ${overrideKept.slice(0, 5).join(", ")}` });
+  }
 
   const loaderVersionId = await installLoader({
     loaderId: pack.loaderId,
@@ -585,6 +619,7 @@ async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, o
         minecraftVersion: pack.minecraftVersion,
         loaderId: pack.loaderId,
         files: [...installedFiles, ...overrideJars],
+        overrideHashes,
       },
       null,
       2,
