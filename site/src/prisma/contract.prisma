@@ -213,3 +213,25 @@ model Notification {
 
   @@index([recipientMinecraftUuid, read, createdAt])
 }
+
+// Reglages globaux de la plateforme, modifiables par un admin (panel admin,
+// section "Sources de modpacks"). Ex. cle "source.curseforge" = "off". Une
+// valeur absente vaut la valeur par defaut du code (voir lib/platformSettings.ts).
+model PlatformSetting {
+  key       String            @id
+  value     String
+  updatedAt TimestamptzString @default(now())
+}
+
+// Comptes de l'administration de la plateforme (panel /admin), separes des comptes
+// Microsoft des joueurs. Mot de passe jamais en clair (scrypt, voir lib/adminAuth.ts).
+// mustChangeCredentials : vrai a la creation, la personne doit changer son nom
+// d'utilisateur et son mot de passe avant toute autre action.
+model AdminAccount {
+  id                    String            @id @default(uuid())
+  username              String            @unique
+  passwordHash          String
+  role                  String
+  mustChangeCredentials Boolean           @default(true)
+  createdAt             TimestamptzString @default(now())
+}

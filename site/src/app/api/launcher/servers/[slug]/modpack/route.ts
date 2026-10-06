@@ -1,3 +1,4 @@
+import { sourceDisabledResponse } from "@/lib/platformSettings";
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
@@ -45,6 +46,9 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   if (server.type !== "modded" || !server.curseforgeModpackId) {
     return NextResponse.json({ error: "Ce serveur n'a pas de modpack." }, { status: 404 });
   }
+  // Interrupteur admin : une source coupée n'est plus servie (voir platformSettings.ts).
+  const sourceOff = await sourceDisabledResponse(server.modpackSource === "modrinth" ? "modrinth" : "curseforge");
+  if (sourceOff) return sourceOff;
 
   try {
     // Toujours la derniere version (jamais un numero fige, voir curseforge.ts/

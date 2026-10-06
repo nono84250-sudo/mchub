@@ -1,0 +1,41 @@
+[
+  {
+    "id": "table.platformSetting",
+    "label": "Create table \"platformSetting\"",
+    "summary": "Creates table \"platformSetting\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "platformSetting"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"platformSetting\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"platformSetting\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"platformSetting\"",
+        "sql": "CREATE TABLE \"public\".\"platformSetting\" (\n  \"key\" text NOT NULL,\n  \"updatedAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"value\" text NOT NULL,\n  PRIMARY KEY (\"key\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"platformSetting\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"platformSetting\""
+        ]
+      }
+    ]
+  }
+]
