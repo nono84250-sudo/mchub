@@ -166,6 +166,43 @@ function applySearchAndSort(servers) {
   return filtered;
 }
 
+// Squelettes de chargement (meme principe que "Mes instances", voir
+// myInstancesSkeletonHtml) : affiches tout de suite, avant l'aller-retour
+// reseau, pour eviter un panneau vide ou foncer qui donne l'impression que
+// l'appli a plante.
+function skeletonRowHtml() {
+  return `
+    <div class="row" aria-hidden="true">
+      <span class="sk-circle" style="width: 38px; height: 38px;"></span>
+      <div class="row-body" style="gap: 6px;">
+        <div class="sk-line" style="height: 13px; width: 45%;"></div>
+        <div class="sk-line" style="height: 11px; width: 75%;"></div>
+      </div>
+    </div>`;
+}
+
+function skeletonListHtml(count = 3) {
+  return `<div class="list-rows server-list" aria-busy="true">${skeletonRowHtml().repeat(count)}</div>`;
+}
+
+function skeletonDetailHtml() {
+  return `
+    <div class="detail-hero"><div class="detail-banner sk-bar"></div></div>
+    <div class="detail-header">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span class="sk-circle" style="width: 44px; height: 44px;"></span>
+        <div class="sk-line" style="height: 18px; width: 50%;"></div>
+      </div>
+    </div>
+    <div class="stat-row" aria-busy="true">
+      <div class="stat-tile"><div class="sk-line" style="height: 30px; width: 100%;"></div></div>
+      <div class="stat-tile"><div class="sk-line" style="height: 30px; width: 100%;"></div></div>
+      <div class="stat-tile"><div class="sk-line" style="height: 30px; width: 100%;"></div></div>
+    </div>
+    <div class="sk-line" style="height: 12px; width: 90%; margin-top: 12px;"></div>
+    <div class="sk-line" style="height: 12px; width: 70%; margin-top: 8px;"></div>`;
+}
+
 async function renderRowsInto(container, servers, origin, onFavoriteToggled) {
   const favorites = await getFavoriteSlugs();
   container.innerHTML = servers.map((server) => serverRowHtml(server, favorites.includes(server.slug))).join("");
@@ -186,7 +223,12 @@ async function renderRowsInto(container, servers, origin, onFavoriteToggled) {
   });
 }
 
-function renderFilteredList() {
+// Meme pagination que "Mes instances" (voir MY_INSTANCES_PAGE_SIZE) : une dizaine de
+// serveurs a la fois, sinon l'annuaire complet serait interminable a faire defiler.
+let serverListPage = 1;
+const SERVER_LIST_PAGE_SIZE = 10;
+
+async function renderFilteredList() {
   const filtered = applySearchAndSort(allServers);
   if (filtered.length === 0 && listSearchQuery.trim()) {
     listEl.innerHTML = "";
@@ -196,7 +238,21 @@ function renderFilteredList() {
     return;
   }
   statusEl.hidden = true;
-  renderRowsInto(listEl, filtered, "servers", renderFilteredList);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / SERVER_LIST_PAGE_SIZE));
+  serverListPage = Math.min(Math.max(1, serverListPage), pageCount);
+  const shown = filtered.slice((serverListPage - 1) * SERVER_LIST_PAGE_SIZE, serverListPage * SERVER_LIST_PAGE_SIZE);
+
+  await renderRowsInto(listEl, shown, "servers", renderFilteredList);
+  listEl.insertAdjacentHTML("beforeend", instancesPagerHtml(serverListPage, pageCount, "server-list-pager"));
+  document.getElementById("server-list-pager-prev")?.addEventListener("click", () => {
+    serverListPage -= 1;
+    renderFilteredList();
+  });
+  document.getElementById("server-list-pager-next")?.addEventListener("click", () => {
+    serverListPage += 1;
+    renderFilteredList();
+  });
 }
 
 async function renderList(servers) {
@@ -218,6 +274,7 @@ async function renderList(servers) {
 
 listSearchInputEl.addEventListener("input", () => {
   listSearchQuery = listSearchInputEl.value;
+  serverListPage = 1;
   renderFilteredList();
 });
 const listRefreshBtn = document.getElementById("list-refresh");
@@ -252,6 +309,7 @@ listRefreshBtn.addEventListener("click", () => {
     listSortMode = btn.dataset.sort;
     sortRecentBtn.classList.toggle("active", listSortMode === "recent");
     sortPlayersBtn.classList.toggle("active", listSortMode === "players");
+    serverListPage = 1;
     renderFilteredList();
   });
 });
@@ -699,9 +757,10 @@ async function openDetail(slug) {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   listToolbarEl.hidden = true;
-  statusEl.hidden = false;
-  statusEl.classList.remove("error");
-  statusEl.textContent = t("serverList.loadingDetail");
+  statusEl.hidden = true;
+  listEl.hidden = true;
+  detailEl.hidden = false;
+  detailEl.innerHTML = skeletonDetailHtml();
 
   const result = await window.mchub.getServer(slug);
   if (!result.ok && result.frozen) {
@@ -709,6 +768,8 @@ async function openDetail(slug) {
     return;
   }
   if (!result.ok) {
+    detailEl.hidden = true;
+    statusEl.hidden = false;
     statusEl.classList.add("error");
     statusEl.textContent = t("serverList.errorDetailPrefix", { error: result.error });
     return;
@@ -737,11 +798,10 @@ async function fetchServerList({ force = false } = {}) {
 }
 
 async function loadServers() {
-  statusEl.hidden = false;
-  statusEl.classList.remove("error");
-  statusEl.textContent = t("serverList.loading");
+  statusEl.hidden = true;
   detailEl.hidden = true;
-  listEl.hidden = true;
+  listEl.hidden = false;
+  listEl.innerHTML = skeletonRowHtml().repeat(6);
 
   // Toujours un aller-retour reseau ici : c'est le point d'entree explicite
   // "l'utilisateur veut voir la liste a jour" (nav, connexion, rafraichissement
@@ -749,6 +809,8 @@ async function loadServers() {
   // barre de lancement rapide.
   const result = await fetchServerList({ force: true });
   if (!result.ok) {
+    listEl.hidden = true;
+    statusEl.hidden = false;
     statusEl.classList.add("error");
     statusEl.textContent = t("serverList.errorPrefix", { error: result.error });
     return;
@@ -1201,20 +1263,39 @@ function notifTimeLabel(iso) {
   return t("notifications.daysAgo", { count: String(days) });
 }
 
-// Couleur par type de notification : gel en bleu, messages de l'équipe selon leur type.
-const NOTIF_COLORS = { server_frozen: "#8ac3e0", admin_info: "#9184d9", admin_warning: "#e8c547", admin_error: "#e5484d" };
+// Couleur par type de notification : gel en bleu, messages de l'équipe selon leur type, messages
+// diffusés (panel admin, voir site/src/app/admin/design/bind.ts notificationsHtml) pareil.
+const NOTIF_COLORS = {
+  server_frozen: "#8ac3e0",
+  admin_info: "#9184d9",
+  admin_warning: "#e8c547",
+  admin_error: "#e5484d",
+  broadcast_announcement: "#9184d9",
+  broadcast_maintenance: "#e8c547",
+  broadcast_alert: "#e5484d",
+  broadcast_promotion: "#5fd3a0",
+};
+const BROADCAST_TITLE_KEYS = {
+  broadcast_announcement: "broadcastAnnouncementTitle",
+  broadcast_maintenance: "broadcastMaintenanceTitle",
+  broadcast_alert: "broadcastAlertTitle",
+  broadcast_promotion: "broadcastPromotionTitle",
+};
 
 function notifItemHtml(notif) {
   const color = NOTIF_COLORS[notif.type];
   const colorStyle = color ? ` style="color:${color};overflow-wrap:anywhere"` : "";
   const isAdmin = notif.type.startsWith("admin_");
+  const broadcastKey = BROADCAST_TITLE_KEYS[notif.type];
   const title = notif.type === "server_frozen"
     ? t("notifications.serverFrozenTitle", { server: notif.serverName })
-    : isAdmin
-      ? t("notifications.adminMessageTitle", { server: notif.serverName })
-      : notif.type === "report_resolved"
-        ? t("notifications.reportResolvedTitle", { server: notif.serverName })
-        : t("notifications.reportRepliedTitle", { server: notif.serverName });
+    : broadcastKey
+      ? t(`notifications.${broadcastKey}`)
+      : isAdmin
+        ? t("notifications.adminMessageTitle", { server: notif.serverName })
+        : notif.type === "report_resolved"
+          ? t("notifications.reportResolvedTitle", { server: notif.serverName })
+          : t("notifications.reportRepliedTitle", { server: notif.serverName });
   let message = "";
   if (notif.type === "server_frozen") {
     message = `<div class="notif-item-message" style="color:${color};overflow-wrap:anywhere">${t("notifications.serverFrozenBody")}</div>`;
@@ -1241,6 +1322,30 @@ function renderNotifications() {
   notifListEl.innerHTML = latestNotifications.map(notifItemHtml).join("");
 }
 
+// Pop-up : un message diffuse (voir BROADCAST_TITLE_KEYS) jamais vu dans cette fenetre de
+// l'appli declenche un petit encart temporaire, en plus de la cloche — pas pour les
+// notifications personnelles (gel, reponse a un signalement...), deja assez visibles.
+const seenNotificationIds = new Set();
+let popupSeeded = false;
+
+function showNotificationPopup(notif) {
+  const color = NOTIF_COLORS[notif.type] ?? "#9184d9";
+  const title = t(`notifications.${BROADCAST_TITLE_KEYS[notif.type]}`);
+  const el = document.createElement("div");
+  el.className = "notif-popup";
+  el.style.borderLeftColor = color;
+  el.innerHTML = `
+    <div class="notif-popup-title" style="color:${color}">${escapeHtml(title)}</div>
+    <div class="notif-popup-message">${escapeHtml(notif.message ?? "")}</div>
+  `;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => {
+    el.classList.remove("show");
+    setTimeout(() => el.remove(), 300);
+  }, 6000);
+}
+
 async function refreshNotifications() {
   if (!signedIn) return;
   const result = await window.mchub.listNotifications();
@@ -1250,6 +1355,15 @@ async function refreshNotifications() {
   const unreadCount = latestNotifications.filter((n) => !n.read).length;
   notifBadgeEl.hidden = unreadCount === 0;
   if (unreadCount > 0) notifBadgeEl.textContent = unreadCount > 9 ? "9+" : String(unreadCount);
+
+  // Au tout premier chargement, les notifications deja la ne sont pas "nouvelles" : on les
+  // marque vues sans pop-up, pour n'afficher que celles qui arrivent vraiment pendant la session.
+  for (const notif of latestNotifications) {
+    if (seenNotificationIds.has(notif.id)) continue;
+    seenNotificationIds.add(notif.id);
+    if (popupSeeded && BROADCAST_TITLE_KEYS[notif.type]) showNotificationPopup(notif);
+  }
+  popupSeeded = true;
 }
 
 function wireNotifications() {
@@ -1372,6 +1486,9 @@ async function showHomeView() {
 
 async function renderHomeView() {
   homePanelEl.className = "detail";
+  homePanelEl.innerHTML = `
+    <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: currentProfile ? currentProfile.name : "" })}</h2>
+    ${skeletonListHtml(2)}`;
 
   const [settings, favoriteSlugs, myServersResult] = await Promise.all([
     window.mchub.settings.get(),
@@ -1506,8 +1623,13 @@ async function renderFavoritesList() {
     return;
   }
 
-  const favoriteServers = await resolveServersBySlug(favorites);
   favoritesPanelEl.className = "server-list";
+  favoritesPanelEl.innerHTML = `
+    <h2>${t("nav.favorites")}</h2>
+    <p class="join-note">${t("favorites.header")}</p>
+    ${skeletonListHtml(favorites.length)}`;
+
+  const favoriteServers = await resolveServersBySlug(favorites);
   favoritesPanelEl.innerHTML = `
     <h2>${t("nav.favorites")}</h2>
     <p class="join-note">${t("favorites.header")}</p>
@@ -1548,8 +1670,13 @@ async function renderRecentList() {
     return;
   }
 
-  const recentServers = await resolveServersBySlug(recentSlugs);
   recentPanelEl.className = "server-list";
+  recentPanelEl.innerHTML = `
+    <h2>${t("nav.recent")}</h2>
+    <p class="join-note">${t("recent.header")}</p>
+    ${skeletonListHtml(recentSlugs.length)}`;
+
+  const recentServers = await resolveServersBySlug(recentSlugs);
   recentPanelEl.innerHTML = `
     <h2>${t("nav.recent")}</h2>
     <p class="join-note">${t("recent.header")}</p>
@@ -1566,6 +1693,10 @@ async function renderRecentList() {
 // sur le site — jamais depuis une carte ici.
 let myInstancesServers = [];
 let myInstancesFilter = "all";
+// Pagination : une dizaine de cartes a la fois, sinon un compte avec beaucoup de serveurs
+// rendrait la page interminable a faire defiler.
+let myInstancesPage = 1;
+const MY_INSTANCES_PAGE_SIZE = 10;
 // Pour le bouton "copier le lien d'invitation" (voir instanceStatusLineHtml) —
 // resolu une fois au demarrage, largement avant qu'on affiche "Mes instances".
 let siteUrl = "";
@@ -1741,6 +1872,7 @@ async function joinByCodeFlow() {
       const listed = await window.mchub.listJoinedServers();
       myJoinedServers = listed.ok ? listed.servers : myJoinedServers;
       myInstancesFilter = "joined";
+      myInstancesPage = 1;
       renderMyInstancesGrid();
       return;
     }
@@ -1748,13 +1880,31 @@ async function joinByCodeFlow() {
   }
 }
 
+// Generique : utilise par "Mes instances" et par la liste publique des serveurs (voir
+// renderFilteredList) — chaque appelant fournit sa propre page courante et ses propres id
+// de boutons, pour ne jamais confondre les deux pagers (tous deux presents dans le DOM a la
+// fois, un seul visible a la fois).
+function instancesPagerHtml(page, pageCount, idPrefix) {
+  if (pageCount <= 1) return "";
+  return `
+    <div class="instances-pager">
+      <button type="button" class="btn-secondary" id="${idPrefix}-prev" ${page <= 1 ? "disabled" : ""}>${t("myInstances.pagerPrevious")}</button>
+      <span class="join-note">${t("myInstances.pagerPage", { page: String(page), count: String(pageCount) })}</span>
+      <button type="button" class="btn-secondary" id="${idPrefix}-next" ${page >= pageCount ? "disabled" : ""}>${t("myInstances.pagerNext")}</button>
+    </div>`;
+}
+
 function renderMyInstancesGrid() {
-  const filtered =
+  const all =
     myInstancesFilter === "joined"
       ? myJoinedServers
       : myInstancesFilter === "all"
         ? myInstancesServers
         : myInstancesServers.filter((server) => instanceStatus(server) === myInstancesFilter);
+
+  const pageCount = Math.max(1, Math.ceil(all.length / MY_INSTANCES_PAGE_SIZE));
+  myInstancesPage = Math.min(Math.max(1, myInstancesPage), pageCount);
+  const filtered = all.slice((myInstancesPage - 1) * MY_INSTANCES_PAGE_SIZE, myInstancesPage * MY_INSTANCES_PAGE_SIZE);
 
   myInstancesPanelEl.innerHTML = `
     <div class="instances-header">
@@ -1766,17 +1916,28 @@ function renderMyInstancesGrid() {
     </div>
     ${instancesToolbarHtml(myInstancesServers, myJoinedServers.length)}
     ${
-      filtered.length === 0
+      all.length === 0
         ? `<p class="join-note">${t("myInstances.filterEmpty")}</p>`
-        : `<div class="instance-grid">${filtered.map((server) => (myInstancesFilter === "joined" ? joinedCardHtml(server) : instanceCardHtml(server))).join("")}</div>`
+        : `<div class="instance-grid">${filtered.map((server) => (myInstancesFilter === "joined" ? joinedCardHtml(server) : instanceCardHtml(server))).join("")}</div>
+           ${instancesPagerHtml(myInstancesPage, pageCount, "my-instances-pager")}`
     }
   `;
 
   document.getElementById("my-instances-join").addEventListener("click", joinByCodeFlow);
 
+  document.getElementById("my-instances-pager-prev")?.addEventListener("click", () => {
+    myInstancesPage -= 1;
+    renderMyInstancesGrid();
+  });
+  document.getElementById("my-instances-pager-next")?.addEventListener("click", () => {
+    myInstancesPage += 1;
+    renderMyInstancesGrid();
+  });
+
   myInstancesPanelEl.querySelectorAll(".instances-filters .sort-chip").forEach((btn) => {
     btn.addEventListener("click", () => {
       myInstancesFilter = btn.dataset.filter;
+      myInstancesPage = 1;
       renderMyInstancesGrid();
     });
   });
@@ -1884,6 +2045,7 @@ async function renderMyInstancesList() {
   // Toujours "Tout" a l'ouverture (meme sans aucun serveur possede ni rejoint
   // : l'onglet "Rejoint" doit rester atteignable pour entrer un code).
   myInstancesFilter = "all";
+  myInstancesPage = 1;
   myInstancesPanelEl.className = "instances-view";
   renderMyInstancesGrid();
 }

@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { getMinecraftProfileFromMicrosoftToken, PendingApprovalError } from "@/lib/xboxAuth";
 
 // "Se connecter avec Microsoft" est desormais l'unique moyen de se

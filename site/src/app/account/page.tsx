@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { logout } from "@/lib/actions/auth";
 import { SignOut } from "@phosphor-icons/react/ssr";
 import { getT } from "@/i18n/getDictionary";

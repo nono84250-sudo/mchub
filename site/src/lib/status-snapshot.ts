@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { pingMinecraftServer } from "@/lib/mc-ping";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 

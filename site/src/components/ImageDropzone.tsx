@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
 import { X, SpinnerGap } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -33,10 +32,9 @@ type ImageDropzoneProps = {
 
 // Remplace les anciens champs "URL de l'image" (coller un lien externe) par
 // un vrai depot de fichier, conforme a la maquette (voir "drop banner, 16:9"
-// / "drop background" dans Design/Omniscient UI Mockups.dc.html). Upload
-// direct navigateur -> Vercel Blob (voir /api/upload) : seul le jeton
-// transite par notre serveur, jamais le fichier lui-meme — evite la limite
-// de taille des server actions Next.js pour des images de quelques Mo.
+// / "drop background" dans Design/Omniscient UI Mockups.dc.html). Le fichier
+// transite par /api/upload, qui le range dans R2 et renvoie son URL — evite
+// la limite de taille des server actions Next.js pour des images de quelques Mo.
 export function ImageDropzone({ name, field, defaultValue, label, hint, placeholder, icon: PlaceholderIcon }: ImageDropzoneProps) {
   const { t } = useI18n();
   const [url, setUrl] = useState(defaultValue ?? "");
@@ -52,12 +50,13 @@ export function ImageDropzone({ name, field, defaultValue, label, hint, placehol
     }
     setStatus("uploading");
     try {
-      const blob = await upload(file.name, file, {
-        access: "public",
-        handleUploadUrl: "/api/upload",
-        clientPayload: JSON.stringify({ field }),
-      });
-      setUrl(blob.url);
+      const form = new FormData();
+      form.append("file", file);
+      form.append("field", field);
+      const res = await fetch("/api/upload", { method: "POST", body: form });
+      if (!res.ok) throw new Error("upload");
+      const { url } = (await res.json()) as { url: string };
+      setUrl(url);
       setStatus("idle");
     } catch {
       setStatus("error");
@@ -114,7 +113,7 @@ export function ImageDropzone({ name, field, defaultValue, label, hint, placehol
       >
         {url ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element -- image d'origine externe (Vercel Blob), pas un asset local optimisable */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- image deposee par l'utilisateur (R2), pas un asset local optimisable */}
             <img src={url} alt="" className="h-full w-full object-cover" />
             <button
               type="button"

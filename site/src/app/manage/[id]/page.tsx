@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
 import { GlobeHemisphereWest, LockSimple } from "@phosphor-icons/react/ssr";
 import { auth } from "@/auth";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { getServerActivity } from "@/lib/server-activity";
 import { getServerStatus } from "@/lib/server-status";
 import { getT } from "@/i18n/getDictionary";

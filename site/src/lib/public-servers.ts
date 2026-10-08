@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
-import { db } from "@/prisma/db";
+import { db, execBatch } from "@/lib/db";
 import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
 import { LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, sessionIdentity, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
@@ -264,25 +264,19 @@ export async function getServerWithIpBySlug(slug: string, proof: PrivateServerPr
 // puis l'ecriture, deux visites simultanees perdaient une vue — et l'evenement
 // est enregistre dans la meme instruction (ni ligne orpheline, ni compteur sans evenement).
 export async function recordServerView(slug: string): Promise<void> {
-  const plan = db.raw.sql`WITH bumped AS (
-      UPDATE "server" SET "viewCount" = "viewCount" + 1 WHERE "slug" = ${slug} RETURNING "id"
-    )
-    INSERT INTO "serverEvent" ("id", "serverId", "kind") SELECT gen_random_uuid()::text, "id", 'view' FROM bumped`
-    .affectedCount()
-    .build();
-  await db.runtime().execute(plan);
+  await execBatch([
+    { sql: 'UPDATE "server" SET "viewCount" = "viewCount" + 1 WHERE "slug" = ?', params: [slug] },
+    { sql: "INSERT INTO \"serverEvent\" (\"id\", \"serverId\", \"kind\") SELECT ?, \"id\", 'view' FROM \"server\" WHERE \"slug\" = ?", params: [crypto.randomUUID(), slug] },
+  ]);
 }
 
 // Appelee par le launcher (route /api/launcher/servers/[slug]/launch) a
 // chaque lancement reussi — meme instruction atomique que recordServerView.
 export async function recordServerLaunch(slug: string): Promise<void> {
-  const plan = db.raw.sql`WITH bumped AS (
-      UPDATE "server" SET "launchCount" = "launchCount" + 1 WHERE "slug" = ${slug} RETURNING "id"
-    )
-    INSERT INTO "serverEvent" ("id", "serverId", "kind") SELECT gen_random_uuid()::text, "id", 'launch' FROM bumped`
-    .affectedCount()
-    .build();
-  await db.runtime().execute(plan);
+  await execBatch([
+    { sql: 'UPDATE "server" SET "launchCount" = "launchCount" + 1 WHERE "slug" = ?', params: [slug] },
+    { sql: "INSERT INTO \"serverEvent\" (\"id\", \"serverId\", \"kind\") SELECT ?, \"id\", 'launch' FROM \"server\" WHERE \"slug\" = ?", params: [crypto.randomUUID(), slug] },
+  ]);
 }
 
 // Fiche publique lue en cache, comme la liste (meme etiquette : voir SERVERS_CACHE_TAG).

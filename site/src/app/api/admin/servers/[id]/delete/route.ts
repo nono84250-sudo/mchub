@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
+import { deleteAllR2Images } from "@/lib/serverImages";
 import { adminForAction, backToServers, refreshServersCache } from "@/lib/adminServers";
 
 // Suppression définitive. Confirmation : le nom du serveur doit être retapé exactement.
@@ -8,12 +9,13 @@ export async function POST(request: Request, ctx: RouteContext<"/api/admin/serve
   if (admin instanceof NextResponse) return admin;
   const { id } = await ctx.params;
   const form = await request.formData();
-  const server = await db.orm.public.Server.select("id", "name").where({ id }).first();
+  const server = await db.orm.public.Server.select("id", "name", "bannerUrl", "iconUrl", "backgroundUrl").where({ id }).first();
   if (!server) return NextResponse.json({ error: "Serveur introuvable." }, { status: 404 });
   if (String(form.get("confirm") ?? "") !== server.name) {
     return NextResponse.json({ error: "Le nom ne correspond pas : rien n'a été supprimé." }, { status: 400 });
   }
   await db.orm.public.Server.where({ id }).delete();
+  await deleteAllR2Images(server, id);
   refreshServersCache();
   return backToServers(request);
 }

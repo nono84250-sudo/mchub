@@ -1,6 +1,5 @@
 import { after } from "next/server";
-import { or } from "@prisma/orm-postgres/orm-client";
-import { db } from "@/prisma/db";
+import { db, or } from "@/lib/db";
 import { pingMinecraftServer } from "@/lib/mc-ping";
 
 // Durée pendant laquelle un statut mesuré reste valable avant qu'on

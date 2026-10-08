@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { adminForAction, backToServers } from "@/lib/adminServers";
 import { createNotification, type NotificationType } from "@/lib/notifications";
 

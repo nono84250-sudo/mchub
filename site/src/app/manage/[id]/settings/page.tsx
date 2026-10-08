@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { updateServer, deleteServer, toggleServerPublished, duplicateServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
 import { ServerForm } from "@/components/ServerForm";

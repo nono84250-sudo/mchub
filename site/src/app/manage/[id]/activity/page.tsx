@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/auth";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { getServerActivity, type ActivityRange } from "@/lib/server-activity";
 import { ActivityChart } from "@/components/ActivityChart";
 import { getT } from "@/i18n/getDictionary";

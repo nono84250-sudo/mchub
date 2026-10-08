@@ -1,5 +1,5 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
-const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
@@ -72,6 +72,21 @@ async function pickSiteUrl() {
     }
   }
 }
+// Pose la Content-Security-Policy une fois SITE_URL connu (voir pickSiteUrl) : les images
+// de serveur (bannerUrl/iconUrl) viennent du site et doivent pouvoir se charger, mais
+// seulement depuis une adresse https, ou depuis SITE_URL lui-meme quand c'est localhost en
+// http (developpement local). Jamais de http: autorise en general, pour ne pas ouvrir la
+// porte a une image chargee en clair depuis n'importe quel autre site.
+function setContentSecurityPolicy() {
+  const siteOrigin = new URL(SITE_URL).origin;
+  const isLocalHttp = siteOrigin.startsWith("http://localhost:") || siteOrigin.startsWith("http://127.0.0.1:");
+  const imgSrc = isLocalHttp ? `'self' https: data: ${siteOrigin}` : "'self' https: data:";
+  const csp = `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src ${imgSrc};`;
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [csp] } });
+  });
+}
+
 // Secret partage avec la route /api/launcher/servers/[slug] du site : c'est
 // la SEULE route qui renvoie l'IP d'un serveur, jamais l'API publique. Jamais
 // de valeur par défaut en dur ici, une ancienne clé a fuité dans le dépôt
@@ -1245,6 +1260,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
 
 app.whenReady().then(async () => {
   await pickSiteUrl();
+  setContentSecurityPolicy();
   if (!LAUNCHER_API_KEY) {
     // Erreur visible (dialog) plutôt qu'un throw silencieux avant toute
     // fenêtre : sinon l'app quitte sans qu'on sache pourquoi.

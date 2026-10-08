@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/prisma/db";
+import { db, execSql } from "@/lib/db";
 
 // Réglages globaux de la plateforme (table platformSetting), modifiables depuis
 // le panel admin. Pour l'instant : l'interrupteur de chaque source de modpacks.
@@ -20,16 +20,42 @@ export async function isSourceEnabled(source: Source): Promise<boolean> {
 
 export async function setSourceEnabled(source: Source, enabled: boolean): Promise<void> {
   const value = enabled ? "on" : "off";
-  const plan = db.raw.sql`INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (${keyOf(source)}, ${value}, now())
-    ON CONFLICT ("key") DO UPDATE SET "value" = EXCLUDED."value", "updatedAt" = now()`
-    .affectedCount()
-    .build();
-  await db.runtime().execute(plan);
+  await execSql(
+    'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"',
+    [keyOf(source), value, new Date().toISOString()],
+  );
 }
 
 export async function allSourceStates(): Promise<Record<Source, boolean>> {
   const entries = await Promise.all(SOURCES.map(async (source) => [source, await isSourceEnabled(source)] as const));
   return Object.fromEntries(entries) as Record<Source, boolean>;
+}
+
+// Bannière du site (panel admin, voir /admin/notifications) : un seul message actif a la fois,
+// affiche en haut de toutes les pages publiques jusqu'a ce qu'un admin la retire. Pas de table a
+// part : reutilise platformSetting, comme les interrupteurs de sources ci-dessus.
+const BANNER_KEY = "site.banner";
+export type SiteBanner = { type: "announcement" | "maintenance" | "alert" | "promotion"; text: string } | null;
+
+export async function getSiteBanner(): Promise<SiteBanner> {
+  const row = await db.orm.public.PlatformSetting.select("value").where({ key: BANNER_KEY }).first();
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value) as SiteBanner;
+  } catch {
+    return null;
+  }
+}
+
+export async function setSiteBanner(banner: SiteBanner): Promise<void> {
+  if (banner === null) {
+    await db.orm.public.PlatformSetting.where({ key: BANNER_KEY }).delete();
+    return;
+  }
+  await execSql(
+    'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"',
+    [BANNER_KEY, JSON.stringify(banner), new Date().toISOString()],
+  );
 }
 
 // Réponse à renvoyer si la source est coupée, sinon null. Le launcher affiche le message.

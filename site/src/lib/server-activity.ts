@@ -1,4 +1,4 @@
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 
 export type ActivityRange = "day" | "week" | "month" | "year";
 
@@ -10,11 +10,12 @@ export type ActivityPoint = {
 
 type Bucket = "hour" | "day" | "month";
 
-// TimestamptzString revient sous la forme "2026-09-15 16:42:44.598134+00"
-// (espace au lieu de "T", et surtout un fuseau "+00" SANS les minutes) —
-// `new Date(...)` ne reconnait pas ce fuseau et retourne silencieusement
-// "Invalid Date" (confirme en isolant le probleme : "+00:00"/"+0000"/"Z"
-// fonctionnent, "+00" seul non), d'ou les deux remplacements.
+// Heritage de l'epoque Postgres, ou TimestamptzString revenait sous la forme
+// "2026-09-15 16:42:44.598134+00" (espace au lieu de "T", fuseau "+00" sans les
+// minutes, que `new Date(...)` ne reconnaissait pas). D1 et le code applicatif
+// produisent desormais des ISO standard ("...Z", via strftime(...)Z ou
+// toISOString()) : les deux remplacements ne font plus rien sur ce format, mais
+// restent inoffensifs. A retirer si on confirme qu'aucune ancienne valeur ne traine.
 function parseTimestamp(raw: string): Date {
   return new Date(raw.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
 }

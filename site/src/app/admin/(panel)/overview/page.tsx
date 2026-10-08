@@ -1,4 +1,4 @@
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { DesignScreen } from "@/components/admin/DesignScreen";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { overviewHtml } from "@/app/admin/design/bind";

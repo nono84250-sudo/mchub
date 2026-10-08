@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { ADMIN_COOKIE, ADMIN_SESSION_TTL_MS, createAdminSession, verifyPassword } from "@/lib/adminAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 

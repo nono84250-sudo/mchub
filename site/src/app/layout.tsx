@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { SiteChrome } from "@/components/SiteChrome";
+import { SiteBanner } from "@/components/SiteBanner";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { getT } from "@/i18n/getDictionary";
 import "./globals.css";
@@ -40,6 +41,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <I18nProvider locale={locale} dict={dict}>
           <SiteChrome>
+            <SiteBanner />
             <Nav />
           </SiteChrome>
           <main className="flex-1">{children}</main>

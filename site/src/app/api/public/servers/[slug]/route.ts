@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPublicServerBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 
 export const revalidate = 60;
 

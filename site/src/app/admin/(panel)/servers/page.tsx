@@ -1,4 +1,4 @@
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { DesignScreen } from "@/components/admin/DesignScreen";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { serversHtml, type ServerFilters } from "@/app/admin/design/bind";
@@ -19,7 +19,7 @@ export default async function AdminServers({ searchParams }: { searchParams: Pro
   };
 
   const [servers, openReports] = await Promise.all([
-    db.orm.public.Server.select("id", "name", "slug", "ip", "type", "published", "isPrivate", "frozenAt", "playerCount", "playerCapacity", "lastPingedAt", "createdAt")
+    db.orm.public.Server.select("id", "name", "slug", "ip", "ownerId", "type", "published", "isPrivate", "frozenAt", "playerCount", "playerCapacity", "lastPingedAt", "createdAt")
       .include("owner", (o) => o.select("name"))
       .orderBy((s) => s.createdAt.desc())
       .all(),
@@ -63,6 +63,7 @@ export default async function AdminServers({ searchParams }: { searchParams: Pro
       slug: s.slug,
       address: s.ip,
       owner: s.owner?.name ?? "—",
+      ownerId: s.ownerId,
       type: s.type,
       published: s.published,
       isPrivate: s.isPrivate,

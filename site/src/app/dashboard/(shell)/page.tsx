@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Plus, ArrowRight, Globe, LockSimple } from "@phosphor-icons/react/ssr";
 import { auth } from "@/auth";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { getT } from "@/i18n/getDictionary";
 import { FROZEN_CHIP_STYLE } from "@/lib/frozen";
 

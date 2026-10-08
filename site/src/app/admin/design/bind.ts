@@ -2,6 +2,7 @@
 // Ce qui n'existe pas encore dans le projet est entouré d'un contour pointillé
 // (classe "nb", voir nocturne.css / DesignScreen) pour qu'on le voie tout de suite.
 import { SCREENS } from "./screens";
+import type { ReportSummary, ReportStatus } from "@/lib/reports";
 
 export const escapeHtml = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -29,19 +30,24 @@ export function balancedEnd(html: string, start: number, tag: "div" | "section")
   }
 }
 
-// Entoure l'élément qui contient le texte `heading` d'un contour "non branché".
-export function markSectionNotBuilt(html: string, heading: string): string {
+// Entoure l'élément qui contient le texte `heading` d'un contour "non branché" (kind "nb",
+// rouge) ou "proposition" (kind "pr", jaune — ce qu'on propose de coder ensuite, a valider
+// avant de brancher les vraies donnees).
+export function markSectionNotBuilt(html: string, heading: string, kind: "nb" | "pr" = "nb"): string {
   const at = html.indexOf(heading);
   if (at < 0) return html;
   const start = html.lastIndexOf("<section", at);
   const end = balancedEnd(html, start, "section");
   if (start < 0 || end < 0) return html;
-  return html.slice(0, start) + `<div class="nb-block"><span class="nb-tag">Non branché</span>${html.slice(start, end)}</div>` + html.slice(end);
+  const label = kind === "pr" ? `<div class="pr-block"><span class="pr-tag">Proposition</span>` : `<div class="nb-block"><span class="nb-tag">Non branché</span>`;
+  return html.slice(0, start) + `${label}${html.slice(start, end)}</div>` + html.slice(end);
 }
 
-// Met en surbrillance un libellé qui n'est pas encore branché.
-export function markLabel(html: string, label: string): string {
-  return html.split(`>${label}<`).join(`><span class="nb">${label}</span><`);
+// Met en surbrillance un libellé qui n'est pas encore branché (kind "nb", rouge) ou que l'on
+// propose de brancher ensuite (kind "pr", jaune).
+export function markLabel(html: string, label: string, kind: "nb" | "pr" = "nb"): string {
+  const cls = kind === "pr" ? "pr" : "nb";
+  return html.split(`>${label}<`).join(`><span class="${cls}">${label}</span><`);
 }
 
 export function replaceOnce(html: string, from: string, to: string): string {
@@ -143,7 +149,7 @@ export function serversHtml(data: {
   from: number;
   to: number;
   pageCount: number;
-  rows: { name: string; slug: string; address: string; owner: string; type: string; published: boolean; isPrivate: boolean; frozen: boolean; pinged: boolean; players: number | null; capacity: number; openReports: number }[];
+  rows: { name: string; slug: string; address: string; owner: string; ownerId: string; type: string; published: boolean; isPrivate: boolean; frozen: boolean; pinged: boolean; players: number | null; capacity: number; openReports: number }[];
 }): string {
   let html = SCREENS.servers;
   const rowStart = `<div style="display:grid;min-width:860px;`;
@@ -159,7 +165,7 @@ export function serversHtml(data: {
     row = replaceOnce(row, 'font-weight:600;">A</span>', `font-weight:600;">${escapeHtml(s.name.charAt(0).toUpperCase())}</span>`);
     row = replaceOnce(row, ">Aetherfall</span>", `><a href="/admin/servers/${escapeHtml(s.slug)}" style="color:inherit;text-decoration:none;">${escapeHtml(s.name)}</a></span>`);
     row = replaceOnce(row, ">play.aetherfall.gg</span>", `>${escapeHtml(s.address)}</span>`);
-    row = replaceOnce(row, ">Kaelthorn</a>", `>${escapeHtml(s.owner)}</a>`);
+    row = replaceOnce(row, '<a href="#" style="white-space:nowrap;">Kaelthorn</a>', `<a href="/admin/players/${escapeHtml(s.ownerId)}" style="white-space:nowrap;">${escapeHtml(s.owner)}</a>`);
     row = replaceOnce(row, ">Modded</span>", `>${escapeHtml(s.type === "modded" ? "Modded" : "Vanilla")}</span>`);
     row = row.replace(/<span style="display:inline-flex[^>]*>Frozen<\/span>/, statusChips(s));
     row = replaceOnce(row, ">0 / 150</span>", `>${onlineText(s)}</span>`);
@@ -191,6 +197,293 @@ export function serversHtml(data: {
   html = html.slice(0, pagerStart) + pagerHtml(data.filters, data.from, data.to, data.total, data.pageCount) + html.slice(pagerEnd);
 
   html = replaceOnce(html, "1,246 servers", `${fmt(data.totalAll)} servers`);
+  return html;
+}
+
+export type PlayerFilters = { q: string; page: number };
+
+// Liste des joueurs : aucune maquette n'existe pour cet ecran (seule la fiche d'un joueur,
+// "player-detail", existe) — on reprend donc son habillage (menu avec Players actif, barre du
+// haut), et on construit la liste a la main, dans le meme style que serversHtml.
+export function playersHtml(data: {
+  filters: PlayerFilters;
+  totalAll: number;
+  total: number;
+  from: number;
+  to: number;
+  pageCount: number;
+  rows: { id: string; name: string; minecraftUuid: string | null; createdAt: string; serverCount: number }[];
+}): string {
+  const chrome = SCREENS["player-detail"];
+  const mainStart = chrome.indexOf("<main");
+  let html = chrome.slice(0, mainStart);
+  html = replaceOnce(html, ">Players / Kaelthorn</span>", ">Players</span>");
+
+  const filterBar =
+    `<form method="get" action="/admin/players" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">` +
+    `<input class="input" name="q" value="${escapeHtml(data.filters.q)}" placeholder="Search players…" style="width:auto;height:36px;flex:1;min-width:260px;max-width:420px;">` +
+    `<button type="submit" style="${BUTTON}height:36px;">Apply</button></form>` +
+    `<span style="margin-left:auto;font-size:12.5px;color:var(--muted);">${fmt(data.totalAll)} players</span>`;
+
+  const rowHtml = (p: (typeof data.rows)[number]) => {
+    const initial = escapeHtml(p.name.charAt(0).toUpperCase());
+    const joined = new Date(p.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+    const uuid = p.minecraftUuid ? `<span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.minecraftUuid.slice(0, 8))}…</span>` : "";
+    return (
+      `<div class="srv-row" style="position:relative;display:grid;min-width:640px;grid-template-columns:minmax(0,2.4fr) 170px 110px 40px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;">` +
+      `<div style="min-width:0;"><div style="display:flex;align-items:center;gap:12px;min-width:0;">` +
+      `<span style="width:34px;height:34px;flex-shrink:0;border-radius:8px;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;">${initial}</span>` +
+      `<div style="display:flex;flex-direction:column;gap:2px;min-width:0;"><span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.name)}</span>${uuid}</div>` +
+      `</div></div>` +
+      `<div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">${joined}</span></div>` +
+      `<div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">${fmt(p.serverCount)}</span></div>` +
+      `<div style="min-width:0;"><a class="srv-cover" href="/admin/players/${escapeHtml(p.id)}" aria-label="Ouvrir la fiche de ${escapeHtml(p.name)}"></a></div>` +
+      `</div>`
+    );
+  };
+
+  const table =
+    `<section style="display:flex;flex-direction:column;gap:16px;padding:12px 8px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;">` +
+    `<div class="srv-table"><div class="srv-head" style="display:grid;min-width:640px;grid-template-columns:minmax(0,2.4fr) 170px 110px 40px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Joueur</span><span>Inscription</span><span>Serveurs</span><span></span></div>` +
+    (data.rows.length ? data.rows.map(rowHtml).join("") : `<p style="margin:0;padding:14px;font-size:13px;color:var(--muted);">Aucun joueur ne correspond.</p>`) +
+    `</div>` +
+    pagerHtml2("/admin/players", data.filters, data.from, data.to, data.total, data.pageCount) +
+    `</section>`;
+
+  return (
+    html +
+    `<main style="flex:1;min-width:0;padding:28px 32px 40px;display:flex;flex-direction:column;gap:22px;">` +
+    `<div style="display:flex;flex-direction:column;gap:4px;min-width:0;"><h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:24px;letter-spacing:-.01em;">Players</h1><p style="margin:0;font-size:13.5px;color:var(--muted);">Tous les comptes joueurs de l'annuaire.</p></div>` +
+    `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">${filterBar}</div>` +
+    table +
+    `</main></div></div>`
+  );
+}
+
+// Pagination generique (q + page), pour playersHtml.
+function pagerHtml2(action: string, f: PlayerFilters, from: number, to: number, total: number, pageCount: number): string {
+  const href = (page: number) => `${action}?${new URLSearchParams({ q: f.q, page: String(page) })}`;
+  const button = (label: string, page: number, enabled: boolean) =>
+    enabled
+      ? `<a href="${escapeHtml(href(page))}" style="${BUTTON}text-decoration:none;">${label}</a>`
+      : `<span style="${BUTTON}opacity:.4;">${label}</span>`;
+  return (
+    `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px 4px;font-size:12.5px;color:var(--muted);">` +
+    `<span>Showing ${from}–${to} of ${fmt(total)}</span>` +
+    `<div style="margin-left:auto;display:flex;gap:6px;">${button("Previous", f.page - 1, f.page > 1)}${button("Next", f.page + 1, f.page < pageCount)}</div></div>`
+  );
+}
+
+// Fiche d'un joueur : pas encore branchee sur les vraies donnees (prochaine etape), mais
+// classee ici element par element — jaune (pr) pour ce qui est facilement faisable avec ce
+// qui existe deja, rouge (nb) pour ce qui demanderait un systeme qui n'existe pas du tout
+// (avertissements, abonnements, gel/verrouillage de compte, IP, notes de moderation...).
+export type PlayerServerRow = { name: string; slug: string; address: string; published: boolean; isPrivate: boolean; frozen: boolean; openReports: number };
+
+export function playerDetailHtml(data: {
+  id: string;
+  name: string;
+  minecraftUuid: string | null;
+  createdAt: string;
+  serversTotal: number;
+  serversFrozen: number;
+  serversShown: PlayerServerRow[];
+  serversOpen: boolean;
+  serversPage: number;
+  serversPageCount: number;
+  serversFrom: number;
+  serversTo: number;
+  reportsTotal: number;
+  reportsOpen: number;
+}): string {
+  let html = SCREENS["player-detail"];
+
+  // Fil d'ariane : lien reel.
+  html = replaceOnce(
+    html,
+    '<span style="display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;"><i class="ph ph-arrow-left" style="font-size:13px;"></i>Back to Aetherfall</span>',
+    '<a href="/admin/players" style="display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;text-decoration:none;"><i class="ph ph-arrow-left" style="font-size:13px;"></i>Retour aux joueurs</a>',
+  );
+
+  // Avatar + nom reels.
+  html = replaceOnce(html, 'font-size:24px;font-weight:600;">K</span>', `font-size:24px;font-weight:600;">${escapeHtml(data.name.charAt(0).toUpperCase())}</span>`);
+  html = replaceOnce(html, ">Kaelthorn</h1>", `>${escapeHtml(data.name)}</h1>`);
+  html = replaceOnce(html, "Players / Kaelthorn", `Players / ${escapeHtml(data.name)}`);
+
+  // Badges : "Active" n'a pas d'equivalent (aucun statut de compte) ; "Server owner" ne
+  // s'affiche que si le compte possede reellement au moins un serveur.
+  html = markLabel(html, "Active", "nb");
+  if (data.serversTotal === 0) html = replaceOnce(html, '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:var(--color-accent-800);color:var(--color-accent-100);">Server owner</span>', "");
+
+  // Ligne d'identite : pas d'email (connexion Microsoft uniquement, jamais stocke) ; "Last
+  // seen" retire aussi, rien ne le suit — mieux vaut l'omettre qu'afficher une fausse heure.
+  const joined = new Date(data.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  html = replaceOnce(
+    html,
+    '<span style="font-size:13px;color:var(--muted);">kael.thorn@mail.com · Microsoft linked · Joined Jan 12, 2026 · Last seen 2 h ago</span>',
+    `<span style="font-size:13px;color:var(--muted);">Lié à Microsoft · Inscrit le ${joined}</span>`,
+  );
+
+  // Boutons d'action : Message est reel. Les trois autres n'ont aucun systeme derriere.
+  html = replaceOnce(html, '<button style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;"><i class="ph ph-chat-circle" style="font-size:14.5px;"></i>Message</button>', playerMessageHtml({ id: data.id, name: data.name }));
+  html = markLabel(html, "Add warning", "nb");
+  html = markLabel(html, "Freeze account", "nb");
+  html = markLabel(html, "Lock account", "nb");
+
+  // Pastilles chiffrees.
+  html = markLabel(html, "Warnings", "nb"); // tuile + section partagent ce libelle, pas construit
+  html = replaceOnce(html, 'letter-spacing:-.01em;">2</div><div style="font-size:12px;color:var(--danger)">Last on Sep 21</div>', 'letter-spacing:-.01em;"><span class="nb">2</span></div><div style="font-size:12px;color:var(--danger)"><span class="nb">Last on Sep 21</span></div>');
+  html = replaceOnce(
+    html,
+    'letter-spacing:-.01em;">2</div><div style="font-size:12px;color:var(--muted)">1 frozen</div>',
+    `letter-spacing:-.01em;">${fmt(data.serversTotal)}</div><div style="font-size:12px;color:var(--muted)">${data.serversFrozen > 0 ? `${fmt(data.serversFrozen)} gelé(s)` : "Aucun gelé"}</div>`,
+  );
+  html = markLabel(html, "Subscription", "nb"); // laisse affiche en rouge : pas d'abonnements pour l'instant (site gratuit)
+  html = replaceOnce(html, 'letter-spacing:-.01em;">Pro</div><div style="font-size:12px;color:var(--muted)">Monthly · renews Oct 12</div>', 'letter-spacing:-.01em;"><span class="nb">Pro</span></div><div style="font-size:12px;color:var(--muted)"><span class="nb">Monthly · renews Oct 12</span></div>');
+  // "Reports against" -> en realite "signalements sur ses serveurs" (rien ne modelise un
+  // signalement contre le joueur lui-meme dans ce projet).
+  html = replaceOnce(
+    html,
+    'letter-spacing:-.01em;">9</div><div style="font-size:12px;color:var(--muted)">7 on his servers</div>',
+    `letter-spacing:-.01em;">${fmt(data.reportsTotal)}</div><div style="font-size:12px;color:var(--muted)">${fmt(data.reportsOpen)} ouvert(s)</div>`,
+  );
+
+  // Section "Servers owned" : liste courte (3) par defaut, avec une fleche pour voir tout
+  // (pagination 5 par 5 une fois ouvert) — sans ca, un compte avec beaucoup de serveurs
+  // prendrait toute la page.
+  html = replaceSectionBody(html, ">Servers owned</h2>", playerServersSectionHtml(data));
+
+  html = markSectionNotBuilt(html, ">Warnings</h2>", "nb");
+  html = markSectionNotBuilt(html, ">Subscription</h2>", "nb");
+
+  // Compte : l'UUID est reel. Last IP et 2FA sont retires (jamais suivi, et le site n'a pas de
+  // 2FA — Microsoft gere deja l'authentification). Launcher (version/OS) reste a construire.
+  html = replaceOnce(
+    html,
+    'text-align:right;min-width:0;"><span style="font:12px ui-monospace,Menlo,monospace;">8f2c…a91e</span>',
+    `text-align:right;min-width:0;"><span style="font:12px ui-monospace,Menlo,monospace;">${data.minecraftUuid ? escapeHtml(data.minecraftUuid) : "—"}</span>`,
+  );
+  html = replaceOnce(html, '<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;"><span style="color:var(--muted);white-space:nowrap;">Last IP</span><span style="text-align:right;min-width:0;">83.12.•••.•• · France</span></div>', "");
+  html = replaceOnce(html, '<span style="color:var(--muted);white-space:nowrap;">Launcher</span><span style="text-align:right;min-width:0;">1.4.2 · Windows</span>', '<span style="color:var(--muted);white-space:nowrap;">Launcher</span><span style="text-align:right;min-width:0;"><span class="nb">1.4.2 · Windows</span></span>');
+  html = replaceOnce(html, '<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;"><span style="color:var(--muted);white-space:nowrap;">2FA</span><span style="text-align:right;min-width:0;">Off</span></div>', "");
+
+  html = markSectionNotBuilt(html, "Staff notes", "nb");
+
+  return html;
+}
+
+// Liste des serveurs possedes : 3 affiches par defaut, lien pour tout voir (pagination 5 par 5).
+function playerServersSectionHtml(data: {
+  id: string;
+  serversTotal: number;
+  serversShown: PlayerServerRow[];
+  serversOpen: boolean;
+  serversPage: number;
+  serversPageCount: number;
+  serversFrom: number;
+  serversTo: number;
+}): string {
+  const row = (s: PlayerServerRow) => {
+    const status = s.frozen
+      ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, #8ac3e0 16%, transparent);color:#8ac3e0;">Gelé</span>`
+      : s.published
+        ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Publié</span>`
+        : `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:var(--raised);color:var(--muted);border:1px solid var(--color-divider);">Masqué</span>`;
+    const flag = s.openReports > 0 ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--danger) 16%, transparent);color:var(--danger);"><i class="ph ph-flag" style="font-size:11px;"></i>${s.openReports}</span>` : "";
+    return (
+      `<div style="position:relative;display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--color-divider);">` +
+      `<span style="width:34px;height:34px;flex-shrink:0;border-radius:8px;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;">${escapeHtml(s.name.charAt(0).toUpperCase())}</span>` +
+      `<div style="display:flex;flex-direction:column;gap:2px;min-width:0;"><span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(s.name)}</span><span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(s.address)}</span></div>` +
+      `<span style="margin-left:auto;display:flex;gap:8px;">${flag}${status}</span>` +
+      `<i class="ph ph-caret-right" style="font-size:14px;color:var(--muted)"></i>` +
+      `<a class="srv-cover" href="/admin/servers/${escapeHtml(s.slug)}" aria-label="Ouvrir la fiche de ${escapeHtml(s.name)}"></a>` +
+      `</div>`
+    );
+  };
+
+  const list = data.serversShown.length
+    ? `<div>${data.serversShown.map(row).join("")}</div>`
+    : `<p style="margin:0;font-size:13px;color:var(--muted);">Ce compte ne possède aucun serveur.</p>`;
+
+  if (!data.serversOpen) {
+    const more = data.serversTotal > data.serversShown.length
+      ? `<a href="/admin/players/${escapeHtml(data.id)}?serversOpen=1" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 0 0;font-size:12.5px;color:var(--muted);text-decoration:none;">Voir tout (${fmt(data.serversTotal)})<i class="ph ph-caret-down" style="font-size:12px;"></i></a>`
+      : "";
+    return list + more;
+  }
+
+  const hrefPage = (page: number) => `/admin/players/${escapeHtml(data.id)}?serversOpen=1&serversPage=${page}`;
+  const pager =
+    `<div style="display:flex;align-items:center;gap:10px;padding:10px 0 0;font-size:12.5px;color:var(--muted);">` +
+    `<span>${data.serversFrom}–${data.serversTo} sur ${fmt(data.serversTotal)}</span>` +
+    `<div style="margin-left:auto;display:flex;gap:6px;">` +
+    (data.serversPage > 1 ? `<a href="${hrefPage(data.serversPage - 1)}" style="${BUTTON}text-decoration:none;">Previous</a>` : `<span style="${BUTTON}opacity:.4;">Previous</span>`) +
+    (data.serversPage < data.serversPageCount ? `<a href="${hrefPage(data.serversPage + 1)}" style="${BUTTON}text-decoration:none;">Next</a>` : `<span style="${BUTTON}opacity:.4;">Next</span>`) +
+    `</div></div>`;
+  const less = `<a href="/admin/players/${escapeHtml(data.id)}" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:4px 0 0;font-size:12.5px;color:var(--muted);text-decoration:none;">Réduire<i class="ph ph-caret-up" style="font-size:12px;"></i></a>`;
+  return list + pager + less;
+}
+
+// Pop-up « Message » depuis la fiche joueur : pas de type "Gel" ici (rien ne gele un compte
+// joueur aujourd'hui), contrairement au message depuis une fiche serveur.
+function playerMessageHtml(data: { id: string; name: string }): string {
+  const COLORS = `{info:'#9184d9',warning:'#e8c547',error:'#e5484d'}`;
+  const field = "display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);";
+  const locked = "display:flex;align-items:center;height:36px;padding:0 10px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:var(--radius-md);font-size:13.5px;color:var(--color-text);";
+  return (
+    `<button type="button" popovertarget="player-message-${escapeHtml(data.id)}" style="${TOP_BUTTON}"><i class="ph ph-chat-circle" style="font-size:14.5px;"></i>Message</button>` +
+    `<div id="player-message-${escapeHtml(data.id)}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:460px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
+    `<div data-stripe style="height:4px;background:#9184d9;"></div>` +
+    `<form method="post" action="/api/admin/players/${escapeHtml(data.id)}/message" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
+    `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Message à ${escapeHtml(data.name)}</h2>` +
+    `<label style="${field}">Type de message<select name="kind" class="input" style="height:36px;" onchange="this.form.querySelector('[data-stripe]').style.background=${COLORS}[this.value]"><option value="info">Information</option><option value="warning">Avertissement</option><option value="error">Erreur</option></select></label>` +
+    `<div style="${field}">Destinataire<span style="${locked}">${escapeHtml(data.name)}</span></div>` +
+    `<label style="${field}">Message<textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:110px;font-size:13.5px;"></textarea></label>` +
+    `<div style="display:flex;gap:10px;justify-content:flex-end;">` +
+    `<button type="button" popovertarget="player-message-${escapeHtml(data.id)}" popovertargetaction="hide" style="${CANCEL}">Annuler</button>` +
+    `<button type="submit" style="${CONFIRM}">Envoyer</button></div>` +
+    `</form></div>`
+  );
+}
+
+// Composer de message diffuse — portee reduite par rapport a la maquette (voir la route
+// /api/admin/notifications/send) : un seul canal reel (boite de reception du launcher), deux
+// audiences (Tout le monde, Proprietaires de serveur — "Un joueur" existe deja depuis la fiche
+// joueur, pas la peine de le dupliquer ici), envoi immediat, pas de brouillon ni de
+// programmation.
+export function notificationsHtml(data: { sentCount: number | null; activeBanner: { type: string; text: string } | null }): string {
+  let html = SCREENS.notifications;
+  html = replaceOnce(html, ">Notifications / New message</span>", ">Notifications</span>");
+
+  const sentBanner = data.sentCount !== null
+    ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Message envoyé à ${fmt(data.sentCount)} compte(s).</div>`
+    : "";
+  const activeBannerNotice = data.activeBanner
+    ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;">` +
+      `<i class="ph ph-browser" style="font-size:16px;color:var(--muted)"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Bannière active : ${escapeHtml(data.activeBanner.text)}</span>` +
+      `<form method="post" action="/api/admin/notifications/banner/clear"><button type="submit" style="${BUTTON}">Retirer</button></form></div>`
+    : "";
+
+  const field = "display:flex;flex-direction:column;gap:6px;min-width:0;";
+  const label = "font-size:12px;color:var(--muted)";
+  const body =
+    sentBanner +
+    activeBannerNotice +
+    `<form method="post" action="/api/admin/notifications/send" style="display:flex;flex-direction:column;gap:16px;">` +
+    `<label style="${field}"><span style="${label}">Type</span><select name="type" class="input" style="height:36px;" required>` +
+    `<option value="announcement">Annonce</option><option value="maintenance">Maintenance</option><option value="alert">Alerte</option><option value="promotion">Promotion</option></select></label>` +
+    `<label style="${field}"><span style="${label}">Audience</span><select name="audience" class="input" style="height:36px;" required>` +
+    `<option value="everyone">Tout le monde</option><option value="owners">Propriétaires de serveur</option></select></label>` +
+    `<label style="${field}"><span style="${label}">Système concerné (si Maintenance)</span><select name="system" class="input" style="height:36px;">` +
+    `<option value="">—</option><option value="Site">Site</option><option value="Launcher">Launcher</option><option value="Connexion Minecraft">Connexion Minecraft</option><option value="CurseForge">CurseForge</option><option value="Modrinth">Modrinth</option><option value="Tout">Tout</option></select></label>` +
+    `<label style="${field}"><span style="${label}">Message</span><textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:110px;font-size:13.5px;"></textarea></label>` +
+    `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;"><input type="checkbox" name="banner" style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Aussi afficher en bannière sur le site (remplace la bannière active)</label>` +
+    `<div style="display:flex;justify-content:flex-end;"><button type="submit" style="${CONFIRM}">Envoyer</button></div>` +
+    `</form>`;
+
+  html = replaceSectionBody(html, ">Compose</h2>", body);
+  html = markSectionNotBuilt(html, ">Launcher preview</h2>", "nb");
+  html = markSectionNotBuilt(html, ">Recent</h2>", "nb");
   return html;
 }
 
@@ -240,6 +533,10 @@ export function serverDetailHtml(data: {
   minecraftVersion: string;
   modpackName: string | null;
   modpackVersion: string | null;
+  createdAt: string;
+  launchCount: number;
+  reports: ReportSummary[];
+  ownerId: string;
 }): string {
   const frozen = data.frozenAt !== null;
   let html = SCREENS["server-detail"];
@@ -254,7 +551,11 @@ export function serverDetailHtml(data: {
     : "";
   html = replaceOnce(html, "<span>play.aetherfall.gg · 1.20.1 Forge</span><span>·</span>", `<span>${escapeHtml(data.ip)} · ${escapeHtml(data.minecraftVersion)}</span><span>·</span>${modpack}`);
   // Propriétaire du serveur (compte qui l'a créé) : nom et initiale réels, pas encore cliquable.
-  html = replaceOnce(html, ">K</span>Kaelthorn <i", `>${escapeHtml(data.owner.charAt(0).toUpperCase())}</span><span class="nb">${escapeHtml(data.owner)}</span> <i`);
+  html = replaceOnce(
+    html,
+    'href="#" style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 3px;border-radius:999px;border:1px solid var(--color-accent-700);font-size:12.5px;"><span style="width:18px;height:18px;flex-shrink:0;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:600;">K</span>Kaelthorn <i',
+    `href="/admin/players/${escapeHtml(data.ownerId)}" style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px 2px 3px;border-radius:999px;border:1px solid var(--color-accent-700);font-size:12.5px;"><span style="width:18px;height:18px;flex-shrink:0;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:600;">${escapeHtml(data.owner.charAt(0).toUpperCase())}</span>${escapeHtml(data.owner)} <i`,
+  );
 
   // Bandeau de gel : celui de la maquette, rempli avec le vrai gel. Retiré si le serveur n'est pas gelé.
   const bannerStart = html.indexOf('<div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;');
@@ -287,7 +588,78 @@ export function serverDetailHtml(data: {
       `</div>`;
     html = html.slice(0, barStart) + newBar + html.slice(barEnd);
   }
-  return markAllSections(html);
+  // Published content et Moderation history restent non branches (rouge) : le second demande un
+  // vrai journal de moderation, pas encore construit ; le premier fait doublon avec l'edition
+  // cote proprietaire.
+  html = markSectionNotBuilt(html, "Published content", "nb");
+  html = markSectionNotBuilt(html, "Moderation history", "nb");
+  html = replaceReportsSection(html, data.reports);
+  html = replaceStatsSection(html, { createdAt: data.createdAt, launchCount: data.launchCount });
+  return html;
+}
+
+// Remplace le corps d'une section (tout ce qui suit son en-tete "titre + actions") par `body`,
+// en gardant l'en-tete et l'habillage <section> de la maquette tels quels.
+function replaceSectionBody(html: string, heading: string, body: string): string {
+  const at = html.indexOf(heading);
+  if (at < 0) return html;
+  const sectionStart = html.lastIndexOf("<section", at);
+  const sectionEnd = balancedEnd(html, sectionStart, "section");
+  const headerStart = html.indexOf('<div style="display:flex;align-items:center;gap:12px;min-height:28px;', sectionStart);
+  const headerEnd = balancedEnd(html, headerStart, "div");
+  if (sectionStart < 0 || sectionEnd < 0 || headerStart < 0 || headerEnd < 0) return html;
+  return html.slice(0, headerEnd) + body + "</section>" + html.slice(sectionEnd);
+}
+
+const REPORT_ISSUE_LABELS: Record<ReportSummary["issue"], string> = {
+  cant_connect: "Impossible de se connecter",
+  wrong_version: "Mauvaise version",
+  modpack_download: "Le modpack ne se télécharge pas",
+  crash: "Plantage au lancement",
+  other: "Autre",
+};
+
+const REPORT_STATUS_STYLE: Record<ReportStatus, { label: string; bg: string; color: string }> = {
+  new: { label: "Nouveau", bg: "color-mix(in srgb, var(--danger) 16%, transparent)", color: "var(--danger)" },
+  replied: { label: "Répondu", bg: "color-mix(in srgb, var(--color-accent) 20%, transparent)", color: "var(--color-accent-100)" },
+  resolved: { label: "Résolu", bg: "var(--raised)", color: "var(--muted)" },
+};
+
+function reportRowHtml(report: ReportSummary): string {
+  const status = REPORT_STATUS_STYLE[report.status];
+  const date = new Date(report.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const subtitle = `${escapeHtml(report.message.slice(0, 80))} · ${escapeHtml(report.reporterMinecraftUsername)}`;
+  return (
+    `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--color-divider);">` +
+    `<div style="display:flex;flex-direction:column;gap:2px;min-width:0;">` +
+    `<span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(REPORT_ISSUE_LABELS[report.issue])}</span>` +
+    `<span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${subtitle}</span>` +
+    `</div>` +
+    `<span style="margin-left:auto;font-size:12px;color:var(--muted2);white-space:nowrap;">${date}</span>` +
+    `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:${status.bg};color:${status.color};">${status.label}</span>` +
+    `</div>`
+  );
+}
+
+function replaceReportsSection(html: string, reports: ReportSummary[]): string {
+  const body = reports.length
+    ? `<div>${reports.slice(0, 5).map(reportRowHtml).join("")}</div>`
+    : `<p style="margin:0;font-size:13px;color:var(--muted);">Aucun signalement pour ce serveur.</p>`;
+  return replaceSectionBody(html, "Reports on this server", body);
+}
+
+// Created et Launcher joins viennent de vraies colonnes (createdAt, launchCount). Players (30 d)
+// et Peak online ne sont pas suivis (aucun comptage de joueurs dans le temps, voir le commentaire
+// sur ServerEvent dans contract.prisma) ; Plan vient des abonnements, pas encore construits —
+// les trois gardent leur valeur de maquette, marquee "non branchee".
+function replaceStatsSection(html: string, data: { createdAt: string; launchCount: number }): string {
+  const created = new Date(data.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  html = replaceOnce(html, '<span style="text-align:right;min-width:0;">Mar 4, 2026</span>', `<span style="text-align:right;min-width:0;">${created}</span>`);
+  html = replaceOnce(html, '<span style="text-align:right;min-width:0;">4,812</span>', `<span style="text-align:right;min-width:0;"><span class="nb">4,812</span></span>`);
+  html = replaceOnce(html, '<span style="text-align:right;min-width:0;">150</span>', `<span style="text-align:right;min-width:0;"><span class="nb">150</span></span>`);
+  html = replaceOnce(html, '<span style="text-align:right;min-width:0;">12,390</span>', `<span style="text-align:right;min-width:0;">${fmt(data.launchCount)}</span>`);
+  html = replaceOnce(html, '<span style="text-align:right;min-width:0;">Pro</span>', `<span style="text-align:right;min-width:0;"><span class="nb">Pro</span></span>`);
+  return html;
 }
 
 // Bouton « Dégeler » : ouvre une confirmation centrée (pop-up native). La case « message au

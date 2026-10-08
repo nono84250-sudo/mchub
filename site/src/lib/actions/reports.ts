@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 
 export type ReportActionState = { error: string } | undefined;

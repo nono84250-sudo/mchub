@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { ADMIN_COOKIE, readAdminSession, type AdminRole } from "@/lib/adminAuth";
 
 // Compte admin connecté, ou null. Relit le compte en base à chaque appel : un

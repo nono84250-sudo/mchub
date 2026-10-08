@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 
 // Alphabet sans caracteres ambigus (0/O, 1/I) : un code d'invitation
 // se lit et se retape a la main, y compris depuis le launcher.

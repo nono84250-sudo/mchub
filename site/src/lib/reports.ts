@@ -1,4 +1,4 @@
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 
 // Signalements techniques envoyes par les joueurs depuis le launcher (voir
 // /api/launcher/servers/[slug]/report) — uniquement la categorie "Probleme
@@ -12,6 +12,7 @@ export type ReportSummary = {
   id: string;
   issue: ReportIssue;
   reporterMinecraftUsername: string;
+  message: string;
   status: ReportStatus;
   createdAt: string;
 };
@@ -23,7 +24,7 @@ export type ReportSummary = {
 // performance qui ne se verrait pas ici (meme raisonnement que
 // listPublicServers).
 export async function listReportsForServer(serverId: string): Promise<ReportSummary[]> {
-  return db.orm.public.Report.select("id", "issue", "reporterMinecraftUsername", "status", "createdAt")
+  return db.orm.public.Report.select("id", "issue", "reporterMinecraftUsername", "message", "status", "createdAt")
     .where({ serverId })
     .orderBy((r) => r.createdAt.desc())
     .all();

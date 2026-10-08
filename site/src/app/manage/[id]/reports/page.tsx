@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/auth";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { listReportsForServer, getReportDetail, type ReportStatus, type ReportIssue } from "@/lib/reports";
 import { markReportResolved } from "@/lib/actions/reports";
 import { ReportReplyForm } from "@/components/ReportReplyForm";
@@ -105,7 +105,7 @@ export default async function ManageServerReportsPage({ params, searchParams }: 
               <p className="text-sm text-muted">{dict.reports.selectPrompt}</p>
             ) : (
               <>
-                <h2 className="text-base font-medium text-foreground">{reportsDict[ISSUE_KEYS[selected.issue]]}</h2>
+                <h2 className="text-base font-medium text-foreground">{reportsDict[ISSUE_KEYS[selected.issue as ReportIssue]]}</h2>
 
                 <div className="flex justify-between text-sm">
                   <span className="text-muted">{dict.reports.playerLabel}</span>

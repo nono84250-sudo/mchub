@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { SERVERS_CACHE_TAG, canSeeServer, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getModpackInstallFile } from "@/lib/curseforge";
 import { getModrinthModpackInstallFile } from "@/lib/modrinth";

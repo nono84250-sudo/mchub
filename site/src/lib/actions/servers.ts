@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
+import { deleteR2ImageIfOwned, deleteAllR2Images } from "@/lib/serverImages";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { slugify } from "@/lib/slug";
 import { generateUniqueInviteCode } from "@/lib/inviteCode";
@@ -29,14 +30,16 @@ type ServerFormValues = {
 };
 
 // Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher :
-// seule une adresse https absolue, sans guillemets, chevrons, espaces ni
-// backticks, est acceptee. Couvre les images deposees (Vercel Blob) comme les
-// valeurs legacy pointant vers des CDN https.
+// seule une adresse http(s) absolue, sans guillemets, chevrons, espaces ni
+// backticks, est acceptee. http est permis uniquement pour que /api/upload (voir
+// route.ts, qui renvoie l'origine de la requete) fonctionne en dev local ; couvre
+// aussi les valeurs legacy pointant vers des CDN https (R2, ex-Vercel Blob).
 function isSafeImageUrl(url: string | null): boolean {
   if (url === null) return true;
-  if (!/^https:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
+  if (!/^https?:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
   try {
-    return new URL(url).protocol === "https:";
+    const protocol = new URL(url).protocol;
+    return protocol === "https:" || protocol === "http:";
   } catch {
     return false;
   }
@@ -166,6 +169,12 @@ export async function updateServer(
     ...(parsed.ip !== owned.ip ? { lastPingedAt: null, playerCount: null, playerCapacity: null } : {}),
   });
 
+  // Image remplacee ou retiree : l'ancienne ne sert plus a rien sur R2 (sauf si une fiche
+  // dupliquee la partage encore, verifie dans deleteR2ImageIfOwned).
+  if (parsed.bannerUrl !== owned.bannerUrl) await deleteR2ImageIfOwned(owned.bannerUrl, serverId);
+  if (parsed.iconUrl !== owned.iconUrl) await deleteR2ImageIfOwned(owned.iconUrl, serverId);
+  if (parsed.backgroundUrl !== owned.backgroundUrl) await deleteR2ImageIfOwned(owned.backgroundUrl, serverId);
+
   updateTag(SERVERS_CACHE_TAG);
   revalidatePath("/servers");
   revalidatePath(`/servers/${owned.slug}`);
@@ -183,6 +192,9 @@ export async function deleteServer(serverId: string) {
   if (!owned) redirect("/dashboard");
 
   await db.orm.public.Server.where({ id: serverId }).delete();
+
+  // Memes verifications que dans updateServer : une fiche dupliquee peut encore partager ces images.
+  await deleteAllR2Images(owned, serverId);
 
   updateTag(SERVERS_CACHE_TAG);
   revalidatePath("/servers");

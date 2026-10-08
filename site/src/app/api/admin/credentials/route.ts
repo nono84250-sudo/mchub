@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/prisma/db";
+import { db, execSql } from "@/lib/db";
 import { hashPassword, passwordProblem, verifyPassword } from "@/lib/adminAuth";
 import { getCurrentAdmin } from "@/lib/adminSession";
 import { rateLimitResponse } from "@/lib/rateLimit";
@@ -39,9 +39,9 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await hashPassword(newPassword);
-  const plan = db.raw.sql`UPDATE "adminAccount" SET "username" = ${username}, "passwordHash" = ${passwordHash}, "mustChangeCredentials" = false WHERE "id" = ${admin.id}`
-    .affectedCount()
-    .build();
-  await db.runtime().execute(plan);
+  await execSql(
+    'UPDATE "adminAccount" SET "username" = ?, "passwordHash" = ?, "mustChangeCredentials" = 0 WHERE "id" = ?',
+    [username, passwordHash, admin.id],
+  );
   return NextResponse.json({ ok: true });
 }

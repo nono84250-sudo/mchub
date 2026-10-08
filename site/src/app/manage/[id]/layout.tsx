@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { db } from "@/prisma/db";
+import { db } from "@/lib/db";
 import { listReportsForServer } from "@/lib/reports";
 import { ManageSidebar } from "@/components/ManageSidebar";
 import { ManageAvatarMenu } from "@/components/ManageAvatarMenu";
