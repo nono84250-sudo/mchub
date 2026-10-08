@@ -623,6 +623,32 @@ ipcMain.handle("app:restart", () => {
   app.exit(0);
 });
 
+// Mode maintenance (voir renderer.js ensureNotInMaintenance/showMaintenanceScreen) : verifie
+// au demarrage et depuis le pop-up d'une notification "maintenance". Pas de session requise
+// (joignable avant meme la connexion Microsoft).
+ipcMain.handle("maintenance:check", async () => {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/maintenance`, { headers: launcherAuthHeaders() });
+    return { ok: true, active: !!data.active, message: data.message || "" };
+  } catch {
+    // Site injoignable : ne bloque jamais le launcher pour ca, seule une vraie reponse
+    // "active: true" du site doit bloquer.
+    return { ok: true, active: false, message: "" };
+  }
+});
+ipcMain.handle("maintenance:verifyCode", async (_event, code) => {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/maintenance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...launcherAuthHeaders() },
+      body: JSON.stringify({ code }),
+    });
+    return { ok: !!data.ok };
+  } catch {
+    return { ok: false };
+  }
+});
+
 // Onglet "Rejoint" de "Mes instances" (voir renderer.js) : serveurs prives
 // rejoints via le code/lien d'invitation de quelqu'un d'autre — jamais ceux
 // que ce joueur possede (voir servers:mine ci-dessus, une liste separee).

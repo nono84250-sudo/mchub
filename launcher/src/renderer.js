@@ -1328,22 +1328,81 @@ function renderNotifications() {
 const seenNotificationIds = new Set();
 let popupSeeded = false;
 
-function showNotificationPopup(notif) {
-  const color = NOTIF_COLORS[notif.type] ?? "#9184d9";
+// Centree et bloquante (reutilise la modale generique showModal, deja partagee par le
+// reste de l'appli) : affichee une a la fois, le launcher attend que chacune soit fermee
+// avant de montrer la suivante — pas d'empilement ni de modale qui en ecrase une autre.
+// Ecran plein (voir Design/Omniscient Launcher UI Mockups, "01a Maintenance") : bloque tout
+// le reste de l'appli jusqu'a un code valide. Reutilisable au demarrage (ensureNotInMaintenance)
+// et depuis le pop-up d'une notification "maintenance" deja en session.
+function showMaintenanceScreen(message) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("maintenance-overlay");
+    const input = document.getElementById("maintenance-code-input");
+    const errorEl = document.getElementById("maintenance-code-error");
+    const continueBtn = document.getElementById("maintenance-continue");
+
+    document.getElementById("maintenance-message").textContent = message || t("maintenance.defaultMessage");
+    errorEl.hidden = true;
+    input.value = "";
+    overlay.hidden = false;
+    document.body.classList.add("modal-blocking");
+    input.focus();
+
+    const cleanup = () => {
+      overlay.hidden = true;
+      document.body.classList.remove("modal-blocking");
+      continueBtn.removeEventListener("click", onSubmit);
+      input.removeEventListener("keydown", onKey);
+    };
+    const onSubmit = async () => {
+      const code = input.value.trim();
+      if (!code) return;
+      continueBtn.disabled = true;
+      const result = await window.mchub.verifyMaintenanceCode(code);
+      continueBtn.disabled = false;
+      if (result.ok) {
+        cleanup();
+        resolve();
+        return;
+      }
+      errorEl.textContent = t("maintenance.wrongCode");
+      errorEl.hidden = false;
+    };
+    const onKey = (event) => {
+      if (event.key === "Enter") onSubmit();
+    };
+    continueBtn.addEventListener("click", onSubmit);
+    input.addEventListener("keydown", onKey);
+  });
+}
+
+// Au demarrage, avant meme l'ecran de connexion : si une maintenance est active, personne ne
+// passe sans le code (voir platformSettings.ts cote site, activateLauncherMaintenance).
+async function ensureNotInMaintenance() {
+  const status = await window.mchub.checkMaintenance();
+  if (!status.active) return;
+  bootstrapEl.hidden = true;
+  await showMaintenanceScreen(status.message);
+}
+
+async function showNotificationPopup(notif) {
   const title = t(`notifications.${BROADCAST_TITLE_KEYS[notif.type]}`);
-  const el = document.createElement("div");
-  el.className = "notif-popup";
-  el.style.borderLeftColor = color;
-  el.innerHTML = `
-    <div class="notif-popup-title" style="color:${color}">${escapeHtml(title)}</div>
-    <div class="notif-popup-message">${escapeHtml(notif.message ?? "")}</div>
-  `;
-  document.body.appendChild(el);
-  requestAnimationFrame(() => el.classList.add("show"));
-  setTimeout(() => {
-    el.classList.remove("show");
-    setTimeout(() => el.remove(), 300);
-  }, 6000);
+  const tone = notif.type === "broadcast_alert" ? "danger" : undefined;
+  const isMaintenance = notif.type === "broadcast_maintenance";
+  const result = await showModal({
+    title,
+    body: notif.message ?? "",
+    confirmLabel: t("common.close"),
+    cancelLabel: isMaintenance ? t("notifications.viewMaintenance") : undefined,
+    tone,
+    stripeColor: NOTIF_COLORS[notif.type],
+  });
+  // "Fermer" (confirmed:true) ne fait rien de plus. Le deuxieme bouton, uniquement present
+  // pour une maintenance, verifie si elle est reellement active et bloque si oui.
+  if (isMaintenance && !result.confirmed) {
+    const status = await window.mchub.checkMaintenance();
+    if (status.active) await showMaintenanceScreen(status.message);
+  }
 }
 
 async function refreshNotifications() {
@@ -1358,12 +1417,15 @@ async function refreshNotifications() {
 
   // Au tout premier chargement, les notifications deja la ne sont pas "nouvelles" : on les
   // marque vues sans pop-up, pour n'afficher que celles qui arrivent vraiment pendant la session.
+  const freshBroadcasts = [];
   for (const notif of latestNotifications) {
     if (seenNotificationIds.has(notif.id)) continue;
     seenNotificationIds.add(notif.id);
-    if (popupSeeded && BROADCAST_TITLE_KEYS[notif.type]) showNotificationPopup(notif);
+    if (popupSeeded && BROADCAST_TITLE_KEYS[notif.type]) freshBroadcasts.push(notif);
   }
   popupSeeded = true;
+  // Une a la fois (await), jamais deux modales en meme temps.
+  for (const notif of freshBroadcasts) await showNotificationPopup(notif);
 }
 
 function wireNotifications() {
@@ -2978,7 +3040,7 @@ function wireSidebar() {
 // bloquant futur. Résout avec { confirmed, checked } plutôt que de bloquer
 // le thread comme un confirm() natif, pour rester cohérent avec le reste de
 // l'UI (pas de fenêtre système grise dans une appli aussi personnalisée).
-function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel, tone }) {
+function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel, tone, stripeColor }) {
   return new Promise((resolve) => {
     const overlay = document.getElementById("modal-overlay");
     const confirmBtn = document.getElementById("modal-confirm");
@@ -2987,8 +3049,9 @@ function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel, tone
     const checkbox = document.getElementById("modal-checkbox");
 
     document.getElementById("modal-title").textContent = title;
-    // Alerte critique (ex. RAM au-delà de 80 % de la machine) : titre en rouge.
-    document.getElementById("modal-title").style.color = tone === "danger" ? "#e5484d" : "";
+    // Couleur du titre : celle du type de message diffuse si fournie, sinon rouge pour une
+    // alerte critique (ex. RAM au-delà de 80 % de la machine), sinon la couleur par defaut.
+    document.getElementById("modal-title").style.color = stripeColor || (tone === "danger" ? "#e5484d" : "");
     document.getElementById("modal-body").textContent = body;
     confirmBtn.textContent = confirmLabel;
     cancelBtn.hidden = !cancelLabel;
@@ -2997,11 +3060,17 @@ function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel, tone
     document.getElementById("modal-checkbox-label").textContent = checkboxLabel || "";
     checkbox.checked = false;
 
-    overlay.querySelector(".modal-box").classList.add("pop-in");
+    const modalBox = overlay.querySelector(".modal-box");
+    modalBox.classList.add("pop-in");
+    modalBox.style.borderTopColor = stripeColor || "";
     overlay.hidden = false;
+    // Filet de securite : coupe les clics sur le reste de l'appli tant que cette modale est
+    // ouverte, independamment du z-index (voir le commentaire CSS sur body.modal-blocking).
+    document.body.classList.add("modal-blocking");
 
     const cleanup = () => {
       overlay.hidden = true;
+      document.body.classList.remove("modal-blocking");
       confirmBtn.removeEventListener("click", onConfirm);
       cancelBtn.removeEventListener("click", onCancel);
     };
@@ -3149,6 +3218,7 @@ async function boot() {
   }
 
   bootstrapEl.hidden = true;
+  await ensureNotInMaintenance();
   await proceedToGate();
 }
 

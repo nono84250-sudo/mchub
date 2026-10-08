@@ -451,7 +451,11 @@ function playerMessageHtml(data: { id: string; name: string }): string {
 // audiences (Tout le monde, Proprietaires de serveur — "Un joueur" existe deja depuis la fiche
 // joueur, pas la peine de le dupliquer ici), envoi immediat, pas de brouillon ni de
 // programmation.
-export function notificationsHtml(data: { sentCount: number | null; activeBanner: { type: string; text: string } | null }): string {
+export function notificationsHtml(data: {
+  sentCount: number | null;
+  activeBanner: { type: string; text: string } | null;
+  maintenance: { active: boolean; code: string; message: string } | null;
+}): string {
   let html = SCREENS.notifications;
   html = replaceOnce(html, ">Notifications / New message</span>", ">Notifications</span>");
 
@@ -464,18 +468,34 @@ export function notificationsHtml(data: { sentCount: number | null; activeBanner
       `<form method="post" action="/api/admin/notifications/banner/clear"><button type="submit" style="${BUTTON}">Retirer</button></form></div>`
     : "";
 
+  // Mode maintenance du launcher : bloque l'ecran d'accueil pour tout le monde, sauf code.
+  const maintenanceBox = data.maintenance?.active
+    ? `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid #e8c547;background:color-mix(in srgb, #e8c547 8%, transparent);font-size:13px;">` +
+      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:#e8c547"></i><strong>Maintenance du launcher active</strong></div>` +
+      `<span style="color:var(--muted);">${escapeHtml(data.maintenance.message)}</span>` +
+      `<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--muted);">Code d'accès :</span><code style="font:600 16px ui-monospace,Menlo,monospace;letter-spacing:.08em;padding:4px 10px;border-radius:var(--radius-md);background:var(--color-bg);border:1px solid var(--color-divider);">${escapeHtml(data.maintenance.code)}</code></div>` +
+      `<form method="post" action="/api/admin/notifications/maintenance/clear"><button type="submit" style="${BUTTON}">Désactiver la maintenance</button></form>` +
+      `</div>`
+    : `<form method="post" action="/api/admin/notifications/maintenance/activate" style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;">` +
+      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:var(--muted)"></i><strong>Mode maintenance du launcher</strong></div>` +
+      `<span style="color:var(--muted);">Bloque l'écran d'accueil du launcher pour tout le monde, sauf qui a le code généré ici.</span>` +
+      `<textarea class="input" name="message" required minlength="3" maxlength="500" placeholder="Message affiché pendant la maintenance" style="min-height:60px;font-size:13px;"></textarea>` +
+      `<button type="submit" style="${BUTTON}width:fit-content;">Activer la maintenance</button>` +
+      `</form>`;
+
   const field = "display:flex;flex-direction:column;gap:6px;min-width:0;";
   const label = "font-size:12px;color:var(--muted)";
   const body =
     sentBanner +
     activeBannerNotice +
+    maintenanceBox +
     `<form method="post" action="/api/admin/notifications/send" style="display:flex;flex-direction:column;gap:16px;">` +
     `<label style="${field}"><span style="${label}">Type</span><select name="type" class="input" style="height:36px;" required>` +
     `<option value="announcement">Annonce</option><option value="maintenance">Maintenance</option><option value="alert">Alerte</option><option value="promotion">Promotion</option></select></label>` +
     `<label style="${field}"><span style="${label}">Audience</span><select name="audience" class="input" style="height:36px;" required>` +
     `<option value="everyone">Tout le monde</option><option value="owners">Propriétaires de serveur</option></select></label>` +
     `<label style="${field}"><span style="${label}">Système concerné (si Maintenance)</span><select name="system" class="input" style="height:36px;">` +
-    `<option value="">—</option><option value="Site">Site</option><option value="Launcher">Launcher</option><option value="Connexion Minecraft">Connexion Minecraft</option><option value="CurseForge">CurseForge</option><option value="Modrinth">Modrinth</option><option value="Tout">Tout</option></select></label>` +
+    `<option value="">—</option><option value="Site">Site</option><option value="Launcher">Launcher</option><option value="CurseForge">CurseForge</option><option value="Modrinth">Modrinth</option><option value="Tout">Tout</option></select></label>` +
     `<label style="${field}"><span style="${label}">Message</span><textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:110px;font-size:13.5px;"></textarea></label>` +
     `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;"><input type="checkbox" name="banner" style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Aussi afficher en bannière sur le site (remplace la bannière active)</label>` +
     `<div style="display:flex;justify-content:flex-end;"><button type="submit" style="${CONFIRM}">Envoyer</button></div>` +

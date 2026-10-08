@@ -58,6 +58,38 @@ export async function setSiteBanner(banner: SiteBanner): Promise<void> {
   );
 }
 
+// Mode maintenance du launcher (panel admin, voir /admin/notifications) : bloque l'ecran
+// d'accueil du launcher pour tout le monde, sauf qui tape le code genere ici. Le code n'est
+// JAMAIS renvoye par une route cote launcher (voir /api/launcher/maintenance) — seul /admin
+// peut le lire, pour que l'admin le communique lui-meme (vocalement, message prive...).
+const MAINTENANCE_KEY = "launcher.maintenance";
+export type LauncherMaintenance = { active: boolean; code: string; message: string } | null;
+
+export async function getLauncherMaintenance(): Promise<LauncherMaintenance> {
+  const row = await db.orm.public.PlatformSetting.select("value").where({ key: MAINTENANCE_KEY }).first();
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value) as LauncherMaintenance;
+  } catch {
+    return null;
+  }
+}
+
+// Genere un nouveau code a chaque activation : un ancien code communique par erreur ne doit
+// plus marcher la fois suivante.
+export async function activateLauncherMaintenance(message: string): Promise<string> {
+  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+  await execSql(
+    'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"',
+    [MAINTENANCE_KEY, JSON.stringify({ active: true, code, message }), new Date().toISOString()],
+  );
+  return code;
+}
+
+export async function clearLauncherMaintenance(): Promise<void> {
+  await db.orm.public.PlatformSetting.where({ key: MAINTENANCE_KEY }).delete();
+}
+
 // Réponse à renvoyer si la source est coupée, sinon null. Le launcher affiche le message.
 export async function sourceDisabledResponse(source: Source): Promise<NextResponse | null> {
   if (await isSourceEnabled(source)) return null;

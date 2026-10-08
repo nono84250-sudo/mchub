@@ -983,6 +983,10 @@
     justify-content: center;
     z-index: 100;
   }
+  /* Filet de securite independant du z-index : coupe les clics sur le reste de l'appli
+     tant que showModal() est ouverte (voir body.classList dans showModal). */
+  body.modal-blocking #titlebar, body.modal-blocking #app { pointer-events: none; }
+  body.modal-blocking .modal-overlay { pointer-events: auto; }
   .modal-box {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -992,20 +996,13 @@
     width: calc(100% - 48px);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     text-align: left;
+    border-top-width: 4px;
+    border-top-style: solid;
+    border-top-color: var(--border);
   }
   .modal-box h3 { margin: 0 0 10px 0; font-size: 16px; }
   .modal-box p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
 
-  .notif-popup {
-    position: fixed; bottom: 20px; right: 20px; z-index: 500;
-    width: 280px; max-width: calc(100% - 40px);
-    background: var(--surface); border: 1px solid var(--border); border-left-width: 3px;
-    border-radius: 10px; padding: 12px 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    opacity: 0; transform: translateY(8px); transition: opacity 0.2s ease, transform 0.2s ease;
-  }
-  .notif-popup.show { opacity: 1; transform: translateY(0); }
-  .notif-popup-title { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600; margin-bottom: 4px; }
-  .notif-popup-message { font-size: 13px; line-height: 1.45; color: var(--foreground); overflow-wrap: anywhere; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
   #report-modal-box { max-width: 460px; }
@@ -1264,6 +1261,21 @@
       <span data-i18n="gate.remember">Se souvenir de moi</span>
     </label>
     <p class="gate-message" id="gate-message"></p>
+  </div>
+
+  <div class="modal-overlay" id="maintenance-overlay" hidden>
+    <div class="modal-box" style="text-align: center;">
+      <h3 data-i18n="maintenance.title">Maintenance en cours</h3>
+      <p class="join-note" id="maintenance-message" style="margin-bottom: 16px;"></p>
+      <div class="settings-field">
+        <label for="maintenance-code-input" class="field-label" data-i18n="maintenance.codeLabel">Code d'accès</label>
+        <input id="maintenance-code-input" class="settings-input" style="text-align: center; letter-spacing: .05em;" data-i18n-placeholder="maintenance.codePlaceholder" placeholder="Code" />
+      </div>
+      <p class="join-note" id="maintenance-code-error" role="alert" style="color: var(--danger);" hidden></p>
+      <div class="modal-actions">
+        <button id="maintenance-continue" class="join-btn" type="button" data-i18n="maintenance.continueBtn">Continuer</button>
+      </div>
+    </div>
   </div>
 
   <div class="modal-overlay" id="ram-setup-overlay" hidden>

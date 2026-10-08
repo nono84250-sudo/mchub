@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("mchub", {
   getSiteUrl: () => ipcRenderer.invoke("app:getSiteUrl"),
   restartApp: () => ipcRenderer.invoke("app:restart"),
+  checkMaintenance: () => ipcRenderer.invoke("maintenance:check"),
+  verifyMaintenanceCode: (code) => ipcRenderer.invoke("maintenance:verifyCode", code),
   listServers: () => ipcRenderer.invoke("servers:list"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
   listMyServers: () => ipcRenderer.invoke("servers:mine"),
