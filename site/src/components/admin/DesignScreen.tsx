@@ -1,11 +1,18 @@
 import Script from "next/script";
 import { SCREENS } from "@/app/admin/design/screens";
-import { markAllSections, balancedEnd } from "@/app/admin/design/bind";
+import { markAllSections, balancedEnd, markNavBadges, escapeHtml } from "@/app/admin/design/bind";
+import { countOpenBehaviorReports } from "@/lib/reports";
+import { countPendingVerification } from "@/lib/verification";
+// Importe la version memoisee (React.cache) depuis guard.ts, pas @/lib/adminSession directement :
+// requireAdmin() (appele par chaque page avant DesignScreen) et cet appel doivent partager la
+// MEME instance cache() pour qu'un seul des deux declenche vraiment une lecture D1.
+import { getCurrentAdmin } from "@/app/admin/design/guard";
+import { getStaffRoleLabels } from "@/lib/platformSettings";
 
 // Affiche un écran de la maquette "Omniscient Admin Dashboard" : même markup, même
 // style (feuille Nocturne), mêmes icônes (Phosphor). `html` remplace le modèle
 // d'origine quand l'écran est rempli avec les vraies données.
-const WRAPPER_VARS = {
+export const WRAPPER_VARS = {
   "--muted": "color-mix(in srgb, var(--color-text) 55%, transparent)",
   "--muted2": "color-mix(in srgb, var(--color-text) 40%, transparent)",
   "--raised": "color-mix(in srgb, var(--color-text) 6%, var(--color-surface))",
@@ -27,7 +34,20 @@ const NAV_LINKS: Record<string, string> = {
   Reports: "/admin/reports",
   "Packs curés": "/admin/packs",
   Administration: "/admin/administration",
+  "Paramètres": "/admin/parametres",
 };
+
+// 2026-10-10 : /admin/parametres (identifiants du compte admin + interrupteurs des sources de
+// modpacks, voir AdminSourceToggles) existait sans aucun lien pour y acceder — la maquette
+// n'a pas d'entree "Paramètres" du tout. On en insere une, juste apres "Administration", avec
+// le meme habillage que les autres entrees (repris tel quel depuis screens.ts).
+function addSettingsNavItem(html: string): string {
+  const marker =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-shield-star" style="font-size:17px;"></i><span style="flex:1">Administration</span></div>';
+  const item =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-gear" style="font-size:17px;"></i><span style="flex:1">Paramètres</span></div>';
+  return html.split(marker).join(marker + item);
+}
 
 // Rend le menu cliquable (même style, même libellés) et marque "Amis" comme non branché.
 function linkNav(html: string): string {
@@ -36,6 +56,26 @@ function linkNav(html: string): string {
     const href = NAV_LINKS[label];
     return href ? `<a href="${href}" style="flex:1;color:inherit;text-decoration:none">${label}</a>` : match;
   });
+}
+
+// 2026-10-11 : panel admin épuré en attendant 30 serveurs publiés (moins de 10 joueurs
+// actuellement, voir avis des agents sur le perimetre). Les pages restent codees et
+// accessibles par URL directe (aucune route retiree) — seules ces entrees disparaissent
+// du menu. Servers/Vérification/Paramètres restent visibles (migration D1 en cours,
+// utile de garder un oeil dessus ; Vérification reste la seule porte d'entree des serveurs).
+const HIDDEN_NAV_LABELS = ["Overview", "Notifications", "News", "Players", "Reports", "Packs curés", "Administration", "Amis"];
+
+function hideNavItems(html: string): string {
+  let result = html;
+  for (const label of HIDDEN_NAV_LABELS) {
+    const at = result.indexOf(`>${label}<`);
+    if (at < 0) continue;
+    const start = result.lastIndexOf("<div", at);
+    const end = balancedEnd(result, start, "div");
+    if (start < 0 || end < 0) continue;
+    result = result.slice(0, start) + result.slice(end);
+  }
+  return result;
 }
 
 // Remonte l'entree "Players" du menu juste au-dessus de "Servers" — chaque ecran de la
@@ -78,13 +118,52 @@ function markTopbarBell(html: string): string {
   const marker =
     '<span style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--color-divider);display:flex;align-items:center;justify-content:center;color:var(--muted);"><i class="ph ph-bell" style="font-size:15px;"></i></span>';
   return html.split(marker).join(
-    '<a class="nb" href="/admin/notifications" style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--color-divider);display:flex;align-items:center;justify-content:center;color:var(--muted);text-decoration:none;"><i class="ph ph-bell" style="font-size:15px;"></i></a>',
+    '<a href="/admin/notifications" style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--color-divider);display:flex;align-items:center;justify-content:center;color:var(--muted);text-decoration:none;"><i class="ph ph-bell" style="font-size:15px;"></i></a>',
   );
 }
 
-export function DesignScreen({ name, html, markAll }: { name: keyof typeof SCREENS; html?: string; markAll?: boolean | "proposal" }) {
-  let content = markTopbarBell(removeTopbarSearch(reorderNav(linkNav(html ?? SCREENS[name]))));
+// Carte utilisateur en bas de la sidebar : la maquette affiche en dur "Alex Kade" / "Owner"
+// avec une icone de deconnexion qui ne fait rien. On remplace par l'admin reellement connecte
+// et son libelle de role (reutilise getStaffRoleLabels — le libelle renomme depuis
+// Administration > Renommer les roles, pas "Administrateur"/"Modérateur" en dur), et on
+// branche l'icone sur /api/admin/logout.
+function markUserCard(html: string, admin: Awaited<ReturnType<typeof getCurrentAdmin>>, roleLabels: Awaited<ReturnType<typeof getStaffRoleLabels>>): string {
+  const marker =
+    '<div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 10px 0;border-top:1px solid var(--color-divider);"><span style="width:30px;height:30px;flex-shrink:0;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;">A</span><div style="min-width:0;flex:1;"><div style="display:flex;flex-direction:column;gap:2px;min-width:0;"><span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Alex Kade</span><span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Owner</span></div></div><i class="ph ph-sign-out" style="font-size:16px;color:var(--muted)"></i></div>';
+  if (!admin || !html.includes(marker)) return html;
+  const initial = escapeHtml(admin.username.charAt(0).toUpperCase());
+  const roleLabel = escapeHtml(roleLabels[admin.role]);
+  const replacement =
+    `<div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 10px 0;border-top:1px solid var(--color-divider);"><span style="width:30px;height:30px;flex-shrink:0;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;">${initial}</span><div style="min-width:0;flex:1;"><div style="display:flex;flex-direction:column;gap:2px;min-width:0;"><span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(admin.username)}</span><span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${roleLabel}</span></div></div><button type="button" onclick="fetch('/api/admin/logout',{method:'POST'}).then(()=>{location.href='/admin/login'})" style="background:none;border:none;padding:0;cursor:pointer;display:flex;align-items:center;" aria-label="Se déconnecter"><i class="ph ph-sign-out" style="font-size:16px;color:var(--muted)"></i></button></div>`;
+  return html.split(marker).join(replacement);
+}
+
+// Extrait du composant pour etre reutilisee par AdminChrome.tsx (pages avec de vrais
+// composants client interactifs, injectes via un portail React plutot que du HTML statique —
+// voir le commentaire la-bas) sans dupliquer tout ce pipeline de transformation.
+export async function buildScreenContent({ name, html, markAll }: { name: keyof typeof SCREENS; html?: string; markAll?: boolean | "proposal" }): Promise<string> {
+  const [verificationPending, reportsOpen, admin, roleLabels] = await Promise.all([
+    countPendingVerification(),
+    countOpenBehaviorReports(),
+    getCurrentAdmin(),
+    getStaffRoleLabels(),
+  ]);
+  // markNavBadges et addSettingsNavItem doivent tourner avant linkNav : celui-ci transforme
+  // le <span style="flex:1"> du libelle en <a>, ce qui change sa balise fermante et casse
+  // tout remplacement litteral fait apres coup.
+  let content = markUserCard(
+    markTopbarBell(
+      removeTopbarSearch(hideNavItems(reorderNav(linkNav(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))))),
+    ),
+    admin,
+    roleLabels,
+  );
   if (markAll) content = markAllSections(content, markAll === "proposal" ? "pr" : "nb");
+  return content;
+}
+
+export async function DesignScreen({ name, html, markAll }: { name: keyof typeof SCREENS; html?: string; markAll?: boolean | "proposal" }) {
+  const content = await buildScreenContent({ name, html, markAll });
   return (
     <>
       <link rel="stylesheet" href="/admin/nocturne.css" />

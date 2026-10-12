@@ -8,5 +8,7 @@ export default async function AdminIndex() {
   const admin = await getCurrentAdmin();
   if (!admin) redirect("/admin/login");
   if (admin.mustChangeCredentials) redirect("/admin/premiere-connexion");
-  redirect("/admin/administration");
+  // 2026-10-12 : Administration est desactivee (perimetre admin reduit) — Serveurs est
+  // maintenant la page d'entree par defaut.
+  redirect("/admin/servers");
 }

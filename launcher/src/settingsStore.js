@@ -44,7 +44,10 @@ const DEFAULTS = {
   // prefers-color-scheme, sinon "dark"/"light" force l'un ou l'autre.
   locale: "fr",
   theme: "dark",
-  accentColor: "#9184d9",
+  // Bleu choisi par le client (2026-10-11), re-sature le meme jour suite a
+  // la comparaison avec Modrinth — voir theme.js/ACCENT_PRESETS (meme
+  // valeur en position 0).
+  accentColor: "#2792dd",
   compactServerList: false,
   // Parametres > Debogage (voir logStore.js/renderer.js) — logLevel ne
   // filtre que ce qui est ecrit dans le fichier de log, jamais la console
@@ -78,36 +81,75 @@ function clampGB(value, fallback) {
   return Math.min(MAX_GB, Math.max(MIN_GB, Math.round(n)));
 }
 
-// Fusionne generiquement (`...current, ...partial`) plutot que de relister
-// chaque champ connu a la main : une whitelist figee avait deja laisse
-// passer silencieusement une ecriture vers une cle inexistante (aucune
-// erreur, juste une valeur jamais enregistree) — seuls les champs qui ont
-// vraiment besoin d'une validation/coercion sont traites a part ici.
+// Ecriture atomique (fichier temporaire + renommage, comme les telechargements ".part" de
+// modpack.js/javaManager.js) : fs.writeFileSync direct laissait un fichier tronque si le
+// process etait tue pendant l'ecriture, avalee silencieusement au redemarrage par le catch de
+// loadSettings() (repart sur DEFAULTS sans aucune trace — voir audit 2026-10-10, §3.7).
+function writeSettingsFile(data) {
+  const tmpFile = `${SETTINGS_FILE}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
+  fs.renameSync(tmpFile, SETTINGS_FILE);
+}
+
+// Liste blanche des cles acceptees par settings:set (IPC, voir main.js) — toute cle absente
+// d'ici est silencieusement ignoree plutot que fusionnee a l'aveugle dans settings.json (voir
+// audit 2026-10-10, §1.6 : un futur XSS/dependance compromise dans le renderer pourrait sinon
+// ecrire n'importe quelle cle, notamment javaPath, consomme ensuite par spawn() dans
+// mcLaunch.js/javaManager.js). Derivee de DEFAULTS plutot que maintenue a la main a cote : une
+// liste parallele aurait reintroduit exactement le risque de desynchronisation silencieuse que
+// cette liste blanche a ete ajoutee pour corriger (un futur reglage ajoute a DEFAULTS mais
+// oublie ici aurait ete rejete sans erreur pour toujours — trouve en relisant le correctif du
+// 2026-10-10 lors de la revue de code qui a suivi).
+const ALLOWED_KEYS = Object.keys(DEFAULTS);
+
+// javaPath n'est accepte que s'il pointe reellement vers un executable java present sur le
+// disque (pas de verification "java -version" ici, juste l'existence du fichier) — consomme
+// ensuite par spawn() dans mcLaunch.js/javaManager.js, donc une primitive d'execution directe
+// si on acceptait n'importe quelle chaine.
+function isJavaExecutablePath(value) {
+  if (typeof value !== "string" || !value) return false;
+  if (!/java(\.exe)?$/i.test(value)) return false;
+  try {
+    return fs.statSync(value).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function saveSettings(partial) {
   const current = loadSettings();
-  const next = { ...current, ...partial };
+  const incoming = partial || {};
+  const filtered = {};
+  for (const key of ALLOWED_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(incoming, key)) filtered[key] = incoming[key];
+  }
+  if (Object.prototype.hasOwnProperty.call(filtered, "javaPath") && !isJavaExecutablePath(filtered.javaPath)) {
+    delete filtered.javaPath;
+  }
 
-  next.memoryMinGB = clampGB(partial.memoryMinGB ?? current.memoryMinGB, current.memoryMinGB);
-  next.memoryMaxGB = clampGB(partial.memoryMaxGB ?? current.memoryMaxGB, current.memoryMaxGB);
+  const next = { ...current, ...filtered };
+
+  next.memoryMinGB = clampGB(filtered.memoryMinGB ?? current.memoryMinGB, current.memoryMinGB);
+  next.memoryMaxGB = clampGB(filtered.memoryMaxGB ?? current.memoryMaxGB, current.memoryMaxGB);
   if (next.memoryMinGB > next.memoryMaxGB) next.memoryMinGB = next.memoryMaxGB;
 
-  if (partial.onboarded !== undefined) next.onboarded = !!partial.onboarded;
-  if (partial.alwaysUseRecommendedRam !== undefined) next.alwaysUseRecommendedRam = !!partial.alwaysUseRecommendedRam;
-  if (partial.alwaysUseCustomRam !== undefined) next.alwaysUseCustomRam = !!partial.alwaysUseCustomRam;
+  if (filtered.onboarded !== undefined) next.onboarded = !!filtered.onboarded;
+  if (filtered.alwaysUseRecommendedRam !== undefined) next.alwaysUseRecommendedRam = !!filtered.alwaysUseRecommendedRam;
+  if (filtered.alwaysUseCustomRam !== undefined) next.alwaysUseCustomRam = !!filtered.alwaysUseCustomRam;
   // Les deux sont exclusifs : la case qui vient d'etre cochee l'emporte.
   if (next.alwaysUseRecommendedRam && next.alwaysUseCustomRam) {
-    if (partial.alwaysUseCustomRam) next.alwaysUseRecommendedRam = false;
+    if (filtered.alwaysUseCustomRam) next.alwaysUseRecommendedRam = false;
     else next.alwaysUseCustomRam = false;
   }
-  if (partial.locale !== undefined) next.locale = ["fr", "en"].includes(partial.locale) ? partial.locale : current.locale;
-  if (partial.theme !== undefined) next.theme = ["system", "dark", "light"].includes(partial.theme) ? partial.theme : current.theme;
-  if (partial.compactServerList !== undefined) next.compactServerList = !!partial.compactServerList;
-  if (partial.logLevel !== undefined) next.logLevel = ["error", "warn", "info", "debug"].includes(partial.logLevel) ? partial.logLevel : current.logLevel;
-  if (partial.openConsoleOnLaunch !== undefined) next.openConsoleOnLaunch = !!partial.openConsoleOnLaunch;
-  if (partial.keepLauncherOpenWhilePlaying !== undefined) next.keepLauncherOpenWhilePlaying = !!partial.keepLauncherOpenWhilePlaying;
-  if (partial.betaChannel !== undefined) next.betaChannel = !!partial.betaChannel;
+  if (filtered.locale !== undefined) next.locale = ["fr", "en"].includes(filtered.locale) ? filtered.locale : current.locale;
+  if (filtered.theme !== undefined) next.theme = ["system", "dark", "light"].includes(filtered.theme) ? filtered.theme : current.theme;
+  if (filtered.compactServerList !== undefined) next.compactServerList = !!filtered.compactServerList;
+  if (filtered.logLevel !== undefined) next.logLevel = ["error", "warn", "info", "debug"].includes(filtered.logLevel) ? filtered.logLevel : current.logLevel;
+  if (filtered.openConsoleOnLaunch !== undefined) next.openConsoleOnLaunch = !!filtered.openConsoleOnLaunch;
+  if (filtered.keepLauncherOpenWhilePlaying !== undefined) next.keepLauncherOpenWhilePlaying = !!filtered.keepLauncherOpenWhilePlaying;
+  if (filtered.betaChannel !== undefined) next.betaChannel = !!filtered.betaChannel;
 
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2));
+  writeSettingsFile(next);
   return next;
 }
 
@@ -117,7 +159,7 @@ function saveSettings(partial) {
 // et les fichiers du jeu (GAME_ROOT) sont des fichiers separes, jamais
 // touches ici.
 function resetSettings() {
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(DEFAULTS, null, 2));
+  writeSettingsFile(DEFAULTS);
   return { ...DEFAULTS };
 }
 

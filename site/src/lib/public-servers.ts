@@ -53,6 +53,7 @@ export type ListPublicServersOptions = {
 
 export type PublicServerDetail = PublicServerSummary & {
   minecraftVersion: string;
+  curseforgeModpackId: string | null;
   curseforgeModpackName: string | null;
   curseforgeModpackVersion: string | null;
   recommendedRamGB: number | null;
@@ -88,7 +89,7 @@ const loadPublishedServers = unstable_cache(
       "viewCount",
     )
       .include("owner", (o) => o.select("minecraftUuid"))
-      .where({ published: true, isPrivate: false })
+      .where({ published: true, isPrivate: false, verificationStatus: "approved" })
       .orderBy((s) => s.createdAt.desc())
       .all(),
   ["published-servers"],
@@ -165,6 +166,7 @@ export type LauncherServerDetail = {
   minecraftVersion: string;
   curseforgeModpackId: string | null;
   recommendedRamGB: number | null;
+  autoConnect: boolean;
 };
 
 // Preuve qu'un visiteur a le droit de voir un serveur prive. Sans preuve, un
@@ -197,6 +199,18 @@ function sameCode(a: string, b: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
+// Le proprietaire prouve son identite (jeton de session, ou a defaut jeton Mojang) : utilise a
+// la fois par canSeeServer (serveur prive) et par le contournement de la file de verification
+// ci-dessous (le proprietaire doit toujours pouvoir lancer/tester SON propre serveur, approuve
+// ou non — voir getServerWithIpBySlug).
+export async function isProvenOwner(owner: { minecraftUuid: string | null } | null, proof: PrivateServerProof): Promise<boolean> {
+  if (proof.launcherSession != null) {
+    const uuid = await sessionIdentity(proof.launcherSession);
+    return !!uuid && !!owner?.minecraftUuid && uuid === normalizeMinecraftUuid(owner.minecraftUuid);
+  }
+  return (await verifyMinecraftIdentity(proof.minecraftToken ?? null, owner?.minecraftUuid ?? null)) === "verified";
+}
+
 export async function canSeeServer(
   server: { isPrivate: boolean; inviteCode: string | null; owner: { minecraftUuid: string | null } | null },
   proof: PrivateServerProof,
@@ -204,25 +218,54 @@ export async function canSeeServer(
   if (!server.isPrivate) return true;
   const code = proof.inviteCode?.trim().toUpperCase();
   if (code && server.inviteCode && sameCode(code, server.inviteCode)) return true;
-  // Jeton de session present : il decide seul (proprietaire = UUID du jeton).
-  if (proof.launcherSession != null) {
-    const uuid = await sessionIdentity(proof.launcherSession);
-    const owner = server.owner?.minecraftUuid;
-    return !!uuid && !!owner && uuid === normalizeMinecraftUuid(owner);
-  }
-  return (await verifyMinecraftIdentity(proof.minecraftToken ?? null, server.owner?.minecraftUuid ?? null)) === "verified";
+  return isProvenOwner(server.owner, proof);
+}
+
+export type VisibilityRow = {
+  published: boolean;
+  isPrivate: boolean;
+  inviteCode: string | null;
+  verificationStatus: "pending" | "approved" | "rejected";
+  owner: { minecraftUuid: string | null } | null;
+};
+
+// Garde complet de visibilite d'un serveur (audit 2026-10-10 §1.3) : publie, ET soit approuve,
+// soit prive avec preuve (code d'invitation/jeton), soit son proprietaire prouve — partage par
+// getServerWithIpBySlug/visibleServerIdBySlug/checkSlugVisibility et la route modpack, pour que
+// tous ces chemins appliquent exactement la meme regle qu'un serveur moddé public mais pas
+// encore publie/valide ne fuite ni son IP, ni son modpack, ni un simple "ça existe".
+export async function isVisibleRow(row: VisibilityRow, proof: PrivateServerProof): Promise<boolean> {
+  if (!row.published) return false;
+  if (!(await canSeeServer(row, proof))) return false;
+  if (row.verificationStatus !== "approved" && !row.isPrivate && !(await isProvenOwner(row.owner, proof))) return false;
+  return true;
 }
 
 // Routes d'ecriture par slug (signalement, compteur de lancements) : un serveur
-// prive sans la preuve renvoie null, comme un slug inconnu — sinon la reponse
-// (200 ou 404) reveleraient qu'un serveur prive existe.
+// prive, non publie ou pas encore valide sans la preuve renvoie null, comme un
+// slug inconnu — sinon la reponse (200 ou 404) reveleraient qu'un serveur existe.
 export async function visibleServerIdBySlug(slug: string, proof: PrivateServerProof): Promise<string | null> {
-  const row = await db.orm.public.Server.select("id", "isPrivate", "inviteCode")
+  const row = await db.orm.public.Server.select("id", "published", "isPrivate", "inviteCode", "verificationStatus")
     .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug })
     .first();
-  if (!row || !(await canSeeServer(row, proof))) return null;
+  if (!row || !(await isVisibleRow(row, proof))) return null;
   return row.id;
+}
+
+export type SlugVisibility = { visible: true; frozenAt: string | null } | { visible: false };
+
+// Visibilite + etat "gele" d'un slug, sans aucune donnee sensible — utilise par les routes
+// qui doivent repondre differemment pour un serveur gele (audit §1.4) SANS reveler qu'un
+// serveur prive/non publie/non valide existe : le contrôle "gele" ne doit s'executer qu'APRES
+// avoir confirme que l'appelant peut voir ce serveur, jamais avant.
+export async function checkSlugVisibility(slug: string, proof: PrivateServerProof): Promise<SlugVisibility> {
+  const row = await db.orm.public.Server.select("published", "isPrivate", "inviteCode", "verificationStatus", "frozenAt")
+    .include("owner", (o) => o.select("minecraftUuid"))
+    .where({ slug })
+    .first();
+  if (!row || !(await isVisibleRow(row, proof))) return { visible: false };
+  return { visible: true, frozenAt: row.frozenAt };
 }
 
 // Seule fonction du fichier qui renvoie `ip` — réservée à la route
@@ -236,14 +279,23 @@ export async function getServerWithIpBySlug(slug: string, proof: PrivateServerPr
     "minecraftVersion",
     "curseforgeModpackId",
     "recommendedRamGB",
+    "autoConnect",
     "isPrivate",
     "inviteCode",
+    "published",
+    "verificationStatus",
   )
     .include("owner", (o) => o.select("minecraftUuid"))
-    .where({ slug, published: true })
+    .where({ slug })
     .first();
 
-  if (!row || !(await canSeeServer(row, proof))) return null;
+  // Pas encore valide par un admin : le proprietaire doit quand meme pouvoir lancer/tester SON
+  // propre serveur (sinon il ne peut jamais rien verifier avant publication — absurde), et un
+  // serveur prive reste joignable par ses invites (meme logique que canSeeServer ci-dessus,
+  // cercle deja ferme par le code). Seul un serveur public reste bloque pour tout le monde
+  // d'autre tant qu'il n'est pas approuve — c'est exactement ce que la file protege (voir
+  // isVisibleRow, meme regle partagee avec visibleServerIdBySlug/checkSlugVisibility/modpack).
+  if (!row || !(await isVisibleRow(row, proof))) return null;
 
   return {
     name: row.name,
@@ -252,6 +304,7 @@ export async function getServerWithIpBySlug(slug: string, proof: PrivateServerPr
     minecraftVersion: row.minecraftVersion,
     curseforgeModpackId: row.curseforgeModpackId,
     recommendedRamGB: row.recommendedRamGB,
+    autoConnect: row.autoConnect,
   };
 }
 
@@ -294,6 +347,7 @@ const loadPublishedServerBySlug = unstable_cache(
     "type",
     "minecraftVersion",
     "ip",
+    "curseforgeModpackId",
     "curseforgeModpackName",
     "curseforgeModpackVersion",
     "playerCount",
@@ -306,7 +360,7 @@ const loadPublishedServerBySlug = unstable_cache(
     "inviteCode",
   )
     .include("owner", (o) => o.select("minecraftUuid"))
-    .where({ slug, published: true })
+    .where({ slug, published: true, verificationStatus: "approved" })
     .first()) ?? null,
   ["published-server-by-slug"],
   { revalidate: SERVERS_CACHE_SECONDS, tags: [SERVERS_CACHE_TAG] },
@@ -329,6 +383,11 @@ export async function getPublicServerBySlug(slug: string, proof: PrivateServerPr
     ownerMinecraftUuid: row.owner?.minecraftUuid ?? null,
     type: row.type,
     minecraftVersion: row.minecraftVersion,
+    // Non sensible (c'est juste l'identifiant d'un projet CurseForge public) —
+    // ajoute le 2026-10-11 pour que le launcher puisse installer un modpack
+    // sans compte connecte (bouton "Installer"), contrairement a l'IP du
+    // serveur qui, elle, reste reservee a /api/launcher/servers/[slug].
+    curseforgeModpackId: row.curseforgeModpackId,
     curseforgeModpackName: row.curseforgeModpackName,
     curseforgeModpackVersion: row.curseforgeModpackVersion,
     playerCount: status.playerCount,
@@ -356,6 +415,10 @@ export type OwnedServerSummary = {
   playerCount: number | null;
   playerCapacity: number | null;
   recommendedRamGB: number | null;
+  verificationStatus: "pending" | "approved" | "rejected";
+  // Auto-test de publication (voir /api/launcher/servers/[slug]/self-test) : sert au bouton
+  // "Tester pour publication" cote launcher (visible seulement si prive ET pas encore passe).
+  selfTestPassedAt: string | null;
 };
 
 // Sert la vue "Mes instances" du launcher (route /api/launcher/servers/mine,
@@ -385,6 +448,8 @@ async function loadOwnedServersByMinecraftUuid(minecraftUuid: string): Promise<O
     "playerCount",
     "playerCapacity",
     "recommendedRamGB",
+    "verificationStatus",
+    "selfTestPassedAt",
   )
     .where({ ownerId: owner.id })
     .orderBy((s) => s.createdAt.desc())
@@ -402,6 +467,9 @@ export const listServersOwnedByMinecraftUuid = unstable_cache(loadOwnedServersBy
 // Resout un code d'invitation vers la fiche du serveur prive correspondant
 // (voir /join/[code]) — jamais expose autrement qu'ici, puisque
 // listPublicServers() exclut deja les serveurs prives de l'annuaire.
+// Pas de condition verificationStatus ici : un code d'invitation est deja la preuve d'un
+// cercle ferme (prive), la meme logique que canSeeServer — la file de verification protege
+// l'annuaire public, pas l'acces prive par invitation.
 export async function getSlugByInviteCode(code: string): Promise<string | null> {
   const row = await db.orm.public.Server.select("slug").where({ inviteCode: code, published: true }).first();
   return row?.slug ?? null;

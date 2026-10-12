@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { OTHER_VERSION_VALUE } from "@/lib/minecraft-versions";
+import { OTHER_VERSION_VALUE } from "@/lib/minecraft-version-constants";
 import { useI18n } from "@/i18n/I18nProvider";
 
 // Choix de la version de Minecraft : liste deroulante alimentee en direct par

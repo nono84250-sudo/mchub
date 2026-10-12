@@ -7,13 +7,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "contract:emit": "prisma contract emit"
+    "lint": "eslint"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1147.0",
     "@phosphor-icons/react": "^2.1.10",
-    "@prisma/orm-postgres": "^8.0.0-rc.11",
     "dotenv": "^17.4.2",
     "next": "^16.3.5",
     "next-auth": "^5.0.0-beta.32",
@@ -22,14 +20,12 @@
     "recharts": "^3.10.1"
   },
   "devDependencies": {
-    "@prisma/cli-engine": "^0.4.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "^16.3.5",
-    "prisma": "^8.0.0-rc.15",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

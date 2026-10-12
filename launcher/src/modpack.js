@@ -44,6 +44,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function siteJson(config, pathname, init = {}) {
   const res = await fetch(`${config.siteUrl}${pathname}`, {
     ...init,
+    signal: init.signal || AbortSignal.timeout(20_000),
     headers: {
       // Identite du joueur (X-Launcher-Session ou X-Minecraft-Token) : exigee par
       // les routes CurseForge du site depuis le point 3 de la securite.
@@ -77,15 +78,37 @@ function safeJoin(base, relative) {
   return target;
 }
 
+// Verrou par destination : un meme fichier peut etre demande par deux installations
+// concurrentes (cache de modpack partage entre deux serveurs utilisant le meme fichier,
+// voir installModpack ci-dessous pour le verrou par instance) — sans ca, deux fetch ecrivaient
+// vers le MEME ".part" et s'entremelaient au niveau OS sans que le SHA-1/compteur (calcules en
+// memoire a partir des seuls octets ecrits par CE process) ne le detectent (course trouvee par
+// l'audit du 2026-10-10).
+const downloadFileLocks = new Map();
+
+function downloadFile(url, destPath, options) {
+  const existing = downloadFileLocks.get(destPath);
+  if (existing) return existing;
+  const promise = downloadFileLocked(url, destPath, options).finally(() => downloadFileLocks.delete(destPath));
+  downloadFileLocks.set(destPath, promise);
+  return promise;
+}
+
 // Telecharge vers `destPath` (fichier .part puis renommage) en verifiant la
 // taille et l'empreinte SHA-1 quand elles sont connues, avec 3 essais.
-async function downloadFile(url, destPath, { sha1, size } = {}) {
+// `signal` (2026-10-11, gestionnaire de telechargements) : annulation
+// volontaire (bouton Annuler) — jamais reessayee, contrairement a une vraie
+// erreur reseau. `onBytes` : octets reçus pour CE fichier depuis le dernier
+// appel, pour la progression/vitesse affichees dans le panneau.
+async function downloadFileLocked(url, destPath, { sha1, size, signal, onBytes } = {}) {
   await fsp.mkdir(path.dirname(destPath), { recursive: true });
   const partPath = `${destPath}.part`;
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt++) {
+    if (signal?.aborted) throw new DOMException("Téléchargement annulé.", "AbortError");
     try {
-      const res = await fetch(url);
+      const timeoutSignal = AbortSignal.timeout(5 * 60_000);
+      const res = await fetch(url, { signal: signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const hash = crypto.createHash("sha1");
       let received = 0;
@@ -93,6 +116,7 @@ async function downloadFile(url, destPath, { sha1, size } = {}) {
       source.on("data", (chunk) => {
         hash.update(chunk);
         received += chunk.length;
+        onBytes?.(chunk.length);
       });
       await pipeline(source, fs.createWriteStream(partPath));
       if (size && received !== size) throw new Error(`taille reçue ${received} au lieu de ${size}`);
@@ -102,6 +126,7 @@ async function downloadFile(url, destPath, { sha1, size } = {}) {
     } catch (error) {
       lastError = error;
       await fsp.rm(partPath, { force: true });
+      if (error?.name === "AbortError" && signal?.aborted) throw error; // annulation volontaire : jamais de reessai
       if (attempt < 3) await sleep(600 * attempt);
     }
   }
@@ -132,6 +157,19 @@ async function readInstalledState(instanceDir) {
     // premiere installation
   }
   return null;
+}
+
+// Un serveur donne a-t-il deja un modpack installe ? (2026-10-11, bouton
+// "Installer" — n'a plus besoin de s'afficher une fois fait, pour CE serveur
+// precis seulement.) Meme fichier d'etat que readInstalledState ci-dessus,
+// juste sans avoir besoin de le parser entierement.
+async function isInstalled(gameRoot, slug) {
+  try {
+    await fsp.access(path.join(gameRoot, "instances", slug, STATE_FILE));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // --- Formats de modpack -----------------------------------------------------
@@ -266,7 +304,13 @@ async function extractOverrides(zip, dirName, instanceDir, previousHashes, nextH
       const installedHash = previousHashes[relative];
       const untouched = installedHash && currentHash === installedHash;
       if (relative === "options.txt" || !untouched) {
-        if (installedHash) nextHashes[relative] = installedHash;
+        // Trace toujours la base de comparaison avec ce qui est REELLEMENT sur
+        // disque (currentHash), meme quand l'installation precedente ne
+        // connaissait pas ce fichier (installedHash absent : premiere
+        // installation, ancien format d'etat...) — sinon ce fichier ne redevient
+        // jamais traçable aux installations suivantes (trouve par l'audit du
+        // 2026-10-10, point mineur).
+        nextHashes[relative] = installedHash || currentHash;
         if (relative !== "options.txt" && installedHash) kept.push(relative);
         continue;
       }
@@ -294,39 +338,84 @@ async function extractOverrides(zip, dirName, instanceDir, previousHashes, nextH
 // ecrits par cette installation (mods livres dans les overrides), a ne pas
 // supprimer meme s'ils figuraient dans la version precedente.
 // Renvoie les chemins telecharges.
-async function installFiles({ entries, instanceDir, previousFiles, keepPaths = [], onProgress }) {
+// `signal`/`waitIfPaused` (2026-10-11, gestionnaire de telechargements) :
+// permettent au bouton Annuler/Pause du panneau de taches d'agir au milieu
+// d'une installation — modpack.js reste sans dependance a Electron (voir
+// l'en-tete du fichier), donc ni l'un ni l'autre ne connait la notion de
+// "tache", juste un AbortSignal standard et une fonction a attendre.
+async function installFiles({ entries, instanceDir, previousFiles, keepPaths = [], onProgress, signal, waitIfPaused }) {
   const targets = entries.map((entry) => ({ ...entry, target: safeJoin(instanceDir, entry.path) }));
-
-  const keep = new Set([...targets.map((entry) => entry.target), ...keepPaths.map((p) => safeJoin(instanceDir, p))]);
-  for (const old of previousFiles) {
-    const oldTarget = safeJoin(instanceDir, old);
-    if (!keep.has(oldTarget)) await fsp.rm(oldTarget, { force: true });
-  }
+  const totalBytes = targets.reduce((sum, entry) => sum + (entry.size || 0), 0);
 
   let done = 0;
+  let downloadedBytes = 0;
   let failure = null;
+  // Chemins reellement telecharges pendant CETTE execution (pas ceux deja
+  // corrects avant) : les seuls a supprimer si l'installation est annulee —
+  // une mise a jour annulee ne doit jamais abimer l'installation precedente.
+  const freshlyDownloaded = [];
   const queue = [...targets];
   const worker = async () => {
     while (queue.length && !failure) {
+      if (waitIfPaused) await waitIfPaused();
+      if (signal?.aborted) {
+        failure = failure || new DOMException("Installation annulée.", "AbortError");
+        break;
+      }
       const entry = queue.shift();
       try {
         if (!(await fileMatches(entry.target, { sha1: entry.sha1, size: entry.size }))) {
-          await downloadFile(entry.url, entry.target, { sha1: entry.sha1, size: entry.size });
+          await downloadFile(entry.url, entry.target, {
+            sha1: entry.sha1,
+            size: entry.size,
+            signal,
+            onBytes: (n) => {
+              downloadedBytes += n;
+              onProgress({ type: "mods-bytes", bytes: downloadedBytes, totalBytes });
+            },
+          });
+          freshlyDownloaded.push(entry.target);
         }
         done++;
-        onProgress({ text: `Téléchargement des mods : ${done}/${targets.length}`, type: "mods", task: done, total: targets.length });
+        onProgress({ text: `Téléchargement des mods : ${done}/${targets.length}`, type: "mods", task: done, total: targets.length, bytes: downloadedBytes, totalBytes });
       } catch (error) {
         failure = failure || error;
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(MOD_DOWNLOAD_CONCURRENCY, targets.length) }, worker));
-  if (failure) throw failure;
+  if (failure) {
+    if (failure.name === "AbortError") {
+      await Promise.all(freshlyDownloaded.map((target) => fsp.rm(target, { force: true })));
+    }
+    throw failure;
+  }
+
+  // Tous les nouveaux fichiers sont desormais confirmes presents sur disque
+  // (telecharges avec succes, ou deja corrects) : on peut supprimer sans risque
+  // les anciens fichiers que cette version du modpack n'utilise plus. Supprimer
+  // AVANT le telechargement (comme avant ce correctif) laissait l'instance
+  // incomplete — anciens fichiers deja effaces, nouveaux pas encore la — dès
+  // qu'un mod echouait apres ses tentatives (trouve par l'audit du 2026-10-10).
+  const keep = new Set([...targets.map((entry) => entry.target), ...keepPaths.map((p) => safeJoin(instanceDir, p))]);
+  for (const old of previousFiles) {
+    const oldTarget = safeJoin(instanceDir, old);
+    if (!keep.has(oldTarget)) await fsp.rm(oldTarget, { force: true });
+  }
 
   return entries.map((entry) => entry.path);
 }
 
 // --- Chargeur de mods (NeoForge / Forge / Fabric) ---------------------------
+
+// Identifiant de version Maven valide (ex. "1.20.1-47.2.0") : Fabric assainit
+// deja loaderVersion/minecraftVersion via encodeURIComponent avant de les
+// mettre dans une URL (meta.fabricmc.net) — Forge/NeoForge concatenaient ces
+// memes valeurs directement dans un chemin Maven sans aucun controle (trouve
+// par l'audit du 2026-10-10, point mineur). Ici on rejette plutot que
+// d'encoder : un identifiant de version Maven ne contient normalement que ces
+// caracteres, et encoder autoriserait silencieusement une valeur inattendue.
+const MAVEN_VERSION_PATTERN = /^[\w.+-]+$/;
 
 function parseLoader(loaderId, minecraftVersion) {
   const match = /^(neoforge|forge|fabric)-(.+)$/.exec(loaderId || "");
@@ -339,6 +428,9 @@ function parseLoader(loaderId, minecraftVersion) {
   const [, kind, loaderVersion] = match;
   if (kind === "fabric") return { kind, loaderVersion };
   const mavenVersion = kind === "neoforge" ? loaderVersion : `${minecraftVersion}-${loaderVersion}`;
+  if (!MAVEN_VERSION_PATTERN.test(mavenVersion)) {
+    throw new ModpackError(`Version de chargeur invalide : ${mavenVersion}.`, { code: "invalid_loader_version" });
+  }
   const installerUrl =
     kind === "neoforge"
       ? `https://maven.neoforged.net/releases/net/neoforged/neoforge/${mavenVersion}/neoforge-${mavenVersion}-installer.jar`
@@ -399,6 +491,7 @@ async function installFabric({ loaderVersion, minecraftVersion, gameRoot, onProg
   onProgress({ text: "Téléchargement de Fabric…" });
   const res = await fetch(
     `https://meta.fabricmc.net/v2/versions/loader/${encodeURIComponent(minecraftVersion)}/${encodeURIComponent(loaderVersion)}/profile/json`,
+    { signal: AbortSignal.timeout(15_000) },
   );
   if (!res.ok) {
     throw new ModpackError(`Fabric ${loaderVersion} introuvable pour Minecraft ${minecraftVersion} (HTTP ${res.status}).`, { code: "installer_failed" });
@@ -423,7 +516,7 @@ async function installLoader({ loaderId, minecraftVersion, gameRoot, javaPath, o
   if (!fs.existsSync(installerPath)) {
     onProgress({ text: `Téléchargement de ${kind === "neoforge" ? "NeoForge" : "Forge"}…` });
     // Les deux depots Maven publient l'empreinte SHA-1 a cote du fichier.
-    const shaRes = await fetch(`${installerUrl}.sha1`);
+    const shaRes = await fetch(`${installerUrl}.sha1`, { signal: AbortSignal.timeout(15_000) });
     if (!shaRes.ok) throw new ModpackError(`Empreinte du chargeur introuvable (HTTP ${shaRes.status}).`, { code: "installer_failed" });
     const sha1 = (await shaRes.text()).trim().split(/\s+/)[0];
     await downloadFile(installerUrl, installerPath, { sha1 });
@@ -469,6 +562,21 @@ async function ensureVanillaVersion(versionsDir, minecraftVersion) {
     await downloadFile(client.url, jarPath, { sha1: client.sha1, size: client.size });
   }
   return vanilla;
+}
+
+// Verifie que l'installation vanilla est REELLEMENT complete sur le disque — pas seulement le
+// JSON et le jar (ce qu'ensureVanillaVersion garantit deja), mais aussi les bibliotheques et les
+// assets, telecharges par minecraft-launcher-core lui-meme au moment du lancement (son API ne
+// permet pas de les telecharger separement sans surveiller tout son fonctionnement interne, voir
+// components/launcher.js). Sans ce controle, l'auto-test de publication annoncait "Fichiers du
+// jeu installes : reussi" des que json+jar existaient, meme si le joueur avait supprime a la main
+// tout le reste (bibliotheques/assets) juste avant de tester — constate le 2026-10-10.
+function hasVanillaFilesInstalled(gameRoot) {
+  try {
+    return fs.readdirSync(path.join(gameRoot, "libraries")).length > 0 && fs.readdirSync(path.join(gameRoot, "assets", "objects")).length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function ruleAllows(rules) {
@@ -548,7 +656,25 @@ async function prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersio
  * Renvoie { instanceDir, minecraftVersion, customVersion, jvmArgs, modpackName,
  * javaPath, javaMajor } — `javaPath` = le Java a utiliser pour lancer le jeu.
  */
-async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, onProgress = () => {} }) {
+// Verrou par instance : deux installations concurrentes pour le MEME serveur (double-clic sur
+// "Jouer", ou "Jouer" + "Réinstaller" avant que le premier ait fini) ecrivaient sinon vers le
+// meme fichier ".part" (downloadFile) — ecritures entremelees au niveau OS que le SHA-1/compteur
+// calcules en memoire (a partir des seuls octets ecrits par CE process) ne detectent pas :
+// chaque appelant peut croire son hash valide alors que le fichier final sur disque est
+// corrompu (course trouvee par l'audit du 2026-10-10). Le second appelant attend simplement le
+// resultat du premier.
+const installLocks = new Map();
+
+function installModpack(options) {
+  const instanceDir = path.join(options.gameRoot, "instances", options.slug);
+  const existing = installLocks.get(instanceDir);
+  if (existing) return existing;
+  const promise = installModpackLocked(options).finally(() => installLocks.delete(instanceDir));
+  installLocks.set(instanceDir, promise);
+  return promise;
+}
+
+async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJava, onProgress = () => {}, signal, waitIfPaused }) {
   onProgress({ text: "Recherche du modpack…" });
   // Serveur prive : preuve d'acces (voir config.headers dans main.js, game:launch).
   const info = await siteJson(config, `/api/launcher/servers/${encodeURIComponent(slug)}/modpack`, { headers: config.headers });
@@ -562,8 +688,18 @@ async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, o
   const cacheName = `${source}-${String(file.id).replace(/[^\w.-]/g, "_")}-${path.basename(file.fileName)}`;
   const zipPath = path.join(gameRoot, "cache", "modpacks", cacheName);
   if (!(await fileMatches(zipPath, { sha1: file.sha1, size: file.fileLength }))) {
+    if (waitIfPaused) await waitIfPaused();
     onProgress({ text: `Téléchargement du modpack ${info.modpack.name}…` });
-    await downloadFile(file.downloadUrl, zipPath, { sha1: file.sha1, size: file.fileLength });
+    let packBytes = 0;
+    await downloadFile(file.downloadUrl, zipPath, {
+      sha1: file.sha1,
+      size: file.fileLength,
+      signal,
+      onBytes: (n) => {
+        packBytes += n;
+        onProgress({ type: "mods-bytes", bytes: packBytes, totalBytes: file.fileLength || 0 });
+      },
+    });
   }
 
   const zip = new AdmZip(zipPath);
@@ -609,7 +745,7 @@ async function installModpack({ config, slug, gameRoot, javaPath, resolveJava, o
   });
 
   const entries = await pack.resolveFiles({ config, onProgress });
-  const installedFiles = await installFiles({ entries, instanceDir, previousFiles, keepPaths: overrideJars, onProgress });
+  const installedFiles = await installFiles({ entries, instanceDir, previousFiles, keepPaths: overrideJars, onProgress, signal, waitIfPaused });
   await fsp.writeFile(
     path.join(instanceDir, STATE_FILE),
     JSON.stringify(
@@ -648,5 +784,8 @@ module.exports = {
   installLoader,
   prepareLaunchVersion,
   ensureVanillaVersion,
+  hasVanillaFilesInstalled,
+  ruleAllows,
+  isInstalled,
   ModpackError,
 };

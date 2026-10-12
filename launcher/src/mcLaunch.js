@@ -5,7 +5,7 @@ const { Client } = require("minecraft-launcher-core");
 const logStore = require("./logStore");
 const discordPresence = require("./discordPresence");
 const { addServerToList } = require("./serversDat");
-const { ensureVanillaVersion } = require("./modpack");
+const { ensureVanillaVersion, ruleAllows } = require("./modpack");
 
 // Options JVM demandees par Mojang pour une version vanilla (arguments.jvm de son
 // JSON). Le lancement passe par minecraft-launcher-core, qui ignore ces options :
@@ -16,12 +16,15 @@ function mojangJvmArgs(vanilla) {
   const out = [];
   // Deja fournies par minecraft-launcher-core : on ne les repete pas.
   const keep = (value) => !value.includes("${") && value !== "-cp" && !value.startsWith("-XX:HeapDumpPath");
-  const allowed = (rules) =>
-    !rules || rules.every((r) => (r.action === "allow" && (!r.os || r.os.name === "windows")) || (r.action === "disallow" && r.os?.name && r.os.name !== "windows"));
+  // ruleAllows() (modpack.js) : meme logique de filtrage des regles JVM Mojang
+  // partagee avec le chargement d'un modpack — la version locale d'ici ignorait
+  // l'architecture (r.os.arch) contrairement a celle de modpack.js, qui gere
+  // aussi correctement la semantique "derniere regle qui matche gagne" (trouve
+  // par l'audit du 2026-10-10).
   for (const arg of vanilla.arguments?.jvm || []) {
     if (typeof arg === "string") {
       if (keep(arg)) out.push(arg);
-    } else if (arg && allowed(arg.rules) && !arg.rules?.some((r) => r.features)) {
+    } else if (arg && ruleAllows(arg.rules)) {
       const values = Array.isArray(arg.value) ? arg.value : [arg.value];
       for (const value of values) if (typeof value === "string" && keep(value)) out.push(value);
     }
@@ -31,8 +34,8 @@ function mojangJvmArgs(vanilla) {
 
 // Repertoire de jeu local : Java, Minecraft (vanilla) et ses assets sont
 // telecharges ici au premier lancement, puis reutilises. Les serveurs moddes
-// (modpack CurseForge, NeoForge/Forge) y ont chacun leur instance dans
-// instances/<slug> (voir modpack.js) ; Fabric/Quilt ne sont pas encore geres.
+// (modpack CurseForge, NeoForge/Forge, Fabric) y ont chacun leur instance dans
+// instances/<slug> (voir modpack.js) ; seul Quilt n'est pas encore gere.
 const GAME_ROOT = path.join(app.getPath("userData"), "minecraft");
 
 // minecraft-launcher-core spawn Java lui-meme sans jamais ecouter l'evenement
@@ -63,6 +66,7 @@ async function launchMinecraft({
   version,
   serverIp,
   serverName,
+  autoConnect = true,
   onProgress,
   memory,
   javaPath,
@@ -127,18 +131,23 @@ async function launchMinecraft({
     // Multijoueur : sans ca, apres une deconnexion il ne peut plus revenir sans
     // tout relancer. Ne doit jamais empecher le lancement.
     try {
-      if (addServerToList(gameDirectory || GAME_ROOT, { name: serverName, ip: serverIp })) {
+      if (await addServerToList(gameDirectory || GAME_ROOT, { name: serverName, ip: serverIp })) {
         logStore.pushLog({ source: "launcher", message: `« ${serverName || serverIp} » ajouté à la liste Multijoueur.` });
       }
     } catch (error) {
       logStore.pushLog({ level: "warn", source: "launcher", message: `Liste Multijoueur non mise à jour : ${error instanceof Error ? error.message : error}` });
     }
 
-    const [host, port] = serverIp.split(":");
-    opts.quickPlay = {
-      type: "multiplayer",
-      identifier: port ? `${host}:${port}` : host,
-    };
+    // Decoche par le proprietaire (serverForm.autoConnect, voir site/src/components/
+    // ServerForm.tsx) : l'IP reste quand meme ajoutee a la liste Multijoueur ci-dessus, seule la
+    // connexion directe (Quick Play, Minecraft 1.20+ uniquement) est sautee.
+    if (autoConnect) {
+      const [host, port] = serverIp.split(":");
+      opts.quickPlay = {
+        type: "multiplayer",
+        identifier: port ? `${host}:${port}` : host,
+      };
+    }
   }
 
   return new Promise((resolve, reject) => {

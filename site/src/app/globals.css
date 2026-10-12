@@ -5,6 +5,10 @@
      quasi neutre, un seul accent blurple utilise comme trait/lueur plutot
      que comme aplat. Memes noms de variables qu'avant pour ne pas avoir a
      toucher chaque composant — seules les valeurs changent. */
+  /* Chargee via <link> Google Fonts dans layout.tsx (pas next/font/google) :
+     un bug de resolution Turbopack sur ce poste empechait next/font de
+     fonctionner ("Module not found: @vercel/turbopack-next/..."). */
+  --font-inter: "Inter", Arial, Helvetica, sans-serif;
   --background: #161826;
   --surface: #232532;
   --surface-raised: color-mix(in srgb, var(--foreground) 6%, var(--surface));
@@ -14,7 +18,10 @@
   /* Palier plus discret que --muted — remonte depuis le launcher (console de
      debug) pour rester un token partage entre les deux apps. */
   --muted2: color-mix(in srgb, var(--foreground) 50%, transparent);
-  --accent: #9184d9;
+  /* Bleu choisi par le client (2026-10-11) — remplace le blurple d'origine.
+     Les formules color-mix ci-dessous (--accent-hover, --accent-2,
+     --accent-fill) se recalculent automatiquement, rien d'autre a toucher. */
+  --accent: #5fa3d3;
   /* Formules color-mix (pas de hex fige) pour rester identiques a celles du
      launcher (voir launcher/src/index.html) qui, elles, DOIVENT etre des
      formules puisque son accent est configurable par l'utilisateur — deux
@@ -30,6 +37,13 @@
   --danger: #e08a8a;
   --warn: #e0c28a;
   --success: #5fd3a0;
+  /* Couleurs dediees (hors palette d'accent) pour deux etats recurrents entre
+     le site et le panel admin : serveur gele (bleu) et verification en attente
+     (or). Reprises depuis les valeurs en dur historiques de lib/frozen.ts et
+     manage/[id]/page.tsx pour que le theme clair ci-dessous puisse enfin les
+     faire basculer. */
+  --frozen: #8ac3e0;
+  --pending: #e0b84a;
   /* Elevation : un trait + une ombre sombre plutot qu'une lueur colorée. */
   --glow-accent: 0 0 0 1px var(--accent), 0 10px 24px -10px rgba(0, 0, 0, 0.6);
 }
@@ -54,6 +68,8 @@
   --danger: #c0453f;
   --warn: #9a6a1f;
   --success: #2f9e6e;
+  --frozen: #2b7a9e;
+  --pending: #8f6a12;
 }
 
 @theme inline {

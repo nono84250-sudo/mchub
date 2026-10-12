@@ -1,5 +1,5 @@
-import { notFound } from "next/navigation";
-import { db } from "@/lib/db";
+import { notFound, redirect } from "next/navigation";
+import { db, execSql } from "@/lib/db";
 import { DesignScreen } from "@/components/admin/DesignScreen";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { playerDetailHtml, type PlayerServerRow } from "@/app/admin/design/bind";
@@ -9,7 +9,15 @@ export const dynamic = "force-dynamic";
 const SHORT_COUNT = 3;
 const PAGE_SIZE = 5;
 
-export default async function PlayerDetail({
+export default async function PlayerDetail() {
+  await requireAdmin();
+  // 2026-10-12 : page desactivee temporairement (perimetre admin reduit), voir
+  // administration/page.tsx. Logique d'origine conservee ci-dessous (PlayerDetailOriginal,
+  // non utilisee) pour reactivation future sans tout reecrire.
+  redirect("/admin/servers");
+}
+
+async function PlayerDetailOriginal({
   params,
   searchParams,
 }: {
@@ -19,17 +27,26 @@ export default async function PlayerDetail({
   await requireAdmin();
   const { id } = await params;
   const query = await searchParams;
-  const player = await db.orm.public.User.select("id", "name", "minecraftUuid", "createdAt").where({ id }).first();
+  const player = await db.orm.public.User.select("id", "name", "minecraftUuid", "createdAt", "lockedAt", "lockedReason", "lockedBy").where({ id }).first();
   if (!player) notFound();
 
-  // ponytail: tout en memoire (comme les autres listes du panel) ; passer en requete SQL si un
-  // compte finit par posseder beaucoup de serveurs.
-  const [servers, reports] = await Promise.all([
+  const [servers, warnings, notes] = await Promise.all([
     db.orm.public.Server.select("id", "name", "slug", "ip", "published", "isPrivate", "frozenAt").where({ ownerId: id }).orderBy((s) => s.createdAt.desc()).all(),
-    db.orm.public.Report.select("serverId", "status").all(),
+    db.orm.public.PlayerWarning.select("id", "reason", "createdBy", "createdAt").where({ userId: id }).orderBy((w) => w.createdAt.desc()).all(),
+    db.orm.public.AdminNote.select("id", "text", "createdBy", "createdAt").where({ userId: id }).orderBy((n) => n.createdAt.desc()).all(),
   ]);
-  const serverIds = new Set(servers.map((s) => s.id));
-  const myReports = reports.filter((r) => serverIds.has(r.serverId));
+  const serverIds = servers.map((s) => s.id);
+  // Signalements techniques scopes aux serveurs de ce joueur (WHERE serverId IN (...)) — avant,
+  // ce fichier chargeait TOUS les signalements techniques de la plateforme puis filtrait en
+  // memoire par serverIds, un aller-retour D1 qui grossit avec la plateforme entiere au lieu
+  // de rester proportionnel aux serveurs de ce joueur. Le query-builder de db.ts n'a pas
+  // d'operateur IN, donc requete SQL directe via execSql (comme ailleurs dans le panel admin).
+  const myReports = serverIds.length
+    ? ((await execSql(
+        `SELECT "serverId", "status" FROM "report" WHERE "category" = 'technical' AND "serverId" IN (${serverIds.map(() => "?").join(",")})`,
+        serverIds,
+      )) as { serverId: string; status: string }[])
+    : [];
   const openByServer = new Map<string, number>();
   for (const r of myReports) if (r.status !== "resolved") openByServer.set(r.serverId, (openByServer.get(r.serverId) ?? 0) + 1);
 
@@ -63,6 +80,12 @@ export default async function PlayerDetail({
     serversTo: serversOpen ? (page - 1) * PAGE_SIZE + serversShown.length : 0,
     reportsTotal: myReports.length,
     reportsOpen: myReports.filter((r) => r.status !== "resolved").length,
+    locked: player.lockedAt !== null,
+    lockedReason: player.lockedReason,
+    lockedBy: player.lockedBy,
+    lockedAt: player.lockedAt,
+    warnings,
+    notes,
   });
   return <DesignScreen name="player-detail" html={html} />;
 }

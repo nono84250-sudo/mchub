@@ -41,7 +41,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // account n'est present qu'a la connexion initiale (pas a chaque
       // requete) — c'est le seul moment ou on a un access_token Microsoft
       // frais a echanger contre le profil Minecraft/Xbox.
-      if (!account?.access_token) return token;
+      if (!account?.access_token) {
+        // Requete suivante (pas de nouvel echange Microsoft) : revalide le verrou de compte a
+        // chaque fois, comme launcherAuth.ts le fait deja pour le launcher — sans ca, un compte
+        // verrouille par un admin (api/admin/players/[id]/lock) gardait un acces web complet
+        // (dashboard, gestion de ses serveurs) jusqu'a l'expiration naturelle du cookie de
+        // session (~30 jours par defaut), alors que le launcher coupe l'acces immediatement.
+        // Trouve par l'audit du 2026-10-10 (§1.8), jamais corrige a l'epoque faute d'avoir ete
+        // assigne a un agent — corrige ici le soir meme, en relisant le reste du dossier.
+        if (token.id) {
+          const current = await db.orm.public.User.select("lockedAt").where({ id: token.id }).first();
+          if (current?.lockedAt) {
+            token.id = undefined;
+            token.error = "account_locked";
+          }
+        }
+        return token;
+      }
 
       try {
         const mcProfile = await getMinecraftProfileFromMicrosoftToken(account.access_token);
@@ -83,6 +99,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.id as string;
         session.user.name = token.name as string;
         session.user.minecraftUsername = token.minecraftUsername as string | null;
+      } else if (session.user) {
+        // token.id absent : l'echange Xbox a echoue a la connexion (voir le catch de jwt()
+        // ci-dessus, qui pose alors token.error) ou le jeton est dans un etat incoherent.
+        // session.user.id reste undefined malgre le type (voir types/next-auth.d.ts) — journalise
+        // pour que ce cas ne reste pas silencieux : un appelant qui l'utilise quand meme comme
+        // ownerId obtiendrait un resultat DB vide plutot qu'une erreur claire (audit §2.16).
+        console.error("[auth] session sans identite (token.id absent)", { error: token.error ?? "inconnu" });
       }
       if (token.error) session.error = token.error as string;
       return session;

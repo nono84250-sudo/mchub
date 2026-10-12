@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, execSql } from "@/lib/db";
-import { hashPassword, passwordProblem, verifyPassword } from "@/lib/adminAuth";
-import { getCurrentAdmin } from "@/lib/adminSession";
+import { ADMIN_COOKIE, ADMIN_SESSION_TTL_MS, createAdminSession, hashPassword, passwordProblem, verifyPassword } from "@/lib/adminAuth";
+import { adminForAction } from "@/lib/adminServers";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Changement du nom d'utilisateur et du mot de passe (première connexion obligatoire,
@@ -11,8 +11,11 @@ const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/;
 export async function POST(request: Request) {
   const limited = rateLimitResponse(request, "admin-credentials", 10);
   if (limited) return limited;
-  const admin = await getCurrentAdmin();
-  if (!admin) return NextResponse.json({ error: "Connexion requise." }, { status: 401 });
+  // allowMustChangeCredentials : un compte en première connexion (mustChangeCredentials=true)
+  // doit encore pouvoir appeler CETTE route pour en sortir. requireAdminRole: false — changer
+  // SES PROPRES identifiants n'est pas réservé aux admins (modérateurs inclus, comme avant).
+  const admin = await adminForAction(request, { allowMustChangeCredentials: true, requireAdminRole: false });
+  if (admin instanceof NextResponse) return admin;
 
   const body = await request.json().catch(() => null);
   const currentPassword = String(body?.currentPassword ?? "");
@@ -39,9 +42,25 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await hashPassword(newPassword);
+  const changedAt = new Date().toISOString();
   await execSql(
-    'UPDATE "adminAccount" SET "username" = ?, "passwordHash" = ?, "mustChangeCredentials" = 0 WHERE "id" = ?',
-    [username, passwordHash, admin.id],
+    'UPDATE "adminAccount" SET "username" = ?, "passwordHash" = ?, "mustChangeCredentials" = 0, "passwordChangedAt" = ? WHERE "id" = ?',
+    [username, passwordHash, changedAt, admin.id],
   );
-  return NextResponse.json({ ok: true });
+
+  // Revoque toute AUTRE session (voir adminSession.ts) — mais la session courante doit survivre
+  // au changement qu'elle vient elle-meme de declencher, sinon l'admin se deconnecte lui-meme :
+  // reemission immediate d'un cookie frais (iat >= passwordChangedAt).
+  const response = NextResponse.json({ ok: true });
+  const token = createAdminSession(admin.id, admin.role);
+  if (token) {
+    response.cookies.set(ADMIN_COOKIE, token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      path: "/",
+      maxAge: ADMIN_SESSION_TTL_MS / 1000,
+    });
+  }
+  return response;
 }

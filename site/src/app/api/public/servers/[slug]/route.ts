@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { getPublicServerBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
+import { checkSlugVisibility, getPublicServerBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
-import { db } from "@/lib/db";
 
 export const revalidate = 60;
 
@@ -16,14 +15,21 @@ export async function GET(request: Request, ctx: RouteContext<"/api/public/serve
   if (inviteLimited) return inviteLimited;
 
   const { slug } = await ctx.params;
-  const server = await getPublicServerBySlug(slug, proofFromRequest(request));
-
-  if (!server) {
+  const proof = proofFromRequest(request);
+  // Visibilite d'ABORD (audit §1.4) : cette route n'exige AUCUNE authentification, donc sans
+  // ce garde n'importe qui sur Internet pouvait confirmer qu'un serveur privé existe à un slug
+  // donné en regardant s'il répond "gelé" plutôt que "introuvable".
+  const visibility = await checkSlugVisibility(slug, proof);
+  if (!visibility.visible) {
+    return NextResponse.json({ error: "Serveur introuvable" }, { status: 404, headers: CORS_HEADERS });
+  }
+  if (visibility.frozenAt) {
     // Serveur gelé par l'équipe : le launcher l'affiche comme « gelé », pas comme « introuvable ».
-    const frozen = await db.orm.public.Server.select("frozenAt").where({ slug }).first();
-    if (frozen?.frozenAt) {
-      return NextResponse.json({ error: "Serveur gelé", code: "frozen" }, { status: 404, headers: CORS_HEADERS });
-    }
+    return NextResponse.json({ error: "Serveur gelé", code: "frozen" }, { status: 404, headers: CORS_HEADERS });
+  }
+
+  const server = await getPublicServerBySlug(slug, proof);
+  if (!server) {
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404, headers: CORS_HEADERS });
   }
 

@@ -9,6 +9,7 @@ import { ImageDropzone } from "@/components/ImageDropzone";
 import { ModpackPicker, type ModpackValue } from "@/components/ModpackPicker";
 import { MinecraftVersionField } from "@/components/MinecraftVersionField";
 import { DEFAULT_MODPACK_SOURCE, type ModpackSource } from "@/lib/modpack-types";
+import { supportsAutoConnect } from "@/lib/minecraft-version-constants";
 import { useI18n } from "@/i18n/I18nProvider";
 
 type ServerFormValues = {
@@ -26,6 +27,7 @@ type ServerFormValues = {
   curseforgeModpackName: string;
   curseforgeModpackVersion: string;
   recommendedRamGB: string;
+  autoConnect: boolean;
 };
 
 const EMPTY_VALUES: ServerFormValues = {
@@ -43,6 +45,7 @@ const EMPTY_VALUES: ServerFormValues = {
   curseforgeModpackName: "",
   curseforgeModpackVersion: "",
   recommendedRamGB: "",
+  autoConnect: true,
 };
 
 type ServerFormProps = {
@@ -55,20 +58,29 @@ type ServerFormProps = {
   // seule la page /manage/[id]/settings les passe.
   serverId?: string;
   inviteCode?: string | null;
+  // Absent en creation (NewServerWizard ne propose plus que Prive, voir son propre
+  // commentaire) : seule la page /manage/[id]/settings le passe. Quand false, l'option
+  // Public est remplacee par une note explicative — voir le rendu de visibility ci-dessous.
+  canPublish?: boolean;
   // Section rendue entre les champs et le bouton d'enregistrement (voir
   // /manage/[id]/settings : Pause/Dupliquer/Supprimer, comme sur la maquette
   // "05 · Settings"). Ne doit contenir que des boutons type="button" —
   // jamais un autre <form>, invalide a l'interieur de celui-ci.
   children?: ReactNode;
+  sourceStates?: Record<ModpackSource, boolean>;
 };
 
-export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode, children }: ServerFormProps) {
+export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode, canPublish = true, children, sourceStates }: ServerFormProps) {
   const { t } = useI18n();
   const router = useRouter();
   const values = { ...EMPTY_VALUES, ...defaultValues };
   const [state, formAction, pending] = useActionState(action, undefined);
   const [type, setType] = useState<"vanilla" | "modded">(values.type);
   const [visibility, setVisibility] = useState<"public" | "private">(values.isPrivate ? "private" : "public");
+  // Le serveur est deja public (cas cree avant cette fonctionnalite, ou deja valide) : on ne
+  // retire jamais une option deja active sous les pieds du proprietaire, seulement le passage
+  // a l'etat public quand il ne l'est pas encore (voir le rendu plus bas).
+  const publicOptionAllowed = canPublish || !values.isPrivate;
   const [resettingCode, setResettingCode] = useState(false);
 
   // minecraftVersion/loader du modpack : connus seulement si le proprietaire
@@ -82,7 +94,12 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
     version: values.curseforgeModpackVersion,
     source: values.modpackSource,
   });
-  const effectiveMcVersion = modpack.minecraftVersion || values.minecraftVersion;
+  // Version "manuelle" (champ Vanilla/Autre) suivie en direct pour l'avertissement
+  // autoConnect ci-dessous — values.minecraftVersion seul ne capte pas les changements de
+  // l'utilisateur apres le rendu initial (voir MinecraftVersionField.onChange).
+  const [manualVersion, setManualVersion] = useState(values.minecraftVersion);
+  const effectiveMcVersion = modpack.minecraftVersion || manualVersion;
+  const [autoConnect, setAutoConnect] = useState(values.autoConnect);
   const modpackDetails =
     type === "modded"
       ? [effectiveMcVersion ? `Minecraft ${effectiveMcVersion}` : null, modpack.loader].filter(Boolean).join(" · ")
@@ -161,24 +178,37 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
       <div className="flex flex-col gap-2">
         <span className="field-label">{t("serverForm.visibility")}</span>
         <div className="flex flex-col sm:flex-row gap-2.5">
-          <label
-            className="flex flex-1 items-start gap-2.5 rounded-md border p-3 cursor-pointer"
-            style={
-              visibility === "public"
-                ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
-                : { borderColor: "var(--border)" }
-            }
-          >
-            <input
-              type="radio" name="visibility" value="public" className="sr-only"
-              checked={visibility === "public"} onChange={() => setVisibility("public")}
-            />
-            <GlobeHemisphereWest className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "public" ? "var(--accent)" : "var(--muted)" }} />
-            <span className="flex flex-col gap-0.5 min-w-0">
-              <span className="text-sm font-medium text-foreground">{t("serverForm.visibilityPublic")}</span>
-              <span className="text-xs text-muted leading-relaxed">{t("serverForm.visibilityPublicHelp")}</span>
-            </span>
-          </label>
+          {publicOptionAllowed ? (
+            <label
+              className="flex flex-1 items-start gap-2.5 rounded-md border p-3 cursor-pointer"
+              style={
+                visibility === "public"
+                  ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
+                  : { borderColor: "var(--border)" }
+              }
+            >
+              <input
+                type="radio" name="visibility" value="public" className="sr-only"
+                checked={visibility === "public"} onChange={() => setVisibility("public")}
+              />
+              <GlobeHemisphereWest className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "public" ? "var(--accent)" : "var(--muted)" }} />
+              <span className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-sm font-medium text-foreground">{t("serverForm.visibilityPublic")}</span>
+                <span className="text-xs text-muted leading-relaxed">{t("serverForm.visibilityPublicHelp")}</span>
+              </span>
+            </label>
+          ) : (
+            // Pas encore de self-test reussi (voir canPublish) : remplace l'option Public par
+            // une note expliquant pourquoi, plutot que de la laisser cliquable pour rien — le
+            // serveur reste prive quoi qu'il arrive (updateServer la reforce de toute facon).
+            <div className="flex flex-1 items-start gap-2.5 rounded-md border border-dashed border-border p-3" style={{ opacity: 0.75 }}>
+              <GlobeHemisphereWest className="h-[17px] w-[17px] mt-0.5 flex-shrink-0 text-muted" />
+              <span className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-sm font-medium text-foreground">{t("serverForm.visibilityPublic")}</span>
+                <span className="text-xs text-muted leading-relaxed">{t("serverForm.visibilityPublicLocked")}</span>
+              </span>
+            </div>
+          )}
           <label
             className="flex flex-1 items-start gap-2.5 rounded-md border p-3 cursor-pointer"
             style={
@@ -271,7 +301,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
       </div>
 
       {showManualVersion ? (
-        <MinecraftVersionField versions={versions} defaultValue={values.minecraftVersion} />
+        <MinecraftVersionField versions={versions} defaultValue={values.minecraftVersion} onChange={setManualVersion} />
       ) : (
         <div className="flex flex-col gap-1.5">
           <span className="field-label">{t("serverForm.version")}</span>
@@ -300,6 +330,27 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
           className="field-input"
         />
         <p className="text-xs text-muted">{t("serverForm.ipHelp")}</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        {/* FormData.get() renvoie la PREMIERE entree du meme nom en ordre DOM : la case doit
+            venir avant le hidden de repli, sinon la valeur soumise est toujours "false" meme
+            cochee (bug trouve par l'audit du 2026-10-10 — l'ordre etait inverse). */}
+        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            name="autoConnect"
+            value="true"
+            checked={autoConnect}
+            onChange={(event) => setAutoConnect(event.target.checked)}
+          />
+          {t("serverForm.autoConnect")}
+        </label>
+        <input type="hidden" name="autoConnect" value="false" />
+        <p className="text-xs text-muted">{t("serverForm.autoConnectHelp")}</p>
+        {autoConnect && effectiveMcVersion && !supportsAutoConnect(effectiveMcVersion) ? (
+          <p className="text-xs text-warn">{t("serverForm.autoConnectVersionWarning")}</p>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -332,6 +383,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
             source: values.modpackSource,
           }}
           onChange={setModpack}
+          sourceStates={sourceStates}
         />
       ) : null}
 

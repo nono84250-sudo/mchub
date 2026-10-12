@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { SiteChrome } from "@/components/SiteChrome";
@@ -7,14 +6,6 @@ import { SiteBanner } from "@/components/SiteBanner";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { getT } from "@/i18n/getDictionary";
 import "./globals.css";
-
-// Systeme de design "Nocturne" : une seule famille (Inter) pour les titres
-// et le corps de texte, plutot que deux polices distinctes.
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
 
 export const metadata: Metadata = {
   title: "Omniscient — Annuaire de serveurs Minecraft",
@@ -25,8 +16,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   const { locale, dict } = await getT();
 
   return (
-    <html lang={locale} className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang={locale} className="h-full antialiased" suppressHydrationWarning>
       <head>
+        {/* Systeme de design "Nocturne" : une seule famille (Inter) pour les titres et le
+           corps de texte — chargee ici en <link> plutot que next/font/google (bug de
+           resolution Turbopack sur ce poste, voir --font-inter dans globals.css). */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
         {/* Bloquant, avant tout paint : evite le flash sombre->clair au
            chargement pour un visiteur ayant choisi "Clair" (voir
            ThemeSwitcher.tsx, meme logique que theme.js cote launcher). Ne

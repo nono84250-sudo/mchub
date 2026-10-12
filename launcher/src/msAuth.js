@@ -51,7 +51,17 @@ function createPkcePair() {
   return { verifier, challenge };
 }
 
-function buildAuthUrl(challenge) {
+// Anti-CSRF : une valeur aleatoire renvoyee telle quelle par Microsoft dans
+// l'URL de retour, verifiee avant d'accepter le "code" qui l'accompagne —
+// l'architecture BrowserWindow actuelle (qui intercepte deja cette URL de
+// retour dans checkUrl ci-dessous pour en extraire "code") permet de la relire
+// facilement, donc pas besoin de documenter une impossibilite ici (point mineur
+// de l'audit du 2026-10-10).
+function createState() {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+function buildAuthUrl(challenge, state) {
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     response_type: "code",
@@ -61,11 +71,12 @@ function buildAuthUrl(challenge) {
     code_challenge: challenge,
     code_challenge_method: "S256",
     prompt: "select_account",
+    state,
   });
   return `${AUTHORITY}/oauth2/v2.0/authorize?${params.toString()}`;
 }
 
-function openLoginWindow(authUrl) {
+function openLoginWindow(authUrl, expectedState) {
   return new Promise((resolve, reject) => {
     const win = new BrowserWindow({
       width: 480,
@@ -98,8 +109,19 @@ function openLoginWindow(authUrl) {
       const parsed = new URL(url);
       const code = parsed.searchParams.get("code");
       const error = parsed.searchParams.get("error_description") || parsed.searchParams.get("error");
-      if (code) finish(resolve, code);
-      else finish(reject, new Error(error || "Connexion annulée"));
+      if (error) {
+        finish(reject, new Error(error));
+        return;
+      }
+      if (!code) {
+        finish(reject, new Error("Connexion annulée"));
+        return;
+      }
+      if (parsed.searchParams.get("state") !== expectedState) {
+        finish(reject, new Error("Réponse de connexion Microsoft invalide (jeton anti-CSRF incorrect) — réessaie."));
+        return;
+      }
+      finish(resolve, code);
     };
 
     win.webContents.on("will-redirect", (_event, url) => checkUrl(url));
@@ -124,7 +146,7 @@ async function requestToken(params) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: CLIENT_ID, scope: SCOPE, ...params }),
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const error = new Error(data.error_description || "Échec de l'échange avec Microsoft");
     // "invalid_grant" = le refresh_token lui-meme est invalide/revoque par
@@ -132,6 +154,13 @@ async function requestToken(params) {
     // ne veulent pas dire que le refresh_token est mauvais.
     error.code = data.error;
     throw error;
+  }
+  // Un proxy d'entreprise/portail captif peut repondre 200 avec du HTML au lieu
+  // du JSON attendu : .catch(() => ({})) ci-dessus evite le crash brut, mais il
+  // faut encore detecter l'objet vide resultant plutot que de renvoyer un jeton
+  // d'acces manquant en silence (trouve par l'audit du 2026-10-10).
+  if (!data.access_token) {
+    throw new Error("Réponse Microsoft illisible (ni jeton d'accès, ni erreur claire) — réessaie plus tard.");
   }
   return data; // { access_token, refresh_token, expires_in, ... }
 }
@@ -164,7 +193,11 @@ async function authenticateXboxLive(msAccessToken) {
     }),
   });
   if (!res.ok) throw new Error("Échec de l'authentification Xbox Live");
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!data.Token || !data.DisplayClaims?.xui?.[0]?.uhs) {
+    throw new Error("Réponse Xbox Live illisible ou incomplète — réessaie plus tard.");
+  }
+  return data;
 }
 
 async function authenticateXsts(xblToken) {
@@ -177,15 +210,23 @@ async function authenticateXsts(xblToken) {
       TokenType: "JWT",
     }),
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (res.status === 401) {
     if (data.XErr === 2148916233) throw new Error("Ce compte Microsoft n'a pas de profil Xbox associé.");
     if (data.XErr === 2148916238) {
       throw new Error("Ce compte est un compte enfant : il doit être ajouté à une famille Microsoft.");
     }
-    throw new Error(`Compte Xbox refusé (code ${data.XErr}).`);
+    throw new Error(`Compte Xbox refusé${data.XErr ? ` (code ${data.XErr})` : ""}.`);
   }
   if (!res.ok) throw new Error("Échec de l'autorisation XSTS");
+  // "Token" est le seul champ reellement indispensable (utilise pour loginWithXbox juste apres) —
+  // DisplayClaims.xui[0].xid (xuid) n'est PAS garanti par Microsoft contrairement a "uhs" sur la
+  // reponse XBL (ligne 197) : il sert seulement a une metadonnee facultative du lancement
+  // (meta.xuid, voir buildAuthorization). L'exiger ici bloquait a tort la connexion de comptes
+  // dont la reponse XSTS ne le renvoie pas (regression du 2026-10-10, corrigee le soir meme).
+  if (!data.Token) {
+    throw new Error("Réponse XSTS illisible ou incomplète — réessaie plus tard.");
+  }
   return data;
 }
 
@@ -197,7 +238,11 @@ async function loginWithXbox(xstsToken, userHash) {
   });
   if (res.status === 403) throw new PendingApprovalError();
   if (!res.ok) throw new Error("Échec de la connexion Minecraft");
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!data.access_token) {
+    throw new Error("Réponse de connexion Minecraft illisible — réessaie plus tard.");
+  }
+  return data;
 }
 
 async function getMinecraftProfile(minecraftAccessToken) {
@@ -207,7 +252,11 @@ async function getMinecraftProfile(minecraftAccessToken) {
   if (res.status === 403) throw new PendingApprovalError();
   if (res.status === 404) throw new Error("Ce compte Microsoft ne possède pas Minecraft.");
   if (!res.ok) throw new Error("Impossible de récupérer le profil Minecraft");
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!data.id || !data.name) {
+    throw new Error("Profil Minecraft illisible ou incomplet — réessaie plus tard.");
+  }
+  return data;
 }
 
 // Format attendu par minecraft-launcher-core (voir mcLaunch.js) — construit
@@ -230,7 +279,9 @@ async function finishSignIn(msAccessToken) {
   const xbl = await authenticateXboxLive(msAccessToken);
   const userHash = xbl.DisplayClaims.xui[0].uhs;
   const xsts = await authenticateXsts(xbl.Token);
-  const xuid = xsts.DisplayClaims.xui[0].xid;
+  // Facultatif (voir le commentaire dans authenticateXsts) : ne doit jamais faire planter la
+  // connexion si absent.
+  const xuid = xsts.DisplayClaims?.xui?.[0]?.xid;
   const mcAuth = await loginWithXbox(xsts.Token, userHash);
   const profile = await getMinecraftProfile(mcAuth.access_token);
 
@@ -247,9 +298,10 @@ async function finishSignIn(msAccessToken) {
 
 async function signIn() {
   const { verifier, challenge } = createPkcePair();
-  const authUrl = buildAuthUrl(challenge);
+  const state = createState();
+  const authUrl = buildAuthUrl(challenge, state);
 
-  const code = await openLoginWindow(authUrl);
+  const code = await openLoginWindow(authUrl, state);
   const msToken = await exchangeCodeForToken(code, verifier);
   const result = await finishSignIn(msToken.access_token);
   return { ...result, refreshToken: msToken.refresh_token };

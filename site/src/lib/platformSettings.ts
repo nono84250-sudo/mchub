@@ -90,6 +90,30 @@ export async function clearLauncherMaintenance(): Promise<void> {
   await db.orm.public.PlatformSetting.where({ key: MAINTENANCE_KEY }).delete();
 }
 
+// Libellés affichés pour les deux rôles staff (admin/modérateur) — le nom change, pas les
+// permissions (toujours juste les deux rôles existants, voir adminAuth.ts). Reutilise
+// platformSetting comme la bannière ci-dessus : pas de table a part pour deux chaines.
+const ROLE_LABELS_KEY = "staff.roleLabels";
+export type StaffRoleLabels = { admin: string; moderator: string };
+const DEFAULT_ROLE_LABELS: StaffRoleLabels = { admin: "Administrateur", moderator: "Modérateur" };
+
+export async function getStaffRoleLabels(): Promise<StaffRoleLabels> {
+  const row = await db.orm.public.PlatformSetting.select("value").where({ key: ROLE_LABELS_KEY }).first();
+  if (!row) return DEFAULT_ROLE_LABELS;
+  try {
+    return { ...DEFAULT_ROLE_LABELS, ...JSON.parse(row.value) };
+  } catch {
+    return DEFAULT_ROLE_LABELS;
+  }
+}
+
+export async function setStaffRoleLabels(labels: StaffRoleLabels): Promise<void> {
+  await execSql(
+    'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"',
+    [ROLE_LABELS_KEY, JSON.stringify(labels), new Date().toISOString()],
+  );
+}
+
 // Réponse à renvoyer si la source est coupée, sinon null. Le launcher affiche le message.
 export async function sourceDisabledResponse(source: Source): Promise<NextResponse | null> {
   if (await isSourceEnabled(source)) return null;

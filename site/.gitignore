@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# cache fichier (survit aux redemarrages du serveur dev, voir lib/minecraft-versions.ts)
+/.cache/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -34,9 +34,14 @@ function isPrivateIPv4(ip: string): boolean {
 
 function isPrivateIPv6(ip: string): boolean {
   const normalized = ip.toLowerCase();
-  if (normalized === "::1") return true; // loopback
+  if (normalized === "::" || normalized === "::1") return true; // non specifiee / loopback
   if (normalized.startsWith("fe80:") || normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb")) return true; // link-local
   if (/^f[cd][0-9a-f]{2}:/.test(normalized)) return true; // unique local (fc00::/7)
+  // Prefixes de tunnel (audit §1.12) : encapsulent une adresse IPv4 potentiellement privee, ou
+  // relaient vers un reseau que l'hebergeur ne maitrise pas forcement.
+  if (normalized.startsWith("2002:")) return true; // 6to4 (2002::/16)
+  if (normalized.startsWith("2001::") || /^2001:0{1,4}:/.test(normalized)) return true; // Teredo (2001::/32)
+  if (normalized.startsWith("64:ff9b::") || normalized.startsWith("64:ff9b:1::")) return true; // NAT64 (64:ff9b::/96 et 64:ff9b:1::/48)
   const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (mapped) return isPrivateIPv4(mapped[1]);
   return false;

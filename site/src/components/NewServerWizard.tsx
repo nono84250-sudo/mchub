@@ -2,18 +2,20 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import { Globe, PuzzlePiece, ArrowRight, Info, GlobeHemisphereWest, LockSimple, Image, Cube, ImageSquare } from "@phosphor-icons/react";
+import { Globe, PuzzlePiece, ArrowRight, Info, LockSimple, Image, Cube, ImageSquare } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
 import { ImageDropzone } from "@/components/ImageDropzone";
 import { ModpackPicker, type ModpackValue } from "@/components/ModpackPicker";
 import { MinecraftVersionField } from "@/components/MinecraftVersionField";
-import { DEFAULT_MODPACK_SOURCE } from "@/lib/modpack-types";
+import { DEFAULT_MODPACK_SOURCE, type ModpackSource } from "@/lib/modpack-types";
+import { supportsAutoConnect } from "@/lib/minecraft-version-constants";
 import { LogoMark } from "@/components/LogoMark";
 import { useI18n } from "@/i18n/I18nProvider";
 
 type Props = {
   action: (prevState: ServerActionState, formData: FormData) => ServerActionState | Promise<ServerActionState>;
   versions: string[];
+  sourceStates?: Record<ModpackSource, boolean>;
 };
 
 // Assistant en 3 etapes pour la publication (maquette "Nocturne" — la
@@ -22,7 +24,7 @@ type Props = {
 // les 3 etapes : les champs des etapes precedentes restent montes (juste
 // masques en CSS) pour que leurs valeurs fassent partie de la soumission
 // finale, plutot que de dupliquer un state parallele pour chaque champ.
-export function NewServerWizard({ action, versions }: Props) {
+export function NewServerWizard({ action, versions, sourceStates }: Props) {
   const { t, locale } = useI18n();
   const STEPS = [
     { label: t("wizard.stepBasics") },
@@ -32,13 +34,18 @@ export function NewServerWizard({ action, versions }: Props) {
   const [state, formAction, pending] = useActionState(action, undefined);
   const [step, setStep] = useState(0);
   const [type, setType] = useState<"vanilla" | "modded">("vanilla");
-  const [visibility, setVisibility] = useState<"public" | "private">("public");
+  // Toute nouvelle fiche est privee (decision produit du 2026-10-10) : passer publique exige
+  // d'abord l'auto-test de publication reussi dans le launcher (voir selfTestPassedAt, et
+  // ServerForm.tsx pour le controle "Publier" une fois la fiche creee). Plus de choix a la
+  // creation : createServer le forcerait de toute facon meme si ce champ existait encore.
+  const visibility = "private" as const;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [ip, setIp] = useState("");
   const [minecraftVersion, setMinecraftVersion] = useState("");
   const [recommendedRamGB, setRecommendedRamGB] = useState("");
+  const [autoConnect, setAutoConnect] = useState(true);
 
   // Modpack choisi dans <ModpackPicker> (recherche CurseForge ou saisie
   // manuelle) : l'assistant n'a besoin que de l'identifiant, pour ne pas
@@ -128,45 +135,13 @@ export function NewServerWizard({ action, versions }: Props) {
 
         <div className="flex flex-col gap-2">
           <span className="field-label">{t("serverForm.visibility")}</span>
-          <div className="flex flex-col sm:flex-row gap-2.5">
-            <label
-              className="flex min-w-0 flex-1 items-start gap-2.5 rounded-md border px-3.5 py-3 cursor-pointer"
-              style={
-                visibility === "public"
-                  ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
-                  : { borderColor: "var(--border)", background: "var(--surface)" }
-              }
-            >
-              <input
-                type="radio" name="visibility" value="public" className="sr-only"
-                checked={visibility === "public"} onChange={() => setVisibility("public")}
-              />
-              <GlobeHemisphereWest className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "public" ? "var(--accent)" : "var(--muted)" }} />
-              <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                <span className="text-[13.5px] font-medium text-foreground">{t("serverForm.visibilityPublic")}</span>
-                <span className="text-xs text-muted leading-normal">{t("serverForm.visibilityPublicHelp")}</span>
-              </span>
-              <RadioDot selected={visibility === "public"} />
-            </label>
-            <label
-              className="flex min-w-0 flex-1 items-start gap-2.5 rounded-md border px-3.5 py-3 cursor-pointer"
-              style={
-                visibility === "private"
-                  ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)" }
-                  : { borderColor: "var(--border)", background: "var(--surface)" }
-              }
-            >
-              <input
-                type="radio" name="visibility" value="private" className="sr-only"
-                checked={visibility === "private"} onChange={() => setVisibility("private")}
-              />
-              <LockSimple className="h-[17px] w-[17px] mt-0.5 flex-shrink-0" style={{ color: visibility === "private" ? "var(--accent)" : "var(--muted)" }} />
-              <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                <span className="text-[13.5px] font-medium text-foreground">{t("serverForm.visibilityPrivate")}</span>
-                <span className="text-xs text-muted leading-normal">{t("serverForm.visibilityPrivateHelp")}</span>
-              </span>
-              <RadioDot selected={visibility === "private"} />
-            </label>
+          {/* Plus de choix a la creation : toute nouvelle fiche est privee (voir le
+              commentaire sur `visibility` ci-dessus). Champ cache quand meme envoye pour que
+              readForm() (lib/actions/servers.ts) reste inchange cote lecture du formulaire. */}
+          <input type="hidden" name="visibility" value="private" />
+          <div className="flex items-start gap-1.5 rounded-md border px-3.5 py-3 text-xs text-foreground" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+            <LockSimple className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-accent" />
+            <span className="leading-normal">{t("wizard.visibilityPrivateOnlyNote")}</span>
           </div>
         </div>
 
@@ -194,7 +169,7 @@ export function NewServerWizard({ action, versions }: Props) {
             aller-retour Vanilla/Modde. Les champs caches partent aussi en vanilla,
             createServer les ignore (voir lib/actions/servers.ts). */}
         <div className={type === "modded" ? undefined : "hidden"}>
-          <ModpackPicker onChange={setModpack} />
+          <ModpackPicker onChange={setModpack} sourceStates={sourceStates} />
         </div>
 
         <div className="mt-2 flex justify-end gap-2.5">
@@ -214,6 +189,11 @@ export function NewServerWizard({ action, versions }: Props) {
         <div>
           <h2 className="text-[26px] font-heading text-foreground mb-1.5">{t("wizard.connectionTitle")}</h2>
           <p className="text-sm text-muted">{t("wizard.connectionSubtitle")}</p>
+        </div>
+
+        <div className="flex items-start gap-1.5 rounded-md border px-3.5 py-3 text-xs text-foreground" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+          <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-accent" />
+          <span className="leading-normal">{t("wizard.connectionVerificationNote")}</span>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -259,6 +239,26 @@ export function NewServerWizard({ action, versions }: Props) {
               placeholder={t("serverForm.ramPlaceholder")} className="field-input"
             />
           </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          {/* FormData.get() renvoie la PREMIERE entree du meme nom en ordre DOM : la case doit
+              venir avant le hidden de repli (bug trouve par l'audit du 2026-10-10). */}
+          <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            <input
+              type="checkbox"
+              name="autoConnect"
+              value="true"
+              checked={autoConnect}
+              onChange={(e) => setAutoConnect(e.target.checked)}
+            />
+            {t("serverForm.autoConnect")}
+          </label>
+          <input type="hidden" name="autoConnect" value="false" />
+          <p className="text-xs text-muted">{t("serverForm.autoConnectHelp")}</p>
+          {autoConnect && effectiveVersion && !supportsAutoConnect(effectiveVersion) ? (
+            <p className="text-xs text-warn">{t("serverForm.autoConnectVersionWarning")}</p>
+          ) : null}
         </div>
 
         <div className="mt-2 flex justify-end gap-2.5">

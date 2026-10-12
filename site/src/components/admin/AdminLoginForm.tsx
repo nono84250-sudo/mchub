@@ -26,33 +26,56 @@ export function AdminLoginForm() {
       setError(data.error ?? "Connexion impossible.");
       return;
     }
-    router.push(data.mustChangeCredentials ? "/admin/premiere-connexion" : "/admin/administration");
+    // 2026-10-12 : Administration est desactivee (perimetre admin reduit) — Serveurs est
+    // la page d'entree par defaut.
+    router.push(data.mustChangeCredentials ? "/admin/premiere-connexion" : "/admin/servers");
     router.refresh();
   }
 
   return (
     <form onSubmit={submit} style={{ display: "grid", gap: 12, maxWidth: 360 }}>
-      <input name="username" placeholder="Nom d'utilisateur" autoComplete="username" required style={inputStyle} />
-      <input name="password" type="password" placeholder="Mot de passe" autoComplete="current-password" required style={inputStyle} />
-      {error && <p role="alert" style={{ color: "#f87171", margin: 0 }}>{error}</p>}
+      {/* 2026-10-10 : aria-label ajoute (pas de <label> visible dans la maquette) — sans ca, un
+         lecteur d'ecran n'avait que le placeholder, qui disparait a la saisie. */}
+      <input
+        name="username"
+        placeholder="Nom d'utilisateur"
+        aria-label="Nom d'utilisateur"
+        autoComplete="username"
+        required
+        style={inputStyle}
+      />
+      <input
+        name="password"
+        type="password"
+        placeholder="Mot de passe"
+        aria-label="Mot de passe"
+        autoComplete="current-password"
+        required
+        style={inputStyle}
+      />
+      {error && <p role="alert" style={{ color: "var(--danger)", margin: 0 }}>{error}</p>}
       <button type="submit" disabled={busy} style={buttonStyle}>{busy ? "Connexion…" : "Se connecter"}</button>
     </form>
   );
 }
 
+// 2026-10-12 : tokens Nocturne (--color-*) plutot que les tokens du site public
+// (--accent/--surface/--border) — ces champs vivent sur des pages admin qui chargent
+// nocturne.css, pas globals.css ; avec les anciens tokens ils rendaient dans les couleurs
+// du site public, visuellement incoherent avec le reste du panel.
 export const inputStyle: React.CSSProperties = {
   padding: "10px 12px",
-  borderRadius: 8,
-  border: "1px solid #2a2d45",
-  background: "#161826",
-  color: "#e5e7eb",
+  borderRadius: "var(--radius-md)",
+  border: "1px solid var(--color-divider)",
+  background: "var(--color-bg)",
+  color: "var(--color-text)",
 };
 
 export const buttonStyle: React.CSSProperties = {
   padding: "10px 14px",
-  borderRadius: 8,
-  border: "1px solid #9184d9",
-  background: "#9184d9",
-  color: "#fff",
+  borderRadius: "var(--radius-md)",
+  border: "1px solid var(--color-accent)",
+  background: "var(--color-accent)",
+  color: "var(--color-accent-100)",
   cursor: "pointer",
 };

@@ -10,13 +10,18 @@ export const metadata = { title: "Première connexion — Omniscient" };
 export default async function FirstLogin() {
   const admin = await getCurrentAdmin();
   if (!admin) redirect("/admin/login");
-  if (!admin.mustChangeCredentials) redirect("/admin/administration");
+  if (!admin.mustChangeCredentials) redirect("/admin/servers");
   return (
-    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0f1119", color: "#e5e7eb", padding: 16 }}>
-      <div>
-        <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 16 }}>Choisis tes identifiants</h1>
-        <AdminCredentialsForm firstLogin currentUsername={admin.username} />
-      </div>
-    </main>
+    <>
+      <link rel="stylesheet" href="/admin/nocturne.css" />
+      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--color-bg)", color: "var(--color-text)", padding: 16 }}>
+        <div style={{ width: 360, maxWidth: "100%" }}>
+          <h1 style={{ margin: "0 0 16px", fontWeight: 500, fontSize: 22 }}>Choisis tes identifiants</h1>
+          <div style={{ padding: 22, borderRadius: "var(--radius-md)", border: "1px solid var(--color-divider)", background: "var(--color-surface)" }}>
+            <AdminCredentialsForm firstLogin currentUsername={admin.username} />
+          </div>
+        </div>
+      </main>
+    </>
   );
 }

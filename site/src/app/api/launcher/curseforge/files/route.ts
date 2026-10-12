@@ -17,8 +17,15 @@ export async function POST(request: Request) {
   }
   const sourceOff = await sourceDisabledResponse("curseforge");
   if (sourceOff) return sourceOff;
-  // Cette route consomme le quota CurseForge de NOTRE cle : frein par adresse.
-  const limited = rateLimitResponse(request, "launcher-curseforge-files", 60);
+  // Cette route consomme le quota CurseForge de NOTRE cle, et les fileIds ne sont rattaches a
+  // aucun serveur visible par l'appelant (audit 2026-10-10 §1.7, severite basse) : un joueur
+  // identifie peut demander les liens de n'importe quel fichier CurseForge, pas seulement ceux
+  // d'un modpack d'un serveur qu'il peut voir. Lier chaque fileId au manifeste du serveur visible
+  // demanderait de faire remonter un slug depuis le launcher ET de re-resoudre/comparer le
+  // manifeste du modpack ici — risque de regression disproportionne pour une fuite de quota
+  // basse severite (aucune donnee utilisateur, juste des liens de telechargement de mods publics).
+  // Attenuation retenue : frein par adresse resserre (20/min au lieu de 60/min).
+  const limited = rateLimitResponse(request, "launcher-curseforge-files", 20);
   if (limited) return limited;
   // Point 3 : le quota reserve a un joueur identifie (session ou jeton Mojang). La cle seule ne suffit plus.
   if (!(await launcherIdentityUuid(request))) {

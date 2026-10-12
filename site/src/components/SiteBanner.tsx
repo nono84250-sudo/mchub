@@ -1,12 +1,13 @@
 import { getSiteBanner } from "@/lib/platformSettings";
 
-// Memes couleurs que le launcher (voir NOTIF_COLORS dans launcher/src/renderer.js) : une seule
-// convention de couleur par type de message diffuse, partagee entre les deux apps.
+// Repris sur les memes roles que le launcher (voir NOTIF_COLORS dans
+// launcher/src/renderer.js), mais via les tokens de theme (var(--accent) etc.)
+// plutot qu'en hex fige : les couleurs ne basculaient jamais en theme clair.
 const COLORS: Record<string, string> = {
-  announcement: "#9184d9",
-  maintenance: "#e8c547",
-  alert: "#e5484d",
-  promotion: "#5fd3a0",
+  announcement: "var(--accent)",
+  maintenance: "var(--warn)",
+  alert: "var(--danger)",
+  promotion: "var(--success)",
 };
 
 // Bannière du site, posée par un admin depuis /admin/notifications (voir platformSettings.ts).

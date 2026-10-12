@@ -4,7 +4,7 @@ import { Plus, ArrowRight, Globe, LockSimple } from "@phosphor-icons/react/ssr";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getT } from "@/i18n/getDictionary";
-import { FROZEN_CHIP_STYLE } from "@/lib/frozen";
+import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
 
 export const metadata = { title: "Mon espace — Omniscient" };
 
@@ -13,7 +13,17 @@ export default async function DashboardPage() {
   if (!session?.user?.id) redirect("/login");
   const { dict } = await getT();
 
-  const servers = await db.orm.public.Server.select("id", "slug", "name", "type", "published", "isPrivate", "frozenAt", "createdAt")
+  const servers = await db.orm.public.Server.select(
+    "id",
+    "slug",
+    "name",
+    "type",
+    "published",
+    "isPrivate",
+    "frozenAt",
+    "verificationStatus",
+    "createdAt",
+  )
     .where({ ownerId: session.user.id })
     .orderBy((s) => s.createdAt.desc())
     .all();
@@ -51,17 +61,35 @@ export default async function DashboardPage() {
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-5">
                   <div className="flex items-center gap-2">
+                    {/* 2026-10-10 : meme priorite d'affichage que manage/[id]/page.tsx (Overview) et
+                       ManageActions.tsx : frozen > pending > rejected > published > paused. */}
                     <span
                       className={
-                        server.frozenAt
+                        server.frozenAt || server.verificationStatus !== "approved" || !server.published || server.isPrivate
                           ? "tag-chip px-[9px] py-[3px] text-[11px]"
-                          : server.published
-                            ? "tag-chip tag-chip-accent px-[9px] py-[3px] text-[11px]"
-                            : "tag-chip border-transparent px-[9px] py-[3px] text-[11px] text-muted"
+                          : "tag-chip tag-chip-accent px-[9px] py-[3px] text-[11px]"
                       }
-                      style={server.frozenAt ? FROZEN_CHIP_STYLE : undefined}
+                      style={
+                        server.frozenAt
+                          ? FROZEN_CHIP_STYLE
+                          : server.verificationStatus === "pending"
+                            ? PENDING_CHIP_STYLE
+                            : server.verificationStatus === "rejected"
+                              ? { color: "var(--danger)" }
+                              : undefined
+                      }
                     >
-                      {server.frozenAt ? dict.dashboard.frozen : server.published ? dict.dashboard.published : dict.dashboard.paused}
+                      {server.frozenAt
+                        ? dict.dashboard.frozen
+                        : server.verificationStatus === "pending"
+                          ? dict.manage.pendingVerification
+                          : server.verificationStatus === "rejected"
+                            ? dict.manage.rejectedVerification
+                            : server.published && !server.isPrivate
+                              ? dict.dashboard.published
+                              : server.isPrivate
+                                ? dict.dashboard.notPublished
+                                : dict.dashboard.paused}
                     </span>
                     <span className="hidden items-center gap-[5px] text-[12.5px] text-muted sm:inline-flex">
                       {server.isPrivate ? <LockSimple className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}

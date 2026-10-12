@@ -5,7 +5,7 @@ import { getT } from "@/i18n/getDictionary";
 
 export const metadata = { title: "Connexion — Omniscient" };
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { dict } = await getT();
   // Microsoft a repondu mais la chaine Xbox -> Minecraft a echoue (voir auth.ts) :
   // sans ce message, la personne se retrouve ici sans comprendre pourquoi.
@@ -16,6 +16,14 @@ export default async function LoginPage() {
       : session?.error
         ? dict.auth.signInErrorProfile
         : null;
+
+  // 2026-10-10 : proxy.ts pose deja ?from=/dashboard/xxx quand une page protegee redirige
+  // ici — jamais lu auparavant, la connexion renvoyait donc toujours vers /dashboard tout
+  // court, meme en arrivant depuis une sous-page. Validation basique faite dans
+  // signInWithMicrosoft (doit commencer par "/", jamais une URL externe) : on se contente
+  // de lire la query ici.
+  const params = await searchParams;
+  const from = typeof params.from === "string" ? params.from : undefined;
 
   return (
     <AuthShell>
@@ -28,7 +36,7 @@ export default async function LoginPage() {
           {error}
         </p>
       )}
-      <MicrosoftSignInButton />
+      <MicrosoftSignInButton from={from} />
     </AuthShell>
   );
 }

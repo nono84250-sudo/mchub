@@ -9,6 +9,7 @@ import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { slugify } from "@/lib/slug";
 import { generateUniqueInviteCode } from "@/lib/inviteCode";
 import type { ModpackSource } from "@/lib/modpack-types";
+import { runAndStoreChecks } from "@/lib/verification";
 
 export type ServerActionState = { error: string } | undefined;
 
@@ -27,6 +28,7 @@ type ServerFormValues = {
   curseforgeModpackVersion: string | null;
   modpackSource: ModpackSource;
   recommendedRamGB: number | null;
+  autoConnect: boolean;
 };
 
 // Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher :
@@ -61,6 +63,10 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   const modpackSource: ModpackSource = formData.get("modpackSource") === "modrinth" ? "modrinth" : "curseforge";
   const recommendedRamRaw = String(formData.get("recommendedRamGB") ?? "").trim();
   const recommendedRamGB = recommendedRamRaw ? Number(recommendedRamRaw) : null;
+  // Coche par defaut (meme logique qu'un checkbox HTML absent du FormData quand decoche) :
+  // seule sa presence explicite a "false" la desactive (voir ServerForm.tsx, qui envoie
+  // toujours un champ hidden "0" a cote de la case pour ce cas precis).
+  const autoConnect = formData.get("autoConnect") !== "false";
 
   if (!name || !description || !minecraftVersion || !ip) {
     return { error: "Nom, description, version et IP sont obligatoires." };
@@ -94,6 +100,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
     curseforgeModpackVersion: type === "modded" ? curseforgeModpackVersion : null,
     modpackSource: type === "modded" ? modpackSource : "curseforge",
     recommendedRamGB,
+    autoConnect,
   };
 }
 
@@ -126,17 +133,29 @@ export async function createServer(_prevState: ServerActionState, formData: Form
   if ("error" in parsed) return parsed;
 
   const slug = await uniqueSlugFor(parsed.name);
-  const inviteCode = parsed.isPrivate ? await generateUniqueInviteCode() : null;
+  // Toute nouvelle fiche est privee, quoi qu'en dise le formulaire (visibilite retiree de
+  // l'etape 1 de NewServerWizard, mais on le force aussi ici au cas ou — jamais fier d'un
+  // champ client) : passer public exige d'abord l'auto-test de publication dans le launcher
+  // (voir /api/launcher/servers/[slug]/self-test et selfTestPassedAt sur server). Decision
+  // produit du 2026-10-10, en plus de la file de verification existante (verificationStatus).
+  const isPrivate = true;
+  const inviteCode = isPrivate ? await generateUniqueInviteCode() : null;
 
+  // Pas de verificationStatus: "pending" ici (laisse le defaut 'approved' de la colonne,
+  // schema.sql) et pas de runAndStoreChecks : une fiche neuve est toujours privee (ci-dessus),
+  // donc invisible de l'annuaire quoi qu'il arrive — l'envoyer tout de suite dans la file de
+  // verification admin encombrerait cette liste de fiches que le proprietaire ne publiera
+  // peut-etre jamais (decision produit du 2026-10-10). La vraie entree en file se fait dans
+  // updateServer, au moment ou le proprietaire demande reellement a passer public.
   const server = await db.orm.public.Server.create({
     ...parsed,
+    isPrivate,
     slug,
     inviteCode,
     ownerId: session.user.id,
   });
 
-  updateTag(SERVERS_CACHE_TAG); // visible tout de suite dans l'annuaire et l'API du launcher
-  revalidatePath("/servers");
+  updateTag(SERVERS_CACHE_TAG); // "Mes instances" (launcher) doit voir la nouvelle fiche tout de suite
   revalidatePath("/dashboard");
   redirect(`/manage/${server.id}`);
 }
@@ -155,18 +174,51 @@ export async function updateServer(
   const parsed = readForm(formData);
   if ("error" in parsed) return parsed;
 
+  // Un changement d'IP, de version declaree ou de modpack rend l'auto-test precedent caduc —
+  // meme esprit que runAndStoreChecks ci-dessous pour le controle automatique du site : une
+  // fiche qui a change de config doit retester sa connexion avant de pouvoir (re)publier.
+  const connectionChanged =
+    parsed.ip !== owned.ip ||
+    parsed.minecraftVersion !== owned.minecraftVersion ||
+    parsed.curseforgeModpackId !== owned.curseforgeModpackId ||
+    parsed.curseforgeModpackVersion !== owned.curseforgeModpackVersion ||
+    parsed.modpackSource !== owned.modpackSource;
+
+  // Passer PRIVE -> PUBLIC exige un auto-test de publication reussi dans le launcher (voir
+  // selfTestPassedAt / /api/launcher/servers/[slug]/self-test) — sans ca, on reste prive quoi
+  // qu'en dise le formulaire (le controle "Publier" du site est aussi masque dans ce cas,
+  // voir ServerForm.tsx, mais on ne fait jamais confiance a ce qui vient du client). Un
+  // changement de connexion invalide le test courant (ci-dessus) : meme si l'ancien
+  // selfTestPassedAt existe encore en base a cet instant, il ne compte plus pour la nouvelle
+  // config, donc on repasse prive aussi dans ce cas.
+  const isPrivate = parsed.isPrivate || !owned.selfTestPassedAt || connectionChanged;
+
   // Genere un code seulement en passant PUBLIC -> PRIVE sans code existant —
   // rebasculer en prive plus tard reutilise le meme code plutot que d'en
   // fabriquer un nouveau a chaque aller-retour (voir le commentaire sur
   // inviteCode dans contract.prisma).
-  const inviteCode = parsed.isPrivate && !owned.inviteCode ? await generateUniqueInviteCode() : owned.inviteCode;
+  const inviteCode = isPrivate && !owned.inviteCode ? await generateUniqueInviteCode() : owned.inviteCode;
+
+  // Le vrai moment d'une "demande de publication" : ce n'est QUE cette transition precise
+  // (prive -> public dans cette meme modification) qui doit faire entrer la fiche dans la
+  // file de verification admin — jamais une simple modification d'un serveur deja prive, et
+  // jamais une simple modification d'un serveur deja public et approuve (voir createServer/
+  // duplicateServer pour le meme raisonnement a la creation). Sans cette distinction, chaque
+  // modif d'un serveur encore prive renverrait inutilement des controles.
+  const enteringPublicationQueue = owned.isPrivate && !isPrivate;
 
   // Nouvelle adresse : le statut enregistré ne vaut plus rien, on la re-mesure à la prochaine visite
   // (sans ça, un serveur resté « hors ligne » attendrait jusqu'à 5 minutes).
   await db.orm.public.Server.where({ id: serverId }).update({
     ...parsed,
+    isPrivate,
     inviteCode,
     ...(parsed.ip !== owned.ip ? { lastPingedAt: null, playerCount: null, playerCapacity: null } : {}),
+    ...(connectionChanged ? { selfTestPassedAt: null, selfTestDetectedVersion: null } : {}),
+    // 2026-10-10 : verificationReason (motif du refus precedent) ne se vidait jamais — un
+    // serveur refuse puis republie gardait l'ancien motif affiche (manage/[id]/page.tsx) meme
+    // apres avoir ete remis en file et potentiellement reapprouve.
+    ...(enteringPublicationQueue ? { verificationStatus: "pending", verificationReason: null } : {}),
   });
 
   // Image remplacee ou retiree : l'ancienne ne sert plus a rien sur R2 (sauf si une fiche
@@ -174,6 +226,14 @@ export async function updateServer(
   if (parsed.bannerUrl !== owned.bannerUrl) await deleteR2ImageIfOwned(owned.bannerUrl, serverId);
   if (parsed.iconUrl !== owned.iconUrl) await deleteR2ImageIfOwned(owned.iconUrl, serverId);
   if (parsed.backgroundUrl !== owned.backgroundUrl) await deleteR2ImageIfOwned(owned.backgroundUrl, serverId);
+
+  // Controles automatiques du site : lances au moment ou la fiche entre reellement dans la
+  // file (ci-dessus), ou re-lances si une fiche deja en file (encore en attente/refusee,
+  // donc toujours publique a ce stade) est modifiee — jamais pour une fiche privee ou deja
+  // approuvee/publiee (voir le commentaire dans lib/verification.ts).
+  if (enteringPublicationQueue || (!isPrivate && owned.verificationStatus !== "approved")) {
+    await runAndStoreChecks(serverId, session.user.name ?? "le propriétaire", owned.verificationStatus === "rejected");
+  }
 
   updateTag(SERVERS_CACHE_TAG);
   revalidatePath("/servers");
@@ -205,7 +265,11 @@ export async function deleteServer(serverId: string) {
 // Retire/republie la fiche de l'annuaire public et de l'API consommee par
 // le launcher (voir published dans contract.prisma) sans supprimer la
 // configuration — pratique pour une maintenance temporaire.
-export async function toggleServerPublished(serverId: string) {
+// 2026-10-10 : renvoie desormais {error} dans les cas de rejet (serveur gele) plutot que de
+// retourner silencieusement sans rien faire — meme convention que createServer/updateServer,
+// pour que l'appelant (ManageActions) puisse l'afficher au lieu de laisser croire que le
+// bouton n'a rien fait.
+export async function toggleServerPublished(serverId: string): Promise<ServerActionState> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
@@ -213,7 +277,7 @@ export async function toggleServerPublished(serverId: string) {
   if (!owned) redirect("/dashboard");
 
   // Un serveur gelé par l'équipe ne se republie pas tout seul : seul un admin le dégèle.
-  if (owned.frozenAt) return;
+  if (owned.frozenAt) return { error: "Ce serveur est gelé par l'équipe : seul un admin peut le dégeler." };
   await db.orm.public.Server.where({ id: serverId }).update({ published: !owned.published });
 
   updateTag(SERVERS_CACHE_TAG); // pause / republication : effet immediat pour tout le monde
@@ -221,6 +285,7 @@ export async function toggleServerPublished(serverId: string) {
   revalidatePath(`/servers/${owned.slug}`);
   revalidatePath("/dashboard");
   revalidatePath(`/manage/${serverId}`);
+  return undefined;
 }
 
 // Cree une copie de la fiche (nouveau slug, meme configuration sauf le nom)
@@ -242,10 +307,13 @@ export async function duplicateServer(serverId: string) {
     bannerUrl: source.bannerUrl,
     iconUrl: source.iconUrl,
     backgroundUrl: source.backgroundUrl,
-    isPrivate: source.isPrivate,
+    // Comme createServer : toute nouvelle fiche est privee, meme une copie d'une fiche deja
+    // publique — elle doit repasser par son propre auto-test de publication (selfTestPassedAt
+    // n'est pas copie de la source, un code different connecte a un autre reseau/config).
+    isPrivate: true,
     // Jamais le meme code que l'original : deux fiches distinctes ne
     // doivent pas partager un lien d'invitation.
-    inviteCode: source.isPrivate ? await generateUniqueInviteCode() : null,
+    inviteCode: await generateUniqueInviteCode(),
     type: source.type,
     minecraftVersion: source.minecraftVersion,
     ip: source.ip,
@@ -254,11 +322,16 @@ export async function duplicateServer(serverId: string) {
     curseforgeModpackVersion: source.curseforgeModpackVersion,
     modpackSource: source.modpackSource,
     recommendedRamGB: source.recommendedRamGB,
+    autoConnect: source.autoConnect,
     // Une fiche mise en pause reste en pause dans sa copie — sans ça, un
     // serveur intentionnellement masque republiait automatiquement sa
     // copie (le defaut du schema est `true`).
     published: source.published,
     ownerId: session.user.id,
+    // Pas de verificationStatus: "pending" ni runAndStoreChecks ici — meme raisonnement que
+    // createServer : la copie est privee (ci-dessus), elle n'entre dans la file de
+    // verification admin qu'au moment ou son proprietaire la republie reellement (voir
+    // updateServer), pas a la simple duplication.
   });
 
   updateTag(SERVERS_CACHE_TAG);

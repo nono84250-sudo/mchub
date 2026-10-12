@@ -50,15 +50,30 @@ const MAX_IDENTITY_CACHE_ENTRIES = 10_000;
 //  - "unavailable" : Mojang ne se prononce pas (timeout, reseau, 429, 5xx...).
 export type IdentityCheck = "verified" | "refused" | "unavailable";
 
+// Verrou de compte (fiche joueur, panel admin) : distinct du gel d'UN serveur
+// (server.frozenAt). Un compte verrouille ne doit plus pouvoir s'authentifier
+// dans le launcher du tout. Interroge a chaque fois (comme sessionsValidAfter
+// plus bas) pour qu'un verrou pose par un admin coupe l'acces immediatement,
+// pas seulement a la prochaine expiration de cache/session.
+export async function getAccountLock(uuid: string): Promise<{ lockedReason: string | null } | null> {
+  const user = await db.orm.public.User.select("lockedAt", "lockedReason").where({ minecraftUuid: uuid }).first();
+  return user?.lockedAt ? { lockedReason: user.lockedReason ?? null } : null;
+}
+
 // Une requete normale vers Mojang repond en quelques centaines de ms. 5 s laisse
 // une grosse marge aux pointes de charge sans bloquer le sondage du launcher
 // (toutes les 30 s) ni depasser la limite de duree des fonctions serverless.
 const MOJANG_TIMEOUT_MS = 5_000;
 
 // Interroge Mojang pour un jeton : renvoie l'UUID confirme, ou la raison du refus.
-async function lookupMojangProfile(token: string): Promise<{ uuid: string } | { check: "refused" | "unavailable" }> {
+async function lookupMojangProfile(token: string): Promise<{ uuid: string } | { check: "refused" | "unavailable" | "locked" }> {
   const cached = identityCache.get(token);
-  if (cached && cached.expiresAt > Date.now()) return { uuid: cached.uuid };
+  if (cached && cached.expiresAt > Date.now()) {
+    // Le cache ne retient que l'identite Mojang, pas le verrou : on le revérifie
+    // a chaque appel pour qu'un verrou pose par un admin coupe l'acces tout de suite.
+    if (await getAccountLock(cached.uuid)) return { check: "locked" };
+    return { uuid: cached.uuid };
+  }
 
   let verifiedUuid: string;
   try {
@@ -76,6 +91,8 @@ async function lookupMojangProfile(token: string): Promise<{ uuid: string } | { 
     return { check: "unavailable" };
   }
 
+  if (await getAccountLock(verifiedUuid)) return { check: "locked" };
+
   if (identityCache.size > MAX_IDENTITY_CACHE_ENTRIES) {
     const now = Date.now();
     for (const [key, entry] of identityCache) if (entry.expiresAt <= now) identityCache.delete(key);
@@ -87,7 +104,7 @@ async function lookupMojangProfile(token: string): Promise<{ uuid: string } | { 
 export async function verifyMinecraftIdentity(token: string | null, claimedUuid: string | null): Promise<IdentityCheck> {
   if (!token || !claimedUuid) return "refused";
   const result = await lookupMojangProfile(token);
-  if ("check" in result) return result.check === "refused" ? "refused" : "unavailable";
+  if ("check" in result) return result.check === "unavailable" ? "unavailable" : "refused";
   return result.uuid === normalizeMinecraftUuid(claimedUuid) ? "verified" : "refused";
 }
 
@@ -101,8 +118,9 @@ export async function verifyMinecraftIdentity(token: string | null, claimedUuid:
 export async function sessionIdentity(token: string): Promise<string | null> {
   const claims = readLauncherSession(token);
   if (!claims) return null;
-  const user = await db.orm.public.User.select("sessionsValidAfter").where({ minecraftUuid: claims.uuid }).first();
+  const user = await db.orm.public.User.select("sessionsValidAfter", "lockedAt").where({ minecraftUuid: claims.uuid }).first();
   if (isSessionRevoked(claims.issuedAt, user?.sessionsValidAfter)) return null;
+  if (user?.lockedAt) return null;
   return claims.uuid;
 }
 

@@ -39,9 +39,16 @@ const SOURCE_LABELS: Record<ModpackSource, string> = { curseforge: "CurseForge",
 export function ModpackPicker({
   defaultValue,
   onChange,
+  sourceStates,
 }: {
   defaultValue?: ModpackValue;
   onChange?: (value: ModpackValue) => void;
+  // 2026-10-12 : etat des interrupteurs admin (voir AdminSourceToggles) — sans ca, une source
+  // coupee par l'equipe restait affichee comme une option normale ici, et le joueur ne
+  // decouvrait le probleme qu'apres avoir essaye de chercher un modpack (signale par
+  // l'utilisateur : confusion -> signalements evitables). Optionnel pour ne pas casser un
+  // appelant qui ne l'a pas encore (traite alors toutes les sources comme activees).
+  sourceStates?: Record<ModpackSource, boolean>;
 }) {
   const { t } = useI18n();
   const [source, setSource] = useState<ModpackSource>(defaultValue?.id ? defaultValue.source : DEFAULT_MODPACK_SOURCE);
@@ -113,27 +120,39 @@ export function ModpackPicker({
 
       <span className="field-label">{t("wizard.modpackSourceLabel")}</span>
       <div role="radiogroup" aria-label={t("wizard.modpackSourceLabel")} className="inline-flex w-fit overflow-hidden rounded-md border border-border">
-        {MODPACK_SOURCES.map((option, index) => (
-          <button
-            key={option}
-            type="button"
-            role="radio"
-            aria-checked={source === option}
-            onClick={() => changeSource(option)}
-            className={`px-3.5 py-2 text-sm ${index > 0 ? "border-l border-border" : ""}`}
-            style={
-              source === option
-                ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: "var(--accent)" }
-                : { color: "var(--muted)" }
-            }
-          >
-            {SOURCE_LABELS[option]}
-          </button>
-        ))}
+        {MODPACK_SOURCES.map((option, index) => {
+          const disabled = sourceStates?.[option] === false;
+          return (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={source === option}
+              onClick={() => changeSource(option)}
+              className={`px-3.5 py-2 text-sm ${index > 0 ? "border-l border-border" : ""}`}
+              style={
+                disabled
+                  ? { color: "var(--danger)" }
+                  : source === option
+                    ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: "var(--accent)" }
+                    : { color: "var(--muted)" }
+              }
+            >
+              {SOURCE_LABELS[option]}
+              {disabled ? " ⚠" : ""}
+            </button>
+          );
+        })}
       </div>
-      <p className="mb-1 text-xs text-muted2">
-        {source === "modrinth" ? t("wizard.modpackModrinthHint") : t("wizard.modpackCurseforgeHint")}
-      </p>
+      {sourceStates?.[source] === false ? (
+        <p className="mb-1 text-xs" style={{ color: "var(--danger)" }}>
+          {t("wizard.modpackSourceDisabled", { source: SOURCE_LABELS[source] })}
+        </p>
+      ) : (
+        <p className="mb-1 text-xs text-muted2">
+          {source === "modrinth" ? t("wizard.modpackModrinthHint") : t("wizard.modpackCurseforgeHint")}
+        </p>
+      )}
 
       {manualEntry ? (
         <div className="flex flex-col gap-4">

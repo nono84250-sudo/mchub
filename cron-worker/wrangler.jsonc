@@ -1,0 +1,11 @@
+{
+  "name": "omniscient-scheduled-broadcasts",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "vars": {
+    "SITE_URL": "http://localhost:3000"
+  }
+}

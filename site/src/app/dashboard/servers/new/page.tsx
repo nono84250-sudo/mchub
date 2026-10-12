@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { createServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
+import { allSourceStates } from "@/lib/platformSettings";
 import { NewServerWizard } from "@/components/NewServerWizard";
 
 export const metadata = { title: "Nouveau serveur — Omniscient" };
@@ -14,7 +15,7 @@ export default async function NewServerPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const versions = await getMinecraftVersions();
+  const [versions, sourceStates] = await Promise.all([getMinecraftVersions(), allSourceStates()]);
 
-  return <NewServerWizard action={createServer} versions={versions} />;
+  return <NewServerWizard action={createServer} versions={versions} sourceStates={sourceStates} />;
 }

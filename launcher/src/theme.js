@@ -8,7 +8,13 @@
 // i18n.js, qui a cause une vraie collision de nom avant l'ajout du wrapper).
 (function () {
 
-const ACCENT_PRESETS = ["#9184d9", "#5fa3d3", "#5fd3a0", "#e0a45f", "#d17ab0"];
+// Bleu (2026-10-11) en position 0 : nouvelle couleur par defaut, l'ancien
+// blurple reste disponible en 2e position pour qui l'avait deja choisi.
+// Re-sature la meme nuance (2026-10-11, suite a la comparaison avec
+// Modrinth) : la version precedente (#5fa3d3) etait jugee trop pastel pour
+// que les elements importants ressortent — pas une nouvelle couleur, juste
+// la meme poussee plus loin.
+const ACCENT_PRESETS = ["#2792dd", "#9184d9", "#5fd3a0", "#e0a45f", "#d17ab0"];
 
 function resolveThemeMode(theme) {
   if (theme === "light" || theme === "dark") return theme;

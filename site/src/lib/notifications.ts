@@ -15,7 +15,9 @@ export type NotificationType =
   | "broadcast_announcement"
   | "broadcast_maintenance"
   | "broadcast_alert"
-  | "broadcast_promotion";
+  | "broadcast_promotion"
+  | "verification_approved"
+  | "verification_rejected";
 
 export type NotificationSummary = {
   id: string;
@@ -24,6 +26,7 @@ export type NotificationSummary = {
   message: string | null;
   read: boolean;
   createdAt: string;
+  eventAt: string | null;
 };
 
 export async function createNotification(input: {
@@ -31,34 +34,77 @@ export async function createNotification(input: {
   type: NotificationType;
   serverName: string;
   message?: string | null;
+  // Instant UTC de l'evenement annonce (ex. debut d'une maintenance programmee) : affiche
+  // cote client dans le fuseau de chaque destinataire (voir notifItemHtml cote launcher).
+  eventAt?: string | null;
 }) {
   return db.orm.public.Notification.create({
     recipientMinecraftUuid: input.recipientMinecraftUuid,
     type: input.type,
     serverName: input.serverName,
     message: input.message ?? null,
+    eventAt: input.eventAt ?? null,
   });
+}
+
+// Qui reçoit une diffusion (panel admin, voir /api/admin/notifications/send et
+// /api/cron/process-scheduled) — partage par l'envoi immediat et par les diffusions
+// programmees, pour ne pas dupliquer la resolution des destinataires.
+export async function resolveAudienceRecipients(audience: "everyone" | "owners"): Promise<string[]> {
+  if (audience === "owners") {
+    const [users, servers] = await Promise.all([
+      db.orm.public.User.select("id", "minecraftUuid").all(),
+      db.orm.public.Server.select("ownerId").all(),
+    ]);
+    const ownerIds = new Set(servers.map((s) => s.ownerId));
+    return users.filter((u) => ownerIds.has(u.id) && u.minecraftUuid).map((u) => u.minecraftUuid!);
+  }
+  const users = await db.orm.public.User.select("minecraftUuid").all();
+  return users.map((u) => u.minecraftUuid).filter((u): u is string => !!u);
 }
 
 // Diffusion a plusieurs destinataires (panel admin, voir /admin/notifications) — une ligne par
 // destinataire, pas de table a part : c'est la meme Notification que les messages individuels,
 // juste creee en boucle. Pas de lot/traçabilite commune entre les destinataires d'un meme envoi.
+//
+// INSERT groupe (plusieurs lignes VALUES par requete) au lieu d'un aller-retour D1 par
+// destinataire — meme principe que markNotificationsRead/deleteReadNotifications ci-dessous,
+// sauf qu'ici createNotification() ne peut pas etre reutilisee telle quelle (elle ne fait
+// qu'une ligne). Decoupe en lots : l'API REST D1 borne le nombre de parametres lies par
+// requete, donc un envoi "everyone" avec beaucoup de destinataires reste plusieurs requetes —
+// un petit nombre de lots plutot qu'un aller-retour par destinataire.
+const BROADCAST_CHUNK_SIZE = 50; // 50 lignes * 6 parametres = 300, large marge sous la limite D1
 export async function broadcastNotification(input: {
   recipientMinecraftUuids: string[];
   type: NotificationType;
   serverName: string;
   message?: string | null;
+  eventAt?: string | null;
 }): Promise<number> {
-  for (const uuid of input.recipientMinecraftUuids) {
-    await createNotification({ recipientMinecraftUuid: uuid, type: input.type, serverName: input.serverName, message: input.message });
+  const uuids = input.recipientMinecraftUuids;
+  if (uuids.length === 0) return 0;
+  const message = input.message ?? null;
+  const eventAt = input.eventAt ?? null;
+
+  for (let i = 0; i < uuids.length; i += BROADCAST_CHUNK_SIZE) {
+    const chunk = uuids.slice(i, i + BROADCAST_CHUNK_SIZE);
+    const params: unknown[] = [];
+    const rows = chunk.map((uuid) => {
+      params.push(crypto.randomUUID(), uuid, input.type, input.serverName, message, eventAt);
+      return "(?, ?, ?, ?, ?, ?)";
+    });
+    await execSql(
+      `INSERT INTO "notification" ("id", "recipientMinecraftUuid", "type", "serverName", "message", "eventAt") VALUES ${rows.join(", ")}`,
+      params,
+    );
   }
-  return input.recipientMinecraftUuids.length;
+  return uuids.length;
 }
 
 // Les 30 plus recentes suffisent pour un panneau de cloche — pas de
 // pagination, meme raisonnement que listReportsForServer.
 export async function listNotificationsForRecipient(minecraftUuid: string): Promise<NotificationSummary[]> {
-  return db.orm.public.Notification.select("id", "type", "serverName", "message", "read", "createdAt")
+  return db.orm.public.Notification.select("id", "type", "serverName", "message", "read", "createdAt", "eventAt")
     .where({ recipientMinecraftUuid: minecraftUuid })
     .orderBy((n) => n.createdAt.desc())
     .limit(30)

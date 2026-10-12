@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { ADMIN_COOKIE, ADMIN_SESSION_TTL_MS, createAdminSession, verifyPassword } from "@/lib/adminAuth";
+import { ADMIN_COOKIE, ADMIN_SESSION_TTL_MS, DUMMY_PASSWORD_HASH, createAdminSession, verifyPassword } from "@/lib/adminAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Connexion au panel admin : nom d'utilisateur + mot de passe. Limité par adresse
@@ -18,7 +18,11 @@ export async function POST(request: Request) {
   const account = await db.orm.public.AdminAccount.select("id", "passwordHash", "role", "mustChangeCredentials")
     .where({ username })
     .first();
-  if (!account || !(await verifyPassword(password, account.passwordHash))) return invalid;
+  // Verifie toujours le mot de passe, meme si le compte n'existe pas (contre un hash factice) :
+  // sinon la reponse est plus rapide pour un nom d'utilisateur inconnu que pour un mauvais mot
+  // de passe, ce qui laisse deviner des noms d'utilisateur valides par le temps de reponse.
+  const passwordOk = await verifyPassword(password, account?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  if (!account || !passwordOk) return invalid;
 
   const token = createAdminSession(account.id, account.role === "admin" ? "admin" : "moderator");
   if (!token) return NextResponse.json({ error: "Connexion indisponible (configuration du serveur)." }, { status: 503 });

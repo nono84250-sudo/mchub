@@ -34,19 +34,37 @@ function parseJavaMajorVersion(versionString) {
   return Number.isFinite(major) ? major : null;
 }
 
+// Timeout generique pour les process externes (java -version, powershell) qui peuvent ne
+// jamais se terminer (wrapper antivirus/EDR casse, lien symbolique en boucle) — sans ca, un
+// seul binaire bloque bloquait tout le pipeline de lancement sans aucun message (audit du
+// 2026-10-10).
+const PROCESS_TIMEOUT_MS = 15_000;
+const FETCH_TIMEOUT_MS = 20_000;
+
 function detectJava(javaPath) {
   return new Promise((resolve) => {
     const proc = spawn(javaPath || "java", ["-version"]);
     let output = "";
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      proc.kill();
+      finish({ found: false });
+    }, PROCESS_TIMEOUT_MS);
     proc.stderr.on("data", (d) => (output += d.toString()));
     proc.stdout.on("data", (d) => (output += d.toString()));
-    proc.on("error", () => resolve({ found: false }));
+    proc.on("error", () => finish({ found: false }));
     proc.on("exit", () => {
-      if (!output) return resolve({ found: false });
+      if (!output) return finish({ found: false });
       const versionMatch = output.match(/version "([\d._]+)"/);
       const version = versionMatch ? versionMatch[1] : null;
       const majorVersion = parseJavaMajorVersion(version);
-      resolve({
+      finish({
         found: true,
         version,
         majorVersion,
@@ -60,7 +78,7 @@ function detectJava(javaPath) {
 async function fetchLatestJreInfo(major) {
   // Le numero de version finit dans une URL : entier borne, jamais du texte libre.
   if (!Number.isInteger(major) || major < 8 || major > 99) throw new Error(`Version de Java invalide : ${major}.`);
-  const res = await fetch(adoptiumApiUrl(major));
+  const res = await fetch(adoptiumApiUrl(major), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`L'API Adoptium a répondu ${res.status}.`);
   const data = await res.json();
   const asset = data[0];
@@ -92,8 +110,19 @@ function extractZip(zipPath, destDir) {
       "-Command",
       `Expand-Archive -LiteralPath '${escapePowerShellSingleQuoted(zipPath)}' -DestinationPath '${escapePowerShellSingleQuoted(destDir)}' -Force`,
     ]);
-    proc.on("error", reject);
-    proc.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`Extraction échouée (code ${code}).`))));
+    let settled = false;
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(() => {
+      proc.kill();
+      finish(() => reject(new Error("Extraction de Java : délai dépassé.")));
+    }, PROCESS_TIMEOUT_MS);
+    proc.on("error", (error) => finish(() => reject(error)));
+    proc.on("exit", (code) => finish(() => (code === 0 ? resolve() : reject(new Error(`Extraction échouée (code ${code}).`)))));
   });
 }
 
@@ -110,19 +139,36 @@ function findExtractedJavaExe(destDir) {
   return null;
 }
 
+// Verrou par destDir : deux appels concurrents pour le meme major (ex. deux "Jouer" sur deux
+// serveurs necessitant tous les deux Java 21, avant que le premier ait fini) ecrivaient sinon
+// dans le MEME tmpZip et faisaient chacun un rmSync(destDir) sur le dossier de l'autre —
+// corruption ou suppression croisee (course trouvee par l'audit du 2026-10-10). Le second
+// appelant attend simplement le resultat du premier au lieu de relancer son propre telechargement.
+const downloadLocks = new Map();
+
 // `major` / `destDir` : par defaut Java 21 dans RUNTIME_DIR (comportement historique,
 // utilise par le bouton "installer Java") ; un autre `major` s'installe dans son
 // propre dossier pour ne jamais ecraser le Java 21 deja gere.
-async function downloadAndInstallJava(onProgress, { major = MIN_JAVA_MAJOR, destDir = RUNTIME_DIR } = {}) {
+function downloadAndInstallJava(onProgress, options = {}) {
+  const destDir = options.destDir ?? RUNTIME_DIR;
+  const existing = downloadLocks.get(destDir);
+  if (existing) return existing;
+  const promise = downloadAndInstallJavaLocked(onProgress, options).finally(() => downloadLocks.delete(destDir));
+  downloadLocks.set(destDir, promise);
+  return promise;
+}
+
+async function downloadAndInstallJavaLocked(onProgress, { major = MIN_JAVA_MAJOR, destDir = RUNTIME_DIR } = {}) {
   const info = await fetchLatestJreInfo(major);
   onProgress?.(`Téléchargement de Java ${info.version}…`);
 
   // path.basename() par prudence : info.name vient de la reponse JSON de
   // l'API Adoptium, jamais interpolee dans un chemin sans passer par ce
   // garde-fou (defense en profondeur si ce nom contenait un jour des
-  // sequences "../").
-  const tmpZip = path.join(app.getPath("temp"), path.basename(info.name));
-  const res = await fetch(info.url);
+  // sequences "../"). Prefixe aleatoire en plus du verrou ci-dessus : defense en
+  // profondeur si jamais deux destDir distincts partageaient le meme nom de fichier Adoptium.
+  const tmpZip = path.join(app.getPath("temp"), `${crypto.randomUUID()}-${path.basename(info.name)}`);
+  const res = await fetch(info.url, { signal: AbortSignal.timeout(10 * 60_000) });
   if (!res.ok || !res.body) throw new Error(`Téléchargement échoué (${res.status}).`);
 
   const hash = crypto.createHash("sha256");

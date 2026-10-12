@@ -11,6 +11,10 @@ import { isPrivateOrReservedAddress } from "@/lib/ssrfGuard";
 export type MinecraftServerStatus = {
   online: number;
   max: number;
+  // Nom de version renvoyé par le serveur (ex. "1.21.1", "Paper 1.20.4") — déjà présent
+  // dans la réponse de statut, jamais lu jusqu'ici. Sert à la verification "declare vs
+  // detecte" sans client du protocole supplementaire (voir lib/verification.ts).
+  versionName: string | null;
 };
 
 const PING_TIMEOUT_MS = 3000;
@@ -118,11 +122,12 @@ function tryParseStatusResponse(buffer: Buffer): MinecraftServerStatus | null {
   if (buffer.length < jsonEnd) return null;
 
   const jsonStr = buffer.subarray(jsonStart, jsonEnd).toString("utf8");
-  const data = JSON.parse(jsonStr) as { players?: { online?: number; max?: number } };
+  const data = JSON.parse(jsonStr) as { players?: { online?: number; max?: number }; version?: { name?: string } };
 
   return {
     online: typeof data.players?.online === "number" ? data.players.online : 0,
     max: typeof data.players?.max === "number" ? data.players.max : 0,
+    versionName: typeof data.version?.name === "string" ? data.version.name : null,
   };
 }
 

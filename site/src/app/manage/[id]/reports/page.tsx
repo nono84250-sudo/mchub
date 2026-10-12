@@ -3,8 +3,8 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { listReportsForServer, getReportDetail, type ReportStatus, type ReportIssue } from "@/lib/reports";
-import { markReportResolved } from "@/lib/actions/reports";
 import { ReportReplyForm } from "@/components/ReportReplyForm";
+import { MarkReportResolvedButton } from "@/components/MarkReportResolvedButton";
 import { getT } from "@/i18n/getDictionary";
 
 export const metadata = { title: "Signalements — Omniscient" };
@@ -151,8 +151,8 @@ export default async function ManageServerReportsPage({ params, searchParams }: 
                   <p
                     className="rounded-md border p-3 text-xs leading-relaxed"
                     style={{
-                      borderColor: "color-mix(in srgb, #e0c28a 35%, transparent)",
-                      background: "color-mix(in srgb, #e0c28a 7%, transparent)",
+                      borderColor: "color-mix(in srgb, var(--warn) 35%, transparent)",
+                      background: "color-mix(in srgb, var(--warn) 7%, transparent)",
                     }}
                   >
                     {dict.reports.versionMismatchHint
@@ -168,11 +168,7 @@ export default async function ManageServerReportsPage({ params, searchParams }: 
                     {dict.reports.openSettings}
                   </Link>
                   {selected.status !== "resolved" ? (
-                    <form action={markReportResolved.bind(null, selected.id)} className="ml-auto">
-                      <button type="submit" className="btn-primary text-sm">
-                        {dict.reports.markResolved}
-                      </button>
-                    </form>
+                    <MarkReportResolvedButton reportId={selected.id} label={dict.reports.markResolved} />
                   ) : null}
                 </div>
               </>

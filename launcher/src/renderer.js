@@ -6,6 +6,7 @@ const gateLoginBtn = document.getElementById("gate-login");
 const appEl = document.getElementById("app");
 const statusEl = document.getElementById("status");
 const listEl = document.getElementById("list");
+const listTitleEl = document.getElementById("list-title");
 const listToolbarEl = document.getElementById("list-toolbar");
 const listSearchInputEl = document.getElementById("list-search-input");
 const sortRecentBtn = document.getElementById("sort-recent");
@@ -70,7 +71,7 @@ function playersLabel(server) {
   const online = server.playerCount !== null && server.playerCount !== undefined;
   // Contacté mais sans réponse : serveur fermé, en rouge (et non « statut inconnu »).
   if (!online && server.pinged) {
-    return `<span class="status-dot" style="background:#e5484d"></span><span style="color:#e5484d">${t("serverCard.offline")}</span>`;
+    return `<span class="status-dot" style="background:var(--danger)"></span><span style="color:var(--danger)">${t("serverCard.offline")}</span>`;
   }
   return `<span class="status-dot${online ? " online" : ""}"></span>${playersText(server)}`;
 }
@@ -81,6 +82,23 @@ function playersLabel(server) {
 const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
+// Active un element au clavier (Entree/Espace) en plus du clic souris — pour les
+// ".row"/cartes cliquees via un simple <div onclick> sans semantique de bouton
+// native (voir serverRowHtml/homeContinueCardHtml). Ne reagit qu'a l'element
+// focalise lui-meme : un bouton imbrique (etoile favori, "Jouer"...) gere deja
+// son propre clic/clavier et appelle stopPropagation() sur son clic, donc ce
+// garde-fou evite de declencher aussi l'activation de la ligne en plus du
+// bouton quand Entree/Espace est presse alors que le focus est sur ce bouton.
+function onRowActivate(el, handler) {
+  el.addEventListener("click", handler);
+  el.addEventListener("keydown", (event) => {
+    if (event.target !== el) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    handler(event);
+  });
 }
 
 function serverInitial(name) {
@@ -134,7 +152,7 @@ function isOwnServer(server) {
 function serverRowHtml(server, isFav) {
   const ownerTag = isOwnServer(server) ? `<span class="owner-tag">${t("serverCard.owner")}</span>` : "";
   return `
-    <div class="row" data-slug="${escapeHtml(server.slug)}">
+    <div class="row" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0">
       <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverIconInner(server)}</span>
       <div class="row-body">
         <div class="row-title-line">
@@ -208,7 +226,7 @@ async function renderRowsInto(container, servers, origin, onFavoriteToggled) {
   container.innerHTML = servers.map((server) => serverRowHtml(server, favorites.includes(server.slug))).join("");
 
   container.querySelectorAll(".row").forEach((row) => {
-    row.addEventListener("click", () => {
+    onRowActivate(row, () => {
       detailOrigin = origin;
       openDetail(row.dataset.slug);
     });
@@ -232,6 +250,7 @@ async function renderFilteredList() {
   const filtered = applySearchAndSort(allServers);
   if (filtered.length === 0 && listSearchQuery.trim()) {
     listEl.innerHTML = "";
+    document.getElementById("server-list-pager-slot").innerHTML = "";
     statusEl.hidden = false;
     statusEl.classList.remove("error");
     statusEl.textContent = t("serverList.noResults");
@@ -244,7 +263,7 @@ async function renderFilteredList() {
   const shown = filtered.slice((serverListPage - 1) * SERVER_LIST_PAGE_SIZE, serverListPage * SERVER_LIST_PAGE_SIZE);
 
   await renderRowsInto(listEl, shown, "servers", renderFilteredList);
-  listEl.insertAdjacentHTML("beforeend", instancesPagerHtml(serverListPage, pageCount, "server-list-pager"));
+  document.getElementById("server-list-pager-slot").innerHTML = topPagerHtml(serverListPage, pageCount, "server-list-pager");
   document.getElementById("server-list-pager-prev")?.addEventListener("click", () => {
     serverListPage -= 1;
     renderFilteredList();
@@ -259,6 +278,7 @@ async function renderList(servers) {
   detailEl.hidden = true;
   listEl.hidden = false;
   listToolbarEl.hidden = servers.length === 0;
+  listTitleEl.hidden = servers.length === 0;
   allServers = servers;
 
   if (servers.length === 0) {
@@ -344,15 +364,27 @@ async function renderDetail(server) {
     tags.push(`<span class="tag-chip">${escapeHtml(server.curseforgeModpackName)}${version}</span>`);
   }
 
-  // signedIn est toujours vrai ici (le portail bloque l'accès sans connexion),
-  // mais on garde le garde-fou par prudence. La progression de lancement ne
+  // Toujours actif, meme sans connexion (2026-10-11, audit onboarding) :
+  // launchServer() demande la connexion lui-meme au clic si besoin — plus de
+  // bouton desactive avec une note a ce stade. La progression de lancement ne
   // s'affiche plus ici — voir launchServer()/la barre de lancement rapide.
-  const joinSection = signedIn
-    ? `<button class="join-btn" id="join-btn">${t("serverDetail.joinBtn")}</button>`
-    : `
-      <button class="join-btn" disabled>${t("serverDetail.joinBtn")}</button>
-      <p class="join-note">${t("serverDetail.joinNote")}</p>
-    `;
+  // "Installer" a cote de "Rejoindre" (2026-10-11, audit onboarding) :
+  // telecharge le modpack/Java sans lancer le jeu, donc sans demander de
+  // connexion — voir installServerStandalone(). "Rejoindre" reste le seul
+  // bouton qui demande un compte Microsoft (voir launchServer()).
+  // "Installer" disponible pour tous les types de serveur (2026-10-11) : un
+  // vanilla profite aussi de pouvoir etre prepare a l'avance (ex. avant un
+  // evenement programme, pour qui a une connexion lente) — pas qu'un confort
+  // reserve aux moddes. Une fois CE serveur precis pret, plus besoin du
+  // bouton — jamais une disparition globale, juste pour ce serveur (voir
+  // servers:installStatus cote main.js, qui gere les deux cas).
+  const showInstallBtn = !(await window.mchub.getServerInstallStatus(server.slug)).installed;
+  const joinSection = `
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+      <button class="join-btn" id="join-btn">${t("serverDetail.joinBtn")}</button>
+      ${showInstallBtn ? `<button class="btn-secondary" id="install-btn" type="button">${t("serverDetail.installBtn")}</button>` : ""}
+    </div>
+  `;
 
   const isFav = (await getFavoriteSlugs()).includes(server.slug);
 
@@ -389,7 +421,7 @@ async function renderDetail(server) {
         server.recommendedRamGB
           ? `<div class="stat-tile">
               <div class="stat-label">${t("serverDetail.recommendedRam")}</div>
-              <div class="stat-value">${server.recommendedRamGB} ${t("serverDetail.ramUnit")}</div>
+              <div class="stat-value">${escapeHtml(String(server.recommendedRamGB))} ${t("serverDetail.ramUnit")}</div>
             </div>`
           : ""
       }
@@ -411,6 +443,11 @@ async function renderDetail(server) {
     joinBtn.addEventListener("click", () => joinServer(server, joinBtn));
   }
 
+  const installBtn = document.getElementById("install-btn");
+  if (installBtn) {
+    installBtn.addEventListener("click", () => installServerStandalone(server, installBtn));
+  }
+
   const favBtn = detailEl.querySelector(".detail-favorite-btn");
   favBtn.addEventListener("click", async () => {
     await toggleFavorite(server.slug);
@@ -422,30 +459,62 @@ async function renderDetail(server) {
   if (reportBtn) reportBtn.addEventListener("click", () => openReportDialog(server));
 }
 
-const REPORT_ISSUES = ["cant_connect", "wrong_version", "modpack_download", "crash", "other"];
+const REPORT_ISSUES = {
+  technical: ["cant_connect", "wrong_version", "modpack_download", "crash", "other"],
+  behavior: ["stolen_server", "stolen_content", "impersonating", "inappropriate_content", "scam_phishing", "other"],
+};
 const reportOverlayEl = document.getElementById("report-overlay");
 const reportTitleEl = document.getElementById("report-title");
 const reportChipsEl = document.getElementById("report-issue-chips");
 const reportMessageEl = document.getElementById("report-message");
+const reportDiagnosticsFieldEl = document.getElementById("report-diagnostics-field");
 const reportDiagnosticsEl = document.getElementById("report-diagnostics");
 const reportDiagnosticsDetailEl = document.getElementById("report-diagnostics-detail");
+const reportProofFieldEl = document.getElementById("report-proof-field");
+const reportProofEl = document.getElementById("report-proof");
+const reportPrivacyNoteEl = document.getElementById("report-privacy-note");
+const reportCategoryTechnicalEl = document.getElementById("report-category-technical");
+const reportCategoryBehaviorEl = document.getElementById("report-category-behavior");
 const reportErrorEl = document.getElementById("report-error");
 const reportSendBtn = document.getElementById("report-send");
 const reportCancelBtn = document.getElementById("report-cancel");
 let reportSelectedIssue = null;
+let reportSelectedCategory = "technical";
 
 function closeReportDialog() {
   reportOverlayEl.hidden = true;
 }
 
-// Dialogue "Signaler un probleme technique" (voir "03b Report a server" dans
-// Design/Omniscient Launcher UI Mockups.dc.html) — uniquement pour le
-// proprietaire du serveur (voir le commentaire sur le modele Report cote
-// site pour la categorie "Comportement/contenu", pas implementee).
-async function openReportDialog(server) {
+function renderReportIssueChips() {
   reportSelectedIssue = null;
+  reportChipsEl.innerHTML = REPORT_ISSUES[reportSelectedCategory]
+    .map((issue) => `<button type="button" class="issue-chip" data-issue="${issue}">${t(`report.issue${issue.replace(/(^|_)(\w)/g, (_, __, c) => c.toUpperCase())}`)}</button>`)
+    .join("");
+  reportChipsEl.querySelectorAll(".issue-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      reportSelectedIssue = chip.dataset.issue;
+      reportChipsEl.querySelectorAll(".issue-chip").forEach((c) => c.classList.toggle("active", c === chip));
+    });
+  });
+}
+
+function setReportCategory(category) {
+  reportSelectedCategory = category;
+  reportCategoryTechnicalEl.classList.toggle("active", category === "technical");
+  reportCategoryBehaviorEl.classList.toggle("active", category === "behavior");
+  reportDiagnosticsFieldEl.hidden = category !== "technical";
+  reportProofFieldEl.hidden = category !== "behavior";
+  reportPrivacyNoteEl.textContent = category === "technical" ? t("report.privacyTechnical") : t("report.privacyBehavior");
+  renderReportIssueChips();
+}
+
+// Dialogue "Signaler" (voir "03b/03c Report a server" dans Design/Omniscient Launcher UI
+// Mockups.dc.html) — deux categories : "Probleme technique" (va au proprietaire) et
+// "Comportement/contenu" (va aux moderateurs Omniscient, jamais vu par le proprietaire).
+async function openReportDialog(server) {
   reportTitleEl.textContent = `${t("report.title")} — ${server.name}`;
   reportMessageEl.value = "";
+  reportProofEl.value = "";
   reportDiagnosticsEl.checked = true;
   const info = await window.mchub.diagnostics.getSystemInfo();
   reportDiagnosticsDetailEl.textContent = `client ${server.minecraftVersion} · launcher ${info.launcherVersion || ""}`;
@@ -453,15 +522,9 @@ async function openReportDialog(server) {
   reportSendBtn.disabled = false;
   reportSendBtn.textContent = t("report.send");
 
-  reportChipsEl.innerHTML = REPORT_ISSUES.map(
-    (issue) => `<button type="button" class="issue-chip" data-issue="${issue}">${t(`report.issue${issue.replace(/(^|_)(\w)/g, (_, __, c) => c.toUpperCase())}`)}</button>`,
-  ).join("");
-  reportChipsEl.querySelectorAll(".issue-chip").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      reportSelectedIssue = chip.dataset.issue;
-      reportChipsEl.querySelectorAll(".issue-chip").forEach((c) => c.classList.toggle("active", c === chip));
-    });
-  });
+  setReportCategory("technical");
+  reportCategoryTechnicalEl.onclick = () => setReportCategory("technical");
+  reportCategoryBehaviorEl.onclick = () => setReportCategory("behavior");
 
   reportOverlayEl.hidden = false;
 
@@ -477,10 +540,13 @@ async function openReportDialog(server) {
     reportSendBtn.textContent = t("report.sending");
     const result = await window.mchub.submitReport({
       slug: server.slug,
-      issue: reportSelectedIssue,
+      category: reportSelectedCategory,
+      issue: reportSelectedCategory === "technical" ? reportSelectedIssue : null,
+      behaviorIssue: reportSelectedCategory === "behavior" ? reportSelectedIssue : null,
       message,
       clientVersion: server.minecraftVersion,
       attachDiagnostics: reportDiagnosticsEl.checked,
+      proofUrl: reportSelectedCategory === "behavior" ? reportProofEl.value.trim() : null,
     });
     if (result.ok) {
       closeReportDialog();
@@ -652,12 +718,33 @@ function syncPlaybarWithGame() {
 }
 
 async function launchServer(server) {
+  // Le flag doit etre pose ICI, avant le moindre await — pas apres
+  // applyRecommendedRamIfNeeded() (qui peut ouvrir une modale bloquante et
+  // laisser largement le temps a un second clic de passer le test
+  // ci-dessus avant que le flag soit leve). C'est ce qui protege tous les
+  // points d'entree (playbar, carte "Continuer", "Mes instances"/"Rejoint",
+  // fiche detail) d'un seul coup, meme ceux qui ne desactivent pas aussi
+  // leur propre bouton par securite.
   if (launchInProgress) return null;
+  launchInProgress = true;
+
+  // Connexion demandee ici, pas avant (2026-10-11, audit onboarding) : premier
+  // moment ou elle est reellement necessaire, quel que soit le point d'entree
+  // (playbar, carte "Continuer", "Mes instances"/"Rejoint", fiche detail).
+  if (!signedIn) {
+    const signedInNow = await attemptSignIn(true);
+    if (!signedInNow) {
+      launchInProgress = false;
+      return null;
+    }
+  }
 
   const { proceed, memoryOverride } = await applyRecommendedRamIfNeeded(server);
-  if (!proceed) return null;
+  if (!proceed) {
+    launchInProgress = false;
+    return null;
+  }
 
-  launchInProgress = true;
   const playBtn = document.getElementById("playbar-play");
   const label = document.getElementById("playbar-progress-label");
   const percentEl = document.getElementById("playbar-progress-percent");
@@ -752,11 +839,42 @@ async function joinServer(server, joinBtn) {
   joinBtn.textContent = t("serverDetail.joinBtn");
 }
 
+// Bouton "Installer" (2026-10-11, audit onboarding) : telecharge le modpack
+// et le Java requis sans lancer le jeu, donc sans demander de connexion
+// Microsoft — voir server:install cote main.js. La progression ne s'affiche
+// plus sur ce bouton : elle vit dans le panneau de taches de la barre de
+// titre (renderTasksPanel/wireTasksMenu), comme "Rejoindre" — ce bouton ne
+// fait plus que declencher la tache, brievement desactive pour eviter un
+// double-clic qui en creerait une seconde pour rien (meme si server:install
+// la rejette aussi de son cote, par securite).
+async function installServerStandalone(server, btn) {
+  btn.disabled = true;
+  try {
+    const result = await window.mchub.installServer(server.slug, server.name);
+    if (result?.ok) {
+      // Disparait tout de suite pour CE serveur (2026-10-11) — pas besoin de
+      // quitter puis revenir sur la fiche pour que ça se mette a jour.
+      btn.remove();
+      return;
+    }
+    if (result?.frozen) {
+      await showModal({
+        title: t("modal.frozenTitle"),
+        body: t("modal.frozenBody", { name: server.name }),
+        confirmLabel: t("modal.frozenClose"),
+      });
+    }
+  } finally {
+    if (document.body.contains(btn)) btn.disabled = false;
+  }
+}
+
 async function openDetail(slug) {
   homePanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
   statusEl.hidden = true;
   listEl.hidden = true;
   detailEl.hidden = false;
@@ -892,6 +1010,10 @@ function skinUrlFor(profile) {
 }
 
 function renderAccountHeader(profile, { rememberFailed } = {}) {
+  // "Parametres" reprend sa place normale au-dessus de l'avatar (2026-10-11) :
+  // en mode visiteur, renderGuestHeader() l'avait deplace tout en bas, a la
+  // place de l'avatar absent — voir ce commentaire la-bas.
+  navSettingsBtn.hidden = false;
   if (currentProfile && currentProfile.id !== profile.id) {
     myInstancesServers = [];
     myJoinedServers = [];
@@ -963,10 +1085,13 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
     currentProfile = null;
     myInstancesServers = [];
     myJoinedServers = [];
-    appEl.hidden = true;
-    gateEl.hidden = false;
-    gateMessageEl.textContent = "";
-    setGateBusy(false);
+    // Retour en mode visiteur, pas vers l'ecran de connexion bloquant
+    // (2026-10-11, audit onboarding) : se deconnecter doit laisser l'annuaire
+    // parcourable, comme au tout premier demarrage. L'annuaire plutot que
+    // l'accueil : l'accueil (carte "Continuer", favoris) n'a rien a montrer
+    // sans historique de connexion.
+    renderGuestHeader();
+    showServersView();
   });
 
   document.getElementById("manage-account").addEventListener("click", (event) => {
@@ -1269,11 +1394,13 @@ const NOTIF_COLORS = {
   server_frozen: "#8ac3e0",
   admin_info: "#9184d9",
   admin_warning: "#e8c547",
-  admin_error: "#e5484d",
+  admin_error: "var(--danger)",
   broadcast_announcement: "#9184d9",
   broadcast_maintenance: "#e8c547",
-  broadcast_alert: "#e5484d",
+  broadcast_alert: "var(--danger)",
   broadcast_promotion: "#5fd3a0",
+  verification_approved: "#5fd3a0",
+  verification_rejected: "var(--danger)",
 };
 const BROADCAST_TITLE_KEYS = {
   broadcast_announcement: "broadcastAnnouncementTitle",
@@ -1289,13 +1416,17 @@ function notifItemHtml(notif) {
   const broadcastKey = BROADCAST_TITLE_KEYS[notif.type];
   const title = notif.type === "server_frozen"
     ? t("notifications.serverFrozenTitle", { server: notif.serverName })
-    : broadcastKey
-      ? t(`notifications.${broadcastKey}`)
-      : isAdmin
-        ? t("notifications.adminMessageTitle", { server: notif.serverName })
-        : notif.type === "report_resolved"
-          ? t("notifications.reportResolvedTitle", { server: notif.serverName })
-          : t("notifications.reportRepliedTitle", { server: notif.serverName });
+    : notif.type === "verification_approved"
+      ? t("notifications.verificationApprovedTitle", { server: notif.serverName })
+      : notif.type === "verification_rejected"
+        ? t("notifications.verificationRejectedTitle", { server: notif.serverName })
+        : broadcastKey
+          ? t(`notifications.${broadcastKey}`)
+          : isAdmin
+            ? t("notifications.adminMessageTitle", { server: notif.serverName })
+            : notif.type === "report_resolved"
+              ? t("notifications.reportResolvedTitle", { server: notif.serverName })
+              : t("notifications.reportRepliedTitle", { server: notif.serverName });
   let message = "";
   if (notif.type === "server_frozen") {
     message = `<div class="notif-item-message" style="color:${color};overflow-wrap:anywhere">${t("notifications.serverFrozenBody")}</div>`;
@@ -1331,6 +1462,10 @@ let popupSeeded = false;
 // Centree et bloquante (reutilise la modale generique showModal, deja partagee par le
 // reste de l'appli) : affichee une a la fois, le launcher attend que chacune soit fermee
 // avant de montrer la suivante — pas d'empilement ni de modale qui en ecrase une autre.
+// Une fois le bon code entre, on ne rebloque plus cette session — meme si la maintenance
+// reste active cote site (c'est exactement le role du code : laisser passer malgre tout).
+let maintenanceBypassed = false;
+
 // Ecran plein (voir Design/Omniscient Launcher UI Mockups, "01a Maintenance") : bloque tout
 // le reste de l'appli jusqu'a un code valide. Reutilisable au demarrage (ensureNotInMaintenance)
 // et depuis le pop-up d'une notification "maintenance" deja en session.
@@ -1361,6 +1496,7 @@ function showMaintenanceScreen(message) {
       const result = await window.mchub.verifyMaintenanceCode(code);
       continueBtn.disabled = false;
       if (result.ok) {
+        maintenanceBypassed = true;
         cleanup();
         resolve();
         return;
@@ -1383,6 +1519,16 @@ async function ensureNotInMaintenance() {
   if (!status.active) return;
   bootstrapEl.hidden = true;
   await showMaintenanceScreen(status.message);
+}
+
+// Re-verifiee periodiquement (voir scheduleRefresh plus bas) : une maintenance activee
+// pendant que le launcher tourne deja (apres l'ecran de connexion) doit aussi bloquer,
+// pas seulement au demarrage. maintenanceBypassed evite de rebloquer la meme session
+// une fois le bon code entre.
+async function checkMaintenanceLoop() {
+  if (maintenanceBypassed) return;
+  const status = await window.mchub.checkMaintenance();
+  if (status.active) await showMaintenanceScreen(status.message);
 }
 
 async function showNotificationPopup(notif) {
@@ -1426,6 +1572,127 @@ async function refreshNotifications() {
   popupSeeded = true;
   // Une a la fois (await), jamais deux modales en meme temps.
   for (const notif of freshBroadcasts) await showNotificationPopup(notif);
+}
+
+// --- Panneau de taches "Download Manager" (2026-10-11, inspire de Modrinth) ---
+// Un seul flux d'etat (window.mchub.onTasksUpdate) pour tout ce qui telecharge,
+// que ce soit via le bouton "Installer" ou "Rejoindre" — voir server:install/
+// game:launch cote main.js.
+
+const TASK_PAUSE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+const TASK_RESUME_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M7 4v16l14-8z"/></svg>';
+const TASK_CANCEL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+const TASK_RING_CIRCUMFERENCE = 62.8; // 2 * PI * r(=10), voir le cercle dans index.html
+
+function formatTaskBytes(n) {
+  if (!n || n <= 0) return "0 Mo";
+  const mb = n / (1024 * 1024);
+  return mb >= 1000 ? `${(mb / 1024).toFixed(1)} Go` : `${mb.toFixed(1)} Mo`;
+}
+
+function formatTaskSpeed(bytesPerSecond) {
+  if (!bytesPerSecond || bytesPerSecond <= 0) return "";
+  const mbps = bytesPerSecond / (1024 * 1024);
+  return mbps >= 1 ? `${mbps.toFixed(1)} Mo/s` : `${Math.round(bytesPerSecond / 1024)} Ko/s`;
+}
+
+function taskRowHtml(task, isActive) {
+  const metaParts = [];
+  if (isActive) {
+    if (task.status === "paused") metaParts.push(t("titlebar.taskPaused"));
+    else if (task.text) metaParts.push(task.text);
+    if (task.totalBytes) metaParts.push(`${formatTaskBytes(task.bytes)} / ${formatTaskBytes(task.totalBytes)}`);
+  } else {
+    metaParts.push(task.status === "error" ? task.error || t("titlebar.taskFailed") : task.status === "cancelled" ? t("titlebar.taskCancelled") : t("titlebar.taskComplete"));
+  }
+  const pct = isActive && task.totalBytes ? Math.min(100, Math.round((task.bytes / task.totalBytes) * 100)) : null;
+  const actions = isActive
+    ? `
+      <button class="task-item-action" data-action="${task.status === "paused" ? "resume" : "pause"}" data-id="${task.id}" title="${task.status === "paused" ? t("titlebar.taskResume") : t("titlebar.taskPause")}">
+        ${task.status === "paused" ? TASK_RESUME_SVG : TASK_PAUSE_SVG}
+      </button>
+      <button class="task-item-action" data-action="cancel" data-id="${task.id}" title="${t("titlebar.taskCancel")}">${TASK_CANCEL_SVG}</button>
+    `
+    : "";
+  return `
+    <div class="task-item${task.status === "error" ? " task-error" : ""}">
+      <div class="task-item-row">
+        <div class="task-item-icon">${escapeHtml((task.name || task.slug || "?").slice(0, 1).toUpperCase())}</div>
+        <div class="task-item-body">
+          <div class="task-item-name">${escapeHtml(task.name || task.slug)}</div>
+          <div class="task-item-meta">${escapeHtml(metaParts.filter(Boolean).join(" · "))}</div>
+        </div>
+        <div class="task-item-actions">${actions}</div>
+      </div>
+      ${pct != null ? `<div class="task-progress-track"><div class="task-progress-fill" style="width:${pct}%;"></div></div>` : ""}
+    </div>
+  `;
+}
+
+function renderTasksPanel(tasks) {
+  const active = tasks.filter((task) => task.status === "active" || task.status === "paused");
+  const complete = tasks.filter((task) => task.status === "complete" || task.status === "error" || task.status === "cancelled");
+
+  const trigger = document.getElementById("tasks-trigger");
+  const nameEl = document.getElementById("tasks-current-name");
+  const speedEl = document.getElementById("tasks-speed");
+  const ringFill = document.getElementById("tasks-ring-fill");
+  const hasActive = active.length > 0;
+  trigger.classList.toggle("has-active", hasActive);
+  if (hasActive) {
+    // Le premier de la liste "active" : des que celui-ci passe a "complete",
+    // il sort de ce tableau et le suivant prend naturellement sa place au
+    // prochain rendu — pas besoin de suivre explicitement "lequel afficher".
+    nameEl.textContent = active[0].name || active[0].slug;
+    nameEl.hidden = false;
+    const totalSpeed = active.reduce((sum, task) => sum + (task.speedBps || 0), 0);
+    const speedText = formatTaskSpeed(totalSpeed);
+    speedEl.textContent = speedText || "…";
+    speedEl.hidden = false;
+    const totalBytes = active.reduce((sum, task) => sum + (task.totalBytes || 0), 0);
+    const doneBytes = active.reduce((sum, task) => sum + (task.bytes || 0), 0);
+    const progress = totalBytes ? doneBytes / totalBytes : 0;
+    ringFill.style.strokeDashoffset = String(TASK_RING_CIRCUMFERENCE * (1 - progress));
+  } else {
+    nameEl.hidden = true;
+    speedEl.hidden = true;
+    ringFill.style.strokeDashoffset = String(TASK_RING_CIRCUMFERENCE);
+  }
+
+  document.getElementById("tasks-empty").hidden = tasks.length > 0;
+  document.getElementById("tasks-active-section").hidden = active.length === 0;
+  document.getElementById("tasks-complete-section").hidden = complete.length === 0;
+  document.getElementById("tasks-active-list").innerHTML = active.map((task) => taskRowHtml(task, true)).join("");
+  document.getElementById("tasks-complete-list").innerHTML = complete.map((task) => taskRowHtml(task, false)).join("");
+}
+
+function wireTasksMenu() {
+  const trigger = document.getElementById("tasks-trigger");
+  const panel = document.getElementById("tasks-panel");
+
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    panel.hidden = !panel.hidden;
+  });
+  panel.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("click", () => {
+    panel.hidden = true;
+  });
+  wireDismissOnEscape(panel, trigger);
+
+  document.getElementById("tasks-list-scroll").addEventListener("click", async (event) => {
+    const btn = event.target.closest(".task-item-action");
+    if (!btn) return;
+    const id = Number(btn.dataset.id);
+    if (btn.dataset.action === "pause") await window.mchub.tasks.pause(id);
+    else if (btn.dataset.action === "resume") await window.mchub.tasks.resume(id);
+    else if (btn.dataset.action === "cancel") await window.mchub.tasks.cancel(id);
+  });
+
+  document.getElementById("tasks-clear-all").addEventListener("click", () => window.mchub.tasks.clearCompleted());
+
+  window.mchub.onTasksUpdate((tasks) => renderTasksPanel(tasks));
+  window.mchub.tasks.list().then(renderTasksPanel);
 }
 
 function wireNotifications() {
@@ -1497,7 +1764,7 @@ function showServersView() {
 // "Mes instances" pour les proprietaires.
 function homeContinueCardHtml(server) {
   return `
-    <div class="home-continue-card" data-slug="${escapeHtml(server.slug)}">
+    <div class="home-continue-card" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0">
       <div class="home-continue-banner">
         ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
         <span class="home-continue-icon">${serverIconInner(server)}</span>
@@ -1520,6 +1787,7 @@ function homeInstanceRowHtml(server) {
         <div class="row-title-line">
           <h3>${escapeHtml(server.name)}</h3>
           <span class="badge"${server.frozenAt ? " style=\"color:#8ac3e0;border-color:#8ac3e0\"" : ""}>${t(`myInstances.${instanceBadgeKey(status, server)}`)}</span>
+          ${verificationBadgeHtml(server)}
         </div>
         <p>${instanceStatusLineHtml(server, status)}</p>
       </div>
@@ -1530,6 +1798,7 @@ async function showHomeView() {
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -1549,7 +1818,7 @@ async function showHomeView() {
 async function renderHomeView() {
   homePanelEl.className = "detail";
   homePanelEl.innerHTML = `
-    <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: currentProfile ? currentProfile.name : "" })}</h2>
+    <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: escapeHtml(currentProfile ? currentProfile.name : "") })}</h2>
     ${skeletonListHtml(2)}`;
 
   const [settings, favoriteSlugs, myServersResult] = await Promise.all([
@@ -1563,7 +1832,7 @@ async function renderHomeView() {
   const myServers = myServersResult.ok ? myServersResult.servers.slice(0, 4) : [];
 
   homePanelEl.innerHTML = `
-    <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: currentProfile ? currentProfile.name : "" })}</h2>
+    <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: escapeHtml(currentProfile ? currentProfile.name : "") })}</h2>
     ${
       continueServer
         ? homeContinueCardHtml(continueServer)
@@ -1595,14 +1864,23 @@ async function renderHomeView() {
 
   const playBtn = homePanelEl.querySelector(".home-continue-play");
   if (playBtn) {
-    playBtn.addEventListener("click", (event) => {
+    // Desactivation synchrone AVANT tout await (meme principe que le bouton
+    // "Rejoindre" de la fiche detail) : sans ca, un double-clic rapide peut
+    // lancer deux fois avant que launchInProgress ne soit leve (§3.13).
+    playBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      if (continueServer) launchServer(continueServer);
+      if (!continueServer || playBtn.disabled) return;
+      playBtn.disabled = true;
+      try {
+        await launchServer(continueServer);
+      } finally {
+        playBtn.disabled = false;
+      }
     });
   }
   const continueCard = homePanelEl.querySelector(".home-continue-card");
   if (continueCard) {
-    continueCard.addEventListener("click", () => {
+    onRowActivate(continueCard, () => {
       detailOrigin = "home";
       openDetail(continueCard.dataset.slug);
     });
@@ -1611,7 +1889,7 @@ async function renderHomeView() {
   const favoritesListEl = document.getElementById("home-favorites-list");
   if (favoritesListEl) {
     favoritesListEl.querySelectorAll(".row").forEach((row) => {
-      row.addEventListener("click", () => {
+      onRowActivate(row, () => {
         detailOrigin = "home";
         openDetail(row.dataset.slug);
       });
@@ -1636,21 +1914,35 @@ async function renderHomeView() {
 // Resout une liste de slugs en objets serveur complets (nom, description,
 // joueurs...) via la liste publique — utilise par "Favoris" et "Recents", qui
 // ne stockent localement que des slugs.
+// Un slug absent de l'annuaire public n'est pas forcement supprime : un serveur prive rejoint
+// par code, en pause, ou gele n'y figure pas non plus (voir /api/public/servers). On ne le
+// confirme vraiment mort qu'avec un servers:get individuel (notFound=true, vrai 404) — seul ce
+// cas justifie de le retirer des favoris/recents (voir pruneDeadSlug ci-dessous), sinon on
+// garde l'ancien placeholder plutot que de perdre une fiche encore valide a tort.
 async function resolveServersBySlug(slugs) {
   const result = await fetchServerList();
   const allServers = result.ok ? result.servers : [];
-  return slugs.map(
-    (slug) =>
-      allServers.find((s) => s.slug === slug) || {
-        slug,
-        name: slug,
-        description: "",
-        type: "vanilla",
-        playerCount: null,
-        playerCapacity: null,
-        bannerUrl: null,
-      },
+  const resolved = await Promise.all(
+    slugs.map(async (slug) => {
+      const found = allServers.find((s) => s.slug === slug);
+      if (found) return found;
+      const single = await window.mchub.getServer(slug);
+      if (single.ok) return single.server;
+      if (single.notFound) {
+        await pruneDeadSlug(slug);
+        return null;
+      }
+      return { slug, name: slug, description: "", type: "vanilla", playerCount: null, playerCapacity: null, bannerUrl: null };
+    }),
   );
+  return resolved.filter((s) => s !== null);
+}
+
+async function pruneDeadSlug(slug) {
+  const settings = await window.mchub.settings.get();
+  const favoriteServers = (settings.favoriteServers || []).filter((s) => s !== slug);
+  const recentlyPlayed = (settings.recentlyPlayed || []).filter((s) => s !== slug);
+  await window.mchub.settings.set({ favoriteServers, recentlyPlayed });
 }
 
 async function showFavoritesView() {
@@ -1658,6 +1950,7 @@ async function showFavoritesView() {
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -1704,6 +1997,7 @@ async function showRecentView() {
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -1780,12 +2074,36 @@ function instanceBadgeKey(status, server) {
   return status === "public" ? "badgePublic" : status === "private" ? "badgePrivate" : "badgePaused";
 }
 
+// Petit tag additionnel accole au badge principal (Public/Privé/En pause),
+// jamais a sa place : un serveur publie mais pas encore valide par un admin
+// (verificationStatus, voir site/src/lib/verification.ts) n'est pas reellement
+// joignable par les joueurs malgre le toggle "publie" du proprietaire, donc on
+// l'indique en plus plutot qu'en remplacement de "Public". Rendu avec la meme
+// classe .instance-badge que le badge principal (voir index.html) pour rester
+// coherent avec le style existant, juste une variante de couleur en plus.
+function verificationBadgeHtml(server) {
+  if (server.frozenAt) return "";
+  if (server.verificationStatus === "pending") {
+    return `<span class="instance-badge verification-pending">${t("myInstances.badgePendingVerification")}</span>`;
+  }
+  if (server.verificationStatus === "rejected") {
+    return `<span class="instance-badge verification-rejected">${t("myInstances.badgeRejectedVerification")}</span>`;
+  }
+  return "";
+}
+
 // Partagee entre la carte de "Mes instances" et la ligne compacte de
 // l'accueil (voir homeInstanceRowHtml) — le seul endroit qui decide quoi
 // afficher a la place du nombre de joueurs pour un serveur prive/en pause.
 function instanceStatusLineHtml(server, status) {
   if (status === "paused" && server.frozenAt) {
     return `<span class="status-dot" style="background:#8ac3e0"></span><span style="color:#8ac3e0">${t("myInstances.frozenLine")}</span>`;
+  }
+  if (!server.frozenAt && server.verificationStatus === "pending") {
+    return `<span class="status-dot" style="background:var(--warn)"></span><span style="color:var(--warn)">${t("myInstances.pendingLine")}</span>`;
+  }
+  if (!server.frozenAt && server.verificationStatus === "rejected") {
+    return `<span class="status-dot" style="background:var(--danger)"></span><span style="color:var(--danger)">${t("myInstances.rejectedLine")}</span>`;
   }
   if (status === "paused") return `<span class="status-dot"></span>${t("myInstances.hiddenNote")}`;
   if (status !== "private") return playersLabel(server);
@@ -1795,6 +2113,16 @@ function instanceStatusLineHtml(server, status) {
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </svg>
   </button>`;
+}
+
+// Visible seulement pour un serveur que le proprietaire peut encore faire passer en public
+// (prive, pas gele, pas encore teste avec succes) — une fois public ou deja teste, plus rien
+// a prouver, le bouton disparait plutot que de rester affiche pour rien (voir le brief :
+// "hide/disable [...] once the test has already passed, or once the server is already
+// public"). Jamais pour un serveur gele : lancer le jeu echouerait (voir game:launch, erreur
+// "frozen"), inutile d'offrir un test qui ne peut pas marcher.
+function canSelfTest(server) {
+  return !server.frozenAt && server.isPrivate && !server.selfTestPassedAt;
 }
 
 function instanceCardHtml(server) {
@@ -1809,11 +2137,13 @@ function instanceCardHtml(server) {
         <div class="instance-card-title">
           <h3>${escapeHtml(server.name)}</h3>
           <span class="instance-badge ${server.frozenAt ? "frozen" : status}">${t(`myInstances.${badgeKey}`)}</span>
+          ${verificationBadgeHtml(server)}
         </div>
         <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)} · ${escapeHtml(server.ip)}</p>
-        ${status === "public" ? "" : `<div class="instance-card-status">${statusLine}</div>`}
+        ${status === "public" && server.verificationStatus === "approved" ? "" : `<div class="instance-card-status">${statusLine}</div>`}
       </div>
       <div class="instance-card-actions">
+        ${canSelfTest(server) ? `<button type="button" class="btn-secondary my-instance-selftest" data-slug="${escapeHtml(server.slug)}">${t("myInstances.selfTestButton")}</button>` : ""}
         ${status !== "paused" ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>` : ""}
         <button type="button" class="btn-secondary my-instance-manage" data-id="${escapeHtml(server.id)}">${t("myInstances.manage")} ↗</button>
       </div>
@@ -1847,7 +2177,7 @@ function joinedCardHtml(server) {
 
 const INSTANCE_FILTERS = ["all", "public", "private", "paused"];
 
-function instancesToolbarHtml(servers, joinedCount) {
+function instancesToolbarHtml(servers, joinedCount, pagerHtml = "") {
   const counts = { all: servers.length, public: 0, private: 0, paused: 0 };
   servers.forEach((server) => counts[instanceStatus(server)]++);
   const chipHtml = (filter, count) => {
@@ -1859,9 +2189,12 @@ function instancesToolbarHtml(servers, joinedCount) {
   // counts.all, qui reste uniquement les serveurs que ce joueur POSSEDE.
   const chips = [chipHtml("all", counts.all), chipHtml("joined", joinedCount), ...INSTANCE_FILTERS.slice(1).map((f) => chipHtml(f, counts[f]))].join("");
 
+  // Le pager (si fourni) s'affiche a droite de cette meme rangee, plutot
+  // qu'en bas de la grille — voir topPagerHtml().
   return `
     <div class="instances-toolbar">
       <div class="instances-filters">${chips}</div>
+      ${pagerHtml}
     </div>`;
 }
 
@@ -1945,14 +2278,15 @@ async function joinByCodeFlow() {
 // Generique : utilise par "Mes instances" et par la liste publique des serveurs (voir
 // renderFilteredList) — chaque appelant fournit sa propre page courante et ses propres id
 // de boutons, pour ne jamais confondre les deux pagers (tous deux presents dans le DOM a la
-// fois, un seul visible a la fois).
-function instancesPagerHtml(page, pageCount, idPrefix) {
+// fois, un seul visible a la fois). Rendu compact (‹ page/total ›) pense pour s'inserer a
+// droite d'une rangee de filtres existante, plutot qu'en bas de liste.
+function topPagerHtml(page, pageCount, idPrefix) {
   if (pageCount <= 1) return "";
   return `
-    <div class="instances-pager">
-      <button type="button" class="btn-secondary" id="${idPrefix}-prev" ${page <= 1 ? "disabled" : ""}>${t("myInstances.pagerPrevious")}</button>
-      <span class="join-note">${t("myInstances.pagerPage", { page: String(page), count: String(pageCount) })}</span>
-      <button type="button" class="btn-secondary" id="${idPrefix}-next" ${page >= pageCount ? "disabled" : ""}>${t("myInstances.pagerNext")}</button>
+    <div class="top-pager" id="${idPrefix}">
+      <button type="button" class="btn-secondary" id="${idPrefix}-prev" ${page <= 1 ? "disabled" : ""} aria-label="${t("myInstances.pagerPrevious")}">‹</button>
+      <span class="pager-label">${t("myInstances.pagerPage", { page: String(page), count: String(pageCount) })}</span>
+      <button type="button" class="btn-secondary" id="${idPrefix}-next" ${page >= pageCount ? "disabled" : ""} aria-label="${t("myInstances.pagerNext")}">›</button>
     </div>`;
 }
 
@@ -1976,12 +2310,11 @@ function renderMyInstancesGrid() {
       </div>
       <button type="button" class="btn-secondary" id="my-instances-join">${t("myInstances.joinButton")}</button>
     </div>
-    ${instancesToolbarHtml(myInstancesServers, myJoinedServers.length)}
+    ${instancesToolbarHtml(myInstancesServers, myJoinedServers.length, topPagerHtml(myInstancesPage, pageCount, "my-instances-pager"))}
     ${
       all.length === 0
         ? `<p class="join-note">${t("myInstances.filterEmpty")}</p>`
-        : `<div class="instance-grid">${filtered.map((server) => (myInstancesFilter === "joined" ? joinedCardHtml(server) : instanceCardHtml(server))).join("")}</div>
-           ${instancesPagerHtml(myInstancesPage, pageCount, "my-instances-pager")}`
+        : `<div class="instance-grid">${filtered.map((server) => (myInstancesFilter === "joined" ? joinedCardHtml(server) : instanceCardHtml(server))).join("")}</div>`
     }
   `;
 
@@ -2005,18 +2338,56 @@ function renderMyInstancesGrid() {
   });
 
   myInstancesPanelEl.querySelectorAll(".my-instance-play").forEach((btn) => {
-    btn.addEventListener("click", (event) => {
+    // Desactivation synchrone AVANT tout await (meme principe que le bouton
+    // "Rejoindre" de la fiche detail) : sans ca, un double-clic rapide peut
+    // lancer deux fois avant que launchInProgress ne soit leve (§3.13).
+    btn.addEventListener("click", async (event) => {
       event.stopPropagation();
+      if (btn.disabled) return;
       const pool = myInstancesFilter === "joined" ? myJoinedServers : myInstancesServers;
       const server = pool.find((s) => s.slug === btn.dataset.slug);
-      if (server) launchServer(server);
+      if (!server) return;
+      btn.disabled = true;
+      try {
+        await launchServer(server);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  myInstancesPanelEl.querySelectorAll(".my-instance-selftest").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const server = myInstancesServers.find((s) => s.slug === btn.dataset.slug);
+      if (!server) return;
+      await runSelfTestFlow(server);
+      // Le test peut avoir change selfTestPassedAt (succes rapporte) : on recharge pour que le
+      // bouton disparaisse et que le badge reflete le nouvel etat (voir canSelfTest ci-dessus).
+      await renderMyInstancesList();
     });
   });
 
   myInstancesPanelEl.querySelectorAll(".copy-invite-link").forEach((btn) => {
-    btn.addEventListener("click", (event) => {
+    btn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      navigator.clipboard?.writeText(`${siteUrl}/join/${btn.dataset.code}`);
+      // Meme principe que settings-copy-log/settings-copy-sysinfo (Parametres > Debogage) :
+      // un retour visuel temporaire plutot qu'un clic qui ne montre rien.
+      try {
+        await navigator.clipboard.writeText(`${siteUrl}/join/${btn.dataset.code}`);
+        const originalHtml = btn.innerHTML;
+        const originalTitle = btn.title;
+        btn.innerHTML = ICON_CHECK;
+        btn.title = t("myInstances.linkCopied");
+        btn.setAttribute("aria-label", t("myInstances.linkCopied"));
+        setTimeout(() => {
+          btn.innerHTML = originalHtml;
+          btn.title = originalTitle;
+          btn.setAttribute("aria-label", originalTitle);
+        }, 1500);
+      } catch {
+        // Presse-papiers indisponible — pas bloquant pour une simple commodite.
+      }
     });
   });
 
@@ -2037,7 +2408,13 @@ function renderMyInstancesGrid() {
         cancelLabel: t("common.cancel"),
       });
       if (!confirmed) return;
-      await window.mchub.leaveJoinedServer(btn.dataset.slug);
+      const result = await window.mchub.leaveJoinedServer(btn.dataset.slug);
+      if (!result.ok) {
+        // Pas de mutation optimiste si l'appel IPC a echoue : la carte doit
+        // rester telle quelle plutot que de faire croire a un depart reussi.
+        await showModal({ tone: "danger", title: t("myInstances.leave"), body: t("myInstances.leaveError"), confirmLabel: t("common.close") });
+        return;
+      }
       myJoinedServers = myJoinedServers.filter((s) => s.slug !== btn.dataset.slug);
       renderMyInstancesGrid();
     });
@@ -2049,6 +2426,7 @@ async function showMyInstancesView() {
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -2132,6 +2510,7 @@ async function showSettingsView() {
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
   detailEl.hidden = true;
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
@@ -2670,18 +3049,29 @@ async function refreshJavaStatus(statusElId, installBtnId, { onReady, defaultOnl
 }
 
 // Verrou obligatoire : Java est requis pour lancer Minecraft (allocation de
-// RAM comprise), donc on bloque tout le launcher (avant même l'assistant RAM
-// et le portail de connexion) tant qu'il n'est pas détecté — à chaque
-// démarrage, pas seulement au premier lancement.
+// RAM comprise), donc on attend qu'il soit pret avant d'entrer dans l'appli —
+// a chaque demarrage, pas seulement au premier lancement.
+// Installation silencieuse (2026-10-11, audit onboarding) : reste dans le
+// petit ecran de demarrage deja visible (meme barre de progression que la
+// verification de mise a jour juste avant), aucune page dediee tant que ca
+// fonctionne. Cet ecran dedie (javaGateEl) ne sert plus qu'au cas d'echec
+// reel, pour laisser un moyen de reessayer plutot que rester bloque.
 async function ensureJavaAvailable() {
   const initial = await window.mchub.java.detect();
   // Seul le Java par defaut (21+) verrouille le demarrage : les autres (8, 17, 25) sont
   // telecharges au lancement d'un serveur qui en a besoin, ou via le bouton des Reglages.
   if (initial.found && initial.is64Bit && initial.meetsMinimum) return;
 
-  // Java manquant : cet ecran peut impliquer une vraie attente (telechargement
-  // + installation), donc on sort de la petite fenetre du bootstrap avant de
-  // l'afficher plutot que de la laisser cramped dedans.
+  const stopListening = window.mchub.onJavaInstallProgress((status) => {
+    bootstrapStatusEl.textContent = status;
+  });
+  const result = await window.mchub.java.install([21]);
+  stopListening();
+
+  if (result.ok) return;
+
+  // Echec reel seulement : la, et seulement la, on sort de la petite fenetre
+  // du bootstrap pour montrer l'ecran dedie avec un bouton pour reessayer.
   await window.mchub.windowControls.expandFromBootstrap();
   bootstrapEl.hidden = true;
   document.body.classList.remove("bootstrapping");
@@ -2705,6 +3095,7 @@ async function showAccountView() {
   statusEl.hidden = true;
   listEl.hidden = true;
   listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
@@ -2818,7 +3209,14 @@ async function refreshAccountList() {
   listContainer.querySelectorAll(".account-remove-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.id;
-      await window.mchub.account.remove(id);
+      const result = await window.mchub.account.remove(id);
+      if (!result.ok) {
+        // Pas de mutation optimiste si l'appel IPC a echoue : le compte
+        // reste affiche dans la liste plutot que de disparaitre a tort.
+        listStatusEl.textContent = t("account.forgetError");
+        listStatusEl.classList.add("ms-error");
+        return;
+      }
       if (id === activeId) {
         // Le compte actif vient d'être oublié : retour au portail, comme
         // une déconnexion normale (plus rien à afficher/gérer ici).
@@ -3018,11 +3416,20 @@ function wirePlaybar() {
   });
 
   playBtn.addEventListener("click", async () => {
-    if (!selectedFavoriteSlug) return;
-    const result = await window.mchub.getServer(selectedFavoriteSlug);
-    // Si la fiche ne charge pas (serveur gelé, par exemple), on tente quand même : le launcher
-    // affichera la raison exacte renvoyée par le site au lieu de ne rien faire.
-    await launchServer(result.ok ? result.server : { slug: selectedFavoriteSlug, name: selectedFavoriteSlug });
+    if (!selectedFavoriteSlug || playBtn.disabled) return;
+    // Desactivation synchrone AVANT le premier await (meme principe que le bouton
+    // "Rejoindre" de la fiche detail) : sans ca, un double-clic rapide peut relancer
+    // getServer()/launchServer() une seconde fois avant que launchInProgress ne soit
+    // leve (§3.13). syncPlaybarWithGame() reprend ensuite la main sur l'etat du bouton.
+    playBtn.disabled = true;
+    try {
+      const result = await window.mchub.getServer(selectedFavoriteSlug);
+      // Si la fiche ne charge pas (serveur gelé, par exemple), on tente quand même : le launcher
+      // affichera la raison exacte renvoyée par le site au lieu de ne rien faire.
+      await launchServer(result.ok ? result.server : { slug: selectedFavoriteSlug, name: selectedFavoriteSlug });
+    } finally {
+      syncPlaybarWithGame();
+    }
   });
 }
 
@@ -3051,7 +3458,7 @@ function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel, tone
     document.getElementById("modal-title").textContent = title;
     // Couleur du titre : celle du type de message diffuse si fournie, sinon rouge pour une
     // alerte critique (ex. RAM au-delà de 80 % de la machine), sinon la couleur par defaut.
-    document.getElementById("modal-title").style.color = stripeColor || (tone === "danger" ? "#e5484d" : "");
+    document.getElementById("modal-title").style.color = stripeColor || (tone === "danger" ? "var(--danger)" : "");
     document.getElementById("modal-body").textContent = body;
     confirmBtn.textContent = confirmLabel;
     cancelBtn.hidden = !cancelLabel;
@@ -3089,45 +3496,300 @@ function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel, tone
   });
 }
 
-// Petite fenêtre (et non plus une page pleine) affichée une seule fois (voir
-// settings.onboarded) pour choisir une RAM raisonnable dès le départ — Java
-// est vérifié séparément par ensureJavaAvailable(), avant même cette étape.
-function showRamSetupModal(settings) {
+// Les 3 controles de l'auto-test de publication (voir main.js/selftest:run), dans l'ordre ou
+// ils se resolvent — chaque clé correspond au `step` envoyé par les évènements
+// "selftest:progress". Le 4e controle ("Connexion au serveur") a ete retire le 2026-10-11 :
+// intestable de maniere fiable pour le moment.
+const SELF_TEST_STEPS = [
+  { key: "reachable", labelKey: "selfTest.stepReachable" },
+  { key: "modpack", labelKey: "selfTest.stepModpack" },
+  { key: "gameStarted", labelKey: "selfTest.stepGameStarted" },
+];
+
+function selfTestStepRowHtml(step, status, detail) {
+  // "pending" (avant son tour) reste gris, sans icone — seules les lignes "running"/"pass"/
+  // "fail"/"skipped" ont une icone (sablier/coche/croix/tiret), comme le reste de la checklist
+  // en direct. "skipped" (étape jamais atteinte car une étape précédente a échoué ou le test a
+  // été annulé) est volontairement distinct de "fail" (étape réellement testée et ratée) :
+  // sinon un simple échec d'IP affichait à tort "tout échoué" comme si chaque contrôle avait
+  // individuellement rate, alors que les suivants n'ont jamais tourné (constate le 2026-10-10).
+  const icon =
+    status === "pass"
+      ? `<span style="color:var(--success);">✅</span>`
+      : status === "fail"
+        ? `<span style="color:var(--danger);">❌</span>`
+        : status === "running"
+          ? `<span class="status-dot" style="background:var(--warn);"></span>`
+          : status === "skipped"
+            ? `<span style="color:var(--muted);">—</span>`
+            : `<span class="status-dot"></span>`;
+  const statusText =
+    status === "pass"
+      ? t("selfTest.statusPass")
+      : status === "fail"
+        ? t("selfTest.statusFail")
+        : status === "running"
+          ? t("selfTest.statusRunning")
+          : status === "skipped"
+            ? t("selfTest.statusSkipped")
+            : "";
+  const color = status === "pass" ? "var(--success)" : status === "fail" ? "var(--danger)" : "var(--muted)";
+  // Check #1 ("IP joignable") : affiche la latence mesurée par le ping quand il réussit —
+  // un chiffre concret plutot qu'un simple pass/fail. Voir mcPing.js pour la mesure (pingMs).
+  const label =
+    step.key === "reachable" && status === "pass" && typeof detail?.pingMs === "number"
+      ? t("selfTest.stepReachableWithPing", { ms: detail.pingMs })
+      : t(step.labelKey);
+  return `
+    <div style="display:flex;align-items:center;gap:10px;font-size:13.5px;" data-selftest-step="${step.key}">
+      ${icon}
+      <span style="flex:1;">${escapeHtml(label)}</span>
+      <span style="color:${color};font-size:12.5px;">${escapeHtml(statusText)}</span>
+    </div>`;
+}
+
+function renderSelfTestChecklist(statuses, details) {
+  document.getElementById("selftest-checklist").innerHTML = SELF_TEST_STEPS.map((step) =>
+    selfTestStepRowHtml(step, statuses[step.key] || "pending", details?.[step.key]),
+  ).join("");
+}
+
+// Corrige le bug "en cours… / le test a échoué" (checklist bloquée) : quel que soit le
+// chemin de sortie du test (annulation via "Annuler le test", ou n'importe quel check qui
+// échoue avant que les suivants aient démarré), TOUT contrôle qui
+// n'a pas atteint un état terminal ("pass"/"fail") au moment où le test se conclut est
+// explicitement force a "skipped" (jamais laisse visuellement bloque sur "en cours…" ou
+// "pending") — "skipped" plutot que "fail" pour ne pas laisser croire que ce controle a ete
+// teste et a rate, alors qu'il n'a simplement jamais demarre (voir selfTestStepRowHtml). Un
+// seul point d'entree, reutilise pour la fin normale du test ET pour l'annulation.
+function finalizeSelfTestStatuses(statuses) {
+  for (const step of SELF_TEST_STEPS) {
+    if (statuses[step.key] !== "pass" && statuses[step.key] !== "fail") {
+      statuses[step.key] = "skipped";
+    }
+  }
+  return statuses;
+}
+
+// "Tester pour publication" (Mes instances) : ouvre la checklist, lance le test (qui démarre
+// réellement le jeu — voir main.js/selftest:run), met les 3 lignes à jour en direct via les
+// évènements "selftest:progress", puis propose d'envoyer le résultat au site si les 3
+// contrôles sont réussis. Résout seulement à la fermeture de la fenêtre (jamais en arrière-
+// plan : un test concurrent avec un lancement normal n'est pas permis, voir
+// selfTestInProgress côté main.js).
+function runSelfTestFlow(server) {
   return new Promise((resolve) => {
-    const overlay = document.getElementById("ram-setup-overlay");
-    const minInput = document.getElementById("ram-setup-min");
-    const maxInput = document.getElementById("ram-setup-max");
-    const note = document.getElementById("ram-setup-note");
-    const continueBtn = document.getElementById("ram-setup-continue");
+    const overlay = document.getElementById("selftest-overlay");
+    const actionsEl = document.getElementById("selftest-actions");
+    const outcomeEl = document.getElementById("selftest-outcome");
+    const errorEl = document.getElementById("selftest-error");
 
-    minInput.value = settings.suggestedMinGB;
-    maxInput.value = settings.suggestedMaxGB;
-    note.textContent = t("ramSetup.note", { total: settings.totalGB, min: settings.suggestedMinGB, max: settings.suggestedMaxGB });
+    document.getElementById("selftest-title").textContent = t("selfTest.title", { name: server.name });
+    document.getElementById("selftest-intro").textContent = t("selfTest.intro");
+    outcomeEl.hidden = true;
+    errorEl.hidden = true;
+    actionsEl.innerHTML = "";
+
+    const statuses = { reachable: "pending", modpack: "pending", gameStarted: "pending", connection: "pending" };
+    const details = {};
+    renderSelfTestChecklist(statuses, details);
+
     overlay.hidden = false;
+    document.body.classList.add("modal-blocking");
 
-    const onContinue = async () => {
-      const min = Number(minInput.value);
-      const max = Number(maxInput.value);
-      await window.mchub.settings.set({ memoryMinGB: min, memoryMaxGB: max, onboarded: true });
+    const closeBtn = (label, onClick) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "join-btn";
+      btn.textContent = label;
+      btn.addEventListener("click", onClick);
+      return btn;
+    };
+
+    const finish = () => {
+      stopListening();
       overlay.hidden = true;
-      continueBtn.removeEventListener("click", onContinue);
+      document.body.classList.remove("modal-blocking");
       resolve();
     };
-    continueBtn.addEventListener("click", onContinue);
+
+    const stopListening = window.mchub.onSelfTestProgress((progress) => {
+      if (!progress || !progress.step) return;
+      statuses[progress.step] = progress.status;
+      details[progress.step] = progress.detail;
+      renderSelfTestChecklist(statuses, details);
+    });
+
+    // "Annuler le test" : visible seulement pendant que le test tourne (retiré dès que le
+    // résultat arrive, succès/échec/erreur confondus). Demande l'annulation côté main.js
+    // (selftest:abort) — la checklist et le résumé "test échoué" se mettent à jour tout
+    // seuls quand window.mchub.runSelfTest() se résout ensuite, exactement comme pour un
+    // échec normal : pas de chemin séparé, voir finalizeSelfTestStatuses().
+    const abortBtn = document.createElement("button");
+    abortBtn.type = "button";
+    abortBtn.className = "btn-secondary";
+    abortBtn.textContent = t("selfTest.abortButton");
+    abortBtn.addEventListener("click", async () => {
+      abortBtn.disabled = true;
+      abortBtn.textContent = t("selfTest.aborting");
+      await window.mchub.abortSelfTest();
+    });
+    actionsEl.appendChild(abortBtn);
+
+    (async () => {
+      const result = await window.mchub.runSelfTest(server.slug);
+      abortBtn.remove();
+
+      if (!result.ok) {
+        finalizeSelfTestStatuses(statuses);
+        renderSelfTestChecklist(statuses, details);
+        errorEl.textContent = result.code === "busy" ? t("selfTest.alreadyRunning") : t("selfTest.runError", { error: result.error });
+        errorEl.hidden = false;
+        actionsEl.appendChild(closeBtn(t("selfTest.close"), finish));
+        return;
+      }
+
+      // Forcé en dernier recours : que le test se soit conclu normalement ou via "Annuler le
+      // test", aucune ligne ne doit rester affichée "en cours…" une fois que ce résumé
+      // "réussi"/"échoué" est affiché.
+      finalizeSelfTestStatuses(statuses);
+      renderSelfTestChecklist(statuses, details);
+      outcomeEl.hidden = false;
+
+      if (result.allPassed) {
+        outcomeEl.textContent = `${t("selfTest.allPassedTitle")} ${t("selfTest.allPassedBody")}`;
+        const submitBtn = closeBtn(t("selfTest.submit"), async () => {
+          submitBtn.disabled = true;
+          submitBtn.textContent = t("selfTest.submitting");
+          const report = await window.mchub.reportSelfTest({
+            slug: server.slug,
+            checks: result.checks,
+            detectedVersion: result.detectedVersion,
+          });
+          if (report.ok && report.passed) {
+            outcomeEl.textContent = t("selfTest.submitted");
+            actionsEl.innerHTML = "";
+            actionsEl.appendChild(closeBtn(t("selfTest.close"), finish));
+          } else {
+            errorEl.textContent = t("selfTest.submitError");
+            errorEl.hidden = false;
+            submitBtn.disabled = false;
+            submitBtn.textContent = t("selfTest.submit");
+          }
+        });
+        actionsEl.appendChild(submitBtn);
+        actionsEl.appendChild(closeBtn(t("selfTest.close"), finish));
+      } else {
+        outcomeEl.textContent = `${t("selfTest.somePassedTitle")} ${t("selfTest.somePassedBody")}`;
+        actionsEl.appendChild(closeBtn(t("selfTest.close"), finish));
+      }
+    })();
   });
 }
 
-async function proceedToGate() {
-  gateEl.hidden = false;
-  gateMessageEl.textContent = t("bootstrap.resumingSession");
+// Applique la RAM suggeree sans rien demander (2026-10-11, audit onboarding) :
+// la premiere fenetre qui forcait a confirmer min/max a ete retiree, les
+// valeurs calculees par main.js (voir getSystemMemoryInfo) suffisent dans
+// l'immense majorite des cas, et restent modifiables dans Parametres > Jeu.
+async function applyDefaultRamSilently(settings) {
+  await window.mchub.settings.set({
+    memoryMinGB: settings.suggestedMinGB,
+    memoryMaxGB: settings.suggestedMaxGB,
+    onboarded: true,
+  });
+}
 
-  const restored = await window.mchub.tryRestoreSession();
-  if (restored.ok) {
-    enterApp(restored.profile);
-    return;
+// Connexion Microsoft declenchee a la demande (2026-10-11, audit onboarding) :
+// plus de portail bloquant avant meme de voir l'annuaire — voir boot() et
+// launchServer(). Reutilisee par le bouton "Se connecter" invite et par le
+// clic sur "Jouer" quand le joueur n'est pas encore connecte.
+let signInCountdownTimer = null;
+
+async function attemptSignIn(remember) {
+  const result = await window.mchub.signIn(remember);
+  if (result.ok) {
+    enterApp(result.profile, { rememberFailed: result.rememberFailed });
+    return true;
+  }
+  // Echec ou approbation en attente : seul cas ou l'ancien ecran de connexion
+  // reapparait, pour afficher l'erreur et permettre de reessayer.
+  appEl.hidden = true;
+  gateEl.hidden = false;
+  setGateBusy(false);
+  gateMessageEl.textContent = result.pendingApproval ? t("gate.pendingApproval") : result.error;
+  gateMessageEl.classList.toggle("ms-error", !result.pendingApproval);
+
+  if (signInCountdownTimer) clearInterval(signInCountdownTimer);
+  const countdownEl = document.getElementById("gate-countdown");
+  // Pas pour "approbation en attente" (2026-10-11) : cet etat n'est pas un
+  // simple echec/annulation (fenetre Microsoft fermee sans se connecter) —
+  // il reste affiche tant que le compte n'est pas approuve, pas de retour
+  // auto au mode visiteur qui ferait croire a tort que c'est regle.
+  if (result.pendingApproval) {
+    countdownEl.hidden = true;
+    return false;
   }
 
-  gateMessageEl.textContent = restored.pendingApproval ? t("gate.pendingApproval") : "";
+  // Retour automatique en mode visiteur apres un echec (2026-10-11) : rester
+  // bloque sur l'ancien ecran de connexion casserait le principe de
+  // navigation libre — le joueur peut toujours relancer la connexion plus
+  // tard, au clic sur "Jouer" ou sur "Se connecter" en Parametres.
+  let remaining = 5;
+  countdownEl.hidden = false;
+  const tick = () => {
+    countdownEl.textContent = t("gate.backToGuestIn", { seconds: remaining });
+    if (remaining <= 0) {
+      clearInterval(signInCountdownTimer);
+      signInCountdownTimer = null;
+      if (!gateEl.hidden) {
+        // Rien a refaire du cote de la vue precedente : elle est restee dans
+        // le DOM, juste cachee derriere #gate (voir launchServer()) — on la
+        // redecouvre telle quelle en revelant simplement #app.
+        gateEl.hidden = true;
+        appEl.hidden = false;
+        renderGuestHeader();
+      }
+      return;
+    }
+    remaining--;
+  };
+  tick();
+  signInCountdownTimer = setInterval(tick, 1000);
+  // Le joueur retente lui-meme pendant le compte a rebours : ne pas lui
+  // fermer l'ecran de connexion sous le nez pendant qu'il s'authentifie.
+  gateLoginBtn.addEventListener(
+    "click",
+    () => {
+      if (signInCountdownTimer) {
+        clearInterval(signInCountdownTimer);
+        signInCountdownTimer = null;
+      }
+      countdownEl.hidden = true;
+    },
+    { once: true },
+  );
+  return false;
+}
+
+// Barre laterale quand personne n'est connecte : pas de bouton "Se connecter"
+// ici (un texte ne tient pas dans cet espace de 56px prevu pour une icone
+// ronde ; la connexion se declenche d'elle-meme au clic sur "Jouer", voir
+// launchServer()/attemptSignIn()). "Parametres" prend la place de l'avatar
+// absent (2026-10-11, retour utilisateur : le laisser dans sa position
+// habituelle laissait un trou vide a la toute fin de la sidebar) plutot que
+// de laisser cet espace reserve a l'avatar completement vide.
+function renderGuestHeader() {
+  navSettingsBtn.hidden = true;
+  msAccountEl.innerHTML = `
+    <button id="ms-account-settings" class="sidebar-btn" data-i18n-title="nav.settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+    </button>
+  `;
+  document.getElementById("ms-account-settings").addEventListener("click", showSettingsView);
+  window.i18n.applyStaticI18n(msAccountEl);
 }
 
 async function boot() {
@@ -3149,6 +3811,7 @@ async function boot() {
   wireSidebar();
   wireSettingsNav();
   wireMcStatus();
+  wireTasksMenu();
   wireNotifications();
   wirePlaybar();
 
@@ -3197,10 +3860,13 @@ async function boot() {
     return;
   }
 
-  bootstrapStatusEl.textContent = t("bootstrap.checkingJava");
-  bootstrapProgressEl.style.width = "45%";
-
-  await ensureJavaAvailable();
+  // Plus de verification/installation de Java au demarrage (2026-10-11) :
+  // ensureJavaForMajor() (javaManager.js) resout et installe deja la version
+  // exacte requise au moment reel du lancement d'un serveur (main.js,
+  // game:launch) — rien a faire tant qu'on ne clique pas sur "Jouer".
+  // ensureJavaAvailable() ci-dessus (helper du bootstrap) n'a donc plus
+  // d'appelant ; laisse en place au cas ou un verrou au demarrage redevienne
+  // utile, mais volontairement plus appele ici.
 
   bootstrapStatusEl.textContent = t("bootstrap.resumingSession");
   bootstrapProgressEl.style.width = "85%";
@@ -3213,13 +3879,29 @@ async function boot() {
   document.body.classList.remove("bootstrapping");
 
   if (!settings.onboarded) {
-    bootstrapEl.hidden = true;
-    await showRamSetupModal(settings);
+    await applyDefaultRamSilently(settings);
   }
 
   bootstrapEl.hidden = true;
   await ensureNotInMaintenance();
-  await proceedToGate();
+
+  // Connexion differee (2026-10-11, audit onboarding) : une reprise de
+  // session silencieuse est tentee, mais on ne bloque plus sur l'ecran de
+  // connexion si elle echoue — l'annuaire reste parcourable sans compte.
+  // Voir attemptSignIn() pour le moment ou la connexion est reellement
+  // demandee (clic sur "Jouer").
+  const restored = await window.mchub.tryRestoreSession();
+  if (restored.ok) {
+    enterApp(restored.profile);
+    return;
+  }
+
+  gateEl.hidden = true;
+  appEl.hidden = false;
+  renderGuestHeader();
+  // L'annuaire plutot que l'accueil : l'accueil (carte "Continuer", favoris)
+  // n'a rien a montrer a un visiteur sans historique de connexion.
+  showServersView();
 }
 
 boot();
@@ -3244,8 +3926,8 @@ let gamePlaying = false;
 let launchStarting = false;
 window.mchub.onGameState((running) => {
   gamePlaying = running;
-  if (running) launchStarting = false;
-  if (!running) launchStarting = false;
+  // Que le jeu demarre ou s'arrete, "en cours de demarrage" n'est plus vrai.
+  launchStarting = false;
   syncPlaybarWithGame();
 });
 
@@ -3260,3 +3942,4 @@ function scheduleRefresh(task, baseMs = REFRESH_INTERVAL_MS) {
 scheduleRefresh(silentRefreshList);
 // Notifications : toutes les 5 minutes (chaque appel interroge la base du site).
 scheduleRefresh(refreshNotifications, 300_000);
+scheduleRefresh(checkMaintenanceLoop, 120_000);

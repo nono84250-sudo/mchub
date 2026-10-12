@@ -80,6 +80,55 @@
   --shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0,0,0,0.65);
 }
 
+/* Theme clair — ce fichier n'avait aucune variante claire : le panel admin restait
+   sombre meme quand le reste du site (globals.css) passait en "Clair" via
+   [data-theme] sur <html>. Valeurs approximatives, memes noms de role que
+   ci-dessus, alignees sur le theme clair de globals.css (--background/--surface/
+   --foreground). A retoucher si besoin — l'objectif ici est qu'aucune page admin
+   ne reste irremediablement sombre, pas un reglage pixel-perfect. */
+:root[data-theme="light"] {
+  --color-bg: #f3f3f6;
+  --color-surface: #ffffff;
+  --color-text: #1a1b23;
+  --color-accent: #6a5ecb;
+  --color-accent-2: #7d72b8;
+  --color-divider: color-mix(in srgb, #1a1b23 14%, transparent);
+
+  --color-neutral-100: #292b31;
+  --color-neutral-200: #3f424d;
+  --color-neutral-300: #595d6c;
+  --color-neutral-400: #75798c;
+  --color-neutral-500: #9397ab;
+  --color-neutral-600: #b2b6ca;
+  --color-neutral-700: #cfd3e5;
+  --color-neutral-800: #e4e7f5;
+  --color-neutral-900: #f3f5fe;
+
+  --color-accent-100: #2b2741;
+  --color-accent-200: #423a6a;
+  --color-accent-300: #5d5294;
+  --color-accent-400: #796cbf;
+  --color-accent-500: #968ae0;
+  --color-accent-600: #b5abfc;
+  --color-accent-700: #d2cefd;
+  --color-accent-800: #e7e5fe;
+  --color-accent-900: #f5f4ff;
+
+  --color-accent-2-100: #2b293a;
+  --color-accent-2-200: #423e5d;
+  --color-accent-2-300: #5c5783;
+  --color-accent-2-400: #7972a9;
+  --color-accent-2-500: #9690c9;
+  --color-accent-2-600: #b5afe8;
+  --color-accent-2-700: #d2cefd;
+  --color-accent-2-800: #e7e5fe;
+  --color-accent-2-900: #f5f4ff;
+
+  --shadow-sm: 0 0 0 1px #cfd3e5;
+  --shadow-md: 0 0 0 1px #b2b6ca, 0 6px 18px rgba(20,20,30,0.12);
+  --shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(20,20,30,0.16);
+}
+
 body {
   background: var(--color-bg);
   color: var(--color-text);

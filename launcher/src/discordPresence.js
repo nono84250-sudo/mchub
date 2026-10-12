@@ -34,23 +34,43 @@ function scheduleReconnect(clientId) {
 }
 
 function connect(clientId) {
-  client = new Client({ clientId });
+  const previousClient = client;
+  const thisClient = new Client({ clientId });
+  client = thisClient;
 
-  client.on("ready", () => {
+  // L'ancien client (s'il y en avait un) ne doit plus pouvoir muter l'etat
+  // partage (ready/pendingActivity) : on le detruit explicitement plutot que de
+  // le laisser trainer en arriere-plan — sinon une resolution ou un echec tardif
+  // de SA connexion pourrait ecraser l'etat de thisClient, pourtant plus recent
+  // et peut-etre deja bien connecte (course trouvee par l'audit du 2026-10-10).
+  if (previousClient && previousClient !== thisClient) {
+    previousClient.removeAllListeners?.();
+    previousClient.destroy?.().catch(() => {});
+  }
+
+  // Chaque callback capture `thisClient` (l'instance creee ICI) plutot que de
+  // relire la variable de module `client` au moment ou il s'execute — et verifie
+  // que `client` pointe toujours vers cette meme instance avant de muter l'etat
+  // partage, pour qu'un client obsolete ne puisse jamais ecraser l'etat d'un
+  // client plus recent.
+  thisClient.on("ready", () => {
+    if (client !== thisClient) return;
     ready = true;
     if (pendingActivity) {
-      client.user?.setActivity(pendingActivity).catch(() => {});
+      thisClient.user?.setActivity(pendingActivity).catch(() => {});
     }
   });
 
-  client.on("disconnected", () => {
+  thisClient.on("disconnected", () => {
+    if (client !== thisClient) return;
     ready = false;
     scheduleReconnect(clientId);
   });
 
   // Discord pas lance, socket IPC absente, etc. — cas normal et frequent,
   // jamais une vraie erreur applicative : on retente plus tard en silence.
-  client.login().catch(() => {
+  thisClient.login().catch(() => {
+    if (client !== thisClient) return;
     ready = false;
     scheduleReconnect(clientId);
   });

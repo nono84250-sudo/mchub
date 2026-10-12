@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { adminForAction } from "@/lib/adminServers";
 import { activateLauncherMaintenance } from "@/lib/platformSettings";
+import { rateLimitResponse } from "@/lib/rateLimit";
 
 export async function POST(request: Request) {
+  const limited = rateLimitResponse(request, "admin-maintenance-activate", 10);
+  if (limited) return limited;
   const admin = await adminForAction(request);
   if (admin instanceof NextResponse) return admin;
   const form = await request.formData();

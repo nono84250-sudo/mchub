@@ -26,10 +26,18 @@ function loadAccounts() {
   }
 }
 
+// Ecriture atomique (fichier temporaire + renommage, comme settingsStore.js) : un
+// fs.writeFileSync direct, interrompu en cours d'ecriture (process tue), laissait un
+// accounts.bin tronque — avale silencieusement au redemarrage par le catch de loadAccounts()
+// (repart sur une liste vide), et le PROCHAIN "se souvenir de moi" reussi reecrivait alors le
+// fichier depuis cet etat vide, effacant definitivement les autres comptes memorises sans
+// aucune trace (voir audit 2026-10-10, §3.7).
 function saveAccounts(state) {
   if (!safeStorage.isEncryptionAvailable()) return false;
   const encrypted = safeStorage.encryptString(JSON.stringify(state));
-  fs.writeFileSync(ACCOUNTS_FILE, encrypted);
+  const tmpFile = `${ACCOUNTS_FILE}.tmp`;
+  fs.writeFileSync(tmpFile, encrypted);
+  fs.renameSync(tmpFile, ACCOUNTS_FILE);
   return true;
 }
 

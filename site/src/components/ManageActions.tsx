@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Pause, Play, Copy, Trash, ArrowSquareOut } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
-import { FROZEN_CHIP_STYLE } from "@/lib/frozen";
+import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
 
 // Boutons d'action de "Paramètres" (voir maquette "05 · Settings") — avec confirmation avant toute
 // action destructive/impactante (l'utilisateur a signale que le formulaire
@@ -15,15 +15,26 @@ import { FROZEN_CHIP_STYLE } from "@/lib/frozen";
 export function ManageActions({
   slug,
   published,
+  isPrivate,
   frozen,
+  verificationStatus,
   onTogglePublished,
   onDuplicate,
   onDelete,
 }: {
   slug: string;
   published: boolean;
+  // 2026-10-10 : une fiche privee n'a pas de fiche publique a afficher, meme si "published"
+  // est a true (toute fiche privee le reste par defaut, voir lib/actions/servers.ts) — sans
+  // cette prop le lien "Voir la fiche publique" menait a un 404.
+  isPrivate: boolean;
   frozen: boolean;
-  onTogglePublished: () => Promise<void>;
+  // 2026-10-10 : meme priorite d'affichage que manage/[id]/page.tsx (Overview) :
+  // frozen > pending > rejected > published > paused.
+  verificationStatus: "approved" | "pending" | "rejected";
+  // 2026-10-10 : peut desormais renvoyer {error} (serveur gele) plutot que de reussir
+  // silencieusement sans rien faire — voir lib/actions/servers.ts.
+  onTogglePublished: () => Promise<{ error: string } | undefined>;
   onDuplicate: () => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
@@ -32,12 +43,16 @@ export function ManageActions({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(key: string, message: string, action: () => Promise<void>) {
+  async function run(key: string, message: string, action: () => Promise<{ error: string } | undefined | void>) {
     if (!window.confirm(message)) return;
     setPending(key);
     setError(null);
     try {
-      await action();
+      const result = await action();
+      if (result && "error" in result && result.error) {
+        setError(result.error);
+        return;
+      }
       router.refresh();
     } catch (err) {
       // redirect() (deleteServer notamment) fonctionne en lançant une
@@ -58,10 +73,32 @@ export function ManageActions({
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
         <span
-          className={frozen ? "tag-chip self-start" : "tag-chip tag-chip-accent self-start"}
-          style={frozen ? FROZEN_CHIP_STYLE : undefined}
+          className={
+            frozen || verificationStatus !== "approved" || !published || isPrivate
+              ? "tag-chip self-start"
+              : "tag-chip tag-chip-accent self-start"
+          }
+          style={
+            frozen
+              ? FROZEN_CHIP_STYLE
+              : verificationStatus === "pending"
+                ? PENDING_CHIP_STYLE
+                : verificationStatus === "rejected"
+                  ? { color: "var(--danger)" }
+                  : undefined
+          }
         >
-          {frozen ? t("manage.frozen") : published ? t("manage.published") : t("manage.paused")}
+          {frozen
+            ? t("manage.frozen")
+            : verificationStatus === "pending"
+              ? t("manage.pendingVerification")
+              : verificationStatus === "rejected"
+                ? t("manage.rejectedVerification")
+                : published && !isPrivate
+                  ? t("manage.published")
+                  : isPrivate
+                    ? t("manage.notPublished")
+                    : t("manage.paused")}
         </span>
 
         {frozen ? (
@@ -80,7 +117,7 @@ export function ManageActions({
           </button>
         )}
 
-        {published ? (
+        {published && !isPrivate && verificationStatus === "approved" ? (
           <Link href={`/servers/${slug}`} className="btn-secondary text-sm">
             <ArrowSquareOut className="h-4 w-4" />
             {t("manage.viewPublicPage")}

@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld("mchub", {
   verifyMaintenanceCode: (code) => ipcRenderer.invoke("maintenance:verifyCode", code),
   listServers: () => ipcRenderer.invoke("servers:list"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
+  // Bouton "Installer" d'une fiche (2026-10-11) : pour savoir s'il faut encore
+  // l'afficher pour CE serveur precis — voir servers:installStatus.
+  getServerInstallStatus: (slug) => ipcRenderer.invoke("servers:installStatus", slug),
   listMyServers: () => ipcRenderer.invoke("servers:mine"),
   listJoinedServers: () => ipcRenderer.invoke("servers:listJoined"),
   joinServerByCode: (code) => ipcRenderer.invoke("servers:joinByCode", code),
@@ -25,6 +28,34 @@ contextBridge.exposeInMainWorld("mchub", {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on("game:progress", listener);
     return () => ipcRenderer.removeListener("game:progress", listener);
+  },
+  // Bouton "Installer" (2026-10-11) : telecharge le modpack/Java sans lancer
+  // le jeu, donc sans demander de connexion Microsoft — voir server:install.
+  // La progression ne remonte plus par un canal dedie : elle passe par le
+  // meme panneau de taches que "Rejoindre" (tasks:*, ci-dessous).
+  installServer: (slug, name) => ipcRenderer.invoke("server:install", slug, name),
+  // Panneau de taches (2026-10-11, façon Modrinth) : un seul flux d'etat pour
+  // tous les telechargements/installations en cours, qu'ils viennent du
+  // bouton "Installer" ou de "Rejoindre".
+  tasks: {
+    list: () => ipcRenderer.invoke("tasks:list"),
+    pause: (id) => ipcRenderer.invoke("tasks:pause", id),
+    resume: (id) => ipcRenderer.invoke("tasks:resume", id),
+    cancel: (id) => ipcRenderer.invoke("tasks:cancel", id),
+    clearCompleted: () => ipcRenderer.invoke("tasks:clearCompleted"),
+  },
+  onTasksUpdate: (callback) => {
+    const listener = (_event, tasks) => callback(tasks);
+    ipcRenderer.on("tasks:update", listener);
+    return () => ipcRenderer.removeListener("tasks:update", listener);
+  },
+  runSelfTest: (slug) => ipcRenderer.invoke("selftest:run", slug),
+  abortSelfTest: () => ipcRenderer.invoke("selftest:abort"),
+  reportSelfTest: (payload) => ipcRenderer.invoke("selftest:report", payload),
+  onSelfTestProgress: (callback) => {
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on("selftest:progress", listener);
+    return () => ipcRenderer.removeListener("selftest:progress", listener);
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke("window:minimize"),

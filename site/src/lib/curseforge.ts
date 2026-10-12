@@ -62,7 +62,7 @@ export async function searchCurseforgeModpacks(query: string): Promise<ModpackSe
   url.searchParams.set("sortField", "2"); // popularité
   url.searchParams.set("pageSize", "8");
 
-  const res = await fetch(url, { headers: { "x-api-key": apiKey, Accept: "application/json" } });
+  const res = await fetch(url, { headers: { "x-api-key": apiKey, Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`Réponse ${res.status} de l'API CurseForge`);
 
   const body: CurseforgeSearchResponse = await res.json();
@@ -115,6 +115,7 @@ async function curseforgeRequest<T>(pathAndQuery: string, init?: { method?: stri
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
     },
     body: init?.body ? JSON.stringify(init.body) : undefined,
+    signal: AbortSignal.timeout(8000),
   });
   if (res.status === 403) throw new CurseforgeForbiddenError(pathAndQuery, /api key/i.test(await res.text()));
   if (!res.ok) throw new Error(`Réponse ${res.status} de l'API CurseForge`);

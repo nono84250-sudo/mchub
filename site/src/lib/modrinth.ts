@@ -23,7 +23,7 @@ type ModrinthVersion = {
 };
 
 async function modrinthRequest<T>(pathAndQuery: string): Promise<T> {
-  const res = await fetch(API_BASE + pathAndQuery, { headers: HEADERS });
+  const res = await fetch(API_BASE + pathAndQuery, { headers: HEADERS, signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`Réponse ${res.status} de l'API Modrinth`);
   return (await res.json()) as T;
 }

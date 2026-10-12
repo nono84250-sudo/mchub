@@ -28,3 +28,62 @@ nav[style*="width:232px"] { position: sticky !important; top: 0; height: 100vh; 
 /* Colonnes Online et Open reports centrées, en-tête compris. */
 .srv-row > :nth-child(5), .srv-row > :nth-child(6),
 .srv-head > :nth-child(5), .srv-head > :nth-child(6) { justify-self: center; text-align: center; }
+
+/* Petit menu "..." ancré au bouton (voir manageStaffHtml) : <details> natif. Se ferme au clic
+   exterieur via un petit script (voir administrationHtml), pas juste du CSS. Surbrillance au
+   survol sur CHAQUE option (summary "Changer le rôle" compris, pas que les boutons) — sinon le
+   menu a l'air fige/non cliquable. */
+.staff-menu summary { list-style: none; }
+.staff-menu summary::-webkit-details-marker { display: none; }
+.staff-menu summary::marker { content: ""; }
+.staff-menu-summary:hover { background: var(--raised); }
+.staff-menu > div > form > button,
+.staff-menu > div > details > summary {
+  transition: background .1s ease;
+}
+.staff-menu > div > form > button:hover,
+.staff-menu > div > details > summary:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+/* Responsive — le panel n'avait aucune adaptation sous ~900px : le menu latéral
+   gardait sa largeur fixe (232px) et les grilles à colonnes fixes (tuiles de
+   stats à 4 colonnes, sections côte à côte) se chevauchaient au lieu de se
+   réagencer. On cible les mêmes styles inline que ci-dessus (la maquette n'a
+   pas de classes dédiées) : le menu devient un rail d'icônes, les grilles
+   repassent à 1-2 colonnes. */
+@media (max-width: 900px) {
+  nav[style*="width:232px"] {
+    width: 64px !important;
+    padding: 20px 8px !important;
+  }
+  /* Libellés, badge "Admin", compteurs et texte du bloc utilisateur : masqués,
+     seules les icônes et l'avatar restent visibles. */
+  nav[style*="width:232px"] span[style*="flex:1"],
+  nav[style*="width:232px"] div[style*="padding:4px 10px 22px"] > span:not(:first-child),
+  nav[style*="width:232px"] div[style*="margin-top:auto"] > div {
+    display: none !important;
+  }
+  nav[style*="width:232px"] div[style*="padding:4px 10px 22px"],
+  nav[style*="width:232px"] div[style*="padding:9px 12px"],
+  nav[style*="width:232px"] div[style*="margin-top:auto"] {
+    justify-content: center;
+  }
+
+  /* Tuiles de stats (Overview) : 4 colonnes égales -> 2 colonnes. */
+  div[style*="grid-template-columns:repeat(4,minmax(0,1fr))"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  /* Sections/paires de champs à deux colonnes égales -> empilées. */
+  div[style*="grid-template-columns:minmax(0,1fr) minmax(0,1fr)"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 560px) {
+  /* Sous 560px, même les tuiles passées à 2 colonnes se chevauchent encore. */
+  div[style*="grid-template-columns:repeat(4,minmax(0,1fr))"],
+  div[style*="grid-template-columns:repeat(2,minmax(0,1fr))"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

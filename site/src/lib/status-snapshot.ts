@@ -16,7 +16,9 @@ export type StatusSnapshot = {
 };
 
 async function buildStatusSnapshot(): Promise<StatusSnapshot> {
-  const rows = await db.orm.public.Server.select("slug", "ip").where({ published: true, isPrivate: false }).all();
+  // verificationStatus: "approved" aligné avec loadPublishedServers (public-servers.ts) : sans
+  // ce filtre, un serveur public en attente/rejeté fuite son statut en ligne + joueurs (audit §2.17).
+  const rows = await db.orm.public.Server.select("slug", "ip").where({ published: true, isPrivate: false, verificationStatus: "approved" }).all();
   const servers: StatusSnapshot["servers"] = {};
   for (let i = 0; i < rows.length; i += CONCURRENCY) {
     await Promise.all(

@@ -58,7 +58,8 @@ export default async function Home() {
             {dict.home.ctaDiscover}
             <ArrowRight className="h-4 w-4" />
           </Link>
-          <Link href="/signup" className="btn-secondary">
+          {/* 2026-10-10 : /signup n'existe pas — l'inscription se fait via /login (compte cree au besoin par Microsoft). */}
+          <Link href="/login" className="btn-secondary">
             {dict.home.ctaPublish}
           </Link>
         </div>

@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { getServerActivity } from "@/lib/server-activity";
 import { getServerStatus } from "@/lib/server-status";
 import { getT } from "@/i18n/getDictionary";
-import { FROZEN_CHIP_STYLE } from "@/lib/frozen";
+import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
 
 export const metadata = { title: "Vue d'ensemble — Omniscient" };
 
@@ -74,20 +74,55 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
       <div className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
         <DetailRow label={dict.manage.detailStatus}>
           <span
-            className={server.frozenAt || !server.published ? "tag-chip" : "tag-chip tag-chip-accent"}
-            style={server.frozenAt ? FROZEN_CHIP_STYLE : undefined}
+            className={
+              server.frozenAt || server.verificationStatus !== "approved" || !server.published || server.isPrivate
+                ? "tag-chip"
+                : "tag-chip tag-chip-accent"
+            }
+            style={
+              server.frozenAt
+                ? FROZEN_CHIP_STYLE
+                : server.verificationStatus === "pending"
+                  ? PENDING_CHIP_STYLE
+                  : server.verificationStatus === "rejected"
+                    ? { color: "var(--danger)" }
+                    : undefined
+            }
           >
-            {server.frozenAt ? dict.manage.frozen : server.published ? dict.manage.published : dict.manage.paused}
+            {server.frozenAt
+              ? dict.manage.frozen
+              : server.verificationStatus === "pending"
+                ? dict.manage.pendingVerification
+                : server.verificationStatus === "rejected"
+                  ? dict.manage.rejectedVerification
+                  : server.published && !server.isPrivate
+                    ? dict.manage.published
+                    : server.isPrivate
+                      ? dict.manage.notPublished
+                      : dict.manage.paused}
           </span>
         </DetailRow>
         {server.frozenAt ? (
           <div className="flex flex-col gap-1.5 px-4 py-3">
             <span className="whitespace-nowrap text-[13px] text-muted">{dict.manage.detailFrozenReason}</span>
-            <span className="text-[13.5px]" style={{ color: "#8ac3e0" }}>
+            <span className="text-[13.5px]" style={{ color: "var(--frozen)" }}>
               {dict.manage.frozenBy}
             </span>
             {server.frozenReason ? (
               <span className="whitespace-pre-wrap break-words text-[13.5px] text-foreground">{server.frozenReason}</span>
+            ) : null}
+          </div>
+        ) : null}
+        {!server.frozenAt && server.verificationStatus === "pending" ? (
+          <div className="flex flex-col gap-1.5 px-4 py-3">
+            <span className="text-[13.5px] text-foreground">{dict.manage.pendingVerificationHint}</span>
+          </div>
+        ) : null}
+        {!server.frozenAt && server.verificationStatus === "rejected" ? (
+          <div className="flex flex-col gap-1.5 px-4 py-3">
+            <span className="whitespace-nowrap text-[13px] text-muted">{dict.manage.detailVerificationReason}</span>
+            {server.verificationReason ? (
+              <span className="whitespace-pre-wrap break-words text-[13.5px] text-foreground">{server.verificationReason}</span>
             ) : null}
           </div>
         ) : null}

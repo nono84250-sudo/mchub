@@ -11,8 +11,10 @@ export type ReportActionState = { error: string } | undefined;
 // le signalement appartient bien a un serveur possede par l'utilisateur
 // connecte avant toute mutation, en une seule requete. Renvoie aussi le
 // serveur (son nom sert a la notification envoyee au joueur).
+// category "behavior" n'appartient jamais au proprietaire (va aux moderateurs Omniscient,
+// voir lib/reports.ts) : exclu ici meme si l'id est devine.
 async function getOwnedReport(reportId: string, userId: string) {
-  const report = await db.orm.public.Report.where({ id: reportId }).first();
+  const report = await db.orm.public.Report.where({ id: reportId, category: "technical" }).first();
   if (!report) return null;
   const server = await db.orm.public.Server.where({ id: report.serverId, ownerId: userId }).first();
   return server ? { report, server } : null;
@@ -49,12 +51,22 @@ export async function replyToReport(
   return undefined;
 }
 
-export async function markReportResolved(reportId: string) {
+// 2026-10-10 : renvoie desormais {error} dans les cas de rejet (session absente, signalement
+// introuvable/pas possede) plutot que de retourner silencieusement sans rien faire — meme
+// convention que replyToReport juste au-dessus. Signature (reportId, prevState, formData)
+// alignee sur replyToReport pour pouvoir passer par useActionState cote appelant (voir
+// MarkReportResolvedButton) et afficher reellement cette erreur, au lieu de la perdre dans
+// un simple <form action={...}> sans etat.
+export async function markReportResolved(
+  reportId: string,
+  _prevState: ReportActionState,
+  _formData: FormData,
+): Promise<ReportActionState> {
   const session = await auth();
-  if (!session?.user?.id) return;
+  if (!session?.user?.id) return { error: "Non authentifié." };
 
   const owned = await getOwnedReport(reportId, session.user.id);
-  if (!owned) return;
+  if (!owned) return { error: "Ce signalement n'existe pas ou ne t'appartient pas." };
 
   await db.orm.public.Report.where({ id: reportId }).update({ status: "resolved" });
   await createNotification({
@@ -64,4 +76,5 @@ export async function markReportResolved(reportId: string) {
   });
 
   revalidatePath(`/manage/${owned.report.serverId}/reports`);
+  return undefined;
 }

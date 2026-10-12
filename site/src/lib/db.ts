@@ -26,15 +26,21 @@ const TABLES: Record<string, string> = {
   Notification: "notification",
   PlatformSetting: "platformSetting",
   AdminAccount: "adminAccount",
+  ScheduledBroadcast: "scheduledBroadcast",
+  PlayerWarning: "playerWarning",
+  AdminNote: "adminNote",
+  News: "news",
 };
 // Colonnes booleennes : stockees en 0/1 dans D1, rendues en true/false.
 const BOOLEAN_COLUMNS: Record<string, string[]> = {
-  server: ["published", "isPrivate"],
+  server: ["published", "isPrivate", "autoConnect"],
   notification: ["read"],
   adminAccount: ["mustChangeCredentials"],
+  scheduledBroadcast: ["banner", "blockLauncher"],
+  news: ["published"],
 };
 // Tables avec un @updatedAt : mises a jour automatiquement a chaque update.
-const HAS_UPDATED_AT = new Set(["user", "server", "report"]);
+const HAS_UPDATED_AT = new Set(["user", "server", "report", "platformSetting"]);
 // Relations belongsTo utilisees par include().
 const RELATIONS: Record<string, Record<string, { model: string; fk: string }>> = {
   Server: { owner: { model: "User", fk: "ownerId" } },

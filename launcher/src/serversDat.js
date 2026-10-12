@@ -201,28 +201,49 @@ function withServer(buf, { name, ip }) {
   }
 }
 
+// Verrou par chemin de fichier : deux appels quasi simultanes pour le MEME
+// servers.dat (lancement rapide + "Rejoindre" depuis la fiche detail, par
+// exemple) lisaient chacun le meme etat initial puis ecrivaient chacun leur
+// propre resultat — le second a renommer son fichier temporaire ecrase le
+// premier, perdant son entree (course trouvee par l'audit du 2026-10-10, point
+// mineur). Meme principe que les verrous keyed ajoutes ce soir dans
+// javaManager.js/modpack.js, ici une simple promesse chainee par fichier.
+const fileLocks = new Map();
+
+function withFileLock(file, fn) {
+  const run = (fileLocks.get(file) || Promise.resolve()).catch(() => {}).then(fn);
+  fileLocks.set(file, run);
+  run.finally(() => {
+    if (fileLocks.get(file) === run) fileLocks.delete(file);
+  });
+  return run;
+}
+
 /**
  * Ajoute { name, ip } a la liste Multijoueur de `gameDir` si l'adresse n'y est pas.
- * Renvoie true si le fichier a ete modifie. Ecrit comme Minecraft (fichier
- * temporaire puis remplacement, ancienne version gardee en servers.dat_old).
- * Leve une erreur (sans rien modifier) si le fichier existant est inattendu.
+ * Renvoie (une promesse résolue en) true si le fichier a ete modifie. Ecrit comme
+ * Minecraft (fichier temporaire puis remplacement, ancienne version gardee en
+ * servers.dat_old). Rejette (sans rien modifier) si le fichier existant est
+ * inattendu. Serialise via withFileLock : voir le commentaire ci-dessus.
  */
 function addServerToList(gameDir, { name, ip }) {
   const address = String(ip || "").trim();
-  if (!address || address.length > 255) return false;
+  if (!address || address.length > 255) return Promise.resolve(false);
   const label = String(name || address).slice(0, 100);
-
   const file = path.join(gameDir, "servers.dat");
-  const current = fs.existsSync(file) ? fs.readFileSync(file) : null;
-  const next = withServer(current, { name: label, ip: address });
-  if (!next) return false;
 
-  fs.mkdirSync(gameDir, { recursive: true });
-  const tmp = `${file}_new`;
-  fs.writeFileSync(tmp, next);
-  if (current) fs.copyFileSync(file, `${file}_old`);
-  fs.renameSync(tmp, file);
-  return true;
+  return withFileLock(file, () => {
+    const current = fs.existsSync(file) ? fs.readFileSync(file) : null;
+    const next = withServer(current, { name: label, ip: address });
+    if (!next) return false;
+
+    fs.mkdirSync(gameDir, { recursive: true });
+    const tmp = `${file}_new`;
+    fs.writeFileSync(tmp, next);
+    if (current) fs.copyFileSync(file, `${file}_old`);
+    fs.renameSync(tmp, file);
+    return true;
+  });
 }
 
 module.exports = { addServerToList, withServer, encodeMutf8, decodeMutf8 };

@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, scrypt as scryptCb, scryptSync, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 
 // Authentification du panel administrateur (/admin), séparée des comptes Microsoft
@@ -13,7 +13,10 @@ const MIN_SECRET_LENGTH = 32;
 const MIN_PASSWORD_LENGTH = 12;
 
 export type AdminRole = "admin" | "moderator";
-export type AdminSession = { sub: string; role: AdminRole; exp: number };
+// iat (emission) permet a adminSession.ts de revoquer une session emise avant le dernier
+// changement de mot de passe (adminAccount.passwordChangedAt) — sans ca, un cookie vole restait
+// valide jusqu'a 8h meme apres un changement de mot de passe (audit du 2026-10-10).
+export type AdminSession = { sub: string; role: AdminRole; exp: number; iat: number };
 
 function sessionSecret(): string | null {
   const secret = process.env.ADMIN_SESSION_SECRET;
@@ -34,6 +37,13 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+// Hash factice, meme format qu'un vrai (mais sans compte derriere) : a passer a verifyPassword
+// quand le nom d'utilisateur n'existe pas, pour que le login prenne le meme temps que si le
+// compte existait (sinon un attaquant peut deviner des noms d'utilisateur valides rien qu'en
+// mesurant le temps de reponse — scrypt est volontairement lent). Calcule une fois au demarrage
+// (scryptSync, pas besoin d'etre secret, juste du meme ordre de grandeur en temps de calcul).
+export const DUMMY_PASSWORD_HASH = `scrypt$${Buffer.alloc(16).toString("base64")}$${scryptSync("dummy", Buffer.alloc(16), 64).toString("base64")}`;
+
 // Règle minimale : longueur et au moins deux types de caractères.
 export function passwordProblem(password: string): string | null {
   if (password.length < MIN_PASSWORD_LENGTH) return `Le mot de passe doit faire au moins ${MIN_PASSWORD_LENGTH} caractères.`;
@@ -45,7 +55,9 @@ export function passwordProblem(password: string): string | null {
 export function createAdminSession(sub: string, role: AdminRole, nowMs: number = Date.now()): string | null {
   const secret = sessionSecret();
   if (!secret) return null;
-  const payload = Buffer.from(JSON.stringify({ sub, role, exp: nowMs + ADMIN_SESSION_TTL_MS } satisfies AdminSession)).toString("base64url");
+  const payload = Buffer.from(
+    JSON.stringify({ sub, role, exp: nowMs + ADMIN_SESSION_TTL_MS, iat: nowMs } satisfies AdminSession),
+  ).toString("base64url");
   const sig = createHmac("sha256", secret).update(payload).digest("base64url");
   return `${payload}.${sig}`;
 }
@@ -62,6 +74,10 @@ export function readAdminSession(token: string | undefined, nowMs: number = Date
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as AdminSession;
     if (typeof data.sub !== "string" || (data.role !== "admin" && data.role !== "moderator")) return null;
     if (typeof data.exp !== "number" || data.exp <= nowMs) return null;
+    // Jeton emis avant l'ajout de "iat" (deploiement de ce correctif) : 0 plutot que de le
+    // rejeter — force juste une revocation au prochain changement de mot de passe au lieu
+    // d'aucune revocation possible, jamais une deconnexion immediate de tout le monde.
+    if (typeof data.iat !== "number") data.iat = 0;
     return data;
   } catch {
     return null;

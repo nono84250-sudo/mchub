@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { updateServer, deleteServer, toggleServerPublished, duplicateServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
+import { allSourceStates } from "@/lib/platformSettings";
 import { ServerForm } from "@/components/ServerForm";
 import { ManageActions } from "@/components/ManageActions";
 import { getT } from "@/i18n/getDictionary";
@@ -22,7 +23,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
   const boundDelete = deleteServer.bind(null, server.id);
   const boundTogglePublished = toggleServerPublished.bind(null, server.id);
   const boundDuplicate = duplicateServer.bind(null, server.id);
-  const versions = await getMinecraftVersions();
+  const [versions, sourceStates] = await Promise.all([getMinecraftVersions(), allSourceStates()]);
 
   const defaultValues = {
     name: server.name,
@@ -39,7 +40,11 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
     curseforgeModpackName: server.curseforgeModpackName ?? "",
     curseforgeModpackVersion: server.curseforgeModpackVersion ?? "",
     recommendedRamGB: server.recommendedRamGB?.toString() ?? "",
+    autoConnect: server.autoConnect,
   };
+  // Controle "Publier" (visibilite publique) masque tant que l'auto-test de publication
+  // (launcher, voir /api/launcher/servers/[slug]/self-test) n'a pas encore reussi une fois.
+  const canPublish = !!server.selfTestPassedAt;
 
   return (
     <div className="max-w-2xl">
@@ -63,13 +68,17 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
           versions={versions}
           serverId={server.id}
           inviteCode={server.inviteCode}
+          canPublish={canPublish}
+          sourceStates={sourceStates}
           defaultValues={defaultValues}
         >
           <div className="border-t border-border pt-5">
             <ManageActions
               slug={server.slug}
               published={server.published}
+              isPrivate={server.isPrivate}
               frozen={server.frozenAt !== null}
+              verificationStatus={server.verificationStatus}
               onTogglePublished={boundTogglePublished}
               onDuplicate={boundDuplicate}
               onDelete={boundDelete}

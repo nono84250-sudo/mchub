@@ -3,19 +3,19 @@ import { db } from "@/lib/db";
 import { DesignScreen } from "@/components/admin/DesignScreen";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { serverDetailHtml } from "@/app/admin/design/bind";
-import { listReportsForServer } from "@/lib/reports";
+import { listReportsForServer, listBehaviorReportsForServer } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 
 export default async function ServerDetail({ params }: { params: Promise<{ slug: string }> }) {
   await requireAdmin();
   const { slug } = await params;
-  const server = await db.orm.public.Server.select("id", "slug", "name", "type", "published", "isPrivate", "frozenAt", "frozenReason", "frozenBy", "ip", "minecraftVersion", "curseforgeModpackName", "curseforgeModpackVersion", "createdAt", "launchCount", "ownerId")
+  const server = await db.orm.public.Server.select("id", "slug", "name", "type", "published", "isPrivate", "frozenAt", "frozenReason", "frozenBy", "verificationStatus", "ip", "minecraftVersion", "curseforgeModpackName", "curseforgeModpackVersion", "createdAt", "launchCount", "ownerId")
     .include("owner", (o) => o.select("name"))
     .where({ slug })
     .first();
   if (!server) notFound();
-  const reports = await listReportsForServer(server.id);
+  const [reports, behaviorReports] = await Promise.all([listReportsForServer(server.id), listBehaviorReportsForServer(server.id)]);
   const html = serverDetailHtml({
     id: server.id,
     slug: server.slug,
@@ -27,6 +27,7 @@ export default async function ServerDetail({ params }: { params: Promise<{ slug:
     frozenAt: server.frozenAt,
     frozenReason: server.frozenReason,
     frozenBy: server.frozenBy,
+    verificationStatus: server.verificationStatus,
     ip: server.ip,
     minecraftVersion: server.minecraftVersion,
     modpackName: server.curseforgeModpackName,
@@ -34,6 +35,7 @@ export default async function ServerDetail({ params }: { params: Promise<{ slug:
     createdAt: server.createdAt,
     launchCount: server.launchCount,
     reports,
+    behaviorReports,
     ownerId: server.ownerId,
   });
   return <DesignScreen name="server-detail" html={html} />;

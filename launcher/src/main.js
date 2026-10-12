@@ -1,20 +1,51 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
 const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session } = require("electron");
+
+// Verrou mono-instance : relancer le launcher pendant qu'une instance tourne deja creait
+// jusqu'ici un second process totalement independant (deux lancements Minecraft simultanes
+// sur le meme GAME_ROOT, ecritures concurrentes sans verrou sur settings.json/accounts.bin,
+// double enregistrement du raccourci global de debug). Doit etre demande avant toute autre
+// initialisation (avant meme la creation de la premiere fenetre).
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
+// Un second lancement a quand meme tente de demarrer (et echoue sur le verrou ci-dessus) :
+// on ramene la fenetre existante au premier plan plutot que de laisser l'utilisateur croire
+// que rien ne s'est passe.
+app.on("second-instance", () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
+  win.focus();
+});
+
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
+const fsp = require("node:fs/promises");
 const logStore = require("./logStore");
 
-// Dossier de donnees renomme en ".omniscient-launcher" (convention "dotfile")
-// plutot que "Omniscient Launcher" (le defaut d'Electron, derive de
-// productName) — doit etre fixe ICI, avant tout require() local : mcLaunch,
-// sessionStore, settingsStore et javaManager calculent chacun leur chemin
-// via app.getPath("userData") des le chargement du module. Renomme l'ancien
-// dossier s'il existe encore, pour ne pas perdre les comptes/reglages deja
-// enregistres localement pendant les tests.
+// Dossier de donnees renomme en ".omniscient-launcher" (convention "dotfile") plutot que
+// "Omniscient Launcher" (le defaut d'Electron, derive de productName) — doit etre fixe ICI,
+// avant tout require() local : mcLaunch, sessionStore, settingsStore et javaManager calculent
+// chacun leur chemin via app.getPath("userData") des le chargement du module.
+//
+// Dev et production ont CHACUN leur propre dossier (".omniscient-launcher-dev" vs
+// ".omniscient-launcher", distingues via app.isPackaged) — decision du 2026-10-10, pour que
+// tester en dev ne touche jamais aux vrais comptes/reglages de production, et inversement.
+// Avant cette separation, les deux environnements partageaient le meme dossier, ce qui rendait
+// impossible de "repartir de zero" en dev sans affecter la prod (et vice-versa).
+const isDev = !app.isPackaged;
 const defaultUserDataPath = app.getPath("userData");
-const dottedUserDataPath = path.join(path.dirname(defaultUserDataPath), ".omniscient-launcher");
-if (!fs.existsSync(dottedUserDataPath) && fs.existsSync(defaultUserDataPath)) {
+const dottedUserDataPath = path.join(path.dirname(defaultUserDataPath), isDev ? ".omniscient-launcher-dev" : ".omniscient-launcher");
+// Migration ponctuelle de l'ancien dossier par defaut d'Electron — uniquement en production :
+// seuls de vrais joueurs ont pu avoir des comptes/reglages enregistres dans ce dossier avant
+// l'introduction de la convention dotfile. En dev, un dossier par defaut trouve n'est que du
+// residu de test sans valeur, qu'on ne veut surtout pas ressusciter.
+if (!isDev && !fs.existsSync(dottedUserDataPath) && fs.existsSync(defaultUserDataPath)) {
   try {
     fs.renameSync(defaultUserDataPath, dottedUserDataPath);
   } catch {
@@ -26,7 +57,8 @@ app.setPath("userData", dottedUserDataPath);
 
 const msAuth = require("./msAuth");
 const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
-const { installModpack, ensureVanillaVersion } = require("./modpack");
+const { installModpack, ensureVanillaVersion, hasVanillaFilesInstalled, isInstalled } = require("./modpack");
+const { pingMinecraftServer } = require("./mcPing");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
 const { checkServicesStatus, measureConnection } = require("./servicesStatus");
@@ -106,15 +138,16 @@ const REQUEST_TIMEOUT_MS = 8000;
 // pas l'autre. Pas de session => pas de jeton a envoyer (les appelants
 // verifient deja currentSession avant d'appeler ceci).
 // Jeton de session (point 3) : le site echange le jeton Mojang contre un jeton
-// signe valable 24 h (POST /api/launcher/session). Quand il est utilisable, on
+// signe valable 15 min (POST /api/launcher/session). Quand il est utilisable, on
 // l'envoie dans X-Launcher-Session a la place de X-Minecraft-Token, qui n'est
 // alors plus transmis a chaque requete. Tant qu'il n'y en a pas (premier appel,
 // expire, echange en echec), on envoie le jeton Mojang comme avant.
 // En memoire seulement : un redemarrage refait l'echange.
-// Le jeton de session vaut 15 min cote site. Il est renouvele en silence 5 min
-// avant son expiration (donc vers la 10e minute), et reste utilisable jusqu'a
-// sa vraie fin ; le jeton Mojang n'est envoye qu'en repli (pas encore d'echange
-// reussi, ou session expiree).
+// Le jeton de session vaut 15 min cote site et reste utilisable jusqu'a 30
+// secondes avant sa vraie expiration (LAUNCHER_SESSION_USABLE_MARGIN_MS). Une
+// fois cette marge depassee, un nouvel echange est demande en arriere-plan
+// (voir requestLauncherSession) et le jeton Mojang est envoye en repli pour
+// cet appel-ci (et les suivants) jusqu'a ce que le nouvel echange reussisse.
 let launcherSession = null; // { uuid, token, expiresAt (ms) }
 let launcherSessionRequest = null;
 const LAUNCHER_SESSION_USABLE_MARGIN_MS = 30_000;
@@ -185,6 +218,16 @@ function launcherAuthHeaders() {
   const sessionToken = usableLauncherSessionToken();
   if (sessionToken) {
     return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": sessionToken };
+  }
+  // Pas encore connecte (2026-10-11 : "Installer" peut maintenant s'utiliser
+  // sans compte, voir server:install) — la cle du launcher seule suffit pour
+  // les endpoints publics (fiche serveur public, fichiers de modpack) ;
+  // X-Minecraft-Token n'est qu'une preuve d'identite en plus, jamais lu que
+  // pour les serveurs prives. Avant ce controle : currentSession.authorization
+  // etait lu sans garde, "Cannot read properties of null" des le premier
+  // appel sans session (trouve en testant le bouton "Installer").
+  if (!currentSession) {
+    return { Authorization: `Bearer ${LAUNCHER_API_KEY}` };
   }
   requestLauncherSession();
   return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Minecraft-Token": currentSession.authorization.access_token };
@@ -562,9 +605,33 @@ ipcMain.handle("servers:get", async (_event, slug) => {
     const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, { headers: inviteHeaders(slug) });
     return { ok: true, server: data.server };
   } catch (error) {
-    // Serveur gelé : signalé pour afficher « gelé » plutôt que « introuvable ».
-    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue", frozen: error?.code === "frozen" };
+    // Serveur gelé : signalé pour afficher « gelé » plutôt que « introuvable ». notFound
+    // distingue un vrai 404 (fiche supprimée, voir resolveServersBySlug côté renderer) d'une
+    // panne réseau/timeout, qu'il ne faut surtout pas confondre avec une suppression.
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Erreur inconnue",
+      frozen: error?.code === "frozen",
+      notFound: error?.status === 404 && error?.code !== "frozen",
+    };
   }
+});
+
+// Le bouton "Installer" d'une fiche (2026-10-11) : une fois CE serveur precis
+// pret (moddé OU vanilla — un vanilla vaut aussi la peine d'etre prepare a
+// l'avance), plus besoin de le reafficher — jamais une desactivation
+// globale, juste pour ce slug-la (voir renderDetail cote renderer.js).
+// Deux marqueurs possibles selon le type : STATE_FILE de modpack.js pour les
+// moddes (deja ecrit par installModpack), .omniscient-ready.json pour les
+// vanilla (ecrit par prepareServerFiles ci-dessus) — on teste les deux sans
+// avoir besoin de connaitre le type a l'avance.
+ipcMain.handle("servers:installStatus", async (_event, slug) => {
+  if (await isInstalled(GAME_ROOT, slug)) return { installed: true };
+  const ready = await fsp
+    .access(path.join(GAME_ROOT, "instances", slug, ".omniscient-ready.json"))
+    .then(() => true)
+    .catch(() => false);
+  return { installed: ready };
 });
 
 // Tous les serveurs (publies ou en pause) du compte Omniscient lie au
@@ -584,12 +651,8 @@ ipcMain.handle("servers:mine", async () => {
   }
   const uuid = currentSession.profile.id;
   if (mineCache && mineCache.uuid === uuid && Date.now() - mineCache.at < MINE_CACHE_MS) {
-    logStore.pushLog({ source: "launcher", message: "[debug] Mes instances : réponse en cache" });
     return { ok: true, servers: mineCache.servers };
   }
-  // DEBUG TEMPORAIRE
-  const debugStart = Date.now();
-  logStore.pushLog({ source: "launcher", message: "[debug] Mes instances : demande au site lancée" });
   try {
     const data = await withSessionRetry(() =>
       fetchJson(
@@ -598,12 +661,10 @@ ipcMain.handle("servers:mine", async () => {
       ),
     );
     mineCache = { uuid, at: Date.now(), servers: data.servers };
-    logStore.pushLog({ source: "launcher", message: `[debug] Mes instances : réponse en ${Date.now() - debugStart} ms` });
     logStore.pushLog({ source: "launcher", message: `Mes instances : ${data.servers?.length ?? 0} serveur(s) chargé(s)` });
     return { ok: true, servers: data.servers };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
-    logStore.pushLog({ level: "error", source: "launcher", message: `[debug] Mes instances : échec après ${Date.now() - debugStart} ms` });
     logStore.pushLog({ level: "error", source: "launcher", message: `Mes instances : échec (${error.status ?? "pas de réponse"}) : ${message}` });
     return { ok: false, status: error.status, error: message };
   }
@@ -626,13 +687,22 @@ ipcMain.handle("app:restart", () => {
 // Mode maintenance (voir renderer.js ensureNotInMaintenance/showMaintenanceScreen) : verifie
 // au demarrage et depuis le pop-up d'une notification "maintenance". Pas de session requise
 // (joignable avant meme la connexion Microsoft).
+// Ces deux appels n'ont besoin QUE de la cle API (comme joinServerByCode plus bas) : la
+// route /api/launcher/maintenance n'exige aucune identite joueur cote site, et
+// launcherAuthHeaders() dereferencerait currentSession (null avant toute connexion) —
+// exactement le moment ou l'ecran de maintenance doit pouvoir bloquer (voir audit 2026-10-10,
+// §3.3 : le TypeError resultant etait avale par le catch ci-dessous, fail-open silencieux).
 ipcMain.handle("maintenance:check", async () => {
   try {
-    const data = await fetchJson(`${SITE_URL}/api/launcher/maintenance`, { headers: launcherAuthHeaders() });
+    const data = await fetchJson(`${SITE_URL}/api/launcher/maintenance`, {
+      headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+    });
     return { ok: true, active: !!data.active, message: data.message || "" };
-  } catch {
+  } catch (error) {
     // Site injoignable : ne bloque jamais le launcher pour ca, seule une vraie reponse
-    // "active: true" du site doit bloquer.
+    // "active: true" du site doit bloquer. On garde une trace pour distinguer ce cas d'une
+    // vraie panne reseau au besoin.
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Vérification de maintenance impossible (${error instanceof Error ? error.message : error})` });
     return { ok: true, active: false, message: "" };
   }
 });
@@ -640,11 +710,12 @@ ipcMain.handle("maintenance:verifyCode", async (_event, code) => {
   try {
     const data = await fetchJson(`${SITE_URL}/api/launcher/maintenance`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...launcherAuthHeaders() },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAUNCHER_API_KEY}` },
       body: JSON.stringify({ code }),
     });
     return { ok: !!data.ok };
-  } catch {
+  } catch (error) {
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Vérification du code de maintenance impossible (${error instanceof Error ? error.message : error})` });
     return { ok: false };
   }
 });
@@ -735,7 +806,7 @@ ipcMain.handle("servers:listJoined", async () => {
 // renderer.js/openReportDialog et site/src/app/api/launcher/servers/[slug]/
 // report/route.ts) — necessite d'etre connecte, le joueur qui signale doit
 // etre identifiable par le proprietaire.
-ipcMain.handle("reports:submit", async (_event, { slug, issue, message, clientVersion, attachDiagnostics }) => {
+ipcMain.handle("reports:submit", async (_event, { slug, category, issue, behaviorIssue, message, clientVersion, attachDiagnostics, proofUrl }) => {
   if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
   try {
     const res = await fetch(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/report`, {
@@ -744,8 +815,11 @@ ipcMain.handle("reports:submit", async (_event, { slug, issue, message, clientVe
       body: JSON.stringify({
         reporterMinecraftUuid: currentSession.profile.id,
         reporterMinecraftUsername: currentSession.profile.name,
+        category,
         issue,
+        behaviorIssue,
         message,
+        proofUrl: proofUrl || null,
         clientVersion: attachDiagnostics ? clientVersion || null : null,
         launcherVersion: attachDiagnostics ? app.getVersion() : null,
       }),
@@ -932,7 +1006,15 @@ ipcMain.handle("account:switch", async (_event, id) => {
     );
     setSession(profile, authorization);
     sessionRemembered = true;
-    sessionStore.rememberAccount(profile.id, profile.name, newRefreshToken);
+    // La bascule elle-meme a deja reussi (currentSession a change) : un echec de
+    // persistance ici ne doit pas etre rapporte comme un echec total (comparer avec
+    // auth:signIn/auth:tryRestore, qui isolent deja ce cas) — juste averti par log, le
+    // compte reste simplement pas remis a jour sur disque pour la prochaine fois.
+    try {
+      sessionStore.rememberAccount(profile.id, profile.name, newRefreshToken);
+    } catch (persistError) {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Bascule de compte : mémorisation échouée (${persistError instanceof Error ? persistError.message : persistError})` });
+    }
     return { ok: true, profile };
   } catch (error) {
     if (error.code === "invalid_grant") {
@@ -946,12 +1028,16 @@ ipcMain.handle("account:switch", async (_event, id) => {
 });
 
 ipcMain.handle("account:remove", async (_event, id) => {
-  sessionStore.forgetAccount(id);
-  if (currentSession?.profile?.id === id) {
-    await revokeLauncherSession();
-    currentSession = null;
+  try {
+    sessionStore.forgetAccount(id);
+    if (currentSession?.profile?.id === id) {
+      await revokeLauncherSession();
+      currentSession = null;
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
-  return { ok: true };
 });
 
 // Changement de skin : le renderer lit le fichier choisi et envoie ses
@@ -1163,6 +1249,258 @@ ipcMain.handle("status:getConnection", (event, force) => {
 
 let gameLaunchInProgress = false;
 
+// Registre des telechargements en cours (2026-10-11, panneau "Taches" façon
+// Modrinth) — plusieurs installations en parallele pour des serveurs
+// differents sont volontairement permises (modpack.js protege deja chaque
+// instance/fichier individuellement : installLocks/downloadFileLocks). Ce
+// registre ne remplace PAS gameLaunchInProgress, qui reste reserve au
+// lancement du jeu lui-meme (minecraft-launcher-core, lui, ne supporte pas
+// deux lancements simultanes) — jamais au telechargement.
+let nextTaskId = 1;
+const installTasks = new Map();
+
+function serializeTask(task) {
+  return {
+    id: task.id,
+    slug: task.slug,
+    name: task.name,
+    status: task.status, // "active" | "paused" | "complete" | "error" | "cancelled"
+    text: task.text,
+    bytes: task.bytes,
+    totalBytes: task.totalBytes,
+    speedBps: task.speedBps,
+    error: task.error,
+  };
+}
+
+function broadcastTasks() {
+  const tasks = [...installTasks.values()].map(serializeTask);
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send("tasks:update", tasks);
+  }
+}
+
+function createInstallTask(slug, name) {
+  const task = {
+    id: nextTaskId++,
+    slug,
+    name: name || slug,
+    status: "active",
+    text: "",
+    bytes: 0,
+    totalBytes: 0,
+    speedBps: 0,
+    error: null,
+    controller: new AbortController(),
+    // Pause cooperative (2026-10-11) : le worker de telechargement (modpack.js)
+    // attend cette promesse entre deux fichiers — resolue au clic sur Reprendre.
+    pausePromise: null,
+    resumeResolve: null,
+    lastTickAt: Date.now(),
+    lastTickBytes: 0,
+  };
+  installTasks.set(task.id, task);
+  return task;
+}
+
+// Vitesse lissee sur des paliers d'au moins 400ms (pas a chaque chunk reçu,
+// trop saccade pour un affichage lisible) — voir downloadFileLocked/
+// installFiles dans modpack.js, qui appellent onProgress a chaque morceau.
+function updateTaskFromProgress(task, status) {
+  if (status.text) task.text = status.text;
+  if (typeof status.bytes === "number") {
+    const now = Date.now();
+    const elapsed = now - task.lastTickAt;
+    if (elapsed >= 400) {
+      const deltaBytes = status.bytes - task.lastTickBytes;
+      task.speedBps = elapsed > 0 ? Math.max(0, (deltaBytes / elapsed) * 1000) : task.speedBps;
+      task.lastTickAt = now;
+      task.lastTickBytes = status.bytes;
+    }
+    task.bytes = status.bytes;
+  }
+  if (status.totalBytes) task.totalBytes = status.totalBytes;
+}
+
+function taskWaitIfPaused(task) {
+  return async () => {
+    while (task.pausePromise) await task.pausePromise;
+  };
+}
+
+ipcMain.handle("tasks:list", () => [...installTasks.values()].map(serializeTask));
+
+ipcMain.handle("tasks:pause", (_event, id) => {
+  const task = installTasks.get(id);
+  if (!task || task.status !== "active") return { ok: false };
+  task.status = "paused";
+  task.pausePromise = new Promise((resolve) => {
+    task.resumeResolve = resolve;
+  });
+  broadcastTasks();
+  return { ok: true };
+});
+
+ipcMain.handle("tasks:resume", (_event, id) => {
+  const task = installTasks.get(id);
+  if (!task || task.status !== "paused") return { ok: false };
+  task.status = "active";
+  task.resumeResolve?.();
+  task.pausePromise = null;
+  broadcastTasks();
+  return { ok: true };
+});
+
+ipcMain.handle("tasks:cancel", (_event, id) => {
+  const task = installTasks.get(id);
+  if (!task) return { ok: false };
+  task.controller.abort();
+  // Si la tache etait en pause, il faut aussi la lever : sinon le worker
+  // reste bloque a attendre une reprise qui ne viendra jamais, sans jamais
+  // constater l'annulation (voir waitIfPaused dans modpack.js).
+  task.resumeResolve?.();
+  task.pausePromise = null;
+  return { ok: true };
+});
+
+ipcMain.handle("tasks:clearCompleted", () => {
+  for (const [id, task] of installTasks) {
+    if (task.status === "complete" || task.status === "error" || task.status === "cancelled") installTasks.delete(id);
+  }
+  broadcastTasks();
+  return { ok: true };
+});
+
+// Prepare les fichiers d'un serveur (modpack + Java requis) sans jamais lancer
+// le jeu — partagee par "Installer" (server:install, aucune connexion requise)
+// et "Rejoindre" (game:launch, qui enchaine avec launchMinecraft). Extraite le
+// 2026-10-11 (audit onboarding) : avant, les deux etaient fusionnes dans
+// game:launch, qui exigeait donc une session Microsoft rien que pour
+// telecharger un modpack.
+async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, waitIfPaused }) {
+  // Deux routes possibles (2026-10-11, bouton "Installer" sans connexion) :
+  // /api/launcher/servers/[slug] exige desormais un joueur identifie (audit
+  // securite, "Point 3") car elle renvoie l'IP reelle du serveur — jamais
+  // utile pour une simple installation, seulement pour launchMinecraft() plus
+  // bas. Sans session, on prend donc /api/public/servers/[slug] (memes infos
+  // utiles a l'installation, jamais d'IP, aucune identite requise). Avec
+  // session (Rejoindre passe toujours par attemptSignIn() avant), on garde la
+  // route privilegiee comme avant, pour avoir l'IP necessaire au lancement.
+  // Serveur prive : le site exige la preuve (jeton du proprietaire, ou code
+  // d'invitation du serveur rejoint), voir canSeeServer cote site.
+  const data = currentSession
+    ? await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
+        headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+      })
+    : await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, {
+        headers: inviteHeaders(slug),
+      });
+  const server = data.server;
+  const settings = settingsStore.loadSettings();
+  // `memoryOverride` sert un lancement "juste cette fois" avec la RAM
+  // recommandee du serveur (voir applyRecommendedRamIfNeeded cote
+  // renderer) — jamais ecrit dans settings.json, seulement utilise pour
+  // CE lancement, toujours borne par la meme limite de securite que les
+  // reglages persistants.
+  const memoryMinGB = memoryOverride ? settingsStore.clampGB(memoryOverride.minGB, settings.memoryMinGB) : settings.memoryMinGB;
+  const memoryMaxGB = memoryOverride ? settingsStore.clampGB(memoryOverride.maxGB, settings.memoryMaxGB) : settings.memoryMaxGB;
+
+  // Serveur moddé : installe (ou met à jour) son modpack CurseForge dans une
+  // instance propre au serveur avant de lancer. Voir modpack.js.
+  let modded = null;
+  if (server.type === "modded" && server.curseforgeModpackId) {
+    modded = await installModpack({
+      config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) } },
+      slug,
+      gameRoot: GAME_ROOT,
+      javaPath: settings.javaPath || undefined,
+      // Java de la version que Mojang demande pour ce jeu (voir javaManager.js).
+      resolveJava: (major, onJavaProgress) =>
+        javaManager.ensureJavaForMajor(major, { preferredPath: settings.javaPath || undefined, onProgress: onJavaProgress }),
+      onProgress: (status) => {
+        // Les mises a jour chiffrees (une par mod, ou en octets) ne sont pas journalisees.
+        if (status.text && typeof status.task !== "number") logStore.pushLog({ source: "launcher", message: status.text });
+        onProgress(status);
+      },
+      signal,
+      waitIfPaused,
+    });
+    logStore.pushLog({
+      source: "launcher",
+      message: `Modpack "${modded.modpackName}" prêt (${modded.customVersion})${modded.javaMajor ? ` — Java ${modded.javaMajor}` : ""}.`,
+    });
+  }
+
+  // Java de cette version de Minecraft (Mojang l'indique dans le JSON de la version ;
+  // sans indication = Java 8, les versions anciennes). Un serveur moddé l'a deja resolu.
+  let gameJava = modded?.javaPath;
+  if (!gameJava) {
+    try {
+      const vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
+      gameJava = await javaManager.ensureJavaForMajor(vanilla.javaVersion?.majorVersion ?? 8, {
+        preferredPath: settings.javaPath || undefined,
+        onProgress: (text) => onProgress({ text }),
+      });
+      // Marqueur de "pret" pour un serveur vanilla (2026-10-11, bouton
+      // "Installer" ouvert a tous les serveurs, pas seulement les moddes —
+      // meme un vanilla vaut la peine d'etre prepare a l'avance, par exemple
+      // avant un evenement programme, pour qui a une connexion lente). Les
+      // moddes ont deja leur propre marqueur via installModpack/STATE_FILE ;
+      // celui-ci ne sert qu'aux vanilla, qui n'ont pas de dossier d'instance
+      // propre (version/Java partages entre tous les serveurs de meme version).
+      await fsp.mkdir(path.join(GAME_ROOT, "instances", slug), { recursive: true });
+      await fsp.writeFile(
+        path.join(GAME_ROOT, "instances", slug, ".omniscient-ready.json"),
+        JSON.stringify({ minecraftVersion: server.minecraftVersion, readyAt: new Date().toISOString() }),
+      );
+    } catch (error) {
+      // Version inconnue de Mojang (snapshot, personnalisee…) : Java par defaut, comme avant.
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Java par défaut (version de Minecraft non résolue) : ${error instanceof Error ? error.message : error}` });
+    }
+  }
+
+  return { server, settings, modded, gameJava, memoryMinGB, memoryMaxGB };
+}
+
+// Installe un serveur (modpack + Java) sans le lancer : le bouton "Installer"
+// a cote de "Rejoindre" (2026-10-11, audit onboarding) — aucune connexion
+// Microsoft requise, juste le telechargement des fichiers. Ne partage PAS
+// gameLaunchInProgress (reserve au lancement du jeu) : plusieurs installations
+// peuvent tourner en parallele pour des serveurs differents, affichees comme
+// autant de taches dans le panneau — voir installTasks ci-dessus.
+ipcMain.handle("server:install", async (event, slug, displayName) => {
+  const already = [...installTasks.values()].find((t) => t.slug === slug && (t.status === "active" || t.status === "paused"));
+  if (already) {
+    return { ok: false, error: "Une installation est déjà en cours pour ce serveur.", taskId: already.id };
+  }
+
+  const task = createInstallTask(slug, displayName);
+  broadcastTasks();
+  logStore.pushLog({ source: "launcher", message: `Demande d'installation pour "${slug}"` });
+  try {
+    const onProgress = (status) => {
+      updateTaskFromProgress(task, status);
+      broadcastTasks();
+    };
+    const { modded } = await prepareServerFiles(slug, { onProgress, signal: task.controller.signal, waitIfPaused: taskWaitIfPaused(task) });
+    task.status = "complete";
+    task.bytes = task.totalBytes || task.bytes;
+    broadcastTasks();
+    return { ok: true, modded: !!modded };
+  } catch (error) {
+    const cancelled = error?.name === "AbortError";
+    task.status = cancelled ? "cancelled" : "error";
+    task.error = cancelled ? null : error instanceof Error ? error.message : "Erreur inconnue";
+    broadcastTasks();
+    if (cancelled) {
+      logStore.pushLog({ source: "launcher", message: `Installation de "${slug}" annulée.` });
+      return { ok: false, cancelled: true };
+    }
+    logStore.pushLog({ level: "error", source: "launcher", message: `Échec de l'installation de "${slug}" : ${task.error}` });
+    return { ok: false, error: task.error, frozen: error?.code === "frozen" };
+  }
+});
+
 ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   if (!currentSession) {
     return { ok: false, error: "Connecte-toi avec ton compte Microsoft avant de rejoindre un serveur." };
@@ -1175,64 +1513,30 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   }
   gameLaunchInProgress = true;
 
+  // Meme registre de taches que "Installer" (2026-10-11) : "Rejoindre" telecharge
+  // aussi (voir prepareServerFiles), donc apparait dans le meme panneau — la tache
+  // se termine des que les fichiers sont prets, avant launchMinecraft() (qui, lui,
+  // reste suivi par la barre de progression existante, pas une tache de telechargement).
+  const task = createInstallTask(slug, null);
+  broadcastTasks();
+
   logStore.pushLog({ source: "launcher", message: `Demande de lancement pour "${slug}"` });
   try {
-    // Serveur prive : le site exige la preuve (jeton du proprietaire, ou code
-    // d'invitation du serveur rejoint), voir canSeeServer cote site.
-    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
-      headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+    const onProgress = (status) => {
+      updateTaskFromProgress(task, status);
+      broadcastTasks();
+      event.sender.send("game:progress", status);
+    };
+    const { server, settings, modded, gameJava, memoryMinGB, memoryMaxGB } = await prepareServerFiles(slug, {
+      memoryOverride,
+      onProgress,
+      signal: task.controller.signal,
+      waitIfPaused: taskWaitIfPaused(task),
     });
-    const server = data.server;
-    const settings = settingsStore.loadSettings();
-    // `memoryOverride` sert un lancement "juste cette fois" avec la RAM
-    // recommandee du serveur (voir applyRecommendedRamIfNeeded cote
-    // renderer) — jamais ecrit dans settings.json, seulement utilise pour
-    // CE lancement, toujours borne par la meme limite de securite que les
-    // reglages persistants.
-    const memoryMinGB = memoryOverride ? settingsStore.clampGB(memoryOverride.minGB, settings.memoryMinGB) : settings.memoryMinGB;
-    const memoryMaxGB = memoryOverride ? settingsStore.clampGB(memoryOverride.maxGB, settings.memoryMaxGB) : settings.memoryMaxGB;
-
-    const onProgress = (status) => event.sender.send("game:progress", status);
-
-    // Serveur moddé : installe (ou met à jour) son modpack CurseForge dans une
-    // instance propre au serveur avant de lancer. Voir modpack.js.
-    let modded = null;
-    if (server.type === "modded" && server.curseforgeModpackId) {
-      modded = await installModpack({
-        config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) } },
-        slug,
-        gameRoot: GAME_ROOT,
-        javaPath: settings.javaPath || undefined,
-        // Java de la version que Mojang demande pour ce jeu (voir javaManager.js).
-        resolveJava: (major, onJavaProgress) =>
-          javaManager.ensureJavaForMajor(major, { preferredPath: settings.javaPath || undefined, onProgress: onJavaProgress }),
-        onProgress: (status) => {
-          // Les mises a jour chiffrees (une par mod) ne sont pas journalisees.
-          if (status.text && typeof status.task !== "number") logStore.pushLog({ source: "launcher", message: status.text });
-          onProgress(status);
-        },
-      });
-      logStore.pushLog({
-        source: "launcher",
-        message: `Modpack "${modded.modpackName}" prêt (${modded.customVersion})${modded.javaMajor ? ` — Java ${modded.javaMajor}` : ""}.`,
-      });
-    }
-
-    // Java de cette version de Minecraft (Mojang l'indique dans le JSON de la version ;
-    // sans indication = Java 8, les versions anciennes). Un serveur moddé l'a deja resolu.
-    let gameJava = modded?.javaPath;
-    if (!gameJava) {
-      try {
-        const vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
-        gameJava = await javaManager.ensureJavaForMajor(vanilla.javaVersion?.majorVersion ?? 8, {
-          preferredPath: settings.javaPath || undefined,
-          onProgress: (text) => onProgress({ text }),
-        });
-      } catch (error) {
-        // Version inconnue de Mojang (snapshot, personnalisee…) : Java par defaut, comme avant.
-        logStore.pushLog({ level: "warn", source: "launcher", message: `Java par défaut (version de Minecraft non résolue) : ${error instanceof Error ? error.message : error}` });
-      }
-    }
+    task.name = server.name;
+    task.status = "complete";
+    task.bytes = task.totalBytes || task.bytes;
+    broadcastTasks();
 
     await launchMinecraft({
       // Jeu lance / ferme : les fenetres ralentissent leurs interrogations pendant la partie.
@@ -1255,6 +1559,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       version: modded?.minecraftVersion ?? server.minecraftVersion,
       serverIp: server.ip,
       serverName: server.name,
+      autoConnect: server.autoConnect,
       onProgress,
       memory: { min: `${memoryMinGB}G`, max: `${memoryMaxGB}G` },
       // Serveur moddé : le Java demandé par sa version de Minecraft (Forge plante
@@ -1272,15 +1577,259 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/launch`, {
       method: "POST",
       headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
-    }).catch((error) => console.debug("[game:launch] suivi du lancement echoue :", error));
+    }).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Suivi du lancement échoué pour "${slug}" : ${error instanceof Error ? error.message : error}` }));
 
     return { ok: true };
   } catch (error) {
+    const cancelled = error?.name === "AbortError";
+    if (task.status === "active" || task.status === "paused") {
+      task.status = cancelled ? "cancelled" : "error";
+      task.error = cancelled ? null : error instanceof Error ? error.message : "Erreur inconnue";
+      broadcastTasks();
+    }
+    if (cancelled) return { ok: false, cancelled: true };
     const message = error instanceof Error ? error.message : "Erreur inconnue";
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement de "${slug}" : ${message}` });
     return { ok: false, error: message, frozen: error?.code === "frozen" };
   } finally {
     gameLaunchInProgress = false;
+  }
+});
+
+// "Tester pour publication" (Mes instances) : auto-test que le PROPRIETAIRE lance lui-meme
+// avant de pouvoir publier son serveur (voir le nouveau flux cote site, selfTestPassedAt).
+// Reutilise les memes briques que game:launch (ping, installModpack, launchMinecraft) —
+// jamais dupliquees, seulement orchestrees differemment ici pour produire 3 resultats
+// distincts plutot qu'un simple ok/erreur. Un seul test (ou lancement normal) a la fois,
+// meme verrou que game:launch (gameLaunchInProgress) puisque les deux lancent reellement
+// Minecraft.
+// 2026-10-11 : le 4e controle ("Connexion au serveur", un re-ping pendant que le jeu reste
+// ouvert) est retire — intestable de maniere fiable pour le moment (demande de laisser le jeu
+// ouvert le temps du re-ping, pas de manière simple de le valider en conditions reelles). Les
+// 3 controles restants (joignabilite, fichiers installes, demarrage du jeu) suffisent a
+// debloquer la publication pour l'instant.
+let selfTestInProgress = false;
+
+// Annulation ("Annuler le test") : un simple drapeau vérifié entre chaque étape. Pas besoin
+// d'identifiant de requête : un seul test à la fois (selfTestInProgress), donc un seul
+// drapeau global, réinitialisé au début de chaque appel.
+let selfTestAbortRequested = false;
+// Reference vers la tache du panneau de telechargements (voir installTasks) creee par le
+// test en cours (2026-10-11 : le telechargement du check #2 restait invisible du panneau,
+// signale par le proprietaire). "Annuler le test" abat aussi cette tache, pour reellement
+// interrompre un telechargement en cours plutot que d'attendre qu'il finisse tout seul.
+let selfTestTask = null;
+
+ipcMain.handle("selftest:abort", async () => {
+  if (!selfTestInProgress) return { ok: false, code: "not_running" };
+  selfTestAbortRequested = true;
+  selfTestTask?.controller.abort();
+  return { ok: true };
+});
+
+ipcMain.handle("selftest:run", async (event, slug) => {
+  if (!currentSession) {
+    return { ok: false, error: "Connecte-toi avec ton compte Microsoft avant de lancer le test.", code: "not_signed_in" };
+  }
+  if (gameLaunchInProgress || selfTestInProgress) {
+    return { ok: false, error: "Un lancement ou un test est déjà en cours.", code: "busy" };
+  }
+  gameLaunchInProgress = true;
+  selfTestInProgress = true;
+  selfTestAbortRequested = false;
+
+  // Meme registre de taches que "Installer"/"Rejoindre" (2026-10-11) : le telechargement du
+  // check #2 doit apparaitre dans le meme panneau, pas rester invisible pendant qu'il tourne.
+  const task = createInstallTask(slug, null);
+  selfTestTask = task;
+  broadcastTasks();
+  const onProgress = (status) => {
+    updateTaskFromProgress(task, status);
+    broadcastTasks();
+    event.sender.send("game:progress", status);
+  };
+
+  const report = (step, status, detail) => event.sender.send("selftest:progress", { step, status, detail });
+  const checks = { reachable: false, modpackInstalled: false, gameStarted: false };
+  let detectedVersion = null;
+
+  // Si le test a été annulé, marque le check en cours comme échoué/annulé et conclut
+  // immédiatement — les checks suivants, jamais atteints, restent "pending" côté UI et
+  // sont automatiquement forcés à "échoué" par le même mécanisme que le bug du timeout
+  // (voir renderer.js/finalizeSelfTestStatuses), donc rien d'autre à faire ici.
+  const bailIfAborted = (step) => {
+    if (!selfTestAbortRequested) return false;
+    report(step, "fail", { aborted: true });
+    if (task.status === "active" || task.status === "paused") {
+      task.status = "cancelled";
+      broadcastTasks();
+    }
+    logStore.pushLog({ source: "launcher", message: `Auto-test de publication annulé pour "${slug}"` });
+    return true;
+  };
+
+  logStore.pushLog({ source: "launcher", message: `Auto-test de publication lancé pour "${slug}"` });
+
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
+      headers: launcherAuthHeaders(),
+    });
+    const server = data.server;
+    const settings = settingsStore.loadSettings();
+
+    // Les 3 controles s'enchainent TOUJOURS, meme si l'un d'eux echoue — seule une annulation
+    // explicite ("Annuler le test") interrompt la suite. Un controle rate n'empeche pas les
+    // suivants de tourner : le proprietaire doit voir le diagnostic complet (quels controles
+    // passent, lesquels non) plutot qu'un test qui s'arrete au premier probleme rencontre —
+    // decision du 2026-10-10, suite a un retour explicite ("le joueur doit savoir ce qui ne va
+    // pas, meme si une section a echoue il faut faire le test suivant").
+
+    // 1. Serveur joignable — ping direct (TCP + Server List Ping), independant de Minecraft
+    // lui-meme (voir mcPing.js, le meme protocole que site/src/lib/mc-ping.ts).
+    report("reachable", "running");
+    const before = await pingMinecraftServer(server.ip);
+    if (bailIfAborted("reachable")) return { ok: true, checks, detectedVersion, allPassed: false, aborted: true };
+    if (before) {
+      checks.reachable = true;
+      detectedVersion = before.versionName;
+      report("reachable", "pass", { detectedVersion, onlineBefore: before.online, pingMs: before.pingMs });
+    } else {
+      report("reachable", "fail");
+    }
+
+    // 2. Fichiers du jeu installés — reutilise exactement le meme flux que game:launch. Pour un
+    // serveur vanilla, ensureVanillaVersion ne garantit que le JSON et le jar : bibliotheques et
+    // assets (le gros du volume) ne sont reellement telecharges que par minecraft-launcher-core
+    // lui-meme, au moment du lancement (etape 3 ci-dessous, via launchMinecraft) — impossible de
+    // les telecharger separement sans dupliquer sa logique interne. Donc ce check reste "en
+    // cours" pendant que l'etape 3 s'execute, et n'est confirme "reussi" qu'au moment ou ce
+    // lancement a reellement reussi (preuve que les fichiers sont bien la) — jamais devine a
+    // l'avance a partir d'un simple JSON+jar (constate le 2026-10-10 : "reussi" s'affichait a
+    // tort juste apres suppression manuelle des fichiers pour tester).
+    if (bailIfAborted("modpack")) return { ok: true, checks, detectedVersion, allPassed: false, aborted: true };
+    report("modpack", "running");
+    let modded = null;
+    let vanilla = null;
+    try {
+      if (server.type === "modded" && server.curseforgeModpackId) {
+        modded = await installModpack({
+          config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: launcherAuthHeaders() },
+          slug,
+          gameRoot: GAME_ROOT,
+          javaPath: settings.javaPath || undefined,
+          resolveJava: (major, onJavaProgress) =>
+            javaManager.ensureJavaForMajor(major, { preferredPath: settings.javaPath || undefined, onProgress: onJavaProgress }),
+          onProgress,
+          signal: task.controller.signal,
+          waitIfPaused: taskWaitIfPaused(task),
+        });
+      } else {
+        vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
+      }
+    } catch (error) {
+      report("modpack", "fail", { error: error instanceof Error ? error.message : String(error) });
+    }
+    if (bailIfAborted("gameStarted")) return { ok: true, checks, detectedVersion, allPassed: false, aborted: true };
+
+    // 3. Jeu démarré (RAM correcte) — launchMinecraft() ne résout qu'une fois Minecraft
+    // réellement démarré (started = true / onGameState(true)), avec la RAM des réglages
+    // actuels du joueur (c'est bien SA configuration qui doit être testée, pas une valeur
+    // arbitraire). Tente de lancer meme si le check #2 a echoue (fichiers manquants, etc.) :
+    // l'erreur rencontree ici est elle-meme une information utile pour le proprietaire — et si
+    // malgre tout le lancement reussit (bibliotheques/assets reinstalles au passage), le check
+    // #2 est valide a cet instant, pas avant (voir plus haut).
+    report("gameStarted", "running");
+    let gameJava = modded?.javaPath;
+    if (!gameJava) {
+      try {
+        gameJava = await javaManager.ensureJavaForMajor(vanilla?.javaVersion?.majorVersion ?? 8, {
+          preferredPath: settings.javaPath || undefined,
+          onProgress: (text) => onProgress({ text }),
+        });
+      } catch (error) {
+        logStore.pushLog({ level: "warn", source: "launcher", message: `Auto-test : Java par défaut (${error instanceof Error ? error.message : error})` });
+      }
+    }
+
+    // Meme convention que game:launch : la tache de telechargement se termine ici (fichiers
+    // du modpack/vanilla prets), avant launchMinecraft() qui telecharge encore bibliotheques/
+    // assets en interne mais reste suivi par la barre de progression du test, pas une
+    // deuxieme tache.
+    task.status = "complete";
+    task.bytes = task.totalBytes || task.bytes;
+    broadcastTasks();
+
+    try {
+      await launchMinecraft({
+        onGameState: (running) => {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) win.webContents.send("game:state", running);
+          }
+        },
+        authorization: currentSession.authorization,
+        version: modded?.minecraftVersion ?? server.minecraftVersion,
+        serverIp: server.ip,
+        serverName: server.name,
+        autoConnect: server.autoConnect,
+        onProgress,
+        memory: { min: `${settings.memoryMinGB}G`, max: `${settings.memoryMaxGB}G` },
+        javaPath: gameJava || settings.javaPath || undefined,
+        gameDirectory: modded?.instanceDir,
+        customVersion: modded?.customVersion,
+        customJvmArgs: modded?.jvmArgs,
+      });
+      // Preuve que les fichiers sont reellement la (voir le commentaire du check #2) : atteint
+      // uniquement si minecraft-launcher-core a fini de telecharger/verifier bibliotheques et
+      // assets avant de demarrer le processus.
+      checks.modpackInstalled = true;
+      report("modpack", "pass");
+      checks.gameStarted = true;
+      report("gameStarted", "pass");
+      discordPresence.setPlayingActivity(server.name);
+    } catch (error) {
+      report("gameStarted", "fail", { error: error instanceof Error ? error.message : String(error) });
+    }
+
+    const allPassed = checks.reachable && checks.modpackInstalled && checks.gameStarted;
+    logStore.pushLog({ source: "launcher", message: `Auto-test de publication terminé pour "${slug}" : ${allPassed ? "réussi" : "échoué"}` });
+    return { ok: true, checks, detectedVersion, allPassed };
+  } catch (error) {
+    // Echec avant que l'etape 2 n'ait eu l'occasion de marquer la tache "complete"
+    // (ex. fetchJson initial echoue) : evite de la laisser "active" pour toujours.
+    if (task.status === "active" || task.status === "paused") {
+      task.status = error?.name === "AbortError" ? "cancelled" : "error";
+      task.error = error?.name === "AbortError" ? null : error instanceof Error ? error.message : "Erreur inconnue";
+      broadcastTasks();
+    }
+    const message = error instanceof Error ? error.message : "Erreur inconnue";
+    logStore.pushLog({ level: "error", source: "launcher", message: `Auto-test de publication : échec pour "${slug}" (${message})` });
+    return { ok: false, error: message };
+  } finally {
+    gameLaunchInProgress = false;
+    selfTestInProgress = false;
+    selfTestAbortRequested = false;
+    selfTestTask = null;
+  }
+});
+
+// Rapporte un test 100% réussi au site (voir /api/launcher/servers/[slug]/self-test) — seule la
+// fiche le stocke (selfTestPassedAt) et seulement si les 3 contrôles sont vrais ; le site
+// re-vérifie aussi côté serveur (jamais confiance au client seul pour débloquer la publication).
+ipcMain.handle("selftest:report", async (_event, { slug, checks, detectedVersion }) => {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/self-test`, {
+      method: "POST",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ checks, detectedVersion }),
+    });
+    // 2026-10-11 : un test reussi envoie maintenant directement la fiche en file d'attente
+    // (isPrivate passe a false cote site, voir self-test/route.ts) — sans vider mineCache,
+    // "Mes instances" pouvait reafficher "Tester pour publication" jusqu'a 60s (MINE_CACHE_MS)
+    // apres une demande reussie, le temps que le cache expire tout seul.
+    if (data.passed) mineCache = null;
+    return { ok: true, passed: !!data.passed };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
 
@@ -1303,6 +1852,17 @@ app.whenReady().then(async () => {
   globalShortcut.register("CommandOrControl+Shift+D", () => createConsoleWindow());
   discordPresence.init(DISCORD_CLIENT_ID);
   discordPresence.setBrowsingActivity();
+}).catch((error) => {
+  // Exception inattendue pendant le demarrage (createWindow/setContentSecurityPolicy/
+  // discordPresence.init...) : sans ce .catch(), le launcher restait figue/invisible sans
+  // aucune trace exploitable (voir audit 2026-10-10, §3.5). Meme modele que le cas
+  // "LAUNCHER_API_KEY manquante" juste au-dessus : log + dialogue explicite pour l'utilisateur.
+  logStore.pushLog({ level: "error", source: "launcher", message: `Démarrage échoué : ${error instanceof Error ? error.message : error}` });
+  dialog.showErrorBox(
+    "Erreur de démarrage",
+    `Omniscient Launcher n'a pas pu démarrer correctement :\n${error instanceof Error ? error.message : String(error)}`,
+  );
+  app.exit(1);
 });
 
 app.on("will-quit", () => {
