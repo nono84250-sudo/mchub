@@ -247,6 +247,10 @@ const DICTIONARIES = {
       joinByCodePlaceholder: "Code d'invitation",
       joinByCodeSubmit: "Ajouter",
       selfTestButton: "Tester pour publication",
+      offlineSubtitle: "Pas de compte Minecraft connecté — voici les instances déjà installées sur cet ordinateur.",
+      offlineEmpty: "Aucune instance installée sur cet ordinateur pour l'instant.",
+      badgeOfflineAvailable: "Disponible hors ligne",
+      playOffline: "Jouer en solo",
     },
     selfTest: {
       title: "Test de publication — {name}",
@@ -706,6 +710,10 @@ const DICTIONARIES = {
       joinByCodePlaceholder: "Invite code",
       joinByCodeSubmit: "Add",
       selfTestButton: "Test for publishing",
+      offlineSubtitle: "No Minecraft account signed in — here are the instances already installed on this computer.",
+      offlineEmpty: "No instance installed on this computer yet.",
+      badgeOfflineAvailable: "Available offline",
+      playOffline: "Play solo",
     },
     selfTest: {
       title: "Publishing test — {name}",

@@ -172,6 +172,52 @@ async function isInstalled(gameRoot, slug) {
   }
 }
 
+// Instances deja presentes sur CE disque (2026-10-12, jouer en solo hors
+// ligne) : utilisee quand il n'y a pas de session Microsoft active (donc pas
+// moyen d'interroger /api/launcher/servers/mine) — scanne directement
+// instances/<slug>/ plutot que d'attendre une reponse du site. Un dossier
+// moddé a son STATE_FILE (readInstalledState ci-dessus) ; un serveur vanilla
+// "juste prepare" (bouton Installer, voir prepareServerFiles) a son
+// ".omniscient-ready.json" a la place — un dossier qui n'a ni l'un ni
+// l'autre (telechargement interrompu avant le premier etat ecrit, ou dossier
+// residuel) est simplement ignore plutot que de planter la liste entiere.
+async function listInstalledInstances(gameRoot) {
+  const instancesDir = path.join(gameRoot, "instances");
+  let entries;
+  try {
+    entries = await fsp.readdir(instancesDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const out = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const slug = entry.name;
+    const instanceDir = path.join(instancesDir, slug);
+
+    const state = await readInstalledState(instanceDir);
+    if (state) {
+      out.push({
+        slug,
+        type: "modded",
+        minecraftVersion: state.minecraftVersion,
+        loaderId: state.loaderId,
+        modpackName: state.modpackName || null,
+      });
+      continue;
+    }
+
+    try {
+      const ready = JSON.parse(await fsp.readFile(path.join(instanceDir, ".omniscient-ready.json"), "utf8"));
+      out.push({ slug, type: "vanilla", minecraftVersion: ready.minecraftVersion, modpackName: null });
+    } catch {
+      // Ni modpack installe ni vanilla pret pour ce dossier : rien a proposer hors ligne.
+    }
+  }
+  return out;
+}
+
 // --- Formats de modpack -----------------------------------------------------
 
 // Un "pack" decrit ce qu'il faut installer, quel que soit le format d'origine :
@@ -754,6 +800,12 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
         modpackFileId: file.id,
         minecraftVersion: pack.minecraftVersion,
         loaderId: pack.loaderId,
+        // Nom affichable (2026-10-12) : seul moyen de montrer un nom plutot que le
+        // slug brut dans la liste "disponible hors ligne" (listInstalledInstances),
+        // qui n'a pas accès au site pour le redemander. N'existait pas avant cette
+        // date — une instance installée plus tôt retombe sur le slug, voir
+        // listInstalledInstances.
+        modpackName: info.modpack.name,
         files: [...installedFiles, ...overrideJars],
         overrideHashes,
       },
@@ -787,5 +839,7 @@ module.exports = {
   hasVanillaFilesInstalled,
   ruleAllows,
   isInstalled,
+  readInstalledState,
+  listInstalledInstances,
   ModpackError,
 };

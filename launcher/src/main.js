@@ -26,6 +26,7 @@ const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
+const crypto = require("node:crypto");
 const logStore = require("./logStore");
 
 // Dossier de donnees renomme en ".omniscient-launcher" (convention "dotfile") plutot que
@@ -57,7 +58,16 @@ app.setPath("userData", dottedUserDataPath);
 
 const msAuth = require("./msAuth");
 const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
-const { installModpack, ensureVanillaVersion, hasVanillaFilesInstalled, isInstalled } = require("./modpack");
+const {
+  installModpack,
+  ensureVanillaVersion,
+  hasVanillaFilesInstalled,
+  isInstalled,
+  installLoader,
+  prepareLaunchVersion,
+  readInstalledState,
+  listInstalledInstances,
+} = require("./modpack");
 const { pingMinecraftServer } = require("./mcPing");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
@@ -667,6 +677,23 @@ ipcMain.handle("servers:mine", async () => {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
     logStore.pushLog({ level: "error", source: "launcher", message: `Mes instances : échec (${error.status ?? "pas de réponse"}) : ${message}` });
     return { ok: false, status: error.status, error: message };
+  }
+});
+
+// "Mes instances" sans session Microsoft active (2026-10-12, jouer en solo hors ligne) :
+// servers:mine ci-dessus exige currentSession (refuse tout sans ça, voir son premier
+// controle) — dans ce cas, le renderer bascule sur cette liste a la place, qui ne lit QUE le
+// disque local (listInstalledInstances, voir modpack.js), jamais le site. Volontairement
+// disponible meme AVEC une session active (un joueur hors ligne peut quand meme avoir une
+// session Microsoft perimee en memoire) : c'est le renderer qui decide quand l'utiliser,
+// jamais ce handler.
+ipcMain.handle("instances:listInstalled", async () => {
+  try {
+    const instances = await listInstalledInstances(GAME_ROOT);
+    return { ok: true, instances };
+  } catch (error) {
+    logStore.pushLog({ level: "error", source: "launcher", message: `Instances locales : échec de la lecture (${error instanceof Error ? error.message : error})` });
+    return { ok: false, instances: [] };
   }
 });
 
@@ -1591,6 +1618,157 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement de "${slug}" : ${message}` });
     return { ok: false, error: message, frozen: error?.code === "frozen" };
+  } finally {
+    gameLaunchInProgress = false;
+  }
+});
+
+// Lancement solo hors ligne (2026-10-12) : pour une instance DEJA installee (voir
+// instances:listInstalled), sans session Microsoft, sans jamais contacter SITE_URL ni le
+// serveur distant du proprietaire — juste ouvrir le jeu avec les mods deja presents sur le
+// disque pour jouer a son propre monde local. Condition d'activation cote renderer : pas de
+// session active (!currentProfile), donc probablement hors ligne ou pas connecte ; ce handler
+// lui-meme ne verifie pas currentSession (un joueur avec une session perimee en memoire doit
+// pouvoir s'en servir aussi), c'est au renderer de ne proposer ce bouton que dans ce cas.
+// Partage gameLaunchInProgress avec game:launch : les deux lancent reellement Minecraft, un
+// seul a la fois quel que soit le chemin.
+ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
+  if (gameLaunchInProgress) {
+    return { ok: false, error: "Un lancement du jeu est déjà en cours." };
+  }
+  gameLaunchInProgress = true;
+
+  const task = createInstallTask(slug, null);
+  broadcastTasks();
+  logStore.pushLog({ source: "launcher", message: `Demande de lancement hors ligne pour "${slug}"` });
+
+  try {
+    const instanceDir = path.join(GAME_ROOT, "instances", slug);
+    const moddedState = await readInstalledState(instanceDir);
+    let vanillaReady = null;
+    if (!moddedState) {
+      try {
+        vanillaReady = JSON.parse(await fsp.readFile(path.join(instanceDir, ".omniscient-ready.json"), "utf8"));
+      } catch {
+        // Pas de marqueur du tout : rien a lancer hors ligne pour ce slug.
+      }
+    }
+    if (!moddedState && !vanillaReady) {
+      throw new Error("Cette instance n'est pas installée sur cet ordinateur.");
+    }
+
+    const settings = settingsStore.loadSettings();
+    const memoryMinGB = memoryOverride ? settingsStore.clampGB(memoryOverride.minGB, settings.memoryMinGB) : settings.memoryMinGB;
+    const memoryMaxGB = memoryOverride ? settingsStore.clampGB(memoryOverride.maxGB, settings.memoryMaxGB) : settings.memoryMaxGB;
+
+    const onProgress = (status) => {
+      updateTaskFromProgress(task, status);
+      broadcastTasks();
+      event.sender.send("game:progress", status);
+    };
+
+    const minecraftVersion = moddedState ? moddedState.minecraftVersion : vanillaReady.minecraftVersion;
+    let customVersion = null;
+    let jvmArgs = null;
+    let gameJava = settings.javaPath || undefined;
+
+    if (moddedState) {
+      // Memes briques que prepareServerFiles/installModpack (installLoader, prepareLaunchVersion),
+      // mais JAMAIS installModpack lui-meme : il commence par interroger le site
+      // (/api/launcher/servers/[slug]/modpack) pour redemander le modpack, ce qui echouerait (ou
+      // pire, attendrait un timeout) sans internet et n'est de toute facon pas necessaire — les
+      // fichiers sont deja sur le disque (STATE_FILE), seul le profil de lancement (version
+      // "-omniscient" fusionnee) doit etre recalcule. installLoader/ensureVanillaVersion ne font
+      // de requete reseau que si le fichier attendu manque localement (installateur/JSON deja en
+      // cache ici, puisque l'instance a ete installee en ligne avant).
+      const loaderVersionId = await installLoader({
+        loaderId: moddedState.loaderId,
+        minecraftVersion,
+        gameRoot: GAME_ROOT,
+        javaPath: settings.javaPath || undefined,
+        onProgress,
+      });
+      const prepared = await prepareLaunchVersion({ gameRoot: GAME_ROOT, loaderVersionId, minecraftVersion });
+      customVersion = prepared.customVersion;
+      jvmArgs = prepared.jvmArgs;
+    }
+
+    try {
+      const vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), minecraftVersion);
+      gameJava = await javaManager.ensureJavaForMajor(vanilla.javaVersion?.majorVersion ?? 8, {
+        preferredPath: settings.javaPath || undefined,
+        onProgress: (text) => onProgress({ text }),
+      });
+    } catch (error) {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Java par défaut (hors ligne, version non résolue) : ${error instanceof Error ? error.message : error}` });
+    }
+
+    task.status = "complete";
+    task.bytes = task.totalBytes || task.bytes;
+    broadcastTasks();
+
+    // Profil "hors connexion" (voir Authenticator.getAuth de minecraft-launcher-core, meme forme
+    // de sortie) : aucun jeton Mojang reel, aucun appel reseau — exactement ce que fait le
+    // launcher officiel avec son bouton "Jouer hors connexion". On reprend l'UUID/pseudo du
+    // dernier compte Microsoft memorise sur CET ordinateur (sessionStore, lu localement, jamais
+    // envoye nulle part) plutot qu'en generer un nouveau : le monde solo et les stats du joueur
+    // restent lies au MEME identifiant qu'en ligne. Aucun compte memorise (jamais connecte sur ce
+    // poste) : profil local generique.
+    const { accounts, activeId } = sessionStore.loadAccounts();
+    const rememberedAccount = accounts.find((a) => a.id === activeId) || accounts[0] || null;
+    const offlineName = rememberedAccount?.name || "Joueur";
+    const offlineUuid = rememberedAccount?.id || crypto.randomUUID();
+    const offlineAuthorization = {
+      access_token: offlineUuid,
+      client_token: offlineUuid,
+      uuid: offlineUuid,
+      name: offlineName,
+      user_properties: "{}",
+      meta: { type: "mojang", demo: false },
+    };
+
+    await launchMinecraft({
+      onGameState: (running) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send("game:state", running);
+        }
+        if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (win.isDestroyed()) continue;
+            if (win.isMinimized()) win.restore();
+            win.show();
+            win.focus();
+          }
+        }
+      },
+      authorization: offlineAuthorization,
+      version: minecraftVersion,
+      // Jamais d'IP/autoConnect ici : impossible de joindre le serveur du proprietaire sans
+      // internet, et ce n'est pas le but — juste ouvrir le jeu pour une partie solo locale.
+      serverIp: null,
+      serverName: null,
+      autoConnect: false,
+      onProgress,
+      memory: { min: `${memoryMinGB}G`, max: `${memoryMaxGB}G` },
+      javaPath: gameJava || settings.javaPath || undefined,
+      gameDirectory: moddedState ? instanceDir : undefined,
+      customVersion,
+      customJvmArgs: jvmArgs,
+    });
+
+    logStore.pushLog({ source: "launcher", message: `Jeu lancé hors ligne pour "${slug}" (profil local "${offlineName}").` });
+    return { ok: true, offline: true };
+  } catch (error) {
+    const cancelled = error?.name === "AbortError";
+    if (task.status === "active" || task.status === "paused") {
+      task.status = cancelled ? "cancelled" : "error";
+      task.error = cancelled ? null : error instanceof Error ? error.message : "Erreur inconnue";
+      broadcastTasks();
+    }
+    if (cancelled) return { ok: false, cancelled: true };
+    const message = error instanceof Error ? error.message : "Erreur inconnue";
+    logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement hors ligne de "${slug}" : ${message}` });
+    return { ok: false, error: message };
   } finally {
     gameLaunchInProgress = false;
   }

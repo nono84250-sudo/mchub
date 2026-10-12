@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld("mchub", {
   // l'afficher pour CE serveur precis — voir servers:installStatus.
   getServerInstallStatus: (slug) => ipcRenderer.invoke("servers:installStatus", slug),
   listMyServers: () => ipcRenderer.invoke("servers:mine"),
+  // Pas de session Microsoft (2026-10-12, jouer en solo hors ligne) : liste les instances
+  // deja installees sur CET ordinateur en lisant juste le disque — voir instances:listInstalled.
+  listLocalInstances: () => ipcRenderer.invoke("instances:listInstalled"),
   listJoinedServers: () => ipcRenderer.invoke("servers:listJoined"),
   joinServerByCode: (code) => ipcRenderer.invoke("servers:joinByCode", code),
   leaveJoinedServer: (slug) => ipcRenderer.invoke("servers:leaveJoined", slug),
@@ -24,6 +27,9 @@ contextBridge.exposeInMainWorld("mchub", {
   tryRestoreSession: () => ipcRenderer.invoke("auth:tryRestore"),
   signOut: () => ipcRenderer.invoke("auth:signOut"),
   playServer: (slug, memoryOverride) => ipcRenderer.invoke("game:launch", slug, memoryOverride),
+  // Solo hors ligne (2026-10-12) : aucune session Microsoft requise, aucun appel au site ni au
+  // serveur distant — voir game:launchOffline cote main.js.
+  playOfflineServer: (slug, memoryOverride) => ipcRenderer.invoke("game:launchOffline", slug, memoryOverride),
   onGameProgress: (callback) => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on("game:progress", listener);

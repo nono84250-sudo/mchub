@@ -3,10 +3,36 @@ import { MagnifyingGlass } from "@phosphor-icons/react/ssr";
 import { ServerCard } from "@/components/ServerCard";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { listPublicServersPage, type ServerListSort } from "@/lib/public-servers";
+import { DEFAULT_OG_IMAGE, DEFAULT_TWITTER_IMAGE } from "@/lib/seo";
 import { getT } from "@/i18n/getDictionary";
 import { t } from "@/i18n/t";
 
-export const metadata = { title: "Serveurs — Omniscient" };
+const TITLE = "Serveurs — Omniscient";
+const DESCRIPTION = "Parcourez l'annuaire Omniscient : des serveurs Minecraft vanilla et moddés, avec leur nombre de joueurs en direct, à lancer en un clic.";
+
+export const metadata = {
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: "/servers" },
+  openGraph: {
+    type: "website",
+    url: "/servers",
+    // siteName/locale repetes ici : un openGraph defini au niveau de la page
+    // remplace entierement celui du layout racine (merge "shallow", pas de
+    // fusion champ par champ — voir generateMetadata.md "Merging").
+    siteName: "Omniscient",
+    locale: "fr_FR",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [DEFAULT_OG_IMAGE],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [DEFAULT_TWITTER_IMAGE],
+  },
+};
 
 export default async function ServersPage({ searchParams }: PageProps<"/servers">) {
   const query = await searchParams;

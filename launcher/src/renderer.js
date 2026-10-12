@@ -2454,13 +2454,130 @@ function myInstancesSkeletonHtml() {
     <div class="instance-grid" aria-busy="true">${card.repeat(3)}</div>`;
 }
 
+// Carte "disponible hors ligne" (2026-10-12) : pas la meme forme qu'instanceCardHtml, qui
+// attend un objet serveur complet (ip, published, isPrivate...) venu du site — une instance
+// locale (voir instances:listInstalled cote main.js) n'a que { slug, type, minecraftVersion,
+// modpackName }. Pas d'icone personnalisee possible hors ligne (iconUrl vient du site), donc
+// toujours la pastille-initiale ; pas de bouton "Gerer" (il ouvrirait le site) ni "Rejoindre"
+// (demande une session) — juste "Jouer en solo", qui passe par game:launchOffline.
+function offlineInstanceCardHtml(instance) {
+  const title = instance.modpackName || instance.slug;
+  return `
+    <div class="instance-card" data-slug="${escapeHtml(instance.slug)}">
+      <span class="instance-card-icon">${serverInitial(title)}</span>
+      <div class="instance-card-body">
+        <div class="instance-card-title">
+          <h3>${escapeHtml(title)}</h3>
+          <span class="instance-badge offline-available">${t("myInstances.badgeOfflineAvailable")}</span>
+        </div>
+        <p>${t(instance.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(instance.minecraftVersion)}</p>
+      </div>
+      <div class="instance-card-actions">
+        <button type="button" class="btn-secondary my-instance-play-offline" data-slug="${escapeHtml(instance.slug)}">${t("myInstances.playOffline")}</button>
+      </div>
+    </div>`;
+}
+
+function renderOfflineInstancesGrid(instances) {
+  myInstancesPanelEl.className = "instances-view";
+  myInstancesPanelEl.innerHTML = `
+    <div class="instances-header">
+      <div>
+        <h2>${t("nav.myInstances")}</h2>
+        <p class="join-note">${t("myInstances.offlineSubtitle")}</p>
+      </div>
+    </div>
+    ${
+      instances.length === 0
+        ? `<p class="join-note">${t("myInstances.offlineEmpty")}</p>`
+        : `<div class="instance-grid">${instances.map(offlineInstanceCardHtml).join("")}</div>`
+    }
+  `;
+
+  myInstancesPanelEl.querySelectorAll(".my-instance-play-offline").forEach((btn) => {
+    // Meme garde synchrone qu'ailleurs (my-instance-play, playbar) : desactive avant tout await.
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (btn.disabled) return;
+      const instance = instances.find((i) => i.slug === btn.dataset.slug);
+      if (!instance) return;
+      btn.disabled = true;
+      try {
+        await launchOfflineInstance(instance);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+// Lancement solo hors ligne (2026-10-12) : variante de launchServer() sans les etapes qui ne
+// s'appliquent qu'en ligne (attemptSignIn, applyRecommendedRamIfNeeded — une instance locale
+// n'a pas de recommendedRamGB venu du site). Reutilise la meme barre de progression du bas
+// (playbar) pour rester visuellement coherent avec un lancement normal.
+async function launchOfflineInstance(instance) {
+  if (launchInProgress) return null;
+  launchInProgress = true;
+
+  const label = document.getElementById("playbar-progress-label");
+  const percentEl = document.getElementById("playbar-progress-percent");
+  const fill = document.getElementById("playbar-progress-fill");
+
+  fill.classList.remove("error");
+  fill.style.width = "0%";
+  percentEl.textContent = "";
+  label.textContent = t("playbar.launchingServer", { name: instance.modpackName || instance.slug });
+  setPlaybarBusy(true);
+
+  const stopListening = window.mchub.onGameProgress((status) => {
+    if (!status || typeof status !== "object") return;
+    if (status.text) label.textContent = status.text;
+    if (typeof status.task === "number" && typeof status.total === "number" && status.total > 0) {
+      const percent = Math.min(100, Math.round((status.task / status.total) * 100));
+      fill.style.width = `${percent}%`;
+      percentEl.textContent = `${percent}%`;
+    }
+  });
+
+  const result = await window.mchub.playOfflineServer(instance.slug);
+  stopListening();
+  launchInProgress = false;
+
+  if (result.ok) {
+    fill.style.width = "100%";
+    percentEl.textContent = "";
+    label.textContent = t("playbar.launched");
+    setTimeout(() => {
+      setPlaybarBusy(false);
+      launchStarting = true;
+      syncPlaybarWithGame();
+      setTimeout(() => {
+        launchStarting = false;
+        syncPlaybarWithGame();
+      }, 60_000);
+    }, 1800);
+  } else {
+    fill.classList.add("error");
+    label.textContent = result.error;
+    setTimeout(() => setPlaybarBusy(false), 4000);
+  }
+
+  return result;
+}
+
 async function renderMyInstancesList() {
   if (!currentProfile) {
-    myInstancesPanelEl.className = "detail";
-    myInstancesPanelEl.innerHTML = `
-      <h2>${t("nav.myInstances")}</h2>
-      <p class="join-note">${t("myInstances.loginRequired")}</p>
-    `;
+    // Pas de session Microsoft active (2026-10-12) : probablement hors ligne, ou simplement
+    // pas encore connecte. Avant, cet ecran se contentait d'un message "connecte-toi" meme si
+    // des instances etaient deja installees sur le disque (bug confirme : rien n'etait propose
+    // au joueur sans internet alors qu'il pouvait deja jouer en solo). On regarde maintenant ce
+    // qui est reellement installe localement (instances:listInstalled, lecture disque seule,
+    // jamais le site) et on l'affiche a la place, avec un bouton "Jouer en solo" dedie
+    // (launchOfflineInstance) plutot que le bouton "Rejoindre" habituel (qui exige une session).
+    myInstancesPanelEl.className = "instances-view";
+    myInstancesPanelEl.innerHTML = myInstancesSkeletonHtml();
+    const localResult = await window.mchub.listLocalInstances();
+    renderOfflineInstancesGrid(localResult.ok ? localResult.instances : []);
     return;
   }
 

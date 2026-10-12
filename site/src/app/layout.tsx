@@ -7,9 +7,32 @@ import { I18nProvider } from "@/i18n/I18nProvider";
 import { getT } from "@/i18n/getDictionary";
 import "./globals.css";
 
+const SITE_URL = "https://omniscientlauncher.com";
+const SITE_NAME = "Omniscient";
+const SITE_DESCRIPTION = "Découvrez des serveurs Minecraft et lancez-les en un clic.";
+
 export const metadata: Metadata = {
+  // Base des URLs absolues (og:url, og:image, canonical...) pour toutes les
+  // pages qui n'en definissent pas la leur — voir decision domaine du 2026-10-12.
+  metadataBase: new URL(SITE_URL),
   title: "Omniscient — Annuaire de serveurs Minecraft",
-  description: "Découvrez des serveurs Minecraft et lancez-les en un clic.",
+  description: SITE_DESCRIPTION,
+  // Open Graph / Twitter Card par defaut : herites par toute page qui ne les
+  // redefinit pas (voir regles de merge de generateMetadata) — servers/page.tsx
+  // et servers/[slug]/page.tsx les precisent avec leur propre titre/description.
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: SITE_NAME,
+    title: "Omniscient — Annuaire de serveurs Minecraft",
+    description: SITE_DESCRIPTION,
+    locale: "fr_FR",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Omniscient — Annuaire de serveurs Minecraft",
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
