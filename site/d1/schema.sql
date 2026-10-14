@@ -209,3 +209,16 @@ CREATE TABLE "news" (
   "createdAt"   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX "news_published_publishedAt_idx" ON "news"("published", "publishedAt");
+
+-- Formulaire de contact public (/contact) : messages lus dans /admin/contact. Table deja
+-- presente dans la base (creee avec le travail de master), ajoutee ici a la mise en ligne de la
+-- page le 2026-10-14.
+CREATE TABLE "contactMessage" (
+  "id"        TEXT PRIMARY KEY,
+  "name"      TEXT NOT NULL,
+  "email"     TEXT NOT NULL,
+  "message"   TEXT NOT NULL,
+  "status"    TEXT NOT NULL DEFAULT 'new',
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX "contactMessage_status_createdAt_idx" ON "contactMessage"("status", "createdAt");

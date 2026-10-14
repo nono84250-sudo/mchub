@@ -30,6 +30,7 @@ const TABLES: Record<string, string> = {
   PlayerWarning: "playerWarning",
   AdminNote: "adminNote",
   News: "news",
+  ContactMessage: "contactMessage",
 };
 // Colonnes booleennes : stockees en 0/1 dans D1, rendues en true/false.
 const BOOLEAN_COLUMNS: Record<string, string[]> = {

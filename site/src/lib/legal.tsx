@@ -130,7 +130,8 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 les règles et traiter les recours.
               </>,
               <>
-                <B>Messages envoyés par e-mail</B> : votre adresse et votre message, pour vous répondre.
+                <B>Formulaire de contact et e-mails</B> : nom, adresse e-mail, sujet et message, pour vous répondre.
+                Votre adresse IP sert seulement, en mémoire, à limiter l&apos;envoi à 5 messages par heure.
               </>,
               <>
                 <B>Données techniques</B> : l&apos;hébergeur du site (Vercel) enregistre automatiquement des données
@@ -209,7 +210,7 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 compte. Vous pouvez supprimer vous-même vos notifications dans le launcher.
               </>,
               <>Cookie de session : jusqu&apos;à 30 jours.</>,
-              <>Messages reçus par e-mail : le temps de traiter la demande.</>,
+              <>Messages de contact : jusqu&apos;à leur suppression par nous ou à votre demande.</>,
               <>Données techniques de l&apos;hébergeur : selon sa propre politique.</>,
             ]}
           />
@@ -257,7 +258,8 @@ export function privacyPolicy(locale: Locale): LegalPage {
               légitime, demander la portabilité de vos données et donner des directives pour après votre décès.
             </p>
             <p>
-              Écrivez à <Mail /> (objet « Données personnelles »). Nous pouvons vous demander de prouver que le compte
+              Écrivez à <Mail /> (objet « Données personnelles ») ou utilisez le{" "}
+              <Link href="/contact" className="text-foreground underline underline-offset-2">formulaire de contact</Link>. Nous pouvons vous demander de prouver que le compte
               est bien le vôtre. Réponse sous un mois. Vous pouvez aussi saisir la CNIL (www.cnil.fr).
             </p>
           </>
@@ -387,7 +389,8 @@ function privacyEn(): LegalPage {
                 internal team notes (never shown to the player). Purpose: enforcing the rules and handling appeals.
               </>,
               <>
-                <B>Messages sent by email</B>: your address and message, to answer you.
+                <B>Contact form and emails</B>: name, email address, subject and message, to answer you. Your IP
+                address is only used, in memory, to limit sending to 5 messages per hour.
               </>,
               <>
                 <B>Technical data</B>: the website host (Vercel) automatically records technical data, including your IP
@@ -462,7 +465,7 @@ function privacyEn(): LegalPage {
                 account. You can delete your notifications yourself in the launcher.
               </>,
               <>Session cookie: up to 30 days.</>,
-              <>Messages received by email: the time needed to handle the request.</>,
+              <>Contact messages: until we delete them or you ask us to.</>,
               <>Host technical data: according to the host&apos;s own policy.</>,
             ]}
           />
@@ -510,7 +513,8 @@ function privacyEn(): LegalPage {
               for after your death.
             </p>
             <p>
-              Write to <Mail /> (subject &quot;Personal data&quot;). We may ask you to prove the account is yours.
+              Write to <Mail /> (subject &quot;Personal data&quot;) or use the{" "}
+              <Link href="/contact" className="text-foreground underline underline-offset-2">contact form</Link>. We may ask you to prove the account is yours.
               Answer within one month. You can also complain to the French data protection authority, the CNIL
               (www.cnil.fr).
             </p>
@@ -660,7 +664,8 @@ export function termsOfUse(locale: Locale): LegalPage {
           <p>
             En cas de non-respect de ces règles, Omniscient peut retirer ou masquer une fiche, envoyer un avertissement,
             geler un serveur ou bloquer un compte. Le propriétaire concerné est informé du motif et peut faire un
-            recours. Vous pouvez signaler un problème depuis le launcher, ou un contenu illicite par e-mail à <Mail />.
+            recours. Vous pouvez signaler un problème depuis le launcher, ou un contenu illicite par e-mail à <Mail /> ou
+            via le <Link href="/contact" className="text-foreground underline underline-offset-2">formulaire de contact</Link>.
           </p>
         ),
       },
@@ -812,7 +817,8 @@ function termsEn(): LegalPage {
           <p>
             If these rules are broken, Omniscient may remove or hide a listing, issue a warning, freeze a server or lock
             an account. The owner concerned is told why and can appeal. You can report a problem from the launcher, or
-            illegal content by email to <Mail />.
+            illegal content by email to <Mail /> or through the{" "}
+            <Link href="/contact" className="text-foreground underline underline-offset-2">contact form</Link>.
           </p>
         ),
       },
