@@ -290,7 +290,8 @@ function resolveModrinthFiles(index) {
 // Le joueur peut le recuperer lui-meme (14/10, demande de Rushi, comme Prism ou
 // ATLauncher) : il le telecharge depuis la page du mod et le laisse dans son dossier
 // Telechargements (`manualSearchDirs`), ou il est retrouve ici par sa taille puis son
-// empreinte SHA-1, et copie dans mods/. Ce qui manque encore fait echouer l'installation
+// empreinte SHA-1, et deplace dans mods/ (14/10, retour de Rushi : ne pas laisser de copie
+// qui encombre Telechargements). Ce qui manque encore fait echouer l'installation
 // avec la liste de ces mods (code "manual_mods"), affichee par le launcher.
 // Pas de lien de repli vers le CDN de CurseForge : il contournerait le choix de l'auteur.
 async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDir, manualSearchDirs = [] }) {
@@ -321,7 +322,7 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
 
   if (blocked.length && instanceDir) {
     const found = await findManualFiles(blocked, { instanceDir, searchDirs: manualSearchDirs });
-    if (found > 0) onProgress({ text: `${found} mod(s) ajouté(s) à la main retrouvé(s).` });
+    if (found > 0) onProgress({ text: `${found} mod(s) ajouté(s) à la main retrouvé(s) et déplacé(s) dans le jeu.` });
   }
   for (const { info, entry, ready } of blocked) {
     if (ready) entries.push(entry);
@@ -360,9 +361,13 @@ function safeCurseforgeUrl(value) {
 
 // Mods bloques deja presents (dans mods/ de l'instance, ou deposes par le joueur dans un
 // des dossiers `searchDirs`) : un fichier n'est accepte que si sa taille ET son empreinte
-// SHA-1 sont celles annoncees par CurseForge — sans les deux, il n'est jamais copie. Seuls les
+// SHA-1 sont celles annoncees par CurseForge — sans les deux, il n'est jamais deplace. Seuls les
 // .jar/.zip de la bonne taille sont lus, rien d'autre du dossier Telechargements.
-// Marque `ready` sur chaque mod retrouve et renvoie combien ont ete copies depuis searchDirs.
+// Deplacement = copie complete dans mods/ PUIS suppression de l'original : jamais l'inverse,
+// et si la suppression echoue (fichier ouvert, droits), l'original reste simplement la — rien
+// n'est perdu. Pas de rename direct : Telechargements et le dossier du jeu peuvent etre sur
+// deux disques differents.
+// Marque `ready` sur chaque mod retrouve et renvoie combien ont ete deplaces depuis searchDirs.
 async function findManualFiles(blocked, { instanceDir, searchDirs }) {
   let copied = 0;
   const pending = [];
@@ -411,6 +416,9 @@ async function findManualFiles(blocked, { instanceDir, searchDirs }) {
       await fsp.rename(`${match.target}.part`, match.target);
       match.ready = true;
       copied++;
+      if (await fileMatches(match.target, { sha1: match.entry.sha1, size: match.entry.size })) {
+        await fsp.rm(candidate, { force: true }).catch(() => {});
+      }
     }
   }
   return copied;
