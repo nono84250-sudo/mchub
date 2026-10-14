@@ -5,7 +5,7 @@ import { SlotPortal } from "@/components/admin/SlotPortal";
 import { PlayerExportButton } from "@/components/admin/PlayerExportButton";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { playerDetailHtml, type PlayerServerRow } from "@/app/admin/design/bind";
-import { countPlayerData, type ExportCategory } from "@/lib/playerExport";
+import { countPlayerData, EXPORT_UNCHECKED_BY_DEFAULT, type ExportCategory } from "@/lib/playerExport";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +17,8 @@ const EXPORT_LABELS: Record<ExportCategory, { title: string; desc: string }> = {
   signalementsEnvoyes: { title: "Signalements envoyés", desc: "Ceux qu'il a faits sur d'autres serveurs" },
   signalementsSurSesServeurs: { title: "Signalements sur ses serveurs", desc: "Auteurs masqués, texte des signalements de comportement exclu" },
   notifications: { title: "Notifications", desc: "Messages reçus dans le launcher" },
-  avertissements: { title: "Avertissements", desc: "Motif, auteur, date" },
-  notesDuStaff: { title: "Notes du staff", desc: "Incluses : ce sont des données sur lui" },
+  avertissements: { title: "Avertissements", desc: "Motif et date" },
+  notesDuStaff: { title: "Notes du staff", desc: "Décochées par défaut : à relire, elles peuvent citer d'autres joueurs" },
   amis: { title: "Amis", desc: "Pseudos et statut des demandes" },
   presence: { title: "Présence", desc: "Dernière activité dans le launcher" },
   serveursSuivis: { title: "Serveurs suivis", desc: "Alertes « revenu en ligne »" },
@@ -107,6 +107,7 @@ export default async function PlayerDetail({
             playerId={player.id}
             playerName={player.name}
             categories={(Object.keys(EXPORT_LABELS) as ExportCategory[]).map((key) => ({ key, ...EXPORT_LABELS[key], count: exportCounts[key] }))}
+            uncheckedByDefault={EXPORT_UNCHECKED_BY_DEFAULT}
           />
         </SlotPortal>
       ) : null}

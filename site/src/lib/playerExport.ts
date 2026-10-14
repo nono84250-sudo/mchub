@@ -20,11 +20,19 @@ export const EXPORT_CATEGORIES = [
 ] as const;
 export type ExportCategory = (typeof EXPORT_CATEGORIES)[number];
 
+// Decochees par defaut dans la fenetre d'export : les notes du staff peuvent citer d'autres
+// joueurs (droits des tiers, RGPD art. 15(4)) — a relire avant de les cocher (audit 14/10, I-8c).
+export const EXPORT_UNCHECKED_BY_DEFAULT: readonly ExportCategory[] = ["notesDuStaff"];
+
+// Ce qui remplace le nom de connexion d'un admin dans l'export : ces noms sont la moitie du
+// couple identifiant + mot de passe du panel, ils ne sortent jamais (audit 14/10, I-8a).
+const TEAM = "l'équipe Omniscient";
+
 export const NOT_INCLUDED = [
   "Jetons et dates de session, secrets du launcher",
   "Codes d'invitation des serveurs privés",
   "Pseudos et UUID des joueurs qui ont signalé ses serveurs",
-  "Identifiants internes des admins",
+  "Noms de connexion des admins (remplacés par « l'équipe Omniscient »)",
 ];
 
 type Row = Record<string, unknown>;
@@ -148,16 +156,16 @@ const LOADERS: Record<ExportCategory, (account: Account) => Promise<unknown>> = 
   },
 
   avertissements: async (a) =>
-    (await rows('SELECT "reason", "createdBy", "createdAt" FROM "playerWarning" WHERE "userId" = ? ORDER BY "createdAt" DESC', [a.id])).map((w) => ({
+    (await rows('SELECT "reason", "createdAt" FROM "playerWarning" WHERE "userId" = ? ORDER BY "createdAt" DESC', [a.id])).map((w) => ({
       motif: w.reason,
-      par: w.createdBy,
+      par: TEAM,
       le: w.createdAt,
     })),
 
   notesDuStaff: async (a) =>
-    (await rows('SELECT "text", "createdBy", "createdAt" FROM "adminNote" WHERE "userId" = ? ORDER BY "createdAt" DESC', [a.id])).map((n) => ({
+    (await rows('SELECT "text", "createdAt" FROM "adminNote" WHERE "userId" = ? ORDER BY "createdAt" DESC', [a.id])).map((n) => ({
       texte: n.text,
-      par: n.createdBy,
+      par: TEAM,
       le: n.createdAt,
     })),
 
@@ -222,7 +230,7 @@ export type PlayerExport = { jsonName: string; txtName: string; json: string; su
 
 export async function buildPlayerExport(
   userId: string,
-  { categories, email, adminName, now = new Date() }: { categories: ExportCategory[]; email: string | null; adminName: string; now?: Date },
+  { categories, email, now = new Date() }: { categories: ExportCategory[]; email: string | null; now?: Date },
 ): Promise<PlayerExport | null> {
   const account = await loadAccount(userId);
   if (!account) return null;
@@ -237,7 +245,7 @@ export async function buildPlayerExport(
       service: "Omniscient (omniscientlauncher.com)",
       responsable: "Rushifa · omniscient.launchermc@gmail.com",
       genereLe: now.toISOString(),
-      genereePar: adminName,
+      genereePar: TEAM,
       joueur: account.pseudo,
       categories: ["compte", ...picked, ...(contact ? ["messagesDeContact"] : [])],
       nonInclus: NOT_INCLUDED,

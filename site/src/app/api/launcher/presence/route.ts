@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherProfile } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
 import { recordPresenceHeartbeat } from "@/lib/presence";
@@ -22,15 +22,16 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const minecraftUuid = typeof body.minecraftUuid === "string" ? body.minecraftUuid : null;
-  const minecraftUsername = typeof body.minecraftUsername === "string" ? body.minecraftUsername : null;
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
   }
-  const identity = await verifyLauncherIdentity(request, minecraftUuid);
+  // Pseudo pris dans le profil verifie, jamais dans le corps (body.minecraftUsername ignore).
+  const { check: identity, name } = await verifyLauncherProfile(request, minecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
 
-  const user = await findOrCreateUserByMinecraft(minecraftUuid, minecraftUsername);
-  await recordPresenceHeartbeat(user.id);
+  // Appel automatique : ne recree pas un compte que le joueur a supprime (user === null).
+  const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: false });
+  if (user) await recordPresenceHeartbeat(user.id);
 
   return NextResponse.json({ ok: true });
 }

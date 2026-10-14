@@ -97,7 +97,13 @@ export async function sendFriendRequest(userId: string, targetMinecraftUsername:
   const trimmed = targetMinecraftUsername.trim();
   if (!trimmed) return;
 
-  const target = await db.orm.public.User.select("id").where({ minecraftUsername: trimmed }).first();
+  // Pseudos Minecraft insensibles a la casse (« notch » = « Notch »). Deux lignes peuvent porter
+  // le meme pseudo (changement de pseudo pas encore resynchronise chez l'ancien proprietaire) :
+  // la plus recemment mise a jour l'emporte, plutot qu'une ligne au hasard (audit 14/10).
+  const [target] = (await execSql(
+    'SELECT "id" FROM "user" WHERE lower("minecraftUsername") = lower(?) ORDER BY "updatedAt" DESC LIMIT 1',
+    [trimmed],
+  )) as { id: string }[];
   if (!target || target.id === userId) return;
 
   const [userId1, userId2] = orderedPair(userId, target.id);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity, verifyLauncherProfile } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
@@ -48,12 +48,12 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const minecraftUuid = typeof body.minecraftUuid === "string" ? body.minecraftUuid : null;
-  const minecraftUsername = typeof body.minecraftUsername === "string" ? body.minecraftUsername : null;
   const targetUsername = typeof body.targetUsername === "string" ? body.targetUsername.trim() : "";
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
   }
-  const identity = await verifyLauncherIdentity(request, minecraftUuid);
+  // Pseudo pris dans le profil verifie, jamais dans le corps (body.minecraftUsername ignore).
+  const { check: identity, name } = await verifyLauncherProfile(request, minecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
 
   // Un pseudo vide est une erreur de saisie, pas une tentative d'énumération (ne révèle rien
@@ -62,8 +62,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Pseudo manquant" }, { status: 400 });
   }
 
-  const user = await findOrCreateUserByMinecraft(minecraftUuid, minecraftUsername);
-  await sendFriendRequest(user.id, targetUsername);
+  // Action volontaire du joueur : recree son compte s'il l'avait supprime.
+  const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: true });
+  if (user) await sendFriendRequest(user.id, targetUsername);
 
   return NextResponse.json({ ok: true });
 }

@@ -44,12 +44,23 @@ function download(name: string, content: string, type: string) {
 
 const size = (s: string) => `${(new Blob([s]).size / 1024).toFixed(1).replace(".", ",")} Ko`;
 
-export function PlayerExportButton({ playerId, playerName, categories }: { playerId: string; playerName: string; categories: Category[] }) {
+export function PlayerExportButton({
+  playerId,
+  playerName,
+  categories,
+  uncheckedByDefault = [],
+}: {
+  playerId: string;
+  playerName: string;
+  categories: Category[];
+  uncheckedByDefault?: readonly string[];
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
-  const [picked, setPicked] = useState<Set<string>>(() => new Set(categories.map((c) => c.key)));
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(categories.map((c) => c.key).filter((k) => !uncheckedByDefault.includes(k))));
   const [email, setEmail] = useState("");
+  const [emailConfirmed, setEmailConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
@@ -81,7 +92,7 @@ export function PlayerExportButton({ playerId, playerName, categories }: { playe
       const response = await fetch("/api/admin/player-export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: playerId, categories: [...picked], email: email.trim() || undefined }),
+        body: JSON.stringify({ id: playerId, categories: [...picked], email: email.trim() || undefined, emailConfirmed }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.json) {
@@ -189,6 +200,12 @@ export function PlayerExportButton({ playerId, playerName, categories }: { playe
                 />
                 <span style={{ fontSize: 11.5 }}>Les messages du formulaire Contact ne sont pas liés au compte. Avec l&apos;email, ceux envoyés depuis cette adresse sont ajoutés.</span>
               </label>
+              {email.trim() ? (
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, cursor: "pointer" }}>
+                  <input type="checkbox" checked={emailConfirmed} onChange={(e) => setEmailConfirmed(e.target.checked)} style={{ marginTop: 2, accentColor: "var(--color-accent)" }} />
+                  <span>La demande d&apos;accès m&apos;est arrivée depuis cette adresse email. Sinon, laisse le champ vide : les messages d&apos;un tiers ne doivent jamais être envoyés.</span>
+                </label>
+              ) : null}
               <div style={{ display: "flex", gap: 10, padding: "10px 12px", borderRadius: "var(--radius-md)", fontSize: 12.5, lineHeight: 1.5, background: "color-mix(in srgb, #e0c28a 10%, transparent)", border: "1px solid color-mix(in srgb, #e0c28a 35%, transparent)" }}>
                 <i className="ph ph-shield-check" style={{ fontSize: 16, color: "#e0c28a", marginTop: 1 }} />
                 <div>
@@ -197,7 +214,7 @@ export function PlayerExportButton({ playerId, playerName, categories }: { playe
                     <li>Jetons et dates de session, secrets du launcher</li>
                     <li>Codes d&apos;invitation des serveurs privés</li>
                     <li>Pseudos et UUID des joueurs qui ont signalé ses serveurs (remplacés par « un joueur »)</li>
-                    <li>Identifiants internes des admins</li>
+                    <li>Noms de connexion des admins (remplacés par « l&apos;équipe Omniscient »)</li>
                   </ul>
                 </div>
               </div>

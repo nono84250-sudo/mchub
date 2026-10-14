@@ -282,6 +282,14 @@ CREATE TABLE "userPresence" (
   "updatedAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
+-- Comptes supprimes par leur proprietaire (2026-10-14, voir lib/users.ts) : empreinte SHA-256
+-- de l'UUID Minecraft seulement (pas de pseudo, pas d'id), pour que le signal de presence du
+-- launcher ne recree pas le compte tout seul. Retiree quand le joueur revient de lui-meme.
+CREATE TABLE "deletedAccount" (
+  "minecraftUuidHash" TEXT PRIMARY KEY,
+  "deletedAt"         TEXT NOT NULL
+);
+
 -- Articles d'actualite (panel admin /admin/news), affiches sur la page "Actualites" du
 -- dashboard une fois publies. Pas de type/auteur/image pour l'instant (voir la maquette,
 -- volontairement simplifie).

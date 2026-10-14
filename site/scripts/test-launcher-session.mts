@@ -22,14 +22,14 @@ function check(name: string, fn: () => void) {
 
 process.env.LAUNCHER_SESSION_SECRET = randomBytes(48).toString("base64url");
 
-const session = createLauncherSession(UUID, NOW)!;
+const session = createLauncherSession(UUID, null, NOW)!;
 const [payloadB64, sig] = session.token.split(".");
 
 check("jeton valide -> uuid et date d'emission", () => {
-  assert.deepEqual(readLauncherSession(session.token, NOW), { uuid: UUID, issuedAt: NOW });
+  assert.deepEqual(readLauncherSession(session.token, NOW), { uuid: UUID, issuedAt: NOW, name: null });
 });
 check("uuid avec tirets normalise a la creation", () => {
-  const s = createLauncherSession("01234567-89ab-cdef-0123-456789abcdef", NOW)!;
+  const s = createLauncherSession("01234567-89ab-cdef-0123-456789abcdef", null, NOW)!;
   assert.equal(readLauncherSession(s.token, NOW)?.uuid, UUID);
 });
 check("duree de vie = 15 minutes", () => {
@@ -46,7 +46,7 @@ check("expire depuis longtemps (24 h apres) -> null", () => {
   assert.equal(readLauncherSession(session.token, NOW + 24 * 60 * MIN), null);
 });
 check("jeton fabrique deja expire -> null", () => {
-  const old = createLauncherSession(UUID, NOW - 16 * MIN)!;
+  const old = createLauncherSession(UUID, null, NOW - 16 * MIN)!;
   assert.equal(readLauncherSession(old.token, NOW), null);
 });
 check("payload modifie (autre uuid) -> null", () => {
@@ -104,7 +104,7 @@ check("sans secret -> creation et lecture refusees", () => {
   const saved = process.env.LAUNCHER_SESSION_SECRET;
   delete process.env.LAUNCHER_SESSION_SECRET;
   try {
-    assert.equal(createLauncherSession(UUID, NOW), null);
+    assert.equal(createLauncherSession(UUID, null, NOW), null);
     assert.equal(readLauncherSession(session.token, NOW), null);
   } finally {
     process.env.LAUNCHER_SESSION_SECRET = saved;
@@ -114,7 +114,7 @@ check("secret trop court (< 32) -> refuse", () => {
   const saved = process.env.LAUNCHER_SESSION_SECRET;
   process.env.LAUNCHER_SESSION_SECRET = "court";
   try {
-    assert.equal(createLauncherSession(UUID, NOW), null);
+    assert.equal(createLauncherSession(UUID, null, NOW), null);
   } finally {
     process.env.LAUNCHER_SESSION_SECRET = saved;
   }
@@ -139,6 +139,17 @@ check("jeton emis a la milliseconde de la revocation -> accepte", () => {
 });
 check("sessionsValidAfter illisible -> ignore (pas de revocation silencieuse)", () => {
   assert.equal(isSessionRevoked(NOW, "pas une date"), false);
+});
+
+check("pseudo verifie signe dans le jeton (audit 14/10)", () => {
+  const s = createLauncherSession(UUID, "Rushi_42", NOW)!;
+  assert.equal(readLauncherSession(s.token, NOW)?.name, "Rushi_42");
+});
+check("pseudo invalide jamais signe", () => {
+  for (const bad of ["", "x".repeat(17), "Notch<script>", "a b", 42 as unknown as string]) {
+    const s = createLauncherSession(UUID, bad, NOW)!;
+    assert.equal(readLauncherSession(s.token, NOW)?.name, null, `attendu null pour ${JSON.stringify(bad)}`);
+  }
 });
 
 console.log(`\n${passed} tests passes`);

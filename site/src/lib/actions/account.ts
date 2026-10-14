@@ -4,6 +4,7 @@ import { revalidateTag } from "next/cache";
 import { auth, signOut } from "@/auth";
 import { db, execSql } from "@/lib/db";
 import { deleteAllR2Images } from "@/lib/serverImages";
+import { markAccountDeleted } from "@/lib/users";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 
 // Suppression definitive du compte (droit a l'effacement RGPD), en libre-service depuis la
@@ -29,6 +30,10 @@ export async function deleteAccount(confirmation: string): Promise<{ error: stri
     await execSql(`DELETE FROM notification WHERE recipientMinecraftUuid = ?`, [user.minecraftUuid]);
   }
 
+  // Empreinte du compte supprime : le launcher, s'il reste connecte, ne le recreera pas tout
+  // seul (voir findOrCreateUserByMinecraft). Ecrite AVANT la suppression : si elle echoue, rien
+  // n'est supprime et le joueur peut reessayer.
+  if (user.minecraftUuid) await markAccountDeleted(user.minecraftUuid);
   await db.orm.public.User.where({ id: user.id }).delete();
   // Sans ca, l'annuaire public (/servers) et "Mes instances" dans le launcher continuent de
   // montrer les serveurs supprimes jusqu'a l'expiration naturelle du cache (unstable_cache,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createLauncherSession, getAccountLock, identityErrorResponse, isAuthorizedLauncherRequest, normalizeMinecraftUuid, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { createLauncherSession, getAccountLock, identityErrorResponse, isAuthorizedLauncherRequest, normalizeMinecraftUuid, verifyMinecraftProfile } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Echange le jeton Mojang du joueur (X-Minecraft-Token, verifie aupres de Mojang)
@@ -17,10 +17,10 @@ export async function POST(request: Request) {
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
   }
-  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
+  const { check: identity, name } = await verifyMinecraftProfile(request.headers.get("x-minecraft-token"), minecraftUuid);
   if (identity !== "verified") {
     // Mojang a bien confirme le jeton, mais le compte est verrouille (fiche joueur, panel
-    // admin) : verifyMinecraftIdentity renvoie "refused" dans ce cas aussi (meme traitement
+    // admin) : verifyMinecraftProfile renvoie "refused" dans ce cas aussi (meme traitement
     // que les autres routes launcher), donc on rejoue le controle ici pour donner un motif
     // clair au joueur plutot que le "Identite non verifiee" generique.
     if (identity === "refused") {
@@ -32,7 +32,8 @@ export async function POST(request: Request) {
     return identityErrorResponse(identity);
   }
 
-  const session = createLauncherSession(normalizeMinecraftUuid(minecraftUuid));
+  // Le pseudo signe dans le jeton est celui que Mojang vient de confirmer (jamais celui du corps).
+  const session = createLauncherSession(normalizeMinecraftUuid(minecraftUuid), name);
   if (!session) {
     return NextResponse.json({ error: "Sessions launcher non configurées sur le serveur" }, { status: 503 });
   }

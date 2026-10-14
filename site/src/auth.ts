@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { db } from "@/lib/db";
 import { getMinecraftProfileFromMicrosoftToken, PendingApprovalError } from "@/lib/xboxAuth";
+import { clearAccountDeletion } from "@/lib/users";
 
 // "Se connecter avec Microsoft" est desormais l'unique moyen de se
 // connecter au site (plus d'email/mot de passe) : le meme identifiant
@@ -64,6 +65,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         let user = await db.orm.public.User.where({ minecraftUuid: mcProfile.uuid }).first();
 
         if (!user) {
+          // Connexion volontaire sur le site : si ce joueur avait supprime son compte, il revient
+          // de lui-meme, l'empreinte de suppression est retiree (voir lib/users.ts).
+          await clearAccountDeletion(mcProfile.uuid);
           user = await db.orm.public.User.create({
             name: mcProfile.name,
             minecraftUuid: mcProfile.uuid,
