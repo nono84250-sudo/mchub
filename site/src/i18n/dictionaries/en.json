@@ -137,7 +137,22 @@
   "account": {
     "title": "Account",
     "microsoftLinked": "Signed in via Microsoft/Xbox",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "deleteTitle": "Delete my account",
+    "deleteHint": "Permanent: your account and everything in it will be erased.",
+    "deleteDialogLabel": "Permanently delete the account",
+    "deleteWarning": "Warning: this cannot be undone",
+    "deleteBody": "Deleting your account permanently erases everything in it: your servers, their modpacks, your friends and the servers you follow. This cannot be undone.",
+    "deleteConfirmWord": "delete",
+    "deleteConfirmBefore": "Type",
+    "deleteConfirmAfter": "to confirm",
+    "deleteCancel": "Cancel",
+    "deleteConfirm": "Delete permanently",
+    "deletePending": "Deleting…",
+    "deleteErrorConfirm": "Type “delete” to confirm.",
+    "deleteErrorSession": "Session expired, please sign in again.",
+    "deleteErrorNotFound": "Account not found.",
+    "deleteErrorGeneric": "Something went wrong, please try again in a moment."
   },
   "friends": {
     "title": "Friends",

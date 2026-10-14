@@ -40,6 +40,10 @@ const DeletionFr = () => (
     présence en ligne, vos avertissements et notes de modération sont effacés. Restent seulement, liés à votre
     identifiant Minecraft, les signalements que vous avez déposés sur les fiches d&apos;autres propriétaires et les
     serveurs que vous suiviez, jusqu&apos;à la suppression de ces fiches : pour les faire effacer aussi, écrivez-nous. Vous pouvez aussi demander la suppression par e-mail à <Mail />.
+    {" "}Si le launcher reste ouvert et connecté, il ne recrée pas votre compte : pour cela, nous gardons seulement une
+    empreinte chiffrée de votre identifiant Minecraft et la date de suppression. Un nouveau compte n&apos;est créé que
+    si vous vous reconnectez sur le site ou si vous envoyez une demande d&apos;ami depuis le launcher ; l&apos;empreinte
+    est alors effacée.
   </p>
 );
 
@@ -51,6 +55,9 @@ const DeletionEn = () => (
     online presence, your warnings and moderation notes are erased. Only the reports you filed on other owners&apos;
     listings and the servers you followed remain, tied to your Minecraft identifier, until those listings are deleted:
     write to us to have them erased too. You can also ask for deletion by email at <Mail />.
+    {" "}If the launcher stays open and signed in, it does not recreate your account: for that, we only keep an
+    encrypted fingerprint of your Minecraft identifier and the deletion date. A new account is only created if you sign
+    in on the website again or send a friend request from the launcher; the fingerprint is then erased.
   </p>
 );
 
@@ -107,6 +114,10 @@ export function privacyPolicy(locale: Locale): LegalPage {
               <>
                 Si vous <B>publiez un serveur</B>, votre identifiant Minecraft (UUID) est public.
               </>,
+              <>
+                Se connecter au <B>launcher</B> avec Microsoft crée automatiquement un compte Omniscient (pseudo et
+                UUID), même sans passer par le site. Le launcher indique alors à vos amis si vous êtes en ligne (voir 3).
+              </>,
             ]}
           />
         ),
@@ -118,7 +129,26 @@ export function privacyPolicy(locale: Locale): LegalPage {
             items={[
               <>
                 <B>Compte</B> : pseudo et UUID Minecraft, identifiant interne, date de création ; cookie de session pour
-                rester connecté. But : faire fonctionner votre compte. Le pseudo est mis à jour à chaque connexion.
+                rester connecté. Il est créé à votre première connexion sur le site, ou automatiquement quand vous vous
+                connectez au launcher avec Microsoft. But : faire fonctionner votre compte. Le pseudo est mis à jour à
+                chaque connexion, à partir de votre profil Minecraft vérifié auprès de Mojang.
+              </>,
+              <>
+                <B>Présence en ligne</B> : tant que le launcher est ouvert et connecté, il nous envoie un signal toutes
+                les 60 secondes avec votre identifiant Minecraft. Nous gardons seulement la date et l&apos;heure du
+                dernier signal. But : montrer à vos amis acceptés si vous êtes en ligne (dernier signal il y a moins de
+                2 minutes). Ce signal ne peut pas être coupé pour l&apos;instant, sauf en vous déconnectant du launcher.
+              </>,
+              <>
+                <B>Amis</B> : les demandes d&apos;ami (qui l&apos;a envoyée, à qui, date, en attente ou acceptée). Une
+                demande se fait par pseudo, depuis le site ou le launcher. La personne à qui vous envoyez une demande
+                voit votre pseudo ; vos amis acceptés voient aussi votre identifiant Minecraft et si vous êtes en ligne.
+                But : la liste d&apos;amis. Vous pouvez refuser une demande ou retirer un ami à tout moment.
+              </>,
+              <>
+                <B>Serveurs suivis</B> : quand vous suivez un serveur dans le launcher, nous enregistrons votre
+                identifiant Minecraft, le serveur, si vous voulez être prévenu de son retour en ligne et son dernier état
+                connu (en ligne ou non). But : vous envoyer cette notification.
               </>,
               <>
                 <B>Fiches de serveurs (propriétaires)</B> : nom, description, adresse du serveur, version, modpack, liens,
@@ -148,12 +178,17 @@ export function privacyPolicy(locale: Locale): LegalPage {
               </>,
               <>
                 <B>Modération</B> : avertissements, blocage éventuel d&apos;un compte (date, motif, auteur), historique
-                des recours sur une fiche, notes internes de l&apos;équipe (jamais montrées au joueur). But : appliquer
-                les règles et traiter les recours.
+                des recours sur une fiche, notes internes de l&apos;équipe (communiquées au joueur seulement s&apos;il
+                demande l&apos;accès à ses données, après relecture pour protéger les autres personnes citées). But :
+                appliquer les règles et traiter les recours.
               </>,
               <>
                 <B>Formulaire de contact et e-mails</B> : nom, adresse e-mail, sujet et message, pour vous répondre.
                 Votre adresse IP sert seulement, en mémoire, à limiter l&apos;envoi à 5 messages par heure.
+              </>,
+              <>
+                <B>Compte supprimé</B> : une empreinte chiffrée (SHA-256) de votre identifiant Minecraft et la date de
+                suppression, rien d&apos;autre. But : que le launcher ne recrée pas votre compte tout seul (voir 9).
               </>,
               <>
                 <B>Données techniques</B> : l&apos;hébergeur du site (Vercel) enregistre automatiquement des données
@@ -186,9 +221,12 @@ export function privacyPolicy(locale: Locale): LegalPage {
               </>,
               <>
                 <B>Discord</B> : si Discord est ouvert sur votre ordinateur, le launcher y affiche « Joue à Omniscient
-                Launcher », avec en dessous « Parcourt les serveurs » ou le serveur que vous avez rejoint. Cela passe par
-                votre application Discord et devient visible sur votre profil Discord, selon vos réglages Discord
-                (« Partager mon activité »). Rien n&apos;est transmis à Omniscient.
+                Launcher », avec en dessous « Parcourt les serveurs », ou le nom du serveur que vous avez rejoint et
+                celui de son modpack. Pour un serveur privé, il affiche seulement « Joue sur un serveur privé », sans
+                nom ni modpack. Cela passe par votre application Discord et devient visible sur votre profil Discord,
+                selon vos réglages Discord (« Partager mon activité »). Rien n&apos;est transmis à Omniscient. Vous
+                pouvez tout couper dans le launcher : Paramètres, Divers, « Afficher mon activité sur Discord »
+                (activé par défaut).
               </>,
               <>
                 Le launcher contacte directement des services tiers, qui voient votre adresse IP : Mojang, les dépôts des
@@ -208,11 +246,12 @@ export function privacyPolicy(locale: Locale): LegalPage {
             items={[
               <>
                 <B>Exécution du service</B> que vous utilisez (conditions d&apos;utilisation) : compte, fiches,
-                signalements, notifications, connexion du launcher.
+                signalements, notifications, connexion du launcher, amis, présence en ligne, serveurs suivis.
               </>,
               <>
                 <B>Intérêt légitime</B> : statistiques anonymes des fiches, sécurité et lutte contre les abus,
-                modération, données techniques d&apos;hébergement, réponse à vos messages.
+                modération, données techniques d&apos;hébergement, réponse à vos messages, respect de votre demande de
+                suppression (empreinte du compte supprimé).
               </>,
               <>
                 <B>Obligation légale</B> : réponse aux demandes des autorités.
@@ -226,7 +265,12 @@ export function privacyPolicy(locale: Locale): LegalPage {
         body: (
           <List
             items={[
-              <>Compte, modération et notifications : tant que le compte existe ; effacés quand vous le supprimez (voir 9).</>,
+              <>
+                Compte, modération, notifications, amis et présence en ligne : tant que le compte existe ; effacés quand
+                vous le supprimez (voir 9). Un ami retiré ou une demande refusée est effacé tout de suite.
+              </>,
+              <>Serveurs suivis : jusqu&apos;à ce que vous arrêtiez de suivre le serveur, ou que sa fiche soit supprimée.</>,
+              <>Empreinte d&apos;un compte supprimé : jusqu&apos;à ce que vous reveniez sur Omniscient (voir 9).</>,
               <>
                 Fiche, ses statistiques et ses signalements : tant que la fiche existe ; supprimés avec elle ou avec le
                 compte. Vous pouvez supprimer vous-même vos notifications dans le launcher.
@@ -253,7 +297,16 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 <B>Microsoft</B> (Xbox Live, Minecraft) : connexion, en tant que responsable distinct de votre compte
                 Microsoft.
               </>,
+              <>
+                <B>Google</B> (Gmail) : réception et envoi des e-mails échangés avec nous, dont les réponses au
+                formulaire de contact.
+              </>,
+              <>
+                <B>GitHub</B> (Microsoft) : hébergement des versions du launcher ; voit votre adresse IP quand le
+                launcher vérifie ou télécharge une mise à jour.
+              </>,
               <>Les propriétaires de serveurs, pour les signalements techniques qui les concernent.</>,
+              <>Vos amis acceptés, pour votre identifiant Minecraft et votre présence en ligne.</>,
               <>L&apos;équipe de modération d&apos;Omniscient.</>,
               <>Les autorités, sur demande légale.</>,
             ]}
@@ -264,8 +317,8 @@ export function privacyPolicy(locale: Locale): LegalPage {
         title: "8. Transferts hors de l'Union européenne",
         body: (
           <p>
-            Vercel et Cloudflare sont des sociétés américaines : l&apos;accès de leurs équipes ou l&apos;acheminement
-            du trafic peut impliquer les États-Unis. Ces transferts sont encadrés par les garanties de ces prestataires
+            Vercel, Cloudflare, Google et GitHub sont des sociétés américaines : l&apos;accès de leurs équipes ou
+            l&apos;acheminement du trafic peut impliquer les États-Unis. Ces transferts sont encadrés par les garanties de ces prestataires
             (Data Privacy Framework UE–États-Unis et clauses contractuelles types).
           </p>
         ),
@@ -283,7 +336,13 @@ export function privacyPolicy(locale: Locale): LegalPage {
               Écrivez à <Mail /> (objet « Données personnelles ») ou utilisez le{" "}
               <Link href="/contact" className="text-foreground underline underline-offset-2">formulaire de contact</Link>.
               Nous pouvons vous demander de prouver que le compte est bien le vôtre. Réponse sous un mois. Pour une
-              demande d&apos;accès, nous vous envoyons par e-mail une copie des données que nous avons sur vous. Vous
+              demande d&apos;accès, nous vous envoyons par e-mail un résumé lisible et un fichier complet (JSON) : votre
+              compte, vos fiches, les signalements envoyés et reçus (sans l&apos;identité de leurs auteurs), vos
+              notifications, avertissements, amis, dernière présence en ligne et serveurs suivis, et, après relecture,
+              les notes de l&apos;équipe vous concernant. Vos messages envoyés par le formulaire de contact sont
+              ajoutés seulement si la demande vient de la même adresse e-mail. N&apos;y figurent jamais : les jetons de
+              connexion, les codes d&apos;invitation des serveurs privés, l&apos;identité des personnes qui ont signalé
+              vos serveurs, ni les noms de connexion de l&apos;équipe. Vous
               pouvez aussi saisir l&apos;Autorité de protection des données belge (www.autoriteprotectiondonnees.be),
               ou l&apos;autorité de protection des données de votre pays (en France, la CNIL).
             </p>
@@ -373,6 +432,11 @@ function privacyEn(): LegalPage {
               <>
                 If you <B>publish a server</B>, your Minecraft identifier (UUID) is public.
               </>,
+              <>
+                Signing in to the <B>launcher</B> with Microsoft automatically creates an Omniscient account (username
+                and UUID), even without using the website. The launcher then tells your friends whether you are online
+                (see 3).
+              </>,
             ]}
           />
         ),
@@ -384,7 +448,26 @@ function privacyEn(): LegalPage {
             items={[
               <>
                 <B>Account</B>: Minecraft username and UUID, internal identifier, creation date; a session cookie to
-                keep you signed in. Purpose: running your account. Your username is updated at each sign-in.
+                keep you signed in. It is created the first time you sign in on the website, or automatically when you
+                sign in to the launcher with Microsoft. Purpose: running your account. Your username is updated at each
+                sign-in, from your Minecraft profile as verified with Mojang.
+              </>,
+              <>
+                <B>Online presence</B>: while the launcher is open and signed in, it sends us a signal every 60 seconds
+                with your Minecraft identifier. We only keep the date and time of the latest signal. Purpose: showing
+                your accepted friends whether you are online (latest signal less than 2 minutes ago). This signal cannot
+                be turned off for now, except by signing out of the launcher.
+              </>,
+              <>
+                <B>Friends</B>: friend requests (who sent it, to whom, date, pending or accepted). A request is made by
+                username, from the website or the launcher. The person you send a request to sees your username; your
+                accepted friends also see your Minecraft identifier and whether you are online. Purpose: the friends
+                list. You can decline a request or remove a friend at any time.
+              </>,
+              <>
+                <B>Followed servers</B>: when you follow a server in the launcher, we record your Minecraft identifier,
+                the server, whether you want to be told when it is back online, and its last known state (online or
+                not). Purpose: sending you that notification.
               </>,
               <>
                 <B>Server listings (owners)</B>: name, description, server address, version, modpack, links, images
@@ -412,11 +495,16 @@ function privacyEn(): LegalPage {
               </>,
               <>
                 <B>Moderation</B>: warnings, possible account lock (date, reason, author), appeal history for a listing,
-                internal team notes (never shown to the player). Purpose: enforcing the rules and handling appeals.
+                internal team notes (shared with the player only if they request access to their data, after review to
+                protect other people mentioned). Purpose: enforcing the rules and handling appeals.
               </>,
               <>
                 <B>Contact form and emails</B>: name, email address, subject and message, to answer you. Your IP
                 address is only used, in memory, to limit sending to 5 messages per hour.
+              </>,
+              <>
+                <B>Deleted account</B>: an encrypted fingerprint (SHA-256) of your Minecraft identifier and the deletion
+                date, nothing else. Purpose: making sure the launcher does not recreate your account on its own (see 9).
               </>,
               <>
                 <B>Technical data</B>: the website host (Vercel) automatically records technical data, including your IP
@@ -446,9 +534,11 @@ function privacyEn(): LegalPage {
               </>,
               <>
                 <B>Discord</B>: if Discord is running on your computer, the launcher shows &quot;Playing Omniscient
-                Launcher&quot; with &quot;Browsing servers&quot; or the server you joined underneath. This goes through
-                your Discord app and becomes visible on your Discord profile, depending on your Discord settings
-                (&quot;Share my activity&quot;). Nothing is sent to Omniscient.
+                Launcher&quot; with &quot;Browsing servers&quot; underneath, or the name of the server you joined and of
+                its modpack. For a private server, it only shows &quot;Playing on a private server&quot;, with no name
+                or modpack. This goes through your Discord app and becomes visible on your Discord profile, depending on
+                your Discord settings (&quot;Share my activity&quot;). Nothing is sent to Omniscient. You can turn it
+                all off in the launcher: Settings, Misc, &quot;Show my activity on Discord&quot; (on by default).
               </>,
               <>
                 The launcher connects directly to third-party services, which see your IP address: Mojang, mod loader
@@ -467,11 +557,12 @@ function privacyEn(): LegalPage {
             items={[
               <>
                 <B>Performance of the service</B> you use (terms of use): account, listings, reports, notifications,
-                launcher sign-in.
+                launcher sign-in, friends, online presence, followed servers.
               </>,
               <>
                 <B>Legitimate interest</B>: anonymous listing statistics, security and abuse prevention, moderation,
-                hosting technical data, answering your messages.
+                hosting technical data, answering your messages, honouring your deletion request (deleted account
+                fingerprint).
               </>,
               <>
                 <B>Legal obligation</B>: answering requests from the authorities.
@@ -485,7 +576,12 @@ function privacyEn(): LegalPage {
         body: (
           <List
             items={[
-              <>Account, moderation and notifications: as long as the account exists; erased when you delete it (see 9).</>,
+              <>
+                Account, moderation, notifications, friends and online presence: as long as the account exists; erased
+                when you delete it (see 9). A removed friend or a declined request is erased immediately.
+              </>,
+              <>Followed servers: until you stop following the server, or its listing is deleted.</>,
+              <>Deleted account fingerprint: until you come back to Omniscient (see 9).</>,
               <>
                 A listing, its statistics and its reports: as long as the listing exists; deleted with it or with the
                 account. You can delete your notifications yourself in the launcher.
@@ -512,7 +608,16 @@ function privacyEn(): LegalPage {
                 <B>Microsoft</B> (Xbox Live, Minecraft): sign-in, as an independent controller of your Microsoft
                 account.
               </>,
+              <>
+                <B>Google</B> (Gmail): receiving and sending the emails exchanged with us, including replies to the
+                contact form.
+              </>,
+              <>
+                <B>GitHub</B> (Microsoft): hosting of launcher releases; sees your IP address when the launcher checks
+                for or downloads an update.
+              </>,
               <>Server owners, for technical reports about their server.</>,
+              <>Your accepted friends, for your Minecraft identifier and online presence.</>,
               <>The Omniscient moderation team.</>,
               <>Authorities, upon legal request.</>,
             ]}
@@ -523,8 +628,8 @@ function privacyEn(): LegalPage {
         title: "8. Transfers outside the European Union",
         body: (
           <p>
-            Vercel and Cloudflare are US companies: access by their staff or traffic routing may involve the United
-            States. These transfers are covered by these providers&apos; safeguards (EU–US Data Privacy Framework and
+            Vercel, Cloudflare, Google and GitHub are US companies: access by their staff or traffic routing may
+            involve the United States. These transfers are covered by these providers&apos; safeguards (EU–US Data Privacy Framework and
             standard contractual clauses).
           </p>
         ),
@@ -541,8 +646,12 @@ function privacyEn(): LegalPage {
             <p>
               Write to <Mail /> (subject &quot;Personal data&quot;) or use the{" "}
               <Link href="/contact" className="text-foreground underline underline-offset-2">contact form</Link>. We may
-              ask you to prove the account is yours. Answer within one month. For an access request, we email you a copy
-              of the data we hold about you. You can also complain to the Belgian Data Protection Authority
+              ask you to prove the account is yours. Answer within one month. For an access request, we email you a
+              readable summary and a complete file (JSON): your account, your listings, the reports you sent and received
+              (without their authors&apos; identity), your notifications, warnings, friends, last online presence and
+              followed servers, and, after review, the team notes about you. Messages you sent through the contact form
+              are only added if the request comes from the same email address. Never included: sign-in tokens, private
+              server invite codes, the identity of people who reported your servers, or the team&apos;s login names. You can also complain to the Belgian Data Protection Authority
               (www.dataprotectionauthority.be), or to the data protection authority of your own country (in France, the
               CNIL).
             </p>
@@ -672,6 +781,7 @@ export function termsOfUse(locale: Locale): LegalPage {
               <>arnaquer, hameçonner, diffuser un logiciel malveillant ou tromper les joueurs (fiche mensongère) ;</>,
               <>usurper l&apos;identité d&apos;une personne ou d&apos;un serveur ;</>,
               <>utiliser des textes ou images sans en avoir le droit ;</>,
+              <>envoyer des demandes d&apos;amis en masse ou à quelqu&apos;un qui les refuse ;</>,
               <>abuser des signalements, contourner la sécurité ou surcharger le service ou son API.</>,
             ]}
           />
@@ -701,11 +811,19 @@ export function termsOfUse(locale: Locale): LegalPage {
       {
         title: "10. Le launcher",
         body: (
-          <p>
-            Le launcher installe le jeu, Java et, si besoin, les mods et modpacks téléchargés depuis des services tiers
-            (Mojang, CurseForge, Modrinth…). Il est fourni tel quel, sans garantie de compatibilité avec chaque
-            configuration.
-          </p>
+          <>
+            <p>
+              Le launcher installe le jeu, Java et, si besoin, les mods et modpacks téléchargés depuis des services
+              tiers (Mojang, CurseForge, Modrinth…). Il est fourni tel quel, sans garantie de compatibilité avec chaque
+              configuration.
+            </p>
+            <p>
+              Se connecter au launcher crée votre compte Omniscient s&apos;il n&apos;existe pas. Le launcher propose des
+              amis : une demande doit être acceptée par l&apos;autre joueur, et seuls vos amis acceptés voient si vous
+              êtes en ligne. Vous pouvez refuser une demande ou retirer un ami à tout moment. Il peut aussi afficher
+              votre activité sur Discord, ce que vous pouvez couper dans Paramètres, Divers.
+            </p>
+          </>
         ),
       },
       {
@@ -828,6 +946,7 @@ function termsEn(): LegalPage {
               <>scamming, phishing, spreading malware or misleading players (false listing);</>,
               <>impersonating a person or a server;</>,
               <>using texts or images you have no right to use;</>,
+              <>sending friend requests in bulk, or to someone who keeps declining them;</>,
               <>abusing reports, bypassing security or overloading the service or its API.</>,
             ]}
           />
@@ -857,10 +976,19 @@ function termsEn(): LegalPage {
       {
         title: "10. The launcher",
         body: (
-          <p>
-            The launcher installs the game, Java and, when needed, mods and modpacks downloaded from third-party services
-            (Mojang, CurseForge, Modrinth…). It is provided as is, with no guarantee of compatibility with every setup.
-          </p>
+          <>
+            <p>
+              The launcher installs the game, Java and, when needed, mods and modpacks downloaded from third-party
+              services (Mojang, CurseForge, Modrinth…). It is provided as is, with no guarantee of compatibility with
+              every setup.
+            </p>
+            <p>
+              Signing in to the launcher creates your Omniscient account if it does not exist yet. The launcher offers
+              friends: a request must be accepted by the other player, and only your accepted friends can see whether
+              you are online. You can decline a request or remove a friend at any time. It can also show your activity
+              on Discord, which you can turn off in Settings, Misc.
+            </p>
+          </>
         ),
       },
       {

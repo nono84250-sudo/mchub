@@ -137,7 +137,22 @@
   "account": {
     "title": "Compte",
     "microsoftLinked": "Connecté via Microsoft/Xbox",
-    "logout": "Se déconnecter"
+    "logout": "Se déconnecter",
+    "deleteTitle": "Supprimer mon compte",
+    "deleteHint": "Définitif : ton compte et tout son contenu seront effacés.",
+    "deleteDialogLabel": "Supprimer définitivement le compte",
+    "deleteWarning": "Attention : action irréversible",
+    "deleteBody": "Si tu supprimes ton compte, tout son contenu sera effacé définitivement : tes serveurs, leurs modpacks, tes amis et tes serveurs suivis. Impossible à annuler.",
+    "deleteConfirmWord": "supprimer",
+    "deleteConfirmBefore": "Écris",
+    "deleteConfirmAfter": "pour valider",
+    "deleteCancel": "Annuler",
+    "deleteConfirm": "Supprimer définitivement",
+    "deletePending": "Suppression…",
+    "deleteErrorConfirm": "Écris « supprimer » pour confirmer.",
+    "deleteErrorSession": "Session expirée, reconnecte-toi.",
+    "deleteErrorNotFound": "Compte introuvable.",
+    "deleteErrorGeneric": "Une erreur est survenue, réessaie dans un instant."
   },
   "friends": {
     "title": "Amis",
@@ -282,7 +297,7 @@
     "visibilityPublicHelp": "Listé dans l'annuaire, la recherche et le launcher. Tout le monde peut rejoindre.",
     "visibilityPrivate": "Privé",
     "visibilityPrivateHelp": "Masqué partout. Seuls les joueurs avec le lien ou le code d'invitation peuvent rejoindre.",
-    "visibilityPublicLocked": "Pour publier votre serveur, vous devez d'abord le tester sur le launcher.",
+    "visibilityPublicLocked": "Pour publier ton serveur, tu dois d'abord le tester sur le launcher.",
     "inviteLinkLabel": "Lien d'invitation",
     "inviteLinkCopy": "Copier",
     "inviteLinkReset": "Réinitialiser",
