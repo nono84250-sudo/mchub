@@ -18,6 +18,7 @@ const accountPanelEl = document.getElementById("account-panel");
 const favoritesPanelEl = document.getElementById("favorites-panel");
 const recentPanelEl = document.getElementById("recent-panel");
 const myInstancesPanelEl = document.getElementById("my-instances-panel");
+const friendsPanelEl = document.getElementById("friends-panel");
 const homePanelEl = document.getElementById("home-panel");
 const javaGateEl = document.getElementById("java-gate");
 const bootstrapEl = document.getElementById("bootstrap");
@@ -29,10 +30,9 @@ const navServersBtn = document.getElementById("nav-servers");
 const navFavoritesBtn = document.getElementById("nav-favorites");
 const navRecentBtn = document.getElementById("nav-recent");
 const navMyInstancesBtn = document.getElementById("nav-my-instances");
-// Systeme d'amis, phase 1 (2026-10-14) : pas une vue (jamais de classe "active"), juste le
-// declencheur du panneau deroulant #friends-dropdown — voir wireFriends() plus bas, et
-// renderAccountHeader()/renderGuestHeader() pour sa visibilite (compte Microsoft requis, comme
-// nav-settings).
+// Systeme d'amis, phase 1 (2026-10-14) : vue plein ecran #friends-panel (voir showFriendsView()
+// plus bas), et renderAccountHeader()/renderGuestHeader() pour sa visibilite (compte Microsoft
+// requis, comme nav-settings).
 const navFriendsBtn = document.getElementById("nav-friends");
 const navSettingsBtn = document.getElementById("nav-settings");
 // D'ou vient la fiche detail actuellement affichee (liste "Serveurs" ou
@@ -878,6 +878,7 @@ async function openDetail(slug) {
   homePanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
   statusEl.hidden = true;
@@ -1019,7 +1020,7 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
   // en mode visiteur, renderGuestHeader() l'avait deplace tout en bas, a la
   // place de l'avatar absent — voir ce commentaire la-bas.
   navSettingsBtn.hidden = false;
-  navFriendsBtn.closest(".friends-menu").hidden = false;
+  navFriendsBtn.hidden = false;
   if (currentProfile && currentProfile.id !== profile.id) {
     myInstancesServers = [];
     myJoinedServers = [];
@@ -1745,20 +1746,27 @@ function wireNotifications() {
   wireDismissOnEscape(panel, trigger);
 }
 
-// --- Panneau "Amis" (systeme d'amis, phase 1, 2026-10-14) ---
+// --- Page "Amis" (systeme d'amis, 2026-10-14) ---
 // Statut binaire en ligne/hors ligne uniquement (pas de "absent"/"invisible"/"ne pas
-// deranger", scope valide par l'utilisateur) ; ajout direct et reciproque, pas de demande a
-// accepter/refuser. Chargee a la demande (a l'ouverture du panneau), pas de badge/compteur
-// proactif comme les notifications — bien plus simple, coherent avec "un panneau simple"
-// demande pour cette V1.
+// deranger", scope valide par l'utilisateur), visible des seuls amis acceptes. Demande puis
+// accord (corrige le 2026-10-14, avant : ajout direct sans accord) : sections "Demandes
+// recues" (Accepter/Refuser), amis en ligne/hors ligne, puis "Demandes envoyees" (Annuler).
+// Chargee a l'ouverture de la page, pas de badge/compteur proactif comme les notifications.
 let friendsList = [];
+let friendsIncoming = [];
+let friendsOutgoing = [];
 
 function friendRowHtml(friend) {
+  const name = friend.minecraftUsername || "?";
   return `
-    <div class="friends-item" data-id="${escapeHtml(friend.userId)}">
-      <span class="friends-item-name">
+    <div class="friends-item${friend.online ? "" : " offline"}" data-id="${escapeHtml(friend.userId)}">
+      <span class="friends-item-avatar">
+        ${escapeHtml(name.charAt(0).toUpperCase())}
         <span class="status-dot${friend.online ? " online" : ""}"></span>
-        ${escapeHtml(friend.minecraftUsername || "?")}
+      </span>
+      <span class="friends-item-text">
+        <span class="friends-item-name">${escapeHtml(name)}</span>
+        <span class="friends-item-status${friend.online ? " online" : ""}">${t(friend.online ? "friends.online" : "friends.offline")}</span>
       </span>
       <button type="button" class="icon-btn friends-item-remove" data-id="${escapeHtml(friend.userId)}" title="${t("friends.remove")}" aria-label="${t("friends.remove")}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
@@ -1766,15 +1774,59 @@ function friendRowHtml(friend) {
     </div>`;
 }
 
+// Demande en attente : pas de pastille ni de statut en ligne (l'autre joueur n'a pas encore
+// accepte, ou c'est moi qui n'ai pas encore repondu).
+function friendRequestRowHtml(request, kind) {
+  const name = request.minecraftUsername || "?";
+  const id = escapeHtml(request.userId);
+  const actions =
+    kind === "incoming"
+      ? `<button type="button" class="join-btn friends-request-btn friends-request-accept" data-id="${id}">${t("friends.accept")}</button>
+         <button type="button" class="friends-request-btn ghost friends-request-decline" data-id="${id}">${t("friends.decline")}</button>`
+      : `<button type="button" class="friends-request-btn ghost friends-request-cancel" data-id="${id}">${t("friends.cancel")}</button>`;
+  return `
+    <div class="friends-item friends-request ${kind}" data-id="${id}">
+      <span class="friends-item-avatar">${escapeHtml(name.charAt(0).toUpperCase())}</span>
+      <span class="friends-item-text">
+        <span class="friends-item-name">${escapeHtml(name)}</span>
+        <span class="friends-item-status">${t(kind === "incoming" ? "friends.incomingHint" : "friends.outgoingHint")}</span>
+      </span>
+      <span class="friends-request-actions">${actions}</span>
+    </div>`;
+}
+
+function friendsSectionHtml(titleKey, items, rowHtml = friendRowHtml) {
+  if (items.length === 0) return "";
+  return `
+    <section class="friends-section">
+      <h3 class="friends-section-title">${t(titleKey)} <span class="count">${items.length}</span></h3>
+      <div class="friends-grid">${items.map(rowHtml).join("")}</div>
+    </section>`;
+}
+
 function renderFriendsList() {
   const listEl = document.getElementById("friends-list");
-  if (friendsList.length === 0) {
-    listEl.className = "friends-empty";
-    listEl.textContent = t("friends.empty");
+  if (friendsList.length === 0 && friendsIncoming.length === 0 && friendsOutgoing.length === 0) {
+    listEl.innerHTML = `
+      <div class="friends-empty">
+        <span class="friends-empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+        </span>
+        <h3>${t("friends.empty")}</h3>
+        <p>${t("friends.emptyHint")}</p>
+      </div>`;
     return;
   }
-  listEl.className = "";
-  listEl.innerHTML = friendsList.map(friendRowHtml).join("");
+  const online = friendsList.filter((f) => f.online);
+  const offline = friendsList.filter((f) => !f.online);
+  listEl.innerHTML =
+    friendsSectionHtml("friends.sectionIncoming", friendsIncoming, (r) => friendRequestRowHtml(r, "incoming")) +
+    friendsSectionHtml("friends.sectionOnline", online) +
+    friendsSectionHtml("friends.sectionOffline", offline) +
+    friendsSectionHtml("friends.sectionOutgoing", friendsOutgoing, (r) => friendRequestRowHtml(r, "outgoing"));
 }
 
 async function refreshFriends() {
@@ -1782,32 +1834,46 @@ async function refreshFriends() {
   const result = await window.mchub.friends.list();
   if (!result.ok) return;
   friendsList = result.friends;
+  friendsIncoming = result.incoming;
+  friendsOutgoing = result.outgoing;
   renderFriendsList();
 }
 
+async function showFriendsView() {
+  homePanelEl.hidden = true;
+  statusEl.hidden = true;
+  listEl.hidden = true;
+  listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
+  detailEl.hidden = true;
+  settingsPanelEl.hidden = true;
+  accountPanelEl.hidden = true;
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = false;
+  navHomeBtn.classList.remove("active");
+  navServersBtn.classList.remove("active");
+  navSettingsBtn.classList.remove("active");
+  navFavoritesBtn.classList.remove("active");
+  navRecentBtn.classList.remove("active");
+  navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.add("active");
+  document.getElementById("friends-feedback").hidden = true;
+  // Etat vide affiche tout de suite (la page n'est jamais blanche), remplace par la vraie liste
+  // des que l'API repond.
+  renderFriendsList();
+  await refreshFriends();
+}
+
 function wireFriends() {
-  const trigger = navFriendsBtn;
-  const panel = document.getElementById("friends-dropdown");
   const form = document.getElementById("friends-add-form");
   const input = document.getElementById("friends-add-input");
   const submitBtn = document.getElementById("friends-add-submit");
   const feedbackEl = document.getElementById("friends-feedback");
   const listEl = document.getElementById("friends-list");
 
-  trigger.addEventListener("click", async (event) => {
-    event.stopPropagation();
-    const wasHidden = panel.hidden;
-    panel.hidden = !panel.hidden;
-    if (wasHidden) await refreshFriends();
-  });
-  // Meme raisonnement que notif-panel/tasks-panel ci-dessus : sans ca, tout clic a l'interieur
-  // (champ, bouton Ajouter, croix de retrait) remonterait jusqu'au listener document et
-  // refermerait le panneau avant meme que l'action ait un effet visible.
-  panel.addEventListener("click", (event) => event.stopPropagation());
-  document.addEventListener("click", () => {
-    panel.hidden = true;
-  });
-  wireDismissOnEscape(panel, trigger);
+  navFriendsBtn.addEventListener("click", showFriendsView);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1823,19 +1889,22 @@ function wireFriends() {
       return;
     }
     input.value = "";
-    // Message TOUJOURS le meme (anti-enumeration, voir addFriendByUsername cote site) : ne dit
-    // jamais si le pseudo existait vraiment ou etait deja ami — seul le rafraichissement de la
-    // liste ci-dessous dira si ca a marche.
+    // Message TOUJOURS le meme (anti-enumeration, voir sendFriendRequest cote site) : ne dit
+    // jamais si le pseudo existait vraiment ou etait deja ami — la demande apparait ensuite dans
+    // "Demandes envoyees" si elle a bien ete creee.
     feedbackEl.textContent = t("friends.addFeedback");
     feedbackEl.hidden = false;
     await refreshFriends();
   });
 
+  // Retirer un ami, refuser une demande recue et annuler une demande envoyee passent tous par
+  // friends.remove (la ligne de la paire est supprimee cote site) ; seul Accepter a sa route.
   listEl.addEventListener("click", async (event) => {
-    const removeBtn = event.target.closest(".friends-item-remove");
-    if (!removeBtn) return;
-    removeBtn.disabled = true;
-    await window.mchub.friends.remove(removeBtn.dataset.id);
+    const btn = event.target.closest(".friends-item-remove, .friends-request-accept, .friends-request-decline, .friends-request-cancel");
+    if (!btn) return;
+    btn.closest(".friends-item").querySelectorAll("button").forEach((b) => (b.disabled = true));
+    if (btn.classList.contains("friends-request-accept")) await window.mchub.friends.accept(btn.dataset.id);
+    else await window.mchub.friends.remove(btn.dataset.id);
     await refreshFriends();
   });
 }
@@ -1859,11 +1928,13 @@ function showServersView() {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   navHomeBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navServersBtn.classList.add("active");
   loadServers();
 }
@@ -1918,15 +1989,21 @@ async function showHomeView() {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   homePanelEl.hidden = false;
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navHomeBtn.classList.add("active");
   await renderHomeView();
 }
+
+// Slugs de serveurs mis en avant par l'equipe (gratuit, jamais paye) pour la colonne "A la une"
+// de l'accueil. Vide = le serveur le plus actif non deja affiche.
+const TEAM_PICK_SLUGS = [];
 
 async function renderHomeView() {
   homePanelEl.className = "detail";
@@ -1944,12 +2021,37 @@ async function renderHomeView() {
   const favoriteServers = favoriteSlugs.length > 0 ? await resolveServersBySlug(favoriteSlugs.slice(0, 4)) : [];
   const myServers = myServersResult.ok ? myServersResult.servers.slice(0, 4) : [];
 
+  // Joueur sans historique : au lieu d'une phrase grise, les serveurs les plus actifs du moment.
+  // "A la une" (colonne de droite, grand ecran) : place reservee a la future mise en avant
+  // payante, remplie pour l'instant par un "Choix de l'equipe" gratuit — slug force dans
+  // TEAM_PICK_SLUGS s'il existe, sinon le serveur le plus actif qui n'est pas deja affiche.
+  const listResult = await fetchServerList();
+  const busiest = (listResult.ok ? listResult.servers : [])
+    .filter((s) => (s.playerCount ?? 0) > 0)
+    .sort((a, b) => (b.playerCount ?? 0) - (a.playerCount ?? 0));
+  const shownSlugs = new Set([continueServer?.slug, ...favoriteServers.map((s) => s.slug)].filter(Boolean));
+  const whereServers = continueServer ? [] : busiest.slice(0, 3);
+  whereServers.forEach((s) => shownSlugs.add(s.slug));
+  const allKnown = listResult.ok ? listResult.servers : [];
+  const teamPick =
+    TEAM_PICK_SLUGS.map((slug) => allKnown.find((s) => s.slug === slug)).find(Boolean) ||
+    busiest.find((s) => !shownSlugs.has(s.slug)) ||
+    null;
+
   homePanelEl.innerHTML = `
     <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: escapeHtml(currentProfile ? currentProfile.name : "") })}</h2>
+    <div class="home-layout${teamPick ? " has-aside" : ""}">
+    <div class="home-main">
     ${
       continueServer
         ? homeContinueCardHtml(continueServer)
-        : `<p class="join-note" style="margin-bottom: 18px;">${t("home.noHistory")}</p>`
+        : whereServers.length > 0
+          ? `<div class="home-section">
+              <div class="home-section-header"><h3>${t("home.whereTitle")}</h3></div>
+              <p class="join-note" style="margin: 0 0 12px;">${t("home.whereSub")}</p>
+              <div class="server-list" id="home-where-list">${whereServers.map((s) => serverRowHtml(s, favoriteSlugs.includes(s.slug))).join("")}</div>
+            </div>`
+          : `<p class="join-note" style="margin-bottom: 18px;">${t("home.noHistory")}</p>`
     }
     <div class="home-section">
       <div class="home-section-header">
@@ -1959,7 +2061,7 @@ async function renderHomeView() {
       ${
         favoriteServers.length > 0
           ? `<div class="server-list" id="home-favorites-list">${favoriteServers.map((s) => serverRowHtml(s, true)).join("")}</div>`
-          : `<p class="join-note">${t("favorites.empty")}</p>`
+          : `<div class="home-empty-card"><p>${t("favorites.empty")}</p><button type="button" class="btn-secondary" id="home-browse-btn">${t("home.browseServers")}</button></div>`
       }
     </div>
     ${
@@ -1973,7 +2075,40 @@ async function renderHomeView() {
           </div>`
         : ""
     }
+    </div>
+    ${
+      teamPick
+        ? `<aside class="home-aside">
+            <div class="home-section" style="margin-bottom: 0;">
+              <div class="home-section-header"><h3>${t("home.featuredTitle")}</h3></div>
+              <div class="home-pick" id="home-pick" data-slug="${escapeHtml(teamPick.slug)}" role="button" tabindex="0">
+                <div class="home-pick-banner">${teamPick.bannerUrl ? `<img src="${escapeHtml(teamPick.bannerUrl)}" alt="" />` : ""}</div>
+                <div class="home-pick-body">
+                  <span class="home-pick-tag">${t("home.teamPick")}</span>
+                  <h3>${escapeHtml(teamPick.name)}</h3>
+                  <p>${t("home.teamPickDesc")}</p>
+                  <button type="button" class="btn-secondary">${t("home.viewPage")}</button>
+                </div>
+              </div>
+            </div>
+          </aside>`
+        : ""
+    }
+    </div>
   `;
+
+  const browseBtn = document.getElementById("home-browse-btn");
+  if (browseBtn) browseBtn.addEventListener("click", showServersView);
+  for (const el of [document.getElementById("home-where-list"), document.getElementById("home-pick")]) {
+    if (!el) continue;
+    const rows = el.classList.contains("home-pick") ? [el] : [...el.querySelectorAll(".row")];
+    rows.forEach((row) => {
+      onRowActivate(row, () => {
+        detailOrigin = "home";
+        openDetail(row.dataset.slug);
+      });
+    });
+  }
 
   const playBtn = homePanelEl.querySelector(".home-continue-play");
   if (playBtn) {
@@ -2069,25 +2204,45 @@ async function showFavoritesView() {
   accountPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   favoritesPanelEl.hidden = false;
   navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navFavoritesBtn.classList.add("active");
   await renderFavoritesList();
+}
+
+// Etat vide des pages Favoris et Recents (preview validee le 2026-10-14) : grand bloc grise
+// centre, icone, titre, phrase et bouton vers la liste des serveurs. Textes en dur (i18n),
+// aucune donnee utilisateur dedans.
+const PAGE_EMPTY_ICONS = {
+  favorites: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  recent: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>',
+};
+
+function renderPageEmpty(panelEl, kind, titleKey) {
+  panelEl.className = "detail is-empty";
+  panelEl.innerHTML = `
+    <h2>${t(titleKey)}</h2>
+    <div class="page-empty">
+      <div class="page-empty-icon">${PAGE_EMPTY_ICONS[kind]}</div>
+      <h3>${t(`${kind}.emptyTitle`)}</h3>
+      <p>${t(`${kind}.emptyText`)}</p>
+      <button type="button" class="btn-secondary page-empty-browse">${t("home.browseServers")}</button>
+    </div>
+  `;
+  panelEl.querySelector(".page-empty-browse").addEventListener("click", showServersView);
 }
 
 async function renderFavoritesList() {
   const favorites = await getFavoriteSlugs();
 
   if (favorites.length === 0) {
-    favoritesPanelEl.className = "detail";
-    favoritesPanelEl.innerHTML = `
-      <h2>${t("nav.favorites")}</h2>
-      <p class="join-note">${t("favorites.empty")}</p>
-    `;
+    renderPageEmpty(favoritesPanelEl, "favorites", "nav.favorites");
     return;
   }
 
@@ -2116,12 +2271,14 @@ async function showRecentView() {
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   recentPanelEl.hidden = false;
   navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navRecentBtn.classList.add("active");
   await renderRecentList();
 }
@@ -2131,11 +2288,7 @@ async function renderRecentList() {
   const recentSlugs = settings.recentlyPlayed || [];
 
   if (recentSlugs.length === 0) {
-    recentPanelEl.className = "detail";
-    recentPanelEl.innerHTML = `
-      <h2>${t("nav.recent")}</h2>
-      <p class="join-note">${t("recent.empty")}</p>
-    `;
+    renderPageEmpty(recentPanelEl, "recent", "nav.recent");
     return;
   }
 
@@ -2238,6 +2391,24 @@ function canSelfTest(server) {
   return !server.frozenAt && server.isPrivate && !server.selfTestPassedAt;
 }
 
+// Option C des cartes « Mes instances » (validee par Rushi, 2026-10-14) : boutons compacts a
+// droite, en icones, avec une infobulle (data-tip, voir .instance-action dans index.html) ;
+// aria-label repete le nom pour les lecteurs d'ecran (pas de title : il doublerait l'infobulle).
+const INSTANCE_ICONS = {
+  play: '<svg viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z" /></svg>',
+  gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>',
+  flask: '<svg viewBox="0 0 24 24"><path d="M9 3h6" /><path d="M10 3v6.2L4.6 18.4A2 2 0 0 0 6.3 21.4h11.4a2 2 0 0 0 1.7-3L14 9.2V3" /><path d="M7.5 15h9" /></svg>',
+  external: '<svg viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>',
+  leave: '<svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></svg>',
+  key: '<svg viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 9.3-9.3" /><path d="m16 7 3 3" /><path d="m14 9 2 2" /></svg>',
+};
+
+// `label` : texte affiche a cote de l'icone (seulement quand l'icone seule ne suffit pas).
+function instanceActionHtml({ cls, icon, tip, label = "", data, extra = "" }) {
+  const attrs = Object.entries(data).map(([k, v]) => ` data-${k}="${escapeHtml(v)}"`).join("");
+  return `<button type="button" class="instance-action ${extra} ${cls}"${attrs} data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${INSTANCE_ICONS[icon]}${label ? `<span>${label}</span>` : ""}</button>`;
+}
+
 function instanceCardHtml(server) {
   const status = instanceStatus(server);
   const badgeKey = instanceBadgeKey(status, server);
@@ -2256,10 +2427,10 @@ function instanceCardHtml(server) {
         ${status === "public" && server.verificationStatus === "approved" ? "" : `<div class="instance-card-status">${statusLine}</div>`}
       </div>
       <div class="instance-card-actions">
-        ${canSelfTest(server) ? `<button type="button" class="btn-secondary my-instance-selftest" data-slug="${escapeHtml(server.slug)}">${t("myInstances.selfTestButton")}</button>` : ""}
-        ${status !== "paused" ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>` : ""}
-        <button type="button" class="btn-secondary my-instance-channel" data-slug="${escapeHtml(server.slug)}">${t("myInstances.channelButton")}</button>
-        <button type="button" class="btn-secondary my-instance-manage" data-id="${escapeHtml(server.id)}">${t("myInstances.manage")} ↗</button>
+        ${canSelfTest(server) ? instanceActionHtml({ cls: "my-instance-selftest", icon: "flask", tip: t("myInstances.selfTestButton"), label: t("myInstances.selfTestShort"), data: { slug: server.slug } }) : ""}
+        ${status !== "paused" ? instanceActionHtml({ cls: "my-instance-play", icon: "play", extra: "is-play", tip: t("myInstances.joinShort"), data: { slug: server.slug } }) : ""}
+        ${instanceActionHtml({ cls: "my-instance-channel", icon: "gear", tip: t("myInstances.channelButton"), data: { slug: server.slug } })}
+        ${instanceActionHtml({ cls: "my-instance-manage", icon: "external", tip: t("myInstances.manageTip"), data: { id: server.id } })}
       </div>
     </div>`;
 }
@@ -2283,9 +2454,9 @@ function joinedCardHtml(server) {
         <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)}</p>
       </div>
       <div class="instance-card-actions">
-        <button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>
-        <button type="button" class="btn-secondary my-instance-channel" data-slug="${escapeHtml(server.slug)}">${t("myInstances.channelButton")}</button>
-        <button type="button" class="btn-secondary my-instance-leave" data-slug="${escapeHtml(server.slug)}">${t("myInstances.leave")}</button>
+        ${instanceActionHtml({ cls: "my-instance-play", icon: "play", extra: "is-play", tip: t("myInstances.joinShort"), data: { slug: server.slug } })}
+        ${instanceActionHtml({ cls: "my-instance-channel", icon: "gear", tip: t("myInstances.channelButton"), data: { slug: server.slug } })}
+        ${instanceActionHtml({ cls: "my-instance-leave", icon: "leave", tip: t("myInstances.leave"), data: { slug: server.slug } })}
       </div>
     </div>`;
 }
@@ -2421,7 +2592,30 @@ const INSTANCE_SETTINGS_FIELDS = [
 // dans le navigateur. `owned` : true pour une instance de l'onglet "Tout"/possedee (filtre
 // appliesTo du canal modpack), false pour une instance "Rejoint" — ce joueur n'en est jamais
 // proprietaire, voir joinedCardHtml.
-async function openInstanceSettingsModal(server, { owned = true } = {}) {
+// Une seule fenetre Reglages a la fois (2026-10-14, bug vu par Rushi : sections repetees 2-3
+// fois). Pendant le chargement, l'engrenage derriere la fenetre gardait le focus : Entree ou
+// Espace le re-cliquait, et chaque appel ajoutait ses propres sections et ses propres
+// ecouteurs (un clic sur Enregistrer sauvegardait alors autant de fois).
+let instanceSettingsOpen = false;
+
+async function openInstanceSettingsModal(server, options) {
+  if (instanceSettingsOpen) return;
+  instanceSettingsOpen = true;
+  try {
+    await showInstanceSettingsModal(server, options);
+  } finally {
+    instanceSettingsOpen = false;
+  }
+}
+
+// Chargement de la fenetre (variante B validee par Rushi, 2026-10-14) : le losange Omniscient
+// qui pulse au centre, un message si le site tarde (apres 3 s), et en cas d'erreur un ecran
+// avec Reessayer / Fermer plutot qu'une simple ligne rouge.
+const SETTINGS_SLOW_DELAY_MS = 3000;
+const ICON_ALERT =
+  '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>';
+
+async function showInstanceSettingsModal(server, { owned = true } = {}) {
   const overlay = document.getElementById("modal-overlay");
   const confirmBtn = document.getElementById("modal-confirm");
   const cancelBtn = document.getElementById("modal-cancel");
@@ -2430,54 +2624,119 @@ async function openInstanceSettingsModal(server, { owned = true } = {}) {
 
   const fields = INSTANCE_SETTINGS_FIELDS.filter((field) => field.appliesTo(server, { owned }));
 
+  // Zone d'attente/erreur a part : #modal-body est un <p>, qui ne peut pas contenir de blocs.
+  document.getElementById("instance-settings-state")?.remove();
+  const stateEl = document.createElement("div");
+  stateEl.id = "instance-settings-state";
+  bodyEl.after(stateEl);
+
   document.getElementById("modal-title").textContent = t("channelSettings.title", { name: server.name });
   checkboxRow.hidden = true;
-  bodyEl.textContent = t("channelSettings.loading");
+  bodyEl.textContent = "";
+  bodyEl.hidden = true;
   bodyEl.style.color = "";
   cancelBtn.hidden = false;
-  cancelBtn.textContent = t("common.cancel");
-  confirmBtn.hidden = true;
+  overlay.querySelector(".modal-box").classList.add("pop-in");
   overlay.hidden = false;
 
+  let slowTimer = null;
   const cleanup = () => {
+    clearTimeout(slowTimer);
     overlay.hidden = true;
+    bodyEl.hidden = false;
     bodyEl.style.color = "";
     confirmBtn.hidden = false;
     confirmBtn.disabled = false;
+    stateEl.remove();
     document.getElementById("instance-settings-fields")?.remove();
   };
 
+  const showLoading = () => {
+    stateEl.innerHTML = `
+      <div class="settings-loader" role="status" aria-live="polite">
+        <div class="settings-loader-halo"><span class="settings-loader-mark"></span></div>
+        <span class="settings-loader-text">${t("channelSettings.loading")}</span>
+      </div>`;
+    cancelBtn.textContent = t("common.cancel");
+    confirmBtn.hidden = true;
+    clearTimeout(slowTimer);
+    slowTimer = setTimeout(() => {
+      stateEl.querySelector(".settings-loader")?.insertAdjacentHTML("beforeend", `<p class="settings-loader-slow">${t("channelSettings.slow")}</p>`);
+    }, SETTINGS_SLOW_DELAY_MS);
+  };
+
+  const showError = (message) => {
+    clearTimeout(slowTimer);
+    stateEl.innerHTML = `
+      <div class="settings-error" role="alert">
+        <span class="settings-error-icon">${ICON_ALERT}</span>
+        <p>${escapeHtml(message)}</p>
+      </div>`;
+    cancelBtn.textContent = t("common.close");
+    confirmBtn.hidden = false;
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = t("channelSettings.retry");
+  };
+
+  // Annuler marche aussi pendant le chargement (avant, le bouton ne faisait rien a ce stade) ;
+  // apres une erreur, Reessayer relance le chargement dans la meme fenetre.
   const currentValues = {};
-  for (const field of fields) {
-    const result = await field.load(server);
-    if (!result.ok) {
-      bodyEl.textContent = result.error || t("channelSettings.loadError");
-      bodyEl.style.color = "var(--danger)";
-      cancelBtn.textContent = t("common.close");
-      await new Promise((resolve) => {
-        const onCancel = () => {
-          cancelBtn.removeEventListener("click", onCancel);
-          cleanup();
-          resolve();
-        };
-        cancelBtn.addEventListener("click", onCancel);
-      });
+  for (;;) {
+    showLoading();
+    let cancelledWhileLoading = false;
+    const onLoadingCancel = () => {
+      cancelledWhileLoading = true;
+      cleanup();
+    };
+    cancelBtn.addEventListener("click", onLoadingCancel);
+    let failure = null;
+    for (const field of fields) {
+      const result = await field.load(server);
+      if (cancelledWhileLoading) return;
+      if (!result.ok) {
+        failure = result.error || t("channelSettings.loadError");
+        break;
+      }
+      currentValues[field.id] = result.value;
+    }
+    cancelBtn.removeEventListener("click", onLoadingCancel);
+    if (!failure) break;
+
+    showError(failure);
+    const retry = await new Promise((resolve) => {
+      const onRetry = () => done(true);
+      const onClose = () => done(false);
+      const done = (value) => {
+        confirmBtn.removeEventListener("click", onRetry);
+        cancelBtn.removeEventListener("click", onClose);
+        resolve(value);
+      };
+      confirmBtn.addEventListener("click", onRetry);
+      cancelBtn.addEventListener("click", onClose);
+    });
+    if (!retry) {
+      cleanup();
       return;
     }
-    currentValues[field.id] = result.value;
   }
 
+  clearTimeout(slowTimer);
+  stateEl.innerHTML = "";
   // La description du canal du modpack ne s'applique qu'a ce reglage precis — vide sinon (le
   // texte d'aide de la case de suivi, juste en dessous d'elle, suffit dans ce cas).
-  bodyEl.textContent = fields.some((field) => field.id === "modpackChannel") ? t("channelSettings.description") : "";
+  const hasDescription = fields.some((field) => field.id === "modpackChannel");
+  bodyEl.textContent = hasDescription ? t("channelSettings.description") : "";
+  bodyEl.hidden = !hasDescription;
   const fieldsContainer = document.createElement("div");
   fieldsContainer.id = "instance-settings-fields";
+  fieldsContainer.className = "settings-fade-in";
+  document.getElementById("instance-settings-fields")?.remove();
   fieldsContainer.innerHTML = fields.map((field) => field.renderHtml(currentValues[field.id])).join("");
-  bodyEl.after(fieldsContainer);
+  stateEl.after(fieldsContainer);
 
+  cancelBtn.textContent = t("common.cancel");
   confirmBtn.hidden = false;
   confirmBtn.textContent = t("channelSettings.save");
-  overlay.querySelector(".modal-box").classList.add("pop-in");
 
   await new Promise((resolve) => {
     const onConfirm = async () => {
@@ -2489,6 +2748,7 @@ async function openInstanceSettingsModal(server, { owned = true } = {}) {
         if (!save.ok) {
           confirmBtn.disabled = false;
           confirmBtn.textContent = t("channelSettings.save");
+          bodyEl.hidden = false;
           bodyEl.textContent = save.error || t("channelSettings.saveError");
           bodyEl.style.color = "var(--danger)";
           return;
@@ -2563,7 +2823,7 @@ function renderMyInstancesGrid() {
         <h2>${t("nav.myInstances")}</h2>
         <p class="join-note">${t("myInstances.subtitle")}</p>
       </div>
-      <button type="button" class="btn-secondary" id="my-instances-join">${t("myInstances.joinButton")}</button>
+      <button type="button" class="btn-secondary join-code-btn" id="my-instances-join">${INSTANCE_ICONS.key}${t("myInstances.joinByCodeButton")}</button>
     </div>
     ${instancesToolbarHtml(myInstancesServers, myJoinedServers.length, topPagerHtml(myInstancesPage, pageCount, "my-instances-pager"))}
     ${
@@ -2700,12 +2960,14 @@ async function showMyInstancesView() {
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   myInstancesPanelEl.hidden = false;
   navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navMyInstancesBtn.classList.add("active");
   await renderMyInstancesList();
 }
@@ -2741,7 +3003,7 @@ function offlineInstanceCardHtml(instance) {
         <p>${t(instance.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(instance.minecraftVersion)}</p>
       </div>
       <div class="instance-card-actions">
-        <button type="button" class="btn-secondary my-instance-play-offline" data-slug="${escapeHtml(instance.slug)}">${t("myInstances.playOffline")}</button>
+        ${instanceActionHtml({ cls: "my-instance-play-offline", icon: "play", extra: "is-play", tip: t("myInstances.playOffline"), label: t("myInstances.playOffline"), data: { slug: instance.slug } })}
       </div>
     </div>`;
 }
@@ -2901,12 +3163,14 @@ async function showSettingsView() {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   settingsPanelEl.hidden = false;
   navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navSettingsBtn.classList.add("active");
   await renderSettingsTab(activeSettingsTab);
 }
@@ -2924,6 +3188,8 @@ function wireSettingsNav() {
 async function renderSettingsTab(tab) {
   const contentEl = document.getElementById("settings-content");
   const settings = await window.mchub.settings.get();
+  // Seul le Debogage s'etale en grille sur la largeur ; les autres onglets gardent leur colonne etroite.
+  contentEl.classList.toggle("settings-content-wide", tab === "debug");
   if (tab === "language") return renderLanguageTab(contentEl, settings);
   if (tab === "memory") return renderMemoryTab(contentEl, settings);
   if (tab === "misc") return renderMiscTab(contentEl, settings);
@@ -2941,6 +3207,7 @@ function renderDebugTab(contentEl, settings) {
   const LOG_LEVELS = ["error", "warn", "info", "debug"];
 
   contentEl.innerHTML = `
+    <div class="settings-grid">
     <section class="settings-section">
       <h3 class="settings-row-desc" style="text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 0;">${t("debug.consoleSection")}</h3>
       <div class="settings-row">
@@ -3010,8 +3277,9 @@ function renderDebugTab(contentEl, settings) {
       </div>
       <div><button id="settings-copy-sysinfo" class="btn-secondary" type="button" hidden>${t("debug.copyToClipboard")}</button></div>
     </section>
+    </div>
 
-    <section class="settings-section">
+    <section class="settings-section settings-reset">
       <h3 class="settings-row-desc" style="text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 0;">${t("debug.resetSection")}</h3>
       <div class="settings-row">
         <span>
@@ -3348,6 +3616,29 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
       </div>
       ${betaPending ? `<p class="join-note">${t("settings.betaRestartNote")}</p><button type="button" class="join-btn" id="settings-beta-restart-btn">${t("language.restartButton")}</button>` : ""}
     </section>
+    <section class="settings-section">
+      <h3 class="settings-section-title">${t("settings.discordSection")}</h3>
+      <div class="settings-row">
+        <span>
+          <label class="settings-row-label" for="settings-discord-presence">${t("settings.discordPresence")}</label>
+          <p class="settings-row-desc">${t("settings.discordPresenceDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-discord-presence" ${settings.discordPresence !== false ? "checked" : ""} />
+      </div>
+    </section>
+    <section class="settings-section">
+      <h3 class="settings-section-title">${t("settings.aboutSection")}</h3>
+      <button type="button" class="settings-link-row" data-legal-page="terms">
+        <span><span class="settings-row-label">${t("settings.terms")}</span><p class="settings-link-url">omniscientlauncher.com/cgu</p></span>
+        <span class="settings-link-ext" aria-hidden="true">↗</span>
+      </button>
+      <div class="settings-divider"></div>
+      <button type="button" class="settings-link-row" data-legal-page="privacy">
+        <span><span class="settings-row-label">${t("settings.privacy")}</span><p class="settings-link-url">omniscientlauncher.com/confidentialite</p></span>
+        <span class="settings-link-ext" aria-hidden="true">↗</span>
+      </button>
+      <p class="join-note">${t("settings.aboutNote")}</p>
+    </section>
   `;
 
   document.getElementById("settings-open-folder").addEventListener("click", () => {
@@ -3358,6 +3649,14 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
     renderMiscTab(contentEl, { ...settings, betaChannel: event.target.checked }, { betaPending: true });
   });
   document.getElementById("settings-beta-restart-btn")?.addEventListener("click", () => window.mchub.restartApp());
+  // Enregistre avec les autres reglages ; main.js coupe ou rallume la presence Discord tout de suite.
+  document.getElementById("settings-discord-presence").addEventListener("change", async (event) => {
+    settings.discordPresence = event.target.checked;
+    await window.mchub.settings.set({ discordPresence: event.target.checked });
+  });
+  contentEl.querySelectorAll("[data-legal-page]").forEach((button) => {
+    button.addEventListener("click", () => window.mchub.openLegalPage(button.dataset.legalPage));
+  });
   refreshJavaStatus("settings-java-status", "settings-java-install");
 
   // "Reparer Java" : supprime les Java du launcher puis reinstalle les quatre.
@@ -3486,11 +3785,13 @@ async function showAccountView() {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   accountPanelEl.hidden = false;
   navServersBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   await renderAccountPanel();
 }
@@ -4167,7 +4468,8 @@ function renderGuestHeader() {
   navSettingsBtn.hidden = true;
   // Amis = necessite un compte Microsoft (comme Parametres ci-dessus) : rien a afficher pour
   // un visiteur sans session.
-  navFriendsBtn.closest(".friends-menu").hidden = true;
+  navFriendsBtn.hidden = true;
+  if (!friendsPanelEl.hidden) showHomeView();
   msAccountEl.innerHTML = `
     <button id="ms-account-settings" class="sidebar-btn" data-i18n-title="nav.settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

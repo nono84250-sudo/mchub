@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
@@ -33,23 +34,44 @@ type ServerFormValues = {
   autoConnect: boolean;
 };
 
-// Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher :
-// seule une adresse http(s) absolue, sans guillemets, chevrons, espaces ni
-// backticks, est acceptee. http est permis uniquement pour que /api/upload (voir
-// route.ts, qui renvoie l'origine de la requete) fonctionne en dev local ; couvre
-// aussi les valeurs legacy pointant vers des CDN https (R2, ex-Vercel Blob).
-function isSafeImageUrl(url: string | null): boolean {
+// Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher. Depuis le
+// passage a R2 (ImageDropzone -> /api/upload), le formulaire n'envoie plus que l'URL renvoyee
+// par /api/upload : <origine du site>/api/images/<uuid>.<ext>. 2026-10-14 : la validation
+// acceptait encore n'importe quelle adresse http(s) — un formulaire forge a la main pouvait
+// donc poser une image hebergee ailleurs (contenu modifiable apres coup, IP des joueurs vue
+// par ce site tiers, http non chiffre). Desormais seule notre propre URL d'image est acceptee :
+// meme hote que la requete en cours, chemin /api/images/<uuid>.<ext> exact, https (http
+// seulement sur localhost, pour le dev local). Exception : une valeur DEJA enregistree sur la
+// fiche (anciennes URLs ex-Vercel Blob) reste acceptee telle quelle a la modification, pour ne
+// pas bloquer l'enregistrement d'une fiche existante — elle ne peut pas etre remplacee par une
+// autre URL externe.
+const OWN_IMAGE_PATH = /^\/api\/images\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/;
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1"]);
+
+function isOwnImageUrl(url: string | null, host: string | null, previous?: string | null): boolean {
   if (url === null) return true;
-  if (!/^https?:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
+  if (previous && url === previous) return true;
+  if (!host || !/^https?:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
   try {
-    const protocol = new URL(url).protocol;
-    return protocol === "https:" || protocol === "http:";
+    const parsed = new URL(url);
+    const secure = parsed.protocol === "https:" || (parsed.protocol === "http:" && LOCAL_HOSTNAMES.has(parsed.hostname));
+    return secure && parsed.host === host && OWN_IMAGE_PATH.test(parsed.pathname) && !parsed.search && !parsed.hash;
   } catch {
     return false;
   }
 }
 
-function readForm(formData: FormData): ServerFormValues | { error: string } {
+async function requestHost(): Promise<string | null> {
+  return (await headers()).get("host");
+}
+
+type PreviousImages = { bannerUrl: string | null; iconUrl: string | null; backgroundUrl: string | null };
+
+function readForm(
+  formData: FormData,
+  host: string | null,
+  previous?: PreviousImages,
+): ServerFormValues | { error: string } {
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const bannerUrl = String(formData.get("bannerUrl") ?? "").trim() || null;
@@ -74,8 +96,12 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   if (!name || !description || !minecraftVersion || !ip) {
     return { error: "Nom, description, version et IP sont obligatoires." };
   }
-  if (!isSafeImageUrl(bannerUrl) || !isSafeImageUrl(iconUrl) || !isSafeImageUrl(backgroundUrl)) {
-    return { error: "Les images (bannière, icône, fond) doivent être des adresses https valides." };
+  if (
+    !isOwnImageUrl(bannerUrl, host, previous?.bannerUrl) ||
+    !isOwnImageUrl(iconUrl, host, previous?.iconUrl) ||
+    !isOwnImageUrl(backgroundUrl, host, previous?.backgroundUrl)
+  ) {
+    return { error: "Les images (bannière, icône, fond) doivent être envoyées depuis ce formulaire." };
   }
   if (type === "modded" && !curseforgeModpackId) {
     return { error: "Un serveur moddé doit indiquer son modpack (CurseForge ou Modrinth)." };
@@ -133,7 +159,7 @@ export async function createServer(_prevState: ServerActionState, formData: Form
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const parsed = readForm(formData);
+  const parsed = readForm(formData, await requestHost());
   if ("error" in parsed) return parsed;
 
   const slug = await uniqueSlugFor(parsed.name);
@@ -175,7 +201,7 @@ export async function updateServer(
   const owned = await getOwnedServer(serverId, session.user.id);
   if (!owned) return { error: "Ce serveur n'existe pas ou ne t'appartient pas." };
 
-  const parsed = readForm(formData);
+  const parsed = readForm(formData, await requestHost(), owned);
   if ("error" in parsed) return parsed;
 
   // Un changement d'IP, de version declaree ou de modpack rend l'auto-test precedent caduc —

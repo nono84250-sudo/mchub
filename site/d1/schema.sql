@@ -247,18 +247,22 @@ CREATE TABLE "adminNote" (
 );
 CREATE INDEX "adminNote_userId_createdAt_idx" ON "adminNote"("userId", "createdAt");
 
--- Amities (systeme d'amis phase 1, 2026-10-14, voir lib/friends.ts) : ajout direct et
--- reciproque, PAS de demande a accepter/refuser (confirme par l'utilisateur) -- une ligne par
--- paire, jamais deux (A-B et B-A). Deduplication par l'application : lib/friends.ts range
--- toujours les deux id dans le meme ordre (le plus petit en userId1) avant d'ecrire, donc
--- l'index unique ci-dessous suffit a empecher un doublon quel que soit l'ordre d'ajout.
--- Suppression par l'un OU l'autre = une seule ligne a retirer, l'amitie disparait des deux
--- cotes (pas de "pending", pas de statut).
+-- Amities (systeme d'amis, 2026-10-14, voir lib/friends.ts) : une ligne par paire, jamais deux
+-- (A-B et B-A). Deduplication par l'application : lib/friends.ts range toujours les deux id dans
+-- le meme ordre (le plus petit en userId1) avant d'ecrire, donc l'index unique ci-dessous suffit
+-- a empecher un doublon quel que soit l'ordre d'ajout. Demande puis accord (corrige le
+-- 2026-10-14, avant : ajout direct sans accord) : "pending" = demande envoyee par requesterId,
+-- en attente de l'autre joueur ; "accepted" = amitie confirmee des deux cotes. Refuser, annuler
+-- ou retirer = supprimer la ligne. Pas de CHECK sur "status" (valeurs applicatives), meme
+-- raisonnement que verificationStatus. Migration d'une base existante :
+-- d1/migrations/2026-10-14-demandes-amis.sql.
 CREATE TABLE "friendship" (
-  "id"        TEXT PRIMARY KEY,
-  "userId1"   TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
-  "userId2"   TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "id"          TEXT PRIMARY KEY,
+  "userId1"     TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "userId2"     TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "createdAt"   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "status"      TEXT NOT NULL DEFAULT 'pending',
+  "requesterId" TEXT REFERENCES "user"("id") ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX "friendship_pair_idx" ON "friendship"("userId1", "userId2");
 -- Recherche "de qui suis-je l'ami" dans l'autre sens (userId2) : userId1 est deja couvert par

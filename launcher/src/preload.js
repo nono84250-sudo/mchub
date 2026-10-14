@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("mchub", {
   getSiteUrl: () => ipcRenderer.invoke("app:getSiteUrl"),
   restartApp: () => ipcRenderer.invoke("app:restart"),
+  // Parametres > Divers > A propos : "terms" ou "privacy" seulement (liste fixe cote main.js).
+  openLegalPage: (page) => ipcRenderer.invoke("app:openLegal", page),
   checkMaintenance: () => ipcRenderer.invoke("maintenance:check"),
   verifyMaintenanceCode: (code) => ipcRenderer.invoke("maintenance:verifyCode", code),
   listServers: () => ipcRenderer.invoke("servers:list"),
@@ -34,6 +36,7 @@ contextBridge.exposeInMainWorld("mchub", {
   friends: {
     list: () => ipcRenderer.invoke("friends:list"),
     add: (minecraftUsername) => ipcRenderer.invoke("friends:add", minecraftUsername),
+    accept: (friendUserId) => ipcRenderer.invoke("friends:accept", friendUserId),
     remove: (friendUserId) => ipcRenderer.invoke("friends:remove", friendUserId),
   },
   // Heartbeat de presence, greffe sur le meme cycle de 60s que silentRefreshList

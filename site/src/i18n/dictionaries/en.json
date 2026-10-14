@@ -14,8 +14,8 @@
   },
   "footer": {
     "tagline": "the Minecraft server toolkit.",
-    "servers": "Servers",
-    "contact": "Contact"
+    "terms": "Terms",
+    "privacy": "Privacy (GDPR)"
   },
   "home": {
     "badge": "Minecraft/Xbox access approved — the launcher is online",
@@ -142,13 +142,20 @@
   "friends": {
     "title": "Friends",
     "addPlaceholder": "Minecraft username…",
-    "addButton": "Add",
-    "adding": "Adding…",
-    "addFeedback": "Done — check the list below.",
-    "empty": "No friends added yet.",
+    "addButton": "Send request",
+    "adding": "Sending…",
+    "addFeedback": "If this player uses Omniscient, they'll get your request.",
+    "empty": "No friends yet. Send a request with a Minecraft username: your friend will need to accept it.",
     "online": "Online",
     "offline": "Offline",
-    "remove": "Remove"
+    "remove": "Remove",
+    "sectionIncoming": "Requests received",
+    "sectionOutgoing": "Requests sent",
+    "incomingHint": "wants to add you as a friend",
+    "outgoingHint": "waiting for a reply",
+    "accept": "Accept",
+    "decline": "Decline",
+    "cancel": "Cancel request"
   },
   "language": {
     "label": "Language",
@@ -369,16 +376,14 @@
     "subjectChoose": "Pick a subject",
     "subjectHelp": "Help with the Launcher or the Site",
     "subjectServer": "Problem with a game server",
-    "subjectBilling": "Subscription, invoice, refund",
     "subjectData": "Personal data",
     "subjectIllicit": "Report illegal content",
     "subjectOther": "Other (press, partnership…)",
     "consent": "I agree that this information is used to answer my request.",
-    "privacyNotice": "Your information is only used to answer your request and is kept for 12 months after it is handled (3 years in case of dispute). You can ask to access, correct or delete it at any time.",
+    "privacyNotice": "Your information is only used to answer your request. You can ask to access, correct or delete it at any time (see the privacy policy).",
     "topicsTitle": "Before you write",
     "topicHelp": "Help with the Launcher or the Site: tell us your system, the Launcher version (in the settings), what you were doing and the message shown.",
     "topicServer": "Problem with a game server: first use the Launcher's \"Report\" button, it notifies the server owner directly. We do not run the listed servers.",
-    "topicBilling": "Subscription, invoice, refund: give the account username and the date of the operation.",
     "illicitTitle": "Report illegal content",
     "illicitIntro": "To report a server page, image or text you believe is illegal, pick this subject and include:",
     "illicitUrl": "the exact address (URL) of the content;",

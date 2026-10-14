@@ -14,8 +14,8 @@
   },
   "footer": {
     "tagline": "la boîte à outils des serveurs Minecraft.",
-    "servers": "Serveurs",
-    "contact": "Contact"
+    "terms": "CGU",
+    "privacy": "Confidentialité (RGPD)"
   },
   "home": {
     "badge": "Accès Minecraft/Xbox approuvé — le launcher est en ligne",
@@ -142,13 +142,20 @@
   "friends": {
     "title": "Amis",
     "addPlaceholder": "Pseudo Minecraft…",
-    "addButton": "Ajouter",
-    "adding": "Ajout…",
-    "addFeedback": "C'est fait — vérifie la liste ci-dessous.",
-    "empty": "Pas encore d'ami ajouté.",
+    "addButton": "Envoyer une demande",
+    "adding": "Envoi…",
+    "addFeedback": "Si ce joueur utilise Omniscient, il recevra ta demande.",
+    "empty": "Pas encore d'ami. Envoie une demande avec un pseudo Minecraft : ton ami devra l'accepter.",
     "online": "En ligne",
     "offline": "Hors ligne",
-    "remove": "Retirer"
+    "remove": "Retirer",
+    "sectionIncoming": "Demandes reçues",
+    "sectionOutgoing": "Demandes envoyées",
+    "incomingHint": "veut t'ajouter en ami",
+    "outgoingHint": "en attente de réponse",
+    "accept": "Accepter",
+    "decline": "Refuser",
+    "cancel": "Annuler la demande"
   },
   "language": {
     "label": "Langue",
@@ -369,16 +376,14 @@
     "subjectChoose": "Choisis un sujet",
     "subjectHelp": "Aide sur le Launcher ou le Site",
     "subjectServer": "Problème avec un serveur de jeu",
-    "subjectBilling": "Abonnement, facture, remboursement",
     "subjectData": "Données personnelles",
     "subjectIllicit": "Signaler un contenu illicite",
     "subjectOther": "Autre (presse, partenariat…)",
     "consent": "J'accepte que ces informations soient utilisées pour répondre à ma demande.",
-    "privacyNotice": "Tes informations servent uniquement à répondre à ta demande et sont conservées 12 mois après son traitement (3 ans en cas de litige). Tu peux demander à y accéder, les corriger ou les supprimer à tout moment.",
+    "privacyNotice": "Tes informations servent uniquement à répondre à ta demande. Tu peux demander à y accéder, les corriger ou les supprimer à tout moment (voir la politique de confidentialité).",
     "topicsTitle": "Avant d'écrire",
     "topicHelp": "Aide sur le Launcher ou le Site : indique ton système, la version du Launcher (dans les paramètres), ce que tu faisais et le message affiché.",
     "topicServer": "Problème avec un serveur de jeu : utilise d'abord le bouton « Signaler » du Launcher, il prévient directement le propriétaire du serveur. Nous n'exploitons pas les serveurs listés.",
-    "topicBilling": "Abonnement, facture, remboursement : indique le pseudo du compte et la date de l'opération.",
     "illicitTitle": "Signaler un contenu illicite",
     "illicitIntro": "Pour signaler une fiche de serveur, une image ou un texte que tu juges illicite, choisis ce sujet et précise :",
     "illicitUrl": "l'adresse exacte (URL) du contenu ;",

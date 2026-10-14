@@ -1,30 +1,41 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db, execSql } from "@/lib/db";
 import { DesignScreen } from "@/components/admin/DesignScreen";
+import { SlotPortal } from "@/components/admin/SlotPortal";
+import { PlayerExportButton } from "@/components/admin/PlayerExportButton";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { playerDetailHtml, type PlayerServerRow } from "@/app/admin/design/bind";
+import { countPlayerData, type ExportCategory } from "@/lib/playerExport";
 
 export const dynamic = "force-dynamic";
 
 const SHORT_COUNT = 3;
 const PAGE_SIZE = 5;
 
-export default async function PlayerDetail() {
-  await requireAdmin();
-  // 2026-10-12 : page desactivee temporairement (perimetre admin reduit), voir
-  // administration/page.tsx. Logique d'origine conservee ci-dessous (PlayerDetailOriginal,
-  // non utilisee) pour reactivation future sans tout reecrire.
-  redirect("/admin/servers");
-}
+// Libelles de la fenetre « Récupérer les données du joueur » (meme ordre que EXPORT_CATEGORIES).
+const EXPORT_LABELS: Record<ExportCategory, { title: string; desc: string }> = {
+  serveurs: { title: "Serveurs possédés", desc: "Fiches, gel, recours, vérification, vues et lancements" },
+  signalementsEnvoyes: { title: "Signalements envoyés", desc: "Ceux qu'il a faits sur d'autres serveurs" },
+  signalementsSurSesServeurs: { title: "Signalements sur ses serveurs", desc: "Auteurs masqués, texte des signalements de comportement exclu" },
+  notifications: { title: "Notifications", desc: "Messages reçus dans le launcher" },
+  avertissements: { title: "Avertissements", desc: "Motif, auteur, date" },
+  notesDuStaff: { title: "Notes du staff", desc: "Incluses : ce sont des données sur lui" },
+  amis: { title: "Amis", desc: "Pseudos et statut des demandes" },
+  presence: { title: "Présence", desc: "Dernière activité dans le launcher" },
+  serveursSuivis: { title: "Serveurs suivis", desc: "Alertes « revenu en ligne »" },
+};
 
-async function PlayerDetailOriginal({
+// 2026-10-12 : page desactivee (perimetre admin reduit) ; reactivee le 2026-10-14 pour le bouton
+// « Récupérer les données du joueur » (droit d'acces RGPD). La liste des joueurs reste masquee :
+// on arrive ici par le lien du proprietaire sur une fiche serveur.
+export default async function PlayerDetail({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const { id } = await params;
   const query = await searchParams;
   const player = await db.orm.public.User.select("id", "name", "minecraftUuid", "createdAt", "lockedAt", "lockedReason", "lockedBy").where({ id }).first();
@@ -87,5 +98,20 @@ async function PlayerDetailOriginal({
     warnings,
     notes,
   });
-  return <DesignScreen name="player-detail" html={html} />;
+  // Export reserve au role admin (la route le verifie aussi) : un moderateur ne voit pas le bouton.
+  const exportCounts = admin.role === "admin" ? await countPlayerData(player.id) : null;
+  return (
+    <>
+      <DesignScreen name="player-detail" html={html} />
+      {exportCounts ? (
+        <SlotPortal slotId="player-export-slot">
+          <PlayerExportButton
+            playerId={player.id}
+            playerName={player.name}
+            categories={(Object.keys(EXPORT_LABELS) as ExportCategory[]).map((key) => ({ key, ...EXPORT_LABELS[key], count: exportCounts[key] }))}
+          />
+        </SlotPortal>
+      ) : null}
+    </>
+  );
 }

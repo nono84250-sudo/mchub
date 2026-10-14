@@ -6,7 +6,8 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 // Langue/Apparence vivent ici (pied de page, toutes les pages, connecte ou
 // non) plutot que dans la barre de nav — voir AccountMenu.tsx pour l'acces
 // rapide propose en plus une fois connecte. "Publier un serveur" retire de
-// partout.
+// partout. Liens : seulement les pages legales (CGU, confidentialite), demandees
+// pour l'application Discord le 2026-10-14 ("Serveurs" et "Contact" retires).
 export async function Footer() {
   const { dict } = await getT();
 
@@ -16,12 +17,12 @@ export async function Footer() {
         <p>
           <span className="text-foreground font-medium">Omniscient</span> — {dict.footer.tagline}
         </p>
-        <div className="flex items-center gap-5">
-          <Link href="/servers" className="hover:text-foreground transition-colors">
-            {dict.footer.servers}
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+          <Link href="/cgu" className="hover:text-foreground transition-colors">
+            {dict.footer.terms}
           </Link>
-          <Link href="/contact" className="hover:text-foreground transition-colors">
-            {dict.footer.contact}
+          <Link href="/confidentialite" className="hover:text-foreground transition-colors">
+            {dict.footer.privacy}
           </Link>
           <ThemeSwitcher />
           <LanguageSwitcher />

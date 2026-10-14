@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
-import { removeFriend } from "@/lib/friends";
+import { acceptFriendRequest, removeFriend } from "@/lib/friends";
 
-// Retrait d'un ami (bouton "Retirer" du panneau "Amis" du launcher) — par L'UN OU L'AUTRE,
-// retire l'amitié des deux côtés (pas de statut "qui a supprimé qui", scope phase 1). Idempotent :
-// retirer un ami déjà absent ne renvoie pas d'erreur.
-export async function DELETE(request: Request, ctx: RouteContext<"/api/launcher/friends/[friendUserId]">) {
+// Lit et vérifie l'identité du joueur (même contrôle que /api/launcher/servers/mine) puis
+// renvoie l'id de sa ligne "user", ou une réponse d'erreur à renvoyer telle quelle. Pas de
+// findOrCreateUserByMinecraft : sans ligne "user" existante, il ne peut exister aucune amitié
+// ni demande à accepter ou retirer.
+async function currentUserId(request: Request): Promise<{ userId: string | null } | NextResponse> {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -22,12 +23,27 @@ export async function DELETE(request: Request, ctx: RouteContext<"/api/launcher/
   const identity = await verifyLauncherIdentity(request, minecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
 
-  const { friendUserId } = await ctx.params;
-
-  // Pas de findOrCreateUserByMinecraft (juste une suppression) : sans ligne "user" existante,
-  // il ne peut de toute façon exister aucune amitié à retirer.
   const user = await db.orm.public.User.select("id").where({ minecraftUuid }).first();
-  if (user) await removeFriend(user.id, friendUserId);
+  return { userId: user?.id ?? null };
+}
 
+// Accepter une demande d'ami reçue (bouton "Accepter" de la page "Amis" du launcher). Seul le
+// destinataire peut accepter, voir acceptFriendRequest. Idempotent.
+export async function POST(request: Request, ctx: RouteContext<"/api/launcher/friends/[friendUserId]">) {
+  const current = await currentUserId(request);
+  if (current instanceof NextResponse) return current;
+  const { friendUserId } = await ctx.params;
+  if (current.userId) await acceptFriendRequest(current.userId, friendUserId);
+  return NextResponse.json({ ok: true });
+}
+
+// Retirer un ami, refuser une demande reçue ou annuler une demande envoyée : la ligne de la
+// paire disparaît des deux côtés (voir removeFriend). Idempotent : retirer un ami déjà absent
+// ne renvoie pas d'erreur.
+export async function DELETE(request: Request, ctx: RouteContext<"/api/launcher/friends/[friendUserId]">) {
+  const current = await currentUserId(request);
+  if (current instanceof NextResponse) return current;
+  const { friendUserId } = await ctx.params;
+  if (current.userId) await removeFriend(current.userId, friendUserId);
   return NextResponse.json({ ok: true });
 }

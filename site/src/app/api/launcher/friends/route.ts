@@ -3,10 +3,11 @@ import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdent
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
-import { addFriendByUsername, listFriends } from "@/lib/friends";
+import { listFriendsOverview, sendFriendRequest } from "@/lib/friends";
 
-// Liste d'amis + statut en ligne/hors ligne (panneau "Amis" du launcher, nouvelle icône de la
-// barre latérale) — même contrôle d'identité que /api/launcher/servers/mine : n'importe quel
+// Liste d'amis + statut en ligne/hors ligne, plus les demandes reçues et envoyées (page "Amis"
+// du launcher). Le statut en ligne n'est renvoyé que pour les amis acceptés (voir
+// lib/friends.ts) — même contrôle d'identité que /api/launcher/servers/mine : n'importe quel
 // joueur identifié peut lire SA PROPRE liste, jamais celle d'un autre (minecraftUuid vérifié
 // par verifyLauncherIdentity, pas juste cru sur parole).
 export async function GET(request: Request) {
@@ -27,15 +28,16 @@ export async function GET(request: Request) {
   // Pas de findOrCreateUserByMinecraft ici (lecture seule) : un joueur qui n'a encore jamais de
   // ligne "user" n'a par construction aucun ami à lister.
   const user = await db.orm.public.User.select("id").where({ minecraftUuid }).first();
-  const friends = user ? await listFriends(user.id) : [];
-  return NextResponse.json({ friends });
+  // "friends" garde sa forme d'avant (amis acceptés uniquement) : un ancien launcher qui ne lit
+  // que ce champ continue de marcher, il ne voit simplement pas les demandes.
+  const overview = user ? await listFriendsOverview(user.id) : { friends: [], incoming: [], outgoing: [] };
+  return NextResponse.json(overview);
 }
 
-// Ajout d'un ami par pseudo Minecraft — ajout direct et réciproque (pas de demande à
-// accepter/refuser, scope phase 1 validé par l'utilisateur). Réponse TOUJOURS identique que le
-// pseudo existe déjà en ami, existe mais pas en ami, ou n'existe pas du tout : anti-énumération
-// (voir addFriendByUsername dans lib/friends.ts), aucun moyen de déduire si un compte existe en
-// testant des pseudos depuis le launcher.
+// Demande d'ami par pseudo Minecraft — l'autre joueur doit l'accepter (voir
+// /api/launcher/friends/[friendUserId], POST). Réponse TOUJOURS identique que le pseudo existe
+// déjà en ami, existe mais pas en ami, ou n'existe pas du tout : anti-énumération (voir
+// sendFriendRequest dans lib/friends.ts).
 export async function POST(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
@@ -61,7 +63,7 @@ export async function POST(request: Request) {
   }
 
   const user = await findOrCreateUserByMinecraft(minecraftUuid, minecraftUsername);
-  await addFriendByUsername(user.id, targetUsername);
+  await sendFriendRequest(user.id, targetUsername);
 
   return NextResponse.json({ ok: true });
 }

@@ -62,6 +62,8 @@ export type PublicServerDetail = PublicServerSummary & {
   // reussi depuis le launcher, jamais null->"jamais teste" pour une fiche deja approuvee avant
   // l'existence de ce controle (voir le commentaire sur selfTestPassedAt dans schema.sql).
   selfTestPassedAt: string | null;
+  // Meme usage que LauncherServerDetail.isPrivate (presence Discord du launcher).
+  isPrivate: boolean;
 };
 
 // Filtre et tri faits en JS plutot que dans la requete : a l'echelle d'un
@@ -171,6 +173,9 @@ export type LauncherServerDetail = {
   curseforgeModpackId: string | null;
   recommendedRamGB: number | null;
   autoConnect: boolean;
+  // Serveur sur invitation : le launcher affiche alors « Joue sur un serveur prive » sur Discord,
+  // sans le nom ni le modpack (voir launcher/src/discordPresence.js).
+  isPrivate: boolean;
 };
 
 // Preuve qu'un visiteur a le droit de voir un serveur prive. Sans preuve, un
@@ -309,6 +314,7 @@ export async function getServerWithIpBySlug(slug: string, proof: PrivateServerPr
     curseforgeModpackId: row.curseforgeModpackId,
     recommendedRamGB: row.recommendedRamGB,
     autoConnect: row.autoConnect,
+    isPrivate: row.isPrivate,
   };
 }
 
@@ -402,6 +408,7 @@ export async function getPublicServerBySlug(slug: string, proof: PrivateServerPr
     createdAt: row.createdAt,
     viewCount: row.viewCount,
     selfTestPassedAt: row.selfTestPassedAt,
+    isPrivate: row.isPrivate,
   };
 }
 

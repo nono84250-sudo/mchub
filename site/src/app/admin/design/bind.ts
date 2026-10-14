@@ -381,8 +381,11 @@ export function playerDetailHtml(data: {
     const lockActions = data.locked
       ? unlockAccountHtml({ id: data.id, name: data.name })
       : freezeOrLockAccountHtml({ id: data.id, name: data.name });
+    // player-export-slot : emplacement du bouton « Récupérer les données du joueur », un vrai
+    // composant React monte par SlotPortal (voir players/[id]/page.tsx).
     const newActions =
       `<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">` +
+      `<span id="player-export-slot" style="display:contents"></span>` +
       playerMessageHtml({ id: data.id, name: data.name }) +
       addWarningHtml({ id: data.id, name: data.name }) +
       lockActions +

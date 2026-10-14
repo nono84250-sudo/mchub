@@ -34,7 +34,7 @@ export default async function AdminContact() {
             <section key={m.id} style={cardStyle}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 500 }}>
+                  <p style={{ margin: 0, fontWeight: 500, overflowWrap: "anywhere" }}>
                     {m.name} <span style={{ color: "var(--muted)", fontWeight: 400 }}>· {m.email}</span>
                   </p>
                   <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--muted)" }}>
@@ -67,7 +67,7 @@ export default async function AdminContact() {
                   {m.status === "new" ? "Nouveau" : "Lu"}
                 </span>
               </div>
-              <p style={{ margin: "12px 0 0", fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{m.message}</p>
+              <p style={{ margin: "12px 0 0", fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.message}</p>
               {m.status === "new" ? (
                 <form method="post" action={`/api/admin/contact/${m.id}/read`} style={{ marginTop: 12 }}>
                   <button

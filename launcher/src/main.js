@@ -1,5 +1,5 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
-const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session, screen } = require("electron");
 
 // Verrou mono-instance : relancer le launcher pendant qu'une instance tourne deja creait
 // jusqu'ici un second process totalement independant (deux lancements Minecraft simultanes
@@ -355,12 +355,72 @@ const BOOTSTRAP_SIZE = { width: 420, height: 376 };
 const APP_SIZE = { width: 1100, height: 720 };
 const APP_MIN_SIZE = { width: 720, height: 480 };
 
+// Taille/position de la fenetre : ouverture agrandie au tout premier lancement,
+// puis on rouvre comme le joueur l'a laissee (taille normale + agrandie ou non),
+// sur le meme ecran. Fichier a part (pas settings.json) : "Reinitialiser les
+// parametres" ne doit pas faire oublier la disposition de la fenetre.
+function windowStateFile() {
+  return path.join(app.getPath("userData"), "window-state.json");
+}
+
+function loadWindowState() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(windowStateFile(), "utf8"));
+    const ok = ["x", "y", "width", "height"].every((k) => Number.isFinite(raw[k]));
+    if (!ok || raw.width < 200 || raw.height < 200) return null;
+    return { x: raw.x, y: raw.y, width: raw.width, height: raw.height, maximized: !!raw.maximized };
+  } catch {
+    return null;
+  }
+}
+
+function saveWindowState(win) {
+  try {
+    if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return;
+    const b = win.getNormalBounds();
+    const data = { x: b.x, y: b.y, width: b.width, height: b.height, maximized: win.isMaximized() };
+    const file = windowStateFile();
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify(data));
+    fs.renameSync(`${file}.tmp`, file);
+  } catch {
+    // Purement du confort : ne jamais empecher la fermeture a cause de ca.
+  }
+}
+
+// Ramene une taille/position dans la zone de travail d'un ecran : la fenetre
+// ne depasse jamais l'ecran (cas du 1080p a 150 %, ou 1100x720 etait trop haut).
+function fitBoundsToWorkArea(bounds, workArea) {
+  const width = Math.min(bounds.width, workArea.width);
+  const height = Math.min(bounds.height, workArea.height);
+  const x = Math.min(Math.max(bounds.x, workArea.x), workArea.x + workArea.width - width);
+  const y = Math.min(Math.max(bounds.y, workArea.y), workArea.y + workArea.height - height);
+  return { x, y, width, height };
+}
+
+function pickStartDisplay(saved) {
+  if (saved) return screen.getDisplayMatching(saved);
+  return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+}
+
+// Remet une fenetre normale (non agrandie) entierement sur un ecran existant,
+// par ex. apres le debranchement d'un ecran ou un changement d'echelle Windows.
+function ensureWindowVisible(win) {
+  if (win.isDestroyed() || win.isMaximized() || win.isMinimized()) return;
+  const b = win.getBounds();
+  const fitted = fitBoundsToWorkArea(b, screen.getDisplayMatching(b).workArea);
+  if (fitted.x !== b.x || fitted.y !== b.y || fitted.width !== b.width || fitted.height !== b.height) win.setBounds(fitted);
+}
+
+const expandedWindows = new WeakSet();
+
 function createWindow() {
+  const startWorkArea = pickStartDisplay(loadWindowState()).workArea;
   const win = new BrowserWindow({
     width: BOOTSTRAP_SIZE.width,
     height: BOOTSTRAP_SIZE.height,
+    x: Math.round(startWorkArea.x + (startWorkArea.width - BOOTSTRAP_SIZE.width) / 2),
+    y: Math.round(startWorkArea.y + (startWorkArea.height - BOOTSTRAP_SIZE.height) / 2),
     resizable: false,
-    center: true,
     backgroundColor: "#070c16",
     frame: false,
     icon: path.join(__dirname, "..", "build", "icon.png"),
@@ -379,6 +439,23 @@ function createWindow() {
   };
   win.on("maximize", sendMaximizedState);
   win.on("unmaximize", sendMaximizedState);
+  // Memorise la disposition une fois la fenetre passee en taille d'appli (pas
+  // pendant le splash 420x376, qui ecraserait la vraie taille du joueur).
+  let saveTimer = null;
+  const scheduleSave = () => {
+    if (!expandedWindows.has(win)) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveWindowState(win), 400);
+  };
+  win.on("resize", scheduleSave);
+  win.on("move", scheduleSave);
+  win.on("maximize", scheduleSave);
+  win.on("unmaximize", scheduleSave);
+  win.on("restore", () => ensureWindowVisible(win));
+  win.on("close", () => {
+    clearTimeout(saveTimer);
+    if (expandedWindows.has(win)) saveWindowState(win);
+  });
   // Fermer le launcher ferme aussi la console de debug, sinon elle garde l'appli ouverte.
   win.on("closed", () => {
     if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.close();
@@ -703,6 +780,19 @@ ipcMain.handle("instances:listInstalled", async () => {
 ipcMain.handle("servers:openManage", (_event, serverId) => {
   if (typeof serverId === "string" && serverId) shell.openExternal(`${SITE_URL}/manage/${encodeURIComponent(serverId)}`);
 });
+
+// Parametres > Divers > A propos (exige par les regles Discord pour developpeurs : la politique
+// de confidentialite doit etre accessible depuis l'application). Adresses fixes du site en ligne,
+// pas SITE_URL : en developpement, SITE_URL pointe sur localhost, ou ces pages peuvent manquer.
+// Le renderer ne choisit qu'une cle, jamais une adresse.
+const LEGAL_URLS = {
+  terms: "https://omniscientlauncher.com/cgu",
+  privacy: "https://omniscientlauncher.com/confidentialite",
+};
+ipcMain.handle("app:openLegal", (_event, page) => {
+  const url = Object.hasOwn(LEGAL_URLS, page) ? LEGAL_URLS[page] : null;
+  if (url) shell.openExternal(url);
+});
 // Petite fenetre "Reglages" d'une instance (Mes instances, 2026-10-13) : lit/modifie le canal
 // du modpack (release/beta, voir server.modpackChannel et /api/launcher/servers/[slug]/channel)
 // SANS ouvrir le site — nouveau bouton distinct de "Gerer" ci-dessus, qui continue d'ouvrir le
@@ -770,7 +860,7 @@ ipcMain.handle("servers:setWatch", async (_event, { slug, notifyOnStatusChange }
   }
 });
 
-// Systeme d'amis, phase 1 (2026-10-14) : panneau "Amis" de la sidebar (voir nav-friends dans
+// Systeme d'amis (2026-10-14, demande puis accord) : page "Amis" de la sidebar (voir nav-friends dans
 // index.html / wireFriends dans renderer.js). Comme servers:getWatch/setWatch ci-dessus, exige
 // juste une session Microsoft active (pas de preuve de propriete a verifier ici) — l'UUID et le
 // pseudo envoyes au site sont ceux du profil DEJA connu du launcher (currentSession), jamais
@@ -785,13 +875,14 @@ ipcMain.handle("friends:list", async () => {
       `${SITE_URL}/api/launcher/friends?minecraftUuid=${encodeURIComponent(uuid)}`,
       { headers: launcherAuthHeaders() },
     );
-    return { ok: true, friends: data.friends ?? [] };
+    return { ok: true, friends: data.friends ?? [], incoming: data.incoming ?? [], outgoing: data.outgoing ?? [] };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
-// Reponse TOUJOURS { ok: true } quoi qu'il arrive cote site (pseudo introuvable, deja ami —
-// voir addFriendByUsername dans lib/friends.ts cote site) : anti-enumeration, le renderer ne
+// Envoie une DEMANDE d'ami (l'autre joueur doit l'accepter). Reponse TOUJOURS { ok: true } quoi
+// qu'il arrive cote site (pseudo introuvable, deja ami — voir sendFriendRequest dans
+// lib/friends.ts cote site) : anti-enumeration, le renderer ne
 // doit jamais pouvoir distinguer ces cas d'apres cet appel, seul un rafraichissement de la
 // liste (friends:list) dit si ca a vraiment ajoute quelqu'un. error/ok:false ici ne couvre que
 // les pannes reseau/validation (pseudo vide), jamais "pseudo introuvable".
@@ -811,6 +902,24 @@ ipcMain.handle("friends:add", async (_event, minecraftUsername) => {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
+// Accepter une demande recue (seul le destinataire peut, verifie cote site).
+ipcMain.handle("friends:accept", async (_event, friendUserId) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    await fetchJson(`${SITE_URL}/api/launcher/friends/${encodeURIComponent(friendUserId)}`, {
+      method: "POST",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid }),
+    });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+// Retirer un ami, refuser une demande recue ou annuler une demande envoyee (meme route DELETE).
 ipcMain.handle("friends:remove", async (_event, friendUserId) => {
   if (!currentSession) {
     return { ok: false, error: "Pas de compte Microsoft connecté." };
@@ -917,6 +1026,13 @@ function removeJoinedServer(slug) {
 function inviteHeaders(slug) {
   const joined = (settingsStore.loadSettings().joinedServers || []).find((j) => j.slug === slug);
   return joined?.inviteCode ? { "X-Invite-Code": joined.inviteCode } : {};
+}
+
+// Presence Discord : un serveur prive n'est jamais nomme. Le site le dit (server.isPrivate) ;
+// en plus, un serveur rejoint par code d'invitation compte comme prive, pour qu'un site plus
+// ancien (sans isPrivate dans sa reponse) ne fasse jamais afficher son nom.
+function isPrivateServer(server, slug) {
+  return server?.isPrivate === true || Boolean(inviteHeaders(slug)["X-Invite-Code"]);
 }
 
 // Resout un code d'invitation (voir site/src/app/api/launcher/servers/join/
@@ -1276,6 +1392,8 @@ ipcMain.handle("window:minimize", (event) => {
 ipcMain.handle("window:toggleMaximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
+  // Pendant le splash la fenetre n'est pas redimensionnable : pas d'agrandissement non plus.
+  if (!win.isResizable()) return;
   if (win.isMaximized()) win.unmaximize();
   else win.maximize();
 });
@@ -1295,10 +1413,37 @@ ipcMain.handle("window:isMaximized", (event) => {
 ipcMain.handle("window:expandFromBootstrap", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
+  // Appele deux fois par le renderer quand l'installation de Java echoue puis
+  // reussit : on ne fait l'agrandissement qu'une fois.
+  if (expandedWindows.has(win)) return;
+  const saved = loadWindowState();
+  const workArea = screen.getDisplayMatching(win.getBounds()).workArea;
+  let bounds;
+  let maximize;
+  if (saved) {
+    bounds = fitBoundsToWorkArea(saved, workArea);
+    maximize = saved.maximized;
+  } else {
+    // Premier lancement : taille normale bornee a 90 % de l'ecran (c'est elle que
+    // retrouve le bouton "Restaurer"), puis agrandie.
+    const width = Math.min(APP_SIZE.width, Math.floor(workArea.width * 0.9));
+    const height = Math.min(APP_SIZE.height, Math.floor(workArea.height * 0.9));
+    bounds = fitBoundsToWorkArea(
+      { x: workArea.x + Math.round((workArea.width - width) / 2), y: workArea.y + Math.round((workArea.height - height) / 2), width, height },
+      workArea,
+    );
+    maximize = true;
+  }
   win.setResizable(true);
-  win.setMinimumSize(APP_MIN_SIZE.width, APP_MIN_SIZE.height);
-  win.setSize(APP_SIZE.width, APP_SIZE.height);
-  win.center();
+  win.setMinimumSize(Math.min(APP_MIN_SIZE.width, workArea.width), Math.min(APP_MIN_SIZE.height, workArea.height));
+  win.setBounds(bounds);
+  // Echelle Windows differente selon l'ecran : la taille posee peut etre relue
+  // autrement, on la repose une fois.
+  const got = win.getBounds();
+  if (got.width !== bounds.width || got.height !== bounds.height) win.setBounds(bounds);
+  expandedWindows.add(win);
+  if (maximize) win.maximize();
+  logStore.pushLog({ source: "launcher", message: `[fenetre] ${JSON.stringify(bounds)} agrandie=${maximize}` });
 });
 
 // Suggestion simple et prudente : la moitie de la RAM systeme, plafonnee a
@@ -1322,12 +1467,18 @@ ipcMain.handle("settings:get", () => ({
 ipcMain.handle("settings:set", (_event, partial) => {
   const next = settingsStore.saveSettings(partial || {});
   if (partial && partial.logLevel !== undefined) logStore.setMinFileLevel(next.logLevel);
+  // Effet immediat sur Discord, sans redemarrer : interrupteur coupe = presence effacee tout de
+  // suite ; changement de langue = texte Discord retraduit.
+  if (partial && partial.discordPresence !== undefined) discordPresence.setEnabled(next.discordPresence);
+  if (partial && partial.locale !== undefined) discordPresence.setLocale(next.locale);
   return next;
 });
 
 ipcMain.handle("settings:reset", () => {
   const next = settingsStore.resetSettings();
   logStore.setMinFileLevel(next.logLevel);
+  discordPresence.setEnabled(next.discordPresence);
+  discordPresence.setLocale(next.locale);
   return next;
 });
 
@@ -1741,7 +1892,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       customJvmArgs: modded?.jvmArgs,
     });
 
-    discordPresence.setPlayingActivity(server.name);
+    discordPresence.setPlayingActivity(server.name, modded?.modpackName, { isPrivate: isPrivateServer(server, slug) });
 
     // Compteur indicatif pour la page de gestion du serveur (site) — ne
     // doit jamais faire echouer un lancement par ailleurs reussi.
@@ -2121,7 +2272,7 @@ ipcMain.handle("selftest:run", async (event, slug) => {
       }
       checks.gameStarted = true;
       report("gameStarted", "pass");
-      discordPresence.setPlayingActivity(server.name);
+      discordPresence.setPlayingActivity(server.name, modded?.modpackName, { isPrivate: isPrivateServer(server, slug) });
     } catch (error) {
       report("gameStarted", "fail", { error: error instanceof Error ? error.message : String(error) });
     }
@@ -2186,7 +2337,8 @@ app.whenReady().then(async () => {
   logStore.pushLog({ source: "launcher", message: `Démarrage d'Omniscient Launcher ${app.getVersion()}` });
   createWindow();
   globalShortcut.register("CommandOrControl+Shift+D", () => createConsoleWindow());
-  discordPresence.init(DISCORD_CLIENT_ID);
+  const startupSettings = settingsStore.loadSettings();
+  discordPresence.init(DISCORD_CLIENT_ID, { enabled: startupSettings.discordPresence !== false, locale: startupSettings.locale });
   discordPresence.setBrowsingActivity();
 }).catch((error) => {
   // Exception inattendue pendant le demarrage (createWindow/setContentSecurityPolicy/

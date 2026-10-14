@@ -59,6 +59,9 @@ const DEFAULTS = {
   // Applique au prochain demarrage : checkForUpdates() lit ce reglage a chaque
   // verification du bootstrap.
   betaChannel: false,
+  // Parametres > Divers > Discord : coupe = le launcher ne se connecte meme pas a Discord
+  // (voir discordPresence.js, setEnabled).
+  discordPresence: true,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -148,6 +151,7 @@ function saveSettings(partial) {
   if (filtered.openConsoleOnLaunch !== undefined) next.openConsoleOnLaunch = !!filtered.openConsoleOnLaunch;
   if (filtered.keepLauncherOpenWhilePlaying !== undefined) next.keepLauncherOpenWhilePlaying = !!filtered.keepLauncherOpenWhilePlaying;
   if (filtered.betaChannel !== undefined) next.betaChannel = !!filtered.betaChannel;
+  if (filtered.discordPresence !== undefined) next.discordPresence = !!filtered.discordPresence;
 
   writeSettingsFile(next);
   return next;
