@@ -37,13 +37,14 @@ const DeletionFr = () => (
     <B>Supprimer votre compte vous-même</B> : connectez-vous sur le site, puis Tableau de bord, Paramètres, « Supprimer
     mon compte » (il faut retaper « supprimer » pour confirmer). C&apos;est immédiat et définitif : votre compte, vos
     fiches de serveurs (avec leurs images, statistiques et signalements reçus), vos notifications, vos amis, votre
-    présence en ligne, vos avertissements et notes de modération sont effacés. Restent seulement, liés à votre
-    identifiant Minecraft, les signalements que vous avez déposés sur les fiches d&apos;autres propriétaires et les
-    serveurs que vous suiviez, jusqu&apos;à la suppression de ces fiches : pour les faire effacer aussi, écrivez-nous. Vous pouvez aussi demander la suppression par e-mail à <Mail />.
-    {" "}Si le launcher reste ouvert et connecté, il ne recrée pas votre compte : pour cela, nous gardons seulement une
-    empreinte chiffrée de votre identifiant Minecraft et la date de suppression. Un nouveau compte n&apos;est créé que
-    si vous vous reconnectez sur le site ou si vous envoyez une demande d&apos;ami depuis le launcher ; l&apos;empreinte
-    est alors effacée.
+    présence en ligne, les serveurs que vous suiviez, vos avertissements et notes de modération sont effacés. Restent
+    seulement, liés à votre identifiant Minecraft, les signalements que vous avez déposés sur les fiches d&apos;autres
+    propriétaires, jusqu&apos;à la suppression de ces fiches : pour les faire effacer aussi, écrivez-nous. Vous pouvez
+    aussi demander la suppression par e-mail à <Mail />.
+    {" "}Si le launcher était connecté, il vous déconnecte dans la minute et ne recrée pas votre compte tout seul :
+    pour cela, nous gardons seulement une empreinte chiffrée de votre identifiant Minecraft et la date de suppression.
+    Un nouveau compte n&apos;est créé que si vous vous reconnectez avec Microsoft, sur le site ou dans le launcher, ou
+    si vous envoyez une demande d&apos;ami depuis le launcher ; l&apos;empreinte est alors effacée.
   </p>
 );
 
@@ -52,12 +53,13 @@ const DeletionEn = () => (
     <B>Delete your account yourself</B>: sign in on the website, then Dashboard, Settings, &quot;Delete my account&quot;
     (you must type the confirmation word). It is immediate and permanent: your account, your server listings (with
     their images, statistics and received reports), your notifications, your friends, your
-    online presence, your warnings and moderation notes are erased. Only the reports you filed on other owners&apos;
-    listings and the servers you followed remain, tied to your Minecraft identifier, until those listings are deleted:
+    online presence, the servers you followed, your warnings and moderation notes are erased. Only the reports you
+    filed on other owners&apos; listings remain, tied to your Minecraft identifier, until those listings are deleted:
     write to us to have them erased too. You can also ask for deletion by email at <Mail />.
-    {" "}If the launcher stays open and signed in, it does not recreate your account: for that, we only keep an
-    encrypted fingerprint of your Minecraft identifier and the deletion date. A new account is only created if you sign
-    in on the website again or send a friend request from the launcher; the fingerprint is then erased.
+    {" "}If the launcher was signed in, it signs you out within a minute and does not recreate your account on its
+    own: for that, we only keep an encrypted fingerprint of your Minecraft identifier and the deletion date. A new
+    account is only created if you sign in with Microsoft again, on the website or in the launcher, or send a friend
+    request from the launcher; the fingerprint is then erased.
   </p>
 );
 
@@ -269,7 +271,7 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 Compte, modération, notifications, amis et présence en ligne : tant que le compte existe ; effacés quand
                 vous le supprimez (voir 9). Un ami retiré ou une demande refusée est effacé tout de suite.
               </>,
-              <>Serveurs suivis : jusqu&apos;à ce que vous arrêtiez de suivre le serveur, ou que sa fiche soit supprimée.</>,
+              <>Serveurs suivis : jusqu&apos;à ce que vous arrêtiez de suivre le serveur, que sa fiche soit supprimée ou que vous supprimiez votre compte.</>,
               <>Empreinte d&apos;un compte supprimé : jusqu&apos;à ce que vous reveniez sur Omniscient (voir 9).</>,
               <>
                 Fiche, ses statistiques et ses signalements : tant que la fiche existe ; supprimés avec elle ou avec le
@@ -580,7 +582,7 @@ function privacyEn(): LegalPage {
                 Account, moderation, notifications, friends and online presence: as long as the account exists; erased
                 when you delete it (see 9). A removed friend or a declined request is erased immediately.
               </>,
-              <>Followed servers: until you stop following the server, or its listing is deleted.</>,
+              <>Followed servers: until you stop following the server, its listing is deleted, or you delete your account.</>,
               <>Deleted account fingerprint: until you come back to Omniscient (see 9).</>,
               <>
                 A listing, its statistics and its reports: as long as the listing exists; deleted with it or with the
