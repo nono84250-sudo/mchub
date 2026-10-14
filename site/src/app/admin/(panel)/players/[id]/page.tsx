@@ -9,7 +9,6 @@ import { countPlayerData, type ExportCategory } from "@/lib/playerExport";
 
 export const dynamic = "force-dynamic";
 
-const SHORT_COUNT = 3;
 const PAGE_SIZE = 5;
 
 // Libelles de la fenetre « Récupérer les données du joueur » (meme ordre que EXPORT_CATEGORIES).
@@ -71,10 +70,10 @@ export default async function PlayerDetail({
     openReports: openByServer.get(s.id) ?? 0,
   });
 
-  const serversOpen = query.serversOpen === "1";
+  // Liste toujours paginee par 5 (plus de « Voir tout / Réduire », demande de Rushi 2026-10-14).
   const pageCount = Math.max(1, Math.ceil(servers.length / PAGE_SIZE));
   const page = Math.min(Math.max(1, Number.parseInt(query.serversPage ?? "1", 10) || 1), pageCount);
-  const serversShown = serversOpen ? servers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(toRow) : servers.slice(0, SHORT_COUNT).map(toRow);
+  const serversShown = servers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(toRow);
 
   const html = playerDetailHtml({
     id: player.id,
@@ -84,11 +83,10 @@ export default async function PlayerDetail({
     serversTotal: servers.length,
     serversFrozen: servers.filter((s) => s.frozenAt !== null).length,
     serversShown,
-    serversOpen,
     serversPage: page,
     serversPageCount: pageCount,
-    serversFrom: serversOpen && servers.length ? (page - 1) * PAGE_SIZE + 1 : 0,
-    serversTo: serversOpen ? (page - 1) * PAGE_SIZE + serversShown.length : 0,
+    serversFrom: servers.length ? (page - 1) * PAGE_SIZE + 1 : 0,
+    serversTo: (page - 1) * PAGE_SIZE + serversShown.length,
     reportsTotal: myReports.length,
     reportsOpen: myReports.filter((r) => r.status !== "resolved").length,
     locked: player.lockedAt !== null,

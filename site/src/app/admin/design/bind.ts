@@ -335,6 +335,10 @@ export type PlayerServerRow = { name: string; slug: string; address: string; pub
 export type PlayerWarningRow = { id: string; reason: string; createdBy: string; createdAt: string };
 export type AdminNoteRow = { id: string; text: string; createdBy: string; createdAt: string };
 
+// Abonnements : pas encore construits (tout est gratuit). La carte "Subscription" de la fiche
+// joueur reste dans la maquette mais n'est affichee qu'une fois ce drapeau active.
+const SUBSCRIPTIONS_ENABLED = false;
+
 export function playerDetailHtml(data: {
   id: string;
   name: string;
@@ -343,7 +347,6 @@ export function playerDetailHtml(data: {
   serversTotal: number;
   serversFrozen: number;
   serversShown: PlayerServerRow[];
-  serversOpen: boolean;
   serversPage: number;
   serversPageCount: number;
   serversFrom: number;
@@ -425,15 +428,13 @@ export function playerDetailHtml(data: {
     'letter-spacing:-.01em;">2</div><div style="font-size:12px;color:var(--muted)">1 frozen</div>',
     `letter-spacing:-.01em;">${fmt(data.serversTotal)}</div><div style="font-size:12px;color:var(--muted)">${data.serversFrozen > 0 ? `${fmt(data.serversFrozen)} gelé(s)` : "Aucun gelé"}</div>`,
   );
-  // Pas d'abonnement (site gratuit) : la tuile "Subscription" de la maquette est retiree et la
-  // ligne passe de quatre a trois tuiles.
-  const crownAt = html.indexOf('<i class="ph ph-crown"');
-  if (crownAt >= 0) {
-    const tileStart = html.lastIndexOf('<div style="display:flex;flex-direction:column;gap:10px;padding:18px 20px;', crownAt);
-    const tileEnd = balancedEnd(html, tileStart, "div");
-    if (tileStart >= 0 && tileEnd >= 0) html = html.slice(0, tileStart) + html.slice(tileEnd);
-  }
-  html = replaceOnce(html, "grid-template-columns:repeat(4,minmax(0,1fr))", "grid-template-columns:repeat(3,minmax(0,1fr))");
+  // Pas d'abonnement pour l'instant : tout est gratuit (demande de Rushi, 2026-10-14). La tuile
+  // reste, avec la valeur reelle « Gratuit ».
+  html = replaceOnce(
+    html,
+    'letter-spacing:-.01em;">Pro</div><div style="font-size:12px;color:var(--muted)">Monthly · renews Oct 12</div>',
+    'letter-spacing:-.01em;">Gratuit</div><div style="font-size:12px;color:var(--muted)">Tout est gratuit pour le moment</div>',
+  );
   // "Reports against" -> en realite "signalements sur ses serveurs" (rien ne modelise un
   // signalement contre le joueur lui-meme dans ce projet).
   html = replaceOnce(
@@ -442,15 +443,15 @@ export function playerDetailHtml(data: {
     `letter-spacing:-.01em;">${fmt(data.reportsTotal)}</div><div style="font-size:12px;color:var(--muted)">${fmt(data.reportsOpen)} ouvert(s)</div>`,
   );
 
-  // Section "Servers owned" : liste courte (3) par defaut, avec une fleche pour voir tout
-  // (pagination 5 par 5 une fois ouvert) — sans ca, un compte avec beaucoup de serveurs
-  // prendrait toute la page.
+  // Section "Servers owned" : liste paginee 5 par 5 (Previous/Next), sans « Voir tout /
+  // Réduire » (retire le 2026-10-14 a la demande de Rushi : il affichait 3 puis 7).
   html = replaceSectionBody(html, ">Servers owned</h2>", playerServersSectionHtml(data));
 
   html = replaceSectionBody(html, ">Warnings</h2>", playerWarningsSectionHtml(data));
-  // Carte "Subscription" (plan, paiement, Refund/Cancel) : aucun abonnement ni paiement dans le
-  // projet, retiree — jamais de faux numero de carte a l'ecran.
-  html = removeSection(html, ">Subscription</h2>");
+  // Carte "Subscription" (plan, paiement, Refund/Cancel) : masquee tant qu'aucun abonnement
+  // n'existe — jamais de faux numero de carte a l'ecran. A brancher sur les vraies donnees le
+  // jour ou SUBSCRIPTIONS_ENABLED passe a true.
+  if (!SUBSCRIPTIONS_ENABLED) html = removeSection(html, ">Subscription</h2>");
 
   // Compte : l'UUID est reel. Last IP, 2FA et Launcher sont retires (IP et version du launcher
   // jamais enregistrees, et le site n'a pas de 2FA — Microsoft gere deja l'authentification).
@@ -468,12 +469,11 @@ export function playerDetailHtml(data: {
   return html;
 }
 
-// Liste des serveurs possedes : 3 affiches par defaut, lien pour tout voir (pagination 5 par 5).
+// Liste des serveurs possedes, paginee 5 par 5.
 function playerServersSectionHtml(data: {
   id: string;
   serversTotal: number;
   serversShown: PlayerServerRow[];
-  serversOpen: boolean;
   serversPage: number;
   serversPageCount: number;
   serversFrom: number;
@@ -501,14 +501,9 @@ function playerServersSectionHtml(data: {
     ? `<div>${data.serversShown.map(row).join("")}</div>`
     : `<p style="margin:0;font-size:13px;color:var(--muted);">Ce compte ne possède aucun serveur.</p>`;
 
-  if (!data.serversOpen) {
-    const more = data.serversTotal > data.serversShown.length
-      ? `<a href="/admin/players/${escapeHtml(data.id)}?serversOpen=1" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 0 0;font-size:12.5px;color:var(--muted);text-decoration:none;">Voir tout (${fmt(data.serversTotal)})<i class="ph ph-caret-down" style="font-size:12px;"></i></a>`
-      : "";
-    return list + more;
-  }
+  if (!data.serversShown.length) return list;
 
-  const hrefPage = (page: number) => `/admin/players/${escapeHtml(data.id)}?serversOpen=1&serversPage=${page}`;
+  const hrefPage = (page: number) => `/admin/players/${escapeHtml(data.id)}?serversPage=${page}`;
   const pager =
     `<div style="display:flex;align-items:center;gap:10px;padding:10px 0 0;font-size:12.5px;color:var(--muted);">` +
     `<span>${data.serversFrom}–${data.serversTo} sur ${fmt(data.serversTotal)}</span>` +
@@ -516,8 +511,7 @@ function playerServersSectionHtml(data: {
     (data.serversPage > 1 ? `<a href="${hrefPage(data.serversPage - 1)}" style="${BUTTON}text-decoration:none;">Previous</a>` : `<span style="${BUTTON}opacity:.4;">Previous</span>`) +
     (data.serversPage < data.serversPageCount ? `<a href="${hrefPage(data.serversPage + 1)}" style="${BUTTON}text-decoration:none;">Next</a>` : `<span style="${BUTTON}opacity:.4;">Next</span>`) +
     `</div></div>`;
-  const less = `<a href="/admin/players/${escapeHtml(data.id)}" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:4px 0 0;font-size:12.5px;color:var(--muted);text-decoration:none;">Réduire<i class="ph ph-caret-up" style="font-size:12px;"></i></a>`;
-  return list + pager + less;
+  return list + pager;
 }
 
 // Pop-up « Message » depuis la fiche joueur : pas de type "Gel" ici (rien ne gele un compte
