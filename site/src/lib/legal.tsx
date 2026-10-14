@@ -9,7 +9,7 @@ import type { Locale } from "@/i18n/locales";
 // en libre-service, formulaire de contact...). La version de travail complète, avec les points à
 // faire relire par un avocat, est Legal/DOCUMENTS_LEGAUX_OMNISCIENT.md.
 export const LEGAL_EDITOR = "Rushifa";
-export const LEGAL_EMAIL = "contact@omniscientlauncher.com";
+export const LEGAL_EMAIL = "omniscient.launchermc@gmail.com";
 const UPDATED = { fr: "Dernière mise à jour : 14 octobre 2026", en: "Last updated: October 14, 2026" };
 
 type LegalPage = { title: string; updated: string; intro: ReactNode; sections: LegalSection[] };
