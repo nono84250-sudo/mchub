@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, normalizeMinecraftUuid, verifyLauncherIdentity } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { acceptFriendRequest, removeFriend } from "@/lib/friends";
@@ -23,7 +23,7 @@ async function currentUserId(request: Request): Promise<{ userId: string | null 
   const identity = await verifyLauncherIdentity(request, minecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
 
-  const user = await db.orm.public.User.select("id").where({ minecraftUuid }).first();
+  const user = await db.orm.public.User.select("id").where({ minecraftUuid: normalizeMinecraftUuid(minecraftUuid) }).first();
   return { userId: user?.id ?? null };
 }
 

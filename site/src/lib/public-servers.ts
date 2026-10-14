@@ -442,7 +442,7 @@ export type OwnedServerSummary = {
 // Inclut `ip` : le proprietaire connait deja sa propre adresse de connexion
 // (meme raisonnement que getServerWithIpBySlug).
 async function loadOwnedServersByMinecraftUuid(minecraftUuid: string): Promise<OwnedServerSummary[]> {
-  const owner = await db.orm.public.User.select("id").where({ minecraftUuid }).first();
+  const owner = await db.orm.public.User.select("id").where({ minecraftUuid: normalizeMinecraftUuid(minecraftUuid) }).first();
   if (!owner) return [];
 
   const rows = await db.orm.public.Server.select(

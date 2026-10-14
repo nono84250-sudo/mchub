@@ -36,14 +36,25 @@ function parseHistory(raw: string | null | undefined): HistoryEntry[] {
   }
 }
 
+// Un seul recours par gel (second audit du 14/10, I1) : sans ça, le propriétaire redemandait un
+// recours dès que l'admin confirmait le gel, et le cron finissait par dégeler au premier creux
+// de 72h de l'admin. Un recours compte pour le gel en cours s'il a été demandé après frozenAt ;
+// un nouveau gel (nouveau frozenAt) rouvre droit à un recours. Dates ISO (toISOString), donc
+// la comparaison de chaînes suffit.
+export function appealUsedForCurrentFreeze(server: { frozenAt: string | null; appealRequestedAt: string | null }): boolean {
+  return !!server.frozenAt && !!server.appealRequestedAt && server.appealRequestedAt >= server.frozenAt;
+}
+
 // Demande du propriétaire ("Demander un second avis", manage/[id]/page.tsx) : fixe le délai de
 // 72h et assigne un admin différent de celui qui a gelé quand c'est possible. Refuse si le
-// serveur n'est pas gelé ou si une demande est déjà en cours (pas de spam).
+// serveur n'est pas gelé, si une demande est déjà en cours ou si le recours de ce gel a déjà
+// été utilisé.
 export async function requestServerAppeal(serverId: string, ownerId: string): Promise<{ error: string } | undefined> {
   const server = await db.orm.public.Server.where({ id: serverId, ownerId }).first();
   if (!server) return { error: "Ce serveur n'existe pas ou ne t'appartient pas." };
   if (!server.frozenAt) return { error: "Ce serveur n'est pas gelé." };
   if (server.appealStatus === "pending") return { error: "Une demande est déjà en cours pour ce serveur." };
+  if (appealUsedForCurrentFreeze(server)) return { error: "Le recours a déjà été utilisé pour ce gel : la décision de l'équipe est définitive." };
 
   const admins = await db.orm.public.AdminAccount.select("id", "username").all();
   const other = (admins as { id: string; username: string }[]).find((a) => a.username !== server.frozenBy);

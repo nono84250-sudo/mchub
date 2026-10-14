@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity, verifyLauncherProfile } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, normalizeMinecraftUuid, verifyLauncherIdentity, verifyLauncherProfile } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
   // Pas de findOrCreateUserByMinecraft ici (lecture seule) : un joueur qui n'a encore jamais de
   // ligne "user" n'a par construction aucun ami à lister.
-  const user = await db.orm.public.User.select("id").where({ minecraftUuid }).first();
+  const user = await db.orm.public.User.select("id").where({ minecraftUuid: normalizeMinecraftUuid(minecraftUuid) }).first();
   // "friends" garde sa forme d'avant (amis acceptés uniquement) : un ancien launcher qui ne lit
   // que ce champ continue de marcher, il ne voit simplement pas les demandes.
   const overview = user ? await listFriendsOverview(user.id) : { friends: [], incoming: [], outgoing: [] };

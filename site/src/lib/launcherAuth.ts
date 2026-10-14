@@ -65,7 +65,7 @@ export type IdentityCheck = "verified" | "refused" | "unavailable";
 // plus bas) pour qu'un verrou pose par un admin coupe l'acces immediatement,
 // pas seulement a la prochaine expiration de cache/session.
 export async function getAccountLock(uuid: string): Promise<{ lockedReason: string | null } | null> {
-  const user = await db.orm.public.User.select("lockedAt", "lockedReason").where({ minecraftUuid: uuid }).first();
+  const user = await db.orm.public.User.select("lockedAt", "lockedReason").where({ minecraftUuid: normalizeMinecraftUuid(uuid) }).first();
   return user?.lockedAt ? { lockedReason: user.lockedReason ?? null } : null;
 }
 
@@ -168,7 +168,7 @@ async function sessionProfile(token: string): Promise<{ uuid: string; name: stri
 // pour ce joueur. Renvoie false si aucun compte site ne porte cet UUID (le launcher
 // n'en cree pas : voir le rapport, les jetons de ces joueurs expirent seuls en 15 min).
 export async function revokeLauncherSessions(uuid: string): Promise<boolean> {
-  const updated = await db.orm.public.User.where({ minecraftUuid: uuid }).update({ sessionsValidAfter: new Date().toISOString() });
+  const updated = await db.orm.public.User.where({ minecraftUuid: normalizeMinecraftUuid(uuid) }).update({ sessionsValidAfter: new Date().toISOString() });
   return !!updated;
 }
 

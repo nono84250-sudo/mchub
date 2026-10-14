@@ -53,6 +53,9 @@ export async function findOrCreateUserByMinecraft(
   minecraftUsername: string | null,
   options: { explicit: boolean },
 ): Promise<{ id: string } | null> {
+  // Second audit du 14/10 (I3) : l'UUID venait brut du corps de la requete. Avec des tirets ou
+  // des majuscules, il creait un second compte pour le meme joueur.
+  minecraftUuid = normalizeMinecraftUuid(minecraftUuid);
   const existing = await db.orm.public.User.select("id", "minecraftUsername", "name").where({ minecraftUuid }).first();
   if (existing) {
     // Le pseudo Minecraft peut changer avec le temps — resynchronise ici aussi (meme

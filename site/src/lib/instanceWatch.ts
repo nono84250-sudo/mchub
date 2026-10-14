@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { normalizeMinecraftUuid } from "@/lib/launcherSession";
 
 // Suivi par (joueur, instance) du point 9 (case "Me prévenir du changement de statut de cette
 // instance", voir INSTANCE_SETTINGS_FIELDS côté launcher et /api/launcher/servers/[slug]/watch).
@@ -16,7 +17,7 @@ export type InstanceWatchRow = {
 
 export async function getInstanceWatch(minecraftUuid: string, serverId: string): Promise<InstanceWatchRow | null> {
   return db.orm.public.InstanceWatch.select("id", "minecraftUuid", "serverId", "notifyOnStatusChange", "lastKnownOnline", "createdAt")
-    .where({ minecraftUuid, serverId })
+    .where({ minecraftUuid: normalizeMinecraftUuid(minecraftUuid), serverId })
     .first();
 }
 
@@ -42,7 +43,7 @@ export async function setInstanceWatch(
     return;
   }
   await db.orm.public.InstanceWatch.create({
-    minecraftUuid,
+    minecraftUuid: normalizeMinecraftUuid(minecraftUuid),
     serverId,
     notifyOnStatusChange,
     lastKnownOnline: currentlyOnline,

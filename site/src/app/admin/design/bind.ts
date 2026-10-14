@@ -436,7 +436,9 @@ export function playerDetailHtml(data: {
     'letter-spacing:-.01em;">Gratuit</div><div style="font-size:12px;color:var(--muted)">Tout est gratuit pour le moment</div>',
   );
   // "Reports against" -> en realite "signalements sur ses serveurs" (rien ne modelise un
-  // signalement contre le joueur lui-meme dans ce projet).
+  // signalement contre le joueur lui-meme dans ce projet). Le titre de la maquette est
+  // remplace aussi (second audit du 14/10 : en anglais et trompeur).
+  html = replaceOnce(html, "></i>Reports against</div>", "></i>Signalements sur ses serveurs</div>");
   html = replaceOnce(
     html,
     'letter-spacing:-.01em;">9</div><div style="font-size:12px;color:var(--muted)">7 on his servers</div>',
@@ -620,7 +622,8 @@ function unlockAccountHtml(data: { id: string; name: string }): string {
   );
 }
 
-// Pop-up « Add note » (Staff notes) : prive, jamais montre au joueur.
+// Pop-up « Add note » (Staff notes) : jamais affichee au joueur, mais exportable s'il demande
+// ses donnees (voir playerExport.ts et legal.tsx).
 function addNoteHtml(data: { id: string; name: string }): string {
   const id = escapeHtml(data.id);
   return (
@@ -629,7 +632,7 @@ function addNoteHtml(data: { id: string; name: string }): string {
     `<div style="height:4px;background:#9184d9;"></div>` +
     `<form method="post" action="/api/admin/players/${id}/notes" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
     `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Note sur ${escapeHtml(data.name)}</h2>` +
-    `<label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);">Note (privée, jamais visible par le joueur)<textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:90px;font-size:13.5px;"></textarea></label>` +
+    `<label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);">Note interne (pas affichée au joueur ; peut lui être communiquée s'il demande ses données)<textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:90px;font-size:13.5px;"></textarea></label>` +
     `<div style="display:flex;gap:10px;justify-content:flex-end;">` +
     `<button type="button" popovertarget="add-note-${id}" popovertargetaction="hide" style="${CANCEL}">Annuler</button>` +
     `<button type="submit" style="${CONFIRM}">Ajouter</button></div>` +

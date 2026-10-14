@@ -26,3 +26,12 @@ export async function listContactMessages(): Promise<ContactMessageSummary[]> {
 export async function markContactMessageRead(id: string): Promise<void> {
   await db.orm.public.ContactMessage.where({ id }).update({ status: "read" });
 }
+
+// Suppression definitive depuis /admin/contact : la politique de confidentialite promet
+// l'effacement d'un message sur demande (second audit du 14/10).
+export async function deleteContactMessage(id: string): Promise<boolean> {
+  const found = await db.orm.public.ContactMessage.select("id").where({ id }).first();
+  if (!found) return false;
+  await db.orm.public.ContactMessage.where({ id }).delete();
+  return true;
+}

@@ -191,11 +191,15 @@ function datesForSlugs(dates, slugs) {
 // les serveurs de plus de 7 jours sortent de la liste. Un serveur enregistre avant les dates
 // (ancienne version) recoit la date d'aujourd'hui : il reste 7 jours, puis sort comme les autres.
 // Liste vide mais « dernier joue » connu (voir recentSlugsFromSettings) : celui-ci est repris.
+// Le « dernier joue » (menu rapide, accueil) suit la meme regle des 7 jours (second audit du
+// 14/10) : sa date est gardee meme hors de la liste, et il est efface une fois trop vieux.
+// Avant, le repli lui redonnait la date du jour a chaque ouverture et il ne sortait jamais.
 function recentEntries(settings, now) {
   const slugs = recentSlugsFromSettings(settings).slice(0, RECENT_MAX);
+  const last = settings?.lastPlayedSlug || null;
   const dates = { ...(settings?.recentPlayedAt || {}) };
   let changed = !Array.isArray(settings?.recentlyPlayed) || settings.recentlyPlayed.length !== slugs.length;
-  for (const slug of slugs) {
+  for (const slug of last && !slugs.includes(last) ? [...slugs, last] : slugs) {
     if (typeof dates[slug] !== "number" || dates[slug] > now) {
       dates[slug] = now;
       changed = true;
@@ -203,11 +207,23 @@ function recentEntries(settings, now) {
   }
   const kept = slugs.filter((slug) => now - dates[slug] < RECENT_MAX_AGE_MS).sort((a, b) => dates[b] - dates[a]);
   if (kept.length !== slugs.length) changed = true;
-  const recentPlayedAt = datesForSlugs(dates, kept);
+  const lastExpired = !!last && now - dates[last] >= RECENT_MAX_AGE_MS;
+  if (lastExpired) changed = true;
+  const recentPlayedAt = datesForSlugs(dates, last && !lastExpired && !kept.includes(last) ? [...kept, last] : kept);
   return {
     entries: kept.map((slug) => ({ slug, playedAt: recentPlayedAt[slug] })),
-    patch: changed ? { recentlyPlayed: kept, recentPlayedAt } : null,
+    patch: changed ? { recentlyPlayed: kept, recentPlayedAt, ...(lastExpired ? { lastPlayedSlug: null } : {}) } : null,
   };
+}
+
+// Reglages avec la regle des 7 jours deja appliquee (et enregistree) : utilise par l'accueil et
+// le menu rapide, pour que le « dernier joue » sorte aussi sans passer par la page Recents.
+async function settingsWithFreshRecents() {
+  const settings = await window.mchub.settings.get();
+  const { patch } = recentEntries(settings, Date.now());
+  if (!patch) return settings;
+  await window.mchub.settings.set(patch);
+  return { ...settings, ...patch };
 }
 
 // « Aujourd'hui / Hier / Il y a 3 jours » compte en jours du calendrier (pas en tranches de
@@ -2251,7 +2267,7 @@ async function renderHomeView() {
     ${skeletonListHtml(2)}`;
 
   const [settings, favoriteSlugs, myServersResult] = await Promise.all([
-    window.mchub.settings.get(),
+    settingsWithFreshRecents(),
     getFavoriteSlugs(),
     currentProfile ? window.mchub.listMyServers() : Promise.resolve({ ok: false, servers: [] }),
   ]);
@@ -2406,9 +2422,17 @@ async function renderHomeView() {
 // confirme vraiment mort qu'avec un servers:get individuel (notFound=true, vrai 404) — seul ce
 // cas justifie de le retirer des favoris/recents (voir pruneDeadSlug ci-dessous), sinon on
 // garde l'ancien placeholder plutot que de perdre une fiche encore valide a tort.
+// Second audit du 14/10 : un de MES serveurs en pause (ou en attente) repond aussi 404, meme a
+// son proprietaire. Avant d'effacer un slug, on verifie donc qu'il n'est pas dans « Mes
+// instances » (servers:mine) ; si cette liste est illisible (hors ligne, pas connecte), on
+// garde le slug plutot que de risquer de l'effacer a tort.
 async function resolveServersBySlug(slugs) {
   const result = await fetchServerList();
   const allServers = result.ok ? result.servers : [];
+  let mine = null;
+  const myServers = () =>
+    (mine ||= currentProfile ? window.mchub.listMyServers().catch(() => ({ ok: false })) : Promise.resolve({ ok: false }));
+  const placeholder = (slug) => ({ slug, name: slug, description: "", type: "vanilla", playerCount: null, playerCapacity: null, bannerUrl: null });
   const resolved = await Promise.all(
     slugs.map(async (slug) => {
       const found = allServers.find((s) => s.slug === slug);
@@ -2416,10 +2440,14 @@ async function resolveServersBySlug(slugs) {
       const single = await window.mchub.getServer(slug);
       if (single.ok) return single.server;
       if (single.notFound) {
+        const owned = await myServers();
+        if (!owned?.ok) return placeholder(slug);
+        const own = (owned.servers || []).find((s) => s.slug === slug);
+        if (own) return { ...placeholder(slug), ...own };
         await pruneDeadSlug(slug);
         return null;
       }
-      return { slug, name: slug, description: "", type: "vanilla", playerCount: null, playerCapacity: null, bannerUrl: null };
+      return placeholder(slug);
     }),
   );
   return resolved.filter((s) => s !== null);
@@ -4287,7 +4315,7 @@ async function refreshPlaybarFavorites() {
   const favPanel = document.getElementById("playbar-fav-panel");
   const playBtn = document.getElementById("playbar-play");
 
-  const settings = await window.mchub.settings.get();
+  const settings = await settingsWithFreshRecents();
   const favorites = settings.favoriteServers || [];
   const playCounts = settings.playCounts || {};
   const lastPlayedSlug = settings.lastPlayedSlug || null;

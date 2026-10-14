@@ -11,6 +11,7 @@ import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
 import { getFreshness, freshnessChipStyle } from "@/lib/freshness";
 import { requestAppeal } from "@/lib/actions/servers";
 import { AppealRequestButton } from "@/components/AppealRequestButton";
+import { appealUsedForCurrentFreeze } from "@/lib/appeals";
 
 export const metadata = { title: "Vue d'ensemble — Omniscient" };
 
@@ -125,6 +126,8 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
                   date: server.appealDeadline ? new Date(server.appealDeadline).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" }) : "—",
                 })}
               </p>
+            ) : appealUsedForCurrentFreeze(server) ? (
+              <p className="pt-1 text-[13.5px] text-muted">{dict.manage.appealUsed}</p>
             ) : (
               <div className="pt-1">
                 <AppealRequestButton

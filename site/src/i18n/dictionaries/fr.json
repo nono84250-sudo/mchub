@@ -244,9 +244,10 @@
     "rejectedVerification": "Refusé",
     "detailVerificationReason": "Motif du refus",
     "appealRequest": "Demander un second avis",
-    "appealRequestConfirm": "Confirmer la demande ? Un administrateur devra se prononcer dans les 72h, sans quoi le serveur sera dégelé automatiquement.",
+    "appealRequestConfirm": "Confirmer la demande ? Un administrateur devra se prononcer dans les 72h, sans quoi le serveur sera dégelé automatiquement. Un seul recours est possible par gel.",
     "appealPendingSecondOpinion": "Second avis demandé — un autre administrateur doit statuer avant le {date}.",
-    "appealPendingReflection": "Délai de réflexion demandé — le gel sera réexaminé avant le {date} (un seul administrateur actif pour l'instant, pas de second avis possible)."
+    "appealPendingReflection": "Délai de réflexion demandé — le gel sera réexaminé avant le {date} (un seul administrateur actif pour l'instant, pas de second avis possible).",
+    "appealUsed": "Le recours de ce gel a déjà été utilisé : la décision de l'équipe est définitive."
   },
   "reports": {
     "title": "Signalements",

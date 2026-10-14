@@ -244,9 +244,10 @@
     "rejectedVerification": "Rejected",
     "detailVerificationReason": "Rejection reason",
     "appealRequest": "Request a second opinion",
-    "appealRequestConfirm": "Confirm the request? An admin must decide within 72h, otherwise the server will be unfrozen automatically.",
+    "appealRequestConfirm": "Confirm the request? An admin must decide within 72h, otherwise the server will be unfrozen automatically. Only one appeal is allowed per freeze.",
     "appealPendingSecondOpinion": "Second opinion requested — another admin must decide by {date}.",
-    "appealPendingReflection": "Reconsideration period requested — the freeze will be reviewed by {date} (only one active admin for now, no second opinion possible)."
+    "appealPendingReflection": "Reconsideration period requested — the freeze will be reviewed by {date} (only one active admin for now, no second opinion possible).",
+    "appealUsed": "The appeal for this freeze has already been used: the team's decision is final."
   },
   "reports": {
     "title": "Reports",

@@ -12,8 +12,12 @@ import { generateUniqueInviteCode } from "@/lib/inviteCode";
 import { DEFAULT_MODPACK_CHANNEL, type ModpackChannel, type ModpackSource } from "@/lib/modpack-types";
 import { runAndStoreChecks } from "@/lib/verification";
 import { requestServerAppeal } from "@/lib/appeals";
+import { addressUsedByFrozenServer } from "@/lib/frozenAddress";
 
 export type ServerActionState = { error: string } | undefined;
+
+// Second audit du 14/10 (I2) : adresse deja utilisee par un serveur gele (voir lib/frozenAddress.ts).
+const FROZEN_ADDRESS_ERROR = "Cette adresse est celle d'un serveur gelé par l'équipe : elle ne peut pas être utilisée pour une autre fiche.";
 
 type ServerFormValues = {
   name: string;
@@ -161,6 +165,7 @@ export async function createServer(_prevState: ServerActionState, formData: Form
 
   const parsed = readForm(formData, await requestHost());
   if ("error" in parsed) return parsed;
+  if (await addressUsedByFrozenServer(parsed.ip)) return { error: FROZEN_ADDRESS_ERROR };
 
   const slug = await uniqueSlugFor(parsed.name);
   // Toute nouvelle fiche est privee, quoi qu'en dise le formulaire (visibilite retiree de
@@ -203,6 +208,7 @@ export async function updateServer(
 
   const parsed = readForm(formData, await requestHost(), owned);
   if ("error" in parsed) return parsed;
+  if (parsed.ip !== owned.ip && (await addressUsedByFrozenServer(parsed.ip, serverId))) return { error: FROZEN_ADDRESS_ERROR };
 
   // Un changement d'IP, de version declaree ou de modpack rend l'auto-test precedent caduc —
   // meme esprit que runAndStoreChecks ci-dessous pour le controle automatique du site : une
@@ -333,6 +339,7 @@ export async function duplicateServer(serverId: string): Promise<ServerActionSta
   // Audit 14/10 (S1) : la copie d'un serveur gele n'etait pas gelee. Le proprietaire pouvait
   // la passer en prive, partager le code d'invitation et revenir en ligne sans controle.
   if (source.frozenAt) return { error: "Ce serveur est gelé par l'équipe : il ne peut pas être dupliqué." };
+  if (await addressUsedByFrozenServer(source.ip, source.id)) return { error: FROZEN_ADDRESS_ERROR };
 
   const name = `${source.name} (copie)`;
   const slug = await uniqueSlugFor(name);

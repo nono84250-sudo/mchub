@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, normalizeMinecraftUuid, verifyLauncherProfile } from "@/lib/launcherAuth";
+import { db } from "@/lib/db";
 import { proofFromRequest, visibleServerIdBySlug } from "@/lib/public-servers";
 import { createReport, createBehaviorReport, type ReportIssue, type BehaviorIssue } from "@/lib/reports";
 import { rateLimitResponse } from "@/lib/rateLimit";
@@ -42,15 +43,21 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
 
   const body = await request.json().catch(() => ({}));
   const reporterMinecraftUuid = String(body.reporterMinecraftUuid ?? "").trim().slice(0, 100);
-  const reporterMinecraftUsername = String(body.reporterMinecraftUsername ?? "").trim().slice(0, 100);
   const message = String(body.message ?? "").trim().slice(0, 2000);
   const category = body.category === "behavior" ? "behavior" : "technical";
 
-  if (!reporterMinecraftUuid || !reporterMinecraftUsername || !message) {
+  if (!reporterMinecraftUuid || !message) {
     return NextResponse.json({ error: "Champs manquants ou invalides" }, { status: 400 });
   }
-  const identity = await verifyLauncherIdentity(request, reporterMinecraftUuid);
+  // Pseudo VERIFIE (profil Mojang ou jeton de session signe), jamais celui du corps : sinon un
+  // joueur pouvait signer « Notch » dans le panel (second audit du 14/10, N3). Jeton de session
+  // ancien sans pseudo : on reprend le pseudo connu du compte.
+  const { check: identity, name } = await verifyLauncherProfile(request, reporterMinecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
+  const known = name
+    ? null
+    : await db.orm.public.User.select("minecraftUsername").where({ minecraftUuid: normalizeMinecraftUuid(reporterMinecraftUuid) }).first();
+  const reporterMinecraftUsername = name ?? known?.minecraftUsername ?? "—";
 
   if (category === "behavior") {
     const behaviorIssue = VALID_BEHAVIOR_ISSUES.includes(body.behaviorIssue) ? (body.behaviorIssue as BehaviorIssue) : null;
