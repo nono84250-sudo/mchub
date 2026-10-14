@@ -237,7 +237,7 @@ function requestLauncherSession() {
       // Joueur deconnecte pendant l'echange : on ne garde pas sa session.
       if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
-      logStore.pushLog({ source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
+      logStore.pushLog({ level: "debug", source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
     } catch (error) {
       // Sans importance : les requetes continuent avec le jeton Mojang.
       logStore.pushLog({ level: "warn", source: "launcher", message: `Session launcher : échange impossible (${error.message}), repli sur le jeton Mojang` });
@@ -870,7 +870,7 @@ ipcMain.handle("servers:mine", async () => {
           { headers: launcherAuthHeaders() },
         ),
       );
-      logStore.pushLog({ source: "launcher", message: `Mes instances : ${fresh.servers?.length ?? 0} serveur(s) chargé(s)` });
+      logStore.pushLog({ level: "debug", source: "launcher", message: `Mes instances : ${fresh.servers?.length ?? 0} serveur(s) chargé(s)` });
       return fresh;
     });
     return { ok: true, servers: data.servers };
@@ -1634,7 +1634,7 @@ ipcMain.handle("window:expandFromBootstrap", (event) => {
   if (got.width !== bounds.width || got.height !== bounds.height) win.setBounds(bounds);
   expandedWindows.add(win);
   if (maximize) win.maximize();
-  logStore.pushLog({ source: "launcher", message: `[fenetre] ${JSON.stringify(bounds)} agrandie=${maximize}` });
+  logStore.pushLog({ level: "debug", source: "launcher", message: `[fenetre] ${JSON.stringify(bounds)} agrandie=${maximize}` });
 });
 
 // Suggestion simple et prudente : la moitie de la RAM systeme, plafonnee a
