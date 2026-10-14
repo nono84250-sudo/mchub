@@ -216,9 +216,13 @@ const DICTIONARIES = {
     },
     recent: {
       empty: "Aucun serveur joué pour l'instant — les derniers serveurs lancés apparaîtront ici.",
-      header: "Les serveurs que tu as lancés récemment.",
+      header: "Les serveurs que tu as lancés ces 7 derniers jours.",
       emptyTitle: "Aucun serveur joué récemment",
-      emptyText: "Les serveurs auxquels tu joues apparaîtront ici. Lance-en un pour commencer.",
+      emptyText: "Les serveurs que tu lances apparaîtront ici pendant 7 jours.",
+      today: "Aujourd'hui",
+      yesterday: "Hier",
+      daysAgo: { one: "Il y a {count} jour", other: "Il y a {count} jours" },
+      at: "à {time}",
     },
     myInstances: {
       manage: "Gérer",
@@ -775,10 +779,14 @@ const DICTIONARIES = {
       emptyText: "Click the star on a server to add it here.",
     },
     recent: {
-      header: "The servers you launched recently.",
+      header: "Servers you launched in the last 7 days.",
       empty: "No server played yet — recently launched servers will appear here.",
-      emptyTitle: "No server played recently",
-      emptyText: "The servers you play will show up here. Launch one to get started.",
+      emptyTitle: "No recently played servers",
+      emptyText: "Servers you launch will show up here for 7 days.",
+      today: "Today",
+      yesterday: "Yesterday",
+      daysAgo: { one: "{count} day ago", other: "{count} days ago" },
+      at: "at {time}",
     },
     myInstances: {
       manage: "Manage",

@@ -154,8 +154,10 @@ function isOwnServer(server) {
 
 // Ligne serveur partagee entre la liste principale, "Favoris" et "Recents" —
 // meme rendu partout, seule la source de la liste de serveurs change.
-function serverRowHtml(server, isFav) {
+// `playedAt` (page Recents seulement) : date de la derniere partie, affichee avant les joueurs.
+function serverRowHtml(server, isFav, playedAt = null) {
   const ownerTag = isOwnServer(server) ? `<span class="owner-tag">${t("serverCard.owner")}</span>` : "";
+  const played = playedAt ? playedLabel(playedAt, Date.now()) : null;
   return `
     <div class="row" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0">
       <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverIconInner(server)}</span>
@@ -167,9 +169,59 @@ function serverRowHtml(server, isFav) {
         </div>
         <p>${escapeHtml(server.description || "")}</p>
       </div>
+      ${played ? `<div class="row-played">${escapeHtml(played.day)}<small>${escapeHtml(played.time)}</small></div>` : ""}
       <div class="players">${playersLabel(server)}</div>
       ${favoriteBtnHtml(server.slug, isFav)}
     </div>`;
+}
+
+// --- Recents (14/10, preview validee par Rushi) ------------------------------
+// 10 serveurs au plus, joues ces 7 derniers jours, avec la date de la derniere partie. Tout
+// reste local (settings.recentlyPlayed + settings.recentPlayedAt), aucune requete au site.
+const RECENT_MAX = 10;
+const RECENT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function datesForSlugs(dates, slugs) {
+  const out = {};
+  for (const slug of slugs) if (typeof dates?.[slug] === "number") out[slug] = dates[slug];
+  return out;
+}
+
+// Liste a afficher, et ce qu'il faut reecrire dans les reglages (`patch`, null si rien) :
+// les serveurs de plus de 7 jours sortent de la liste. Un serveur enregistre avant les dates
+// (ancienne version) recoit la date d'aujourd'hui : il reste 7 jours, puis sort comme les autres.
+// Liste vide mais « dernier joue » connu (voir recentSlugsFromSettings) : celui-ci est repris.
+function recentEntries(settings, now) {
+  const slugs = recentSlugsFromSettings(settings).slice(0, RECENT_MAX);
+  const dates = { ...(settings?.recentPlayedAt || {}) };
+  let changed = !Array.isArray(settings?.recentlyPlayed) || settings.recentlyPlayed.length !== slugs.length;
+  for (const slug of slugs) {
+    if (typeof dates[slug] !== "number" || dates[slug] > now) {
+      dates[slug] = now;
+      changed = true;
+    }
+  }
+  const kept = slugs.filter((slug) => now - dates[slug] < RECENT_MAX_AGE_MS).sort((a, b) => dates[b] - dates[a]);
+  if (kept.length !== slugs.length) changed = true;
+  const recentPlayedAt = datesForSlugs(dates, kept);
+  return {
+    entries: kept.map((slug) => ({ slug, playedAt: recentPlayedAt[slug] })),
+    patch: changed ? { recentlyPlayed: kept, recentPlayedAt } : null,
+  };
+}
+
+// « Aujourd'hui / Hier / Il y a 3 jours » compte en jours du calendrier (pas en tranches de
+// 24 h) : une partie d'hier soir reste « Hier » ce matin.
+function playedLabel(playedAt, now) {
+  const startOfDay = (ms) => {
+    const d = new Date(ms);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  const days = Math.max(0, Math.round((startOfDay(now) - startOfDay(playedAt)) / 86_400_000));
+  const day = days === 0 ? t("recent.today") : days === 1 ? t("recent.yesterday") : t("recent.daysAgo", { count: days });
+  const time = new Date(playedAt).toLocaleTimeString(window.i18n.getLocale() === "en" ? "en-US" : "fr-FR", { hour: "2-digit", minute: "2-digit" });
+  return { day, time: t("recent.at", { time }) };
 }
 
 // Liste principale "Serveurs" uniquement : recherche + tri cote client sur
@@ -226,9 +278,12 @@ function skeletonDetailHtml() {
     <div class="sk-line" style="height: 12px; width: 70%; margin-top: 8px;"></div>`;
 }
 
-async function renderRowsInto(container, servers, origin, onFavoriteToggled) {
+// `playedAtBySlug` : page Recents seulement (date de la derniere partie de chaque serveur).
+async function renderRowsInto(container, servers, origin, onFavoriteToggled, playedAtBySlug = null) {
   const favorites = await getFavoriteSlugs();
-  container.innerHTML = servers.map((server) => serverRowHtml(server, favorites.includes(server.slug))).join("");
+  container.innerHTML = servers
+    .map((server) => serverRowHtml(server, favorites.includes(server.slug), playedAtBySlug?.[server.slug] ?? null))
+    .join("");
 
   container.querySelectorAll(".row").forEach((row) => {
     onRowActivate(row, () => {
@@ -787,8 +842,9 @@ async function launchServer(server) {
     const settings = await window.mchub.settings.get();
     const playCounts = { ...(settings.playCounts || {}) };
     playCounts[server.slug] = (playCounts[server.slug] || 0) + 1;
-    const recentlyPlayed = [server.slug, ...(settings.recentlyPlayed || []).filter((s) => s !== server.slug)].slice(0, 10);
-    await window.mchub.settings.set({ playCounts, lastPlayedSlug: server.slug, recentlyPlayed });
+    const recentlyPlayed = [server.slug, ...(settings.recentlyPlayed || []).filter((s) => s !== server.slug)].slice(0, RECENT_MAX);
+    const recentPlayedAt = datesForSlugs({ ...(settings.recentPlayedAt || {}), [server.slug]: Date.now() }, recentlyPlayed);
+    await window.mchub.settings.set({ playCounts, lastPlayedSlug: server.slug, recentlyPlayed, recentPlayedAt });
     selectedFavoriteSlug = server.slug;
     await refreshPlaybarFavorites();
 
@@ -2481,7 +2537,10 @@ async function showRecentView() {
 
 async function renderRecentList() {
   const settings = await window.mchub.settings.get();
-  const recentSlugs = recentSlugsFromSettings(settings);
+  const { entries, patch } = recentEntries(settings, Date.now());
+  if (patch) await window.mchub.settings.set(patch);
+  const recentSlugs = entries.map((entry) => entry.slug);
+  const playedAtBySlug = Object.fromEntries(entries.map((entry) => [entry.slug, entry.playedAt]));
 
   if (recentSlugs.length === 0) {
     renderPageEmpty(recentPanelEl, "recent", "nav.recent");
@@ -2499,7 +2558,7 @@ async function renderRecentList() {
     <h2>${t("nav.recent")}</h2>
     <p class="join-note">${t("recent.header")}</p>
     <div class="list-rows server-list"></div>`;
-  await renderRowsInto(recentPanelEl.querySelector(".list-rows"), recentServers, "recent", renderRecentList);
+  await renderRowsInto(recentPanelEl.querySelector(".list-rows"), recentServers, "recent", renderRecentList, playedAtBySlug);
 }
 
 // "Mes instances" : tous les serveurs du proprietaire connecte (publies OU

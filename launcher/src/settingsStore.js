@@ -39,6 +39,9 @@ const DEFAULTS = {
   // plus ancien (page "Recents" de la barre laterale) — deja limite en
   // taille par renderer.js avant d'etre enregistre.
   recentlyPlayed: [],
+  // Date (ms) de la derniere partie de chaque serveur de recentlyPlayed (14/10, page Recents
+  // avec la date, retrait apres 7 jours) — local seulement, jamais envoye au site.
+  recentPlayedAt: {},
   // Langue de l'UI (voir i18n.js) — seuls "fr"/"en" ont une vraie traduction
   // pour l'instant. Theme/accent (voir globals du launcher) : "system" suit
   // prefers-color-scheme, sinon "dark"/"light" force l'un ou l'autre.
