@@ -472,6 +472,12 @@ function parseLoader(loaderId, minecraftVersion) {
     );
   }
   const [, kind, loaderVersion] = match;
+  // Fabric aussi (audit 14/10, L2) : sa version servait telle quelle dans un chemin du dossier
+  // de jeu. Un pack truque pouvait donner "x/../../instances/<slug>/evil" et faire lire un faux
+  // JSON de version (depose par ses propres overrides) avec des arguments Java malveillants.
+  if (!MAVEN_VERSION_PATTERN.test(loaderVersion) || !MAVEN_VERSION_PATTERN.test(minecraftVersion || "")) {
+    throw new ModpackError(`Version de chargeur invalide : ${loaderId} (Minecraft ${minecraftVersion}).`, { code: "invalid_loader_version" });
+  }
   if (kind === "fabric") return { kind, loaderVersion };
   const mavenVersion = kind === "neoforge" ? loaderVersion : `${minecraftVersion}-${loaderVersion}`;
   if (!MAVEN_VERSION_PATTERN.test(mavenVersion)) {
@@ -531,7 +537,7 @@ function runInstaller({ javaPath, installerPath, gameRoot, onProgress }) {
 // minecraft-launcher-core telecharge au lancement). On le pose tel quel.
 async function installFabric({ loaderVersion, minecraftVersion, gameRoot, onProgress }) {
   const versionId = `fabric-loader-${loaderVersion}-${minecraftVersion}`;
-  const versionJson = path.join(gameRoot, "versions", versionId, `${versionId}.json`);
+  const versionJson = safeJoin(path.join(gameRoot, "versions"), path.join(versionId, `${versionId}.json`));
   if (fs.existsSync(versionJson)) return versionId;
 
   onProgress({ text: "Téléchargement de Fabric…" });
@@ -569,7 +575,7 @@ async function installLoader({ loaderId, minecraftVersion, gameRoot, javaPath, o
   }
 
   const versionId = readInstalledVersionId(installerPath);
-  const versionJson = path.join(gameRoot, "versions", versionId, `${versionId}.json`);
+  const versionJson = safeJoin(path.join(gameRoot, "versions"), path.join(versionId, `${versionId}.json`));
   if (!fs.existsSync(versionJson)) {
     // L'installateur refuse de demarrer sans profil de lanceur officiel.
     const profiles = path.join(gameRoot, "launcher_profiles.json");
@@ -642,9 +648,11 @@ function ruleAllows(rules) {
 // fournit donc un JSON deja fusionne (arguments de jeu vanilla + chargeur) dans
 // une version "-omniscient", et on calcule nous-memes les arguments JVM du
 // chargeur (chemin des modules, --add-opens...) qu'on passera en customArgs.
+const FORBIDDEN_JVM_ARG = /^-(javaagent|agentpath|agentlib|XX:On|Djava\.library\.path)/i;
+
 async function prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersion }) {
   const versionsDir = path.join(gameRoot, "versions");
-  const readJson = async (id) => JSON.parse(await fsp.readFile(path.join(versionsDir, id, `${id}.json`), "utf8"));
+  const readJson = async (id) => JSON.parse(await fsp.readFile(safeJoin(versionsDir, path.join(id, `${id}.json`)), "utf8"));
 
   const loader = await readJson(loaderVersionId);
   const parentId = loader.inheritsFrom || minecraftVersion;
@@ -684,6 +692,12 @@ async function prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersio
   for (const arg of loader.arguments.jvm || []) {
     if (typeof arg === "string") jvmArgs.push(fill(arg));
     else if (ruleAllows(arg.rules)) jvmArgs.push(...[].concat(arg.value).map(fill));
+  }
+  // Aucun chargeur officiel (NeoForge, Forge, Fabric) n'a besoin de ces options, qui permettent
+  // de lancer du code ou une commande au demarrage de Java (audit 14/10, L2) : refus net.
+  const forbidden = jvmArgs.find((arg) => FORBIDDEN_JVM_ARG.test(arg));
+  if (forbidden) {
+    throw new ModpackError(`Argument Java refusé dans le chargeur du modpack : ${forbidden.slice(0, 80)}`, { code: "unsafe_jvm_arg" });
   }
 
   return { customVersion: customId, jvmArgs };
@@ -766,6 +780,16 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
 
   const previousState = await readInstalledState(instanceDir);
   const previousFiles = previousState?.files ?? [];
+  // Chargeur installe AVANT d'extraire les fichiers du pack (audit 14/10, L2) : les overrides
+  // ne doivent jamais pouvoir fournir eux-memes le JSON de version que le chargeur va lire.
+  const loaderVersionId = await installLoader({
+    loaderId: pack.loaderId,
+    minecraftVersion: pack.minecraftVersion,
+    gameRoot,
+    javaPath: gameJava,
+    onProgress,
+  });
+
   let overrides = 0;
   const overrideJars = [];
   const overrideKept = [];
@@ -781,14 +805,6 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
   if (overrideKept.length) {
     onProgress({ text: `${overrideKept.length} fichier(s) modifié(s) par toi conservé(s) : ${overrideKept.slice(0, 5).join(", ")}` });
   }
-
-  const loaderVersionId = await installLoader({
-    loaderId: pack.loaderId,
-    minecraftVersion: pack.minecraftVersion,
-    gameRoot,
-    javaPath: gameJava,
-    onProgress,
-  });
 
   const entries = await pack.resolveFiles({ config, onProgress });
   const installedFiles = await installFiles({ entries, instanceDir, previousFiles, keepPaths: overrideJars, onProgress, signal, waitIfPaused });

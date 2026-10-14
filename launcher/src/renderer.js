@@ -1915,7 +1915,28 @@ function wireFriends() {
 // heartbeat rate ne fait que retarder le passage "hors ligne" d'un ami, jamais a signaler au joueur.
 async function sendPresenceHeartbeat() {
   if (!signedIn) return;
-  await window.mchub.sendPresenceHeartbeat();
+  const result = await window.mchub.sendPresenceHeartbeat();
+  if (result?.accountDeleted) handleAccountDeleted();
+}
+
+// Compte Omniscient supprime sur le site pendant que le launcher etait connecte (voir
+// presence:heartbeat dans main.js, qui a deja coupe et oublie la session) : meme retour au mode
+// visiteur que "Se deconnecter", avec l'ecran de connexion pour expliquer pourquoi. Se
+// reconnecter avec Microsoft recree un compte neuf.
+function handleAccountDeleted() {
+  signedIn = false;
+  currentProfile = null;
+  myInstancesServers = [];
+  myJoinedServers = [];
+  renderGuestHeader();
+  showServersView();
+  appEl.hidden = true;
+  gateEl.hidden = false;
+  setGateBusy(false);
+  gateMessageEl.textContent = t("gate.accountDeleted");
+  gateMessageEl.classList.remove("ms-error");
+  if (signInCountdownTimer) clearInterval(signInCountdownTimer);
+  startBackToGuestCountdown(document.getElementById("gate-countdown"), 15);
 }
 
 // Bascule entre la vue "serveurs" (liste/détail) et la vue "paramètres" dans
@@ -4416,11 +4437,18 @@ async function attemptSignIn(remember) {
     return false;
   }
 
+  startBackToGuestCountdown(countdownEl, 5);
+  return false;
+}
+
+// Compte a rebours de l'ecran de connexion vers le mode visiteur (echec de connexion, compte
+// Omniscient supprime) : le joueur n'y reste jamais bloque.
+function startBackToGuestCountdown(countdownEl, seconds) {
   // Retour automatique en mode visiteur apres un echec (2026-10-11) : rester
   // bloque sur l'ancien ecran de connexion casserait le principe de
   // navigation libre — le joueur peut toujours relancer la connexion plus
   // tard, au clic sur "Jouer" ou sur "Se connecter" en Parametres.
-  let remaining = 5;
+  let remaining = seconds;
   countdownEl.hidden = false;
   const tick = () => {
     countdownEl.textContent = t("gate.backToGuestIn", { seconds: remaining });
@@ -4454,7 +4482,6 @@ async function attemptSignIn(remember) {
     },
     { once: true },
   );
-  return false;
 }
 
 // Barre laterale quand personne n'est connecte : pas de bouton "Se connecter"

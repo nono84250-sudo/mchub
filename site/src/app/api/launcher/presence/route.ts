@@ -29,9 +29,13 @@ export async function POST(request: Request) {
   const { check: identity, name } = await verifyLauncherProfile(request, minecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
 
-  // Appel automatique : ne recree pas un compte que le joueur a supprime (user === null).
+  // Appel automatique : cree le compte d'un nouveau joueur (premiere connexion au launcher sans
+  // passer par le site), mais ne recree pas un compte que le joueur a supprime (user === null).
+  // Dans ce cas le launcher (>= 14/10) deconnecte le joueur : il devra se reconnecter avec
+  // Microsoft, ce qui recree le compte (route session, freshLogin).
   const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: false });
-  if (user) await recordPresenceHeartbeat(user.id);
+  if (!user) return NextResponse.json({ ok: true, accountDeleted: true });
+  await recordPresenceHeartbeat(user.id);
 
   return NextResponse.json({ ok: true });
 }

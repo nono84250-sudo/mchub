@@ -2,9 +2,10 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
-<!-- Content-Security-Policy posee dynamiquement par main.js (voir setContentSecurityPolicy) :
-     elle doit inclure SITE_URL (http://localhost:... en dev, https://... en prod), connu
-     seulement au demarrage, donc une valeur figee ici ne peut pas convenir aux deux cas. -->
+<!-- Content-Security-Policy (audit 14/10, L1) : l'en-tete pose par main.js
+     (setContentSecurityPolicy) ne s'applique pas aux pages chargees en file://, il faut cette
+     balise. Images : https et data: partout, http seulement pour le site en local (dev). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'" />
 <title>Omniscient Launcher</title>
 <style>
   :root {

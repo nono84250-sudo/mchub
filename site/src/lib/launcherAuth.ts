@@ -10,18 +10,27 @@ export { createLauncherSession, LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid 
 // en theorie sur le nombre de caracteres corrects avant la premiere
 // difference. timingSafeEqual exige des buffers de meme longueur, d'ou le
 // contrôle de longueur avant l'appel plutôt que de le laisser lever.
-export function isAuthorizedLauncherRequest(request: Request): boolean {
-  const secret = process.env.LAUNCHER_API_KEY;
+//
+// Deux cles acceptees pendant un renouvellement (audit 14/10, S6, choix de Rushi) :
+// LAUNCHER_API_KEY (la nouvelle, embarquee dans le prochain launcher) et, si elle existe,
+// LAUNCHER_API_KEY_PREVIOUS (celle des launchers deja installes). On retire la seconde de
+// Vercel quand plus personne ne l'utilise. Sans LAUNCHER_API_KEY_PREVIOUS : comportement d'avant.
+function matchesSecret(authHeader: string, secret: string | undefined): boolean {
   if (!secret) return false;
-
-  const authHeader = request.headers.get("authorization") ?? "";
-  const expected = `Bearer ${secret}`;
-
   const actualBuffer = Buffer.from(authHeader);
-  const expectedBuffer = Buffer.from(expected);
+  const expectedBuffer = Buffer.from(`Bearer ${secret}`);
   if (actualBuffer.length !== expectedBuffer.length) return false;
-
   return timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+export function isAuthorizedLauncherRequest(request: Request): boolean {
+  if (!process.env.LAUNCHER_API_KEY) return false;
+  const authHeader = request.headers.get("authorization") ?? "";
+  // Les deux comparaisons sont toujours faites, pour ne pas dire par le temps de reponse
+  // laquelle des deux cles a ete reconnue.
+  const current = matchesSecret(authHeader, process.env.LAUNCHER_API_KEY);
+  const previous = matchesSecret(authHeader, process.env.LAUNCHER_API_KEY_PREVIOUS);
+  return current || previous;
 }
 
 // Verifie QUI joue, pas seulement "c'est un launcher" (ce que fait deja
@@ -66,12 +75,20 @@ export async function getAccountLock(uuid: string): Promise<{ lockedReason: stri
 const MOJANG_TIMEOUT_MS = 5_000;
 
 // Interroge Mojang pour un jeton : renvoie l'UUID et le pseudo confirmes, ou la raison du refus.
-async function lookupMojangProfile(token: string): Promise<{ uuid: string; name: string | null } | { check: "refused" | "unavailable" | "locked" }> {
+// Un compte verrouille renvoie aussi l'UUID que Mojang a confirme, pour que l'appelant ne
+// montre le motif qu'au vrai titulaire du jeton (audit 14/10, S2).
+type MojangLookup =
+  | { uuid: string; name: string | null }
+  | { check: "refused" | "unavailable" }
+  | { check: "locked"; uuid: string; lockedReason: string | null };
+
+async function lookupMojangProfile(token: string): Promise<MojangLookup> {
   const cached = identityCache.get(token);
   if (cached && cached.expiresAt > Date.now()) {
     // Le cache ne retient que l'identite Mojang, pas le verrou : on le revérifie
     // a chaque appel pour qu'un verrou pose par un admin coupe l'acces tout de suite.
-    if (await getAccountLock(cached.uuid)) return { check: "locked" };
+    const lock = await getAccountLock(cached.uuid);
+    if (lock) return { check: "locked", uuid: cached.uuid, lockedReason: lock.lockedReason };
     return { uuid: cached.uuid, name: cached.name };
   }
 
@@ -93,7 +110,8 @@ async function lookupMojangProfile(token: string): Promise<{ uuid: string; name:
     return { check: "unavailable" };
   }
 
-  if (await getAccountLock(verifiedUuid)) return { check: "locked" };
+  const lock = await getAccountLock(verifiedUuid);
+  if (lock) return { check: "locked", uuid: verifiedUuid, lockedReason: lock.lockedReason };
 
   if (identityCache.size > MAX_IDENTITY_CACHE_ENTRIES) {
     const now = Date.now();
@@ -104,13 +122,21 @@ async function lookupMojangProfile(token: string): Promise<{ uuid: string; name:
 }
 
 // Identite verifiee + pseudo confirme par Mojang (name est null si l'identite n'est pas verifiee).
-export type VerifiedProfile = { check: IdentityCheck; name: string | null };
+// lock n'est rempli que si Mojang a confirme que le jeton appartient bien a claimedUuid : le
+// motif d'un verrou n'est jamais montre a quelqu'un d'autre que le joueur concerne.
+export type VerifiedProfile = { check: IdentityCheck; name: string | null; lock?: { lockedReason: string | null } };
 
 export async function verifyMinecraftProfile(token: string | null, claimedUuid: string | null): Promise<VerifiedProfile> {
   if (!token || !claimedUuid) return { check: "refused", name: null };
   const result = await lookupMojangProfile(token);
-  if ("check" in result) return { check: result.check === "unavailable" ? "unavailable" : "refused", name: null };
-  return result.uuid === normalizeMinecraftUuid(claimedUuid) ? { check: "verified", name: result.name } : { check: "refused", name: null };
+  const isClaimed = "uuid" in result && result.uuid === normalizeMinecraftUuid(claimedUuid);
+  if ("check" in result) {
+    if (result.check === "locked") {
+      return isClaimed ? { check: "refused", name: null, lock: { lockedReason: result.lockedReason } } : { check: "refused", name: null };
+    }
+    return { check: result.check, name: null };
+  }
+  return isClaimed ? { check: "verified", name: result.name } : { check: "refused", name: null };
 }
 
 export async function verifyMinecraftIdentity(token: string | null, claimedUuid: string | null): Promise<IdentityCheck> {
@@ -173,7 +199,7 @@ export async function launcherIdentityUuid(request: Request): Promise<string | n
   const token = request.headers.get("x-minecraft-token");
   if (!token) return null;
   const result = await lookupMojangProfile(token);
-  return "uuid" in result ? result.uuid : null;
+  return "uuid" in result && !("check" in result) ? result.uuid : null;
 }
 
 // Reponse d'erreur pour une identite non confirmee. 401 : le launcher demande

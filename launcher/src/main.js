@@ -1,6 +1,41 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
 const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session, screen } = require("electron");
 
+// Verrou de navigation (audit 14/10, L1). Avant : un lien glisse sur la fenetre, ou un
+// window.open, chargeait une page distante DANS la fenetre du launcher, avec le preload, donc
+// avec toute l'API window.mchub (lancer un serveur piege, envoyer des demandes d'ami...).
+//  - Aucune page ne peut ouvrir de nouvelle fenetre (toutes les webContents, celle de la
+//    connexion Microsoft comprise : elle n'en a pas besoin).
+//  - Les fenetres du launcher (principale, console) ne naviguent jamais ailleurs : voir
+//    lockAppNavigation, appele a leur creation. La fenetre Microsoft garde sa navigation
+//    (pages de connexion), surveillee par msAuth.js.
+//  - Chaque appel IPC doit venir d'une page locale (file://) : une page distante qui
+//    reussirait malgre tout a se charger ne peut rien demander au processus principal.
+app.on("web-contents-created", (_event, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  contents.on("will-attach-webview", (event) => event.preventDefault());
+});
+
+function lockAppNavigation(contents) {
+  contents.on("will-navigate", (event) => event.preventDefault());
+  contents.on("will-redirect", (event) => event.preventDefault());
+}
+
+function isLocalSender(event) {
+  try {
+    return new URL(event.senderFrame?.url ?? "").protocol === "file:";
+  } catch {
+    return false;
+  }
+}
+
+const registerIpcHandler = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, listener) =>
+  registerIpcHandler(channel, (event, ...args) => {
+    if (!isLocalSender(event)) throw new Error("Appel refusé : origine non autorisée");
+    return listener(event, ...args);
+  });
+
 // Verrou mono-instance : relancer le launcher pendant qu'une instance tourne deja creait
 // jusqu'ici un second process totalement independant (deux lancements Minecraft simultanes
 // sur le meme GAME_ROOT, ecritures concurrentes sans verrou sur settings.json/accounts.bin,
@@ -96,8 +131,10 @@ try {
 let SITE_URL = process.env.MCHUB_SITE_URL || generatedEnv.MCHUB_SITE_URL || "http://localhost:3000";
 // Adresses de secours du site de production : si l'adresse principale ne
 // répond pas au démarrage, le launcher prend la première qui répond. Pas
-// utilisées pour le développement en local (localhost).
-const FALLBACK_SITE_URLS = ["https://omniscient-theta.vercel.app", "https://omniscientlauncher.com"];
+// utilisées pour le développement en local (localhost). Le vrai domaine d'abord (audit 14/10,
+// B8) : les liens d'invitation copiés reprennent l'adresse retenue, l'ancienne adresse
+// vercel.app ne sert qu'en dernier recours.
+const FALLBACK_SITE_URLS = ["https://omniscientlauncher.com", "https://omniscient-theta.vercel.app"];
 
 async function pickSiteUrl() {
   if (!SITE_URL.startsWith("https://")) return;
@@ -160,6 +197,10 @@ const REQUEST_TIMEOUT_MS = 8000;
 // cet appel-ci (et les suivants) jusqu'a ce que le nouvel echange reussisse.
 let launcherSession = null; // { uuid, token, expiresAt (ms) }
 let launcherSessionRequest = null;
+// UUID du joueur qui vient de se connecter avec le bouton Microsoft (pas une reprise de
+// session ni un renouvellement) : le prochain echange le signale au site (freshLogin), qui
+// recree alors son compte s'il l'avait supprime. Garde jusqu'a un echange reussi.
+let pendingFreshLoginUuid = null;
 const LAUNCHER_SESSION_USABLE_MARGIN_MS = 30_000;
 
 function usableLauncherSessionToken() {
@@ -174,6 +215,7 @@ function requestLauncherSession() {
   if (!currentSession || launcherSessionRequest) return;
   const uuid = currentSession.profile.id;
   const mojangToken = currentSession.authorization.access_token;
+  const freshLogin = pendingFreshLoginUuid === uuid;
   launcherSessionRequest = (async () => {
     try {
       const res = await fetch(`${SITE_URL}/api/launcher/session`, {
@@ -183,7 +225,7 @@ function requestLauncherSession() {
           Authorization: `Bearer ${LAUNCHER_API_KEY}`,
           "X-Minecraft-Token": mojangToken,
         },
-        body: JSON.stringify({ minecraftUuid: uuid }),
+        body: JSON.stringify({ minecraftUuid: uuid, ...(freshLogin ? { freshLogin: true } : {}) }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) {
@@ -191,6 +233,7 @@ function requestLauncherSession() {
         return;
       }
       const data = await res.json();
+      if (freshLogin && pendingFreshLoginUuid === uuid) pendingFreshLoginUuid = null;
       // Joueur deconnecte pendant l'echange : on ne garde pas sa session.
       if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
@@ -251,8 +294,9 @@ let currentSession = null;
 // lui, pas de renouvellement silencieux (comportement d'avant).
 let sessionRemembered = false;
 
-function setSession(profile, authorization) {
+function setSession(profile, authorization, { freshLogin = false } = {}) {
   currentSession = { profile, authorization };
+  pendingFreshLoginUuid = freshLogin ? profile.id : null;
   requestLauncherSession();
   return profile;
 }
@@ -461,6 +505,7 @@ function createWindow() {
     if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.close();
   });
 
+  lockAppNavigation(win.webContents);
   win.loadFile(path.join(__dirname, "index.html"));
 
   wireAutoUpdater(win);
@@ -509,6 +554,7 @@ function createConsoleWindow() {
     consoleWindow = null;
   });
 
+  lockAppNavigation(consoleWindow.webContents);
   consoleWindow.loadFile(path.join(__dirname, "debug-console.html"));
   return consoleWindow;
 }
@@ -945,11 +991,28 @@ ipcMain.handle("presence:heartbeat", async () => {
     return { ok: false, error: "Pas de compte Microsoft connecté." };
   }
   try {
-    await fetchJson(`${SITE_URL}/api/launcher/presence`, {
+    const uuid = currentSession.profile.id;
+    const result = await fetchJson(`${SITE_URL}/api/launcher/presence`, {
       method: "POST",
       headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ minecraftUuid: currentSession.profile.id, minecraftUsername: currentSession.profile.name }),
+      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name }),
     });
+    // Compte Omniscient supprime par le joueur (sur le site) alors que le launcher etait encore
+    // connecte : le site ne le recree pas tout seul. On deconnecte et on oublie ce compte, pour
+    // que seule une vraie connexion Microsoft le recree (freshLogin, voir setSession).
+    if (result?.accountDeleted && currentSession?.profile.id === uuid) {
+      logStore.pushLog({ level: "warn", source: "launcher", message: "Compte Omniscient supprimé : déconnexion du launcher" });
+      try {
+        sessionStore.forgetAccount(uuid);
+      } catch {
+        // Le fichier local n'a pas pu etre mis a jour : la session est quand meme coupee.
+      }
+      launcherSession = null;
+      pendingFreshLoginUuid = null;
+      currentSession = null;
+      sessionRemembered = false;
+      return { ok: true, accountDeleted: true };
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -1187,7 +1250,7 @@ ipcMain.handle("auth:signIn", async (_event, remember) => {
     // Toujours défini avant la tentative de sauvegarde : si le compte
     // signIn a réussi, cette réponse doit rester "ok" même si la
     // persistance échoue ensuite (écriture disque, coffre indisponible...).
-    setSession(profile, authorization);
+    setSession(profile, authorization, { freshLogin: true });
 
     let remembered = false;
     if (remember && refreshToken) {

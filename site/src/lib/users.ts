@@ -5,8 +5,8 @@ import { normalizeMinecraftUuid } from "@/lib/launcherSession";
 // une empreinte SHA-256 de l'UUID Minecraft et la date, dans la table "deletedAccount" (voir
 // schema.sql). Sans ca, le signal de presence du launcher (toutes les 60 s) recreait un compte
 // vide dans la minute qui suit la suppression (audit 14/10, B10). L'empreinte est retiree des
-// que le joueur revient de lui-meme : connexion sur le site, ou action explicite dans le
-// launcher (envoyer une demande d'ami).
+// que le joueur revient de lui-meme : connexion sur le site, nouvelle connexion Microsoft dans
+// le launcher (route session, freshLogin), ou demande d'ami envoyee depuis le launcher.
 async function uuidFingerprint(minecraftUuid: string): Promise<string> {
   const bytes = new TextEncoder().encode(normalizeMinecraftUuid(minecraftUuid));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -45,8 +45,9 @@ async function wasDeletedByOwner(minecraftUuid: string): Promise<boolean> {
 // jamais celui du corps de la requete (audit 14/10, B2). null = on garde le pseudo connu.
 //
 // explicit : false pour un appel automatique (signal de presence) — il ne recree PAS un compte
-// supprime par son proprietaire et renvoie null. true pour une action volontaire du joueur
-// (demande d'ami) : le compte est recree et l'empreinte de suppression retiree.
+// supprime par son proprietaire et renvoie null (un nouveau joueur, lui, est bien cree). true
+// pour une action volontaire du joueur (connexion Microsoft dans le launcher, demande d'ami) :
+// le compte est recree et l'empreinte de suppression retiree.
 export async function findOrCreateUserByMinecraft(
   minecraftUuid: string,
   minecraftUsername: string | null,

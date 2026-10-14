@@ -35,7 +35,7 @@ export function ManageActions({
   // 2026-10-10 : peut desormais renvoyer {error} (serveur gele) plutot que de reussir
   // silencieusement sans rien faire — voir lib/actions/servers.ts.
   onTogglePublished: () => Promise<{ error: string } | undefined>;
-  onDuplicate: () => Promise<void>;
+  onDuplicate: () => Promise<{ error: string } | undefined>;
   onDelete: () => Promise<void>;
 }) {
   const router = useRouter();
@@ -126,7 +126,7 @@ export function ManageActions({
 
         <button
           type="button"
-          disabled={pending !== null}
+          disabled={pending !== null || frozen}
           onClick={() => run("duplicate", t("manage.confirmDuplicate"), onDuplicate)}
           className="btn-secondary text-sm"
         >

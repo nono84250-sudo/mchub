@@ -80,6 +80,7 @@ const DICTIONARIES = {
       connecting: "Connexion en cours…",
       pendingApproval: "Connexion Microsoft OK — en attente de validation par Microsoft pour l'accès Minecraft.",
       backToGuestIn: "Retour à l'annuaire dans {seconds}…",
+      accountDeleted: "Ton compte Omniscient a été supprimé, tu as été déconnecté. Reconnecte-toi avec Microsoft pour en créer un nouveau.",
     },
     ramSetup: {
       title: "Mémoire allouée au jeu",
@@ -607,6 +608,7 @@ const DICTIONARIES = {
       connecting: "Signing in…",
       pendingApproval: "Microsoft sign-in OK — waiting on Microsoft's approval for Minecraft access.",
       backToGuestIn: "Back to the directory in {seconds}…",
+      accountDeleted: "Your Omniscient account was deleted, so you were signed out. Sign in with Microsoft to create a new one.",
     },
     ramSetup: {
       title: "Memory allocated to the game",

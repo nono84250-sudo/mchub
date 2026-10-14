@@ -324,12 +324,15 @@ export async function toggleServerPublished(serverId: string): Promise<ServerAct
 
 // Cree une copie de la fiche (nouveau slug, meme configuration sauf le nom)
 // — pratique pour publier plusieurs serveurs similaires sans tout ressaisir.
-export async function duplicateServer(serverId: string) {
+export async function duplicateServer(serverId: string): Promise<ServerActionState> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
   const source = await getOwnedServer(serverId, session.user.id);
   if (!source) redirect("/dashboard");
+  // Audit 14/10 (S1) : la copie d'un serveur gele n'etait pas gelee. Le proprietaire pouvait
+  // la passer en prive, partager le code d'invitation et revenir en ligne sans controle.
+  if (source.frozenAt) return { error: "Ce serveur est gelé par l'équipe : il ne peut pas être dupliqué." };
 
   const name = `${source.name} (copie)`;
   const slug = await uniqueSlugFor(name);
