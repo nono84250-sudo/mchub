@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { checkRateLimit, clientIpFromHeadersList } from "@/lib/rateLimit";
+import { CONTACT_SUBJECTS } from "@/lib/contactSubjects";
 
 export type ContactActionState = { error: string } | { success: true } | undefined;
 
@@ -26,12 +27,16 @@ export async function submitContactMessage(
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
+  const subject = CONTACT_SUBJECTS.find((s) => s.id === String(formData.get("subject") ?? ""));
 
-  if (!name || !email || !message) return { error: "Tous les champs sont obligatoires." };
+  if (!name || !email || !message || !subject) return { error: "Tous les champs sont obligatoires." };
+  if (formData.get("consent") !== "yes") return { error: "Coche la case d'accord pour qu'on puisse te répondre." };
   if (!EMAIL_RE.test(email)) return { error: "Adresse email invalide." };
   if (name.length > 200 || email.length > 200 || message.length > 5000) return { error: "Message trop long." };
 
-  await db.orm.public.ContactMessage.create({ name, email, message, status: "new" });
+  // Pas de colonne "sujet" dans contactMessage : le sujet est place en tete du message, lisible
+  // tel quel dans /admin/contact, sans migration D1.
+  await db.orm.public.ContactMessage.create({ name, email, message: `[${subject.adminLabel}]\n\n${message}`, status: "new" });
 
   return { success: true };
 }
