@@ -12,7 +12,8 @@
   },
   "footer": {
     "tagline": "the Minecraft server toolkit.",
-    "servers": "Servers"
+    "terms": "Terms",
+    "privacy": "Privacy (GDPR)"
   },
   "home": {
     "badge": "Minecraft/Xbox access approved — the launcher is online",

@@ -12,7 +12,8 @@
   },
   "footer": {
     "tagline": "la boîte à outils des serveurs Minecraft.",
-    "servers": "Serveurs"
+    "terms": "CGU",
+    "privacy": "Confidentialité (RGPD)"
   },
   "home": {
     "badge": "Accès Minecraft/Xbox approuvé — le launcher est en ligne",
