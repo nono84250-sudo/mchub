@@ -1,6 +1,6 @@
 // Installation d'un modpack (CurseForge ou Modrinth) pour un serveur moddé :
 // telecharge le modpack, ses mods et ses fichiers de config dans une instance
-// propre au serveur, installe le chargeur de mods (NeoForge / Forge / Fabric) et prepare
+// propre au serveur, installe le chargeur de mods (NeoForge / Forge / Fabric / Quilt) et prepare
 // la version a lancer avec minecraft-launcher-core.
 //
 // Node pur (aucune dependance a Electron) pour pouvoir etre teste en ligne de
@@ -237,7 +237,8 @@ function readCurseforgePack(zip) {
     minecraftVersion: manifest.minecraft.version,
     loaderId: (loaders.find((l) => l.primary) || loaders[0])?.id || null,
     overrideDirs: [manifest.overrides || "overrides"],
-    resolveFiles: ({ config, onProgress }) => resolveCurseforgeFiles({ config, manifest, onProgress }),
+    resolveFiles: ({ config, onProgress, instanceDir, manualSearchDirs }) =>
+      resolveCurseforgeFiles({ config, manifest, onProgress, instanceDir, manualSearchDirs }),
   };
 }
 
@@ -284,9 +285,15 @@ function resolveModrinthFiles(index) {
 }
 
 // CurseForge : les liens de telechargement des mods sont demandes au site, qui
-// garde la cle. Un mod sans lien (auteur qui interdit le telechargement
-// automatique) fait echouer l'installation, avec la liste de ces mods.
-async function resolveCurseforgeFiles({ config, manifest, onProgress }) {
+// garde la cle. Un mod sans lien (auteur qui interdit le telechargement par les
+// autres launchers, "allowModDistribution" faux) ne peut pas etre telecharge par nous.
+// Le joueur peut le recuperer lui-meme (14/10, demande de Rushi, comme Prism ou
+// ATLauncher) : il le telecharge depuis la page du mod et le laisse dans son dossier
+// Telechargements (`manualSearchDirs`), ou il est retrouve ici par sa taille puis son
+// empreinte SHA-1, et copie dans mods/. Ce qui manque encore fait echouer l'installation
+// avec la liste de ces mods (code "manual_mods"), affichee par le launcher.
+// Pas de lien de repli vers le CDN de CurseForge : il contournerait le choix de l'auteur.
+async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDir, manualSearchDirs = [] }) {
   onProgress({ text: "Récupération de la liste des mods…" });
   const wantedIds = manifest.files.map((f) => f.fileID);
   const infos = new Map();
@@ -299,22 +306,114 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress }) {
   }
 
   const entries = [];
+  const blocked = [];
   const manualMods = [];
   for (const fileId of wantedIds) {
     const info = infos.get(fileId);
-    if (!info) manualMods.push({ fileId, fileName: null, reason: "fichier retiré de CurseForge" });
-    else if (!info.downloadUrl) manualMods.push({ fileId, modId: info.modId, fileName: info.fileName, reason: "téléchargement automatique interdit par l'auteur" });
-    else entries.push({ path: `mods/${path.basename(info.fileName)}`, url: info.downloadUrl, sha1: info.sha1, size: info.fileLength });
+    if (!info) {
+      manualMods.push({ fileId, modId: null, modName: null, fileName: null, pageUrl: null, reason: "removed" });
+      continue;
+    }
+    const entry = { path: `mods/${path.basename(info.fileName)}`, url: info.downloadUrl, sha1: info.sha1, size: info.fileLength };
+    if (info.downloadUrl) entries.push(entry);
+    else blocked.push({ info, entry });
   }
+
+  if (blocked.length && instanceDir) {
+    const found = await findManualFiles(blocked, { instanceDir, searchDirs: manualSearchDirs });
+    if (found > 0) onProgress({ text: `${found} mod(s) ajouté(s) à la main retrouvé(s).` });
+  }
+  for (const { info, entry, ready } of blocked) {
+    if (ready) entries.push(entry);
+    else {
+      manualMods.push({
+        fileId: info.id,
+        modId: info.modId,
+        modName: typeof info.modName === "string" ? info.modName : null,
+        fileName: info.fileName,
+        pageUrl: safeCurseforgeUrl(info.pageUrl),
+        reason: "blocked",
+      });
+    }
+  }
+
   if (manualMods.length) {
     throw new ModpackError(
       `${manualMods.length} mod(s) du modpack ne peuvent pas être installés automatiquement : ${manualMods
-        .map((m) => m.fileName || `fichier ${m.fileId}`)
+        .map((m) => m.modName || m.fileName || `fichier ${m.fileId}`)
         .join(", ")}.`,
       { code: "manual_mods", manualMods },
     );
   }
   return entries;
+}
+
+// Seules les pages du site de CurseForge sont ouvertes depuis la liste des mods bloques.
+function safeCurseforgeUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "www.curseforge.com" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+// Mods bloques deja presents (dans mods/ de l'instance, ou deposes par le joueur dans un
+// des dossiers `searchDirs`) : un fichier n'est accepte que si sa taille ET son empreinte
+// SHA-1 sont celles annoncees par CurseForge — sans les deux, il n'est jamais copie. Seuls les
+// .jar/.zip de la bonne taille sont lus, rien d'autre du dossier Telechargements.
+// Marque `ready` sur chaque mod retrouve et renvoie combien ont ete copies depuis searchDirs.
+async function findManualFiles(blocked, { instanceDir, searchDirs }) {
+  let copied = 0;
+  const pending = [];
+  for (const item of blocked) {
+    const { sha1, size } = item.entry;
+    if (!sha1 || !size) continue;
+    item.target = safeJoin(instanceDir, item.entry.path);
+    if (await fileMatches(item.target, { sha1, size })) item.ready = true;
+    else pending.push(item);
+  }
+  if (!pending.length) return 0;
+
+  const bySize = new Map();
+  for (const item of pending) {
+    if (!bySize.has(item.entry.size)) bySize.set(item.entry.size, []);
+    bySize.get(item.entry.size).push(item);
+  }
+  for (const dir of searchDirs) {
+    let dirents;
+    try {
+      dirents = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const dirent of dirents) {
+      if (!dirent.isFile() || !/\.(jar|zip)$/i.test(dirent.name)) continue;
+      const candidate = path.join(dir, dirent.name);
+      let stat;
+      try {
+        stat = await fsp.stat(candidate);
+      } catch {
+        continue;
+      }
+      const sameSize = (bySize.get(stat.size) || []).filter((item) => !item.ready);
+      if (!sameSize.length) continue;
+      let hash;
+      try {
+        hash = await sha1File(candidate);
+      } catch {
+        continue;
+      }
+      const match = sameSize.find((item) => item.entry.sha1.toLowerCase() === hash);
+      if (!match) continue;
+      await fsp.mkdir(path.dirname(match.target), { recursive: true });
+      await fsp.copyFile(candidate, `${match.target}.part`);
+      await fsp.rename(`${match.target}.part`, match.target);
+      match.ready = true;
+      copied++;
+    }
+  }
+  return copied;
 }
 
 // Copie un dossier "overrides" du modpack (configs, etc.) dans l'instance.
@@ -452,7 +551,7 @@ async function installFiles({ entries, instanceDir, previousFiles, keepPaths = [
   return entries.map((entry) => entry.path);
 }
 
-// --- Chargeur de mods (NeoForge / Forge / Fabric) ---------------------------
+// --- Chargeur de mods (NeoForge / Forge / Fabric / Quilt) --------------------
 
 // Identifiant de version Maven valide (ex. "1.20.1-47.2.0") : Fabric assainit
 // deja loaderVersion/minecraftVersion via encodeURIComponent avant de les
@@ -463,22 +562,39 @@ async function installFiles({ entries, instanceDir, previousFiles, keepPaths = [
 // caracteres, et encoder autoriserait silencieusement une valeur inattendue.
 const MAVEN_VERSION_PATTERN = /^[\w.+-]+$/;
 
+// Minecraft avant 1.13 : ancien format de lancement (minecraftArguments, launchwrapper, Java 8),
+// pas encore pris en charge (voir prepareLaunchVersion). Teste ici, AVANT tout telechargement :
+// sinon le joueur telechargeait tout le pack pour se voir refuser le lancement a la fin.
+function isLegacyMinecraft(minecraftVersion) {
+  const match = /^1\.(\d+)(?:\.|$)/.exec(minecraftVersion || "");
+  return Boolean(match) && Number(match[1]) < 13;
+}
+
 function parseLoader(loaderId, minecraftVersion) {
-  const match = /^(neoforge|forge|fabric)-(.+)$/.exec(loaderId || "");
+  // Quilt (14/10) : derive de Fabric, meme fonctionnement (profil JSON servi par son API
+  // officielle). CurseForge l'ecrit "quilt-<version>", Modrinth "quilt-loader" (voir
+  // readModrinthPack, qui donne aussi "quilt-<version>").
+  const match = /^(neoforge|forge|fabric|quilt)-(.+)$/.exec(loaderId || "");
   if (!match) {
     throw new ModpackError(
-      `Chargeur de mods non pris en charge pour l'instant : ${loaderId || "aucun"} (NeoForge, Forge et Fabric seulement).`,
+      `Chargeur de mods non pris en charge pour l'instant : ${loaderId || "aucun"} (NeoForge, Forge, Fabric et Quilt seulement).`,
       { code: "unsupported_loader" },
     );
   }
   const [, kind, loaderVersion] = match;
+  if (isLegacyMinecraft(minecraftVersion)) {
+    throw new ModpackError(
+      `Les modpacks pour Minecraft ${minecraftVersion} (avant 1.13) ne sont pas encore pris en charge par le launcher.`,
+      { code: "unsupported_legacy" },
+    );
+  }
   // Fabric aussi (audit 14/10, L2) : sa version servait telle quelle dans un chemin du dossier
   // de jeu. Un pack truque pouvait donner "x/../../instances/<slug>/evil" et faire lire un faux
   // JSON de version (depose par ses propres overrides) avec des arguments Java malveillants.
   if (!MAVEN_VERSION_PATTERN.test(loaderVersion) || !MAVEN_VERSION_PATTERN.test(minecraftVersion || "")) {
     throw new ModpackError(`Version de chargeur invalide : ${loaderId} (Minecraft ${minecraftVersion}).`, { code: "invalid_loader_version" });
   }
-  if (kind === "fabric") return { kind, loaderVersion };
+  if (kind === "fabric" || kind === "quilt") return { kind, loaderVersion };
   const mavenVersion = kind === "neoforge" ? loaderVersion : `${minecraftVersion}-${loaderVersion}`;
   if (!MAVEN_VERSION_PATTERN.test(mavenVersion)) {
     throw new ModpackError(`Version de chargeur invalide : ${mavenVersion}.`, { code: "invalid_loader_version" });
@@ -532,25 +648,33 @@ function runInstaller({ javaPath, installerPath, gameRoot, onProgress }) {
   });
 }
 
-// Fabric n'a pas d'installateur a lancer : son API officielle sert directement le
+// Fabric et Quilt n'ont pas d'installateur a lancer : leur API officielle sert directement le
 // JSON de version (avec le lien Maven de chaque bibliotheque, que
 // minecraft-launcher-core telecharge au lancement). On le pose tel quel.
-async function installFabric({ loaderVersion, minecraftVersion, gameRoot, onProgress }) {
-  const versionId = `fabric-loader-${loaderVersion}-${minecraftVersion}`;
+// Profil Quilt verifie le 14/10 (meta.quiltmc.org) : meme forme que Fabric, id
+// "quilt-loader-<version>-<minecraft>", inheritsFrom, arguments.game.
+const PROFILE_LOADERS = {
+  fabric: { name: "Fabric", prefix: "fabric-loader", meta: "https://meta.fabricmc.net/v2/versions/loader" },
+  quilt: { name: "Quilt", prefix: "quilt-loader", meta: "https://meta.quiltmc.org/v3/versions/loader" },
+};
+
+async function installProfileLoader({ kind, loaderVersion, minecraftVersion, gameRoot, onProgress }) {
+  const loader = PROFILE_LOADERS[kind];
+  const versionId = `${loader.prefix}-${loaderVersion}-${minecraftVersion}`;
   const versionJson = safeJoin(path.join(gameRoot, "versions"), path.join(versionId, `${versionId}.json`));
   if (fs.existsSync(versionJson)) return versionId;
 
-  onProgress({ text: "Téléchargement de Fabric…" });
+  onProgress({ text: `Téléchargement de ${loader.name}…` });
   const res = await fetch(
-    `https://meta.fabricmc.net/v2/versions/loader/${encodeURIComponent(minecraftVersion)}/${encodeURIComponent(loaderVersion)}/profile/json`,
+    `${loader.meta}/${encodeURIComponent(minecraftVersion)}/${encodeURIComponent(loaderVersion)}/profile/json`,
     { signal: AbortSignal.timeout(15_000) },
   );
   if (!res.ok) {
-    throw new ModpackError(`Fabric ${loaderVersion} introuvable pour Minecraft ${minecraftVersion} (HTTP ${res.status}).`, { code: "installer_failed" });
+    throw new ModpackError(`${loader.name} ${loaderVersion} introuvable pour Minecraft ${minecraftVersion} (HTTP ${res.status}).`, { code: "installer_failed" });
   }
   const profile = await res.json();
   if (profile.id !== versionId || !Array.isArray(profile.libraries)) {
-    throw new ModpackError("Profil Fabric illisible ou inattendu.", { code: "installer_failed" });
+    throw new ModpackError(`Profil ${loader.name} illisible ou inattendu.`, { code: "installer_failed" });
   }
   await fsp.mkdir(path.dirname(versionJson), { recursive: true });
   await fsp.writeFile(`${versionJson}.part`, JSON.stringify(profile, null, 2));
@@ -562,7 +686,7 @@ async function installFabric({ loaderVersion, minecraftVersion, gameRoot, onProg
 // client, dans le dossier de jeu partage. Ne refait rien s'il est deja la.
 async function installLoader({ loaderId, minecraftVersion, gameRoot, javaPath, onProgress }) {
   const { kind, installerUrl, loaderVersion } = parseLoader(loaderId, minecraftVersion);
-  if (kind === "fabric") return installFabric({ loaderVersion, minecraftVersion, gameRoot, onProgress });
+  if (PROFILE_LOADERS[kind]) return installProfileLoader({ kind, loaderVersion, minecraftVersion, gameRoot, onProgress });
   const installerPath = path.join(gameRoot, "cache", "installers", path.basename(installerUrl));
 
   if (!fs.existsSync(installerPath)) {
@@ -693,7 +817,7 @@ async function prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersio
     if (typeof arg === "string") jvmArgs.push(fill(arg));
     else if (ruleAllows(arg.rules)) jvmArgs.push(...[].concat(arg.value).map(fill));
   }
-  // Aucun chargeur officiel (NeoForge, Forge, Fabric) n'a besoin de ces options, qui permettent
+  // Aucun chargeur officiel (NeoForge, Forge, Fabric, Quilt) n'a besoin de ces options, qui permettent
   // de lancer du code ou une commande au demarrage de Java (audit 14/10, L2) : refus net.
   const forbidden = jvmArgs.find((arg) => FORBIDDEN_JVM_ARG.test(arg));
   if (forbidden) {
@@ -734,7 +858,9 @@ function installModpack(options) {
   return promise;
 }
 
-async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJava, onProgress = () => {}, signal, waitIfPaused }) {
+// `manualSearchDirs` : dossiers ou chercher les mods bloques que le joueur a telecharges lui-meme
+// (le dossier Telechargements, voir main.js et resolveCurseforgeFiles).
+async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJava, onProgress = () => {}, signal, waitIfPaused, manualSearchDirs = [] }) {
   onProgress({ text: "Recherche du modpack…" });
   // Serveur prive : preuve d'acces (voir config.headers dans main.js, game:launch).
   const info = await siteJson(config, `/api/launcher/servers/${encodeURIComponent(slug)}/modpack`, { headers: config.headers });
@@ -775,7 +901,8 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
   // Mojang donne un minimum. Fabric tourne tres bien sur Java 21 et ses mods sont
   // souvent compiles pour lui (le pack « Ce Soir la Vendée » plante sous Java 17 :
   // "compatibility level JAVA_21"). Forge, lui, n'est valide qu'avec le Java de Mojang.
-  if (loaderKind === "fabric" && javaMajor === 17) javaMajor = 21;
+  // Quilt pareil : il charge les memes mods Fabric.
+  if ((loaderKind === "fabric" || loaderKind === "quilt") && javaMajor === 17) javaMajor = 21;
   const gameJava = (resolveJava && javaMajor ? await resolveJava(javaMajor, (text) => onProgress({ text })) : null) || javaPath;
 
   const previousState = await readInstalledState(instanceDir);
@@ -806,7 +933,7 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
     onProgress({ text: `${overrideKept.length} fichier(s) modifié(s) par toi conservé(s) : ${overrideKept.slice(0, 5).join(", ")}` });
   }
 
-  const entries = await pack.resolveFiles({ config, onProgress });
+  const entries = await pack.resolveFiles({ config, onProgress, instanceDir, manualSearchDirs });
   const installedFiles = await installFiles({ entries, instanceDir, previousFiles, keepPaths: overrideJars, onProgress, signal, waitIfPaused });
   await fsp.writeFile(
     path.join(instanceDir, STATE_FILE),

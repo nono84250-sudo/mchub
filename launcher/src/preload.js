@@ -64,6 +64,10 @@ contextBridge.exposeInMainWorld("mchub", {
   // La progression ne remonte plus par un canal dedie : elle passe par le
   // meme panneau de taches que "Rejoindre" (tasks:*, ci-dessous).
   installServer: (slug, name) => ipcRenderer.invoke("server:install", slug, name),
+  // Mods qu'un modpack CurseForge interdit de telecharger (14/10) : page du mod sur CurseForge
+  // (adresse verifiee cote main.js) et dossier Telechargements ou le joueur les depose.
+  openModPage: (pageUrl, searchName) => ipcRenderer.invoke("modpack:openModPage", pageUrl, searchName),
+  openDownloadsFolder: () => ipcRenderer.invoke("modpack:openDownloads"),
   // Panneau de taches (2026-10-11, façon Modrinth) : un seul flux d'etat pour
   // tous les telechargements/installations en cours, qu'ils viennent du
   // bouton "Installer" ou de "Rejoindre".

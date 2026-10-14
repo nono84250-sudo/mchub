@@ -839,6 +839,56 @@ ipcMain.handle("app:openLegal", (_event, page) => {
   const url = Object.hasOwn(LEGAL_URLS, page) ? LEGAL_URLS[page] : null;
   if (url) shell.openExternal(url);
 });
+
+// Mods qu'un modpack CurseForge interdit de telecharger par les autres launchers (14/10) : le
+// joueur les telecharge lui-meme et les laisse dans son dossier Telechargements, ou
+// installModpack les retrouve (taille + empreinte SHA-1, voir modpack.js/findManualFiles).
+function manualModsSearchDirs() {
+  try {
+    return [app.getPath("downloads")];
+  } catch {
+    return [];
+  }
+}
+
+// Champs d'erreur transmis au renderer pour la fenetre des mods bloques. Les liens sont
+// re-verifies a l'ouverture (modpack:openModPage), jamais ouverts tels quels.
+function modpackErrorFields(error) {
+  if (error?.code !== "manual_mods" || !Array.isArray(error.manualMods)) return {};
+  return {
+    code: "manual_mods",
+    manualMods: error.manualMods.slice(0, 200).map((mod) => ({
+      fileId: mod.fileId,
+      modName: mod.modName || null,
+      fileName: mod.fileName || null,
+      pageUrl: mod.pageUrl || null,
+      reason: mod.reason === "removed" ? "removed" : "blocked",
+    })),
+  };
+}
+
+// Page CurseForge d'un mod bloque : uniquement https://www.curseforge.com. Sans lien connu (site
+// pas encore a jour, cle limitee), une recherche CurseForge par nom.
+ipcMain.handle("modpack:openModPage", (_event, pageUrl, searchName) => {
+  let url = null;
+  try {
+    const parsed = new URL(pageUrl);
+    if (parsed.protocol === "https:" && parsed.hostname === "www.curseforge.com") url = parsed.href;
+  } catch {
+    // pas de lien valable : recherche par nom ci-dessous
+  }
+  if (!url && typeof searchName === "string" && searchName.trim()) {
+    // Nom de fichier ("balm-neoforge-1.21.1-21.0.20.jar") : on garde le debut, avant la version.
+    const words = searchName.trim().replace(/\.(jar|zip)$/i, "").split(/[-_ ](?=v?\d)/)[0];
+    url = `https://www.curseforge.com/minecraft/search?search=${encodeURIComponent(words.slice(0, 100))}`;
+  }
+  if (url) shell.openExternal(url);
+});
+
+ipcMain.handle("modpack:openDownloads", () => {
+  const [downloads] = manualModsSearchDirs();
+  if (downloads) shell.openPath(downloads);
+});
 // Petite fenetre "Reglages" d'une instance (Mes instances, 2026-10-13) : lit/modifie le canal
 // du modpack (release/beta, voir server.modpackChannel et /api/launcher/servers/[slug]/channel)
 // SANS ouvrir le site — nouveau bouton distinct de "Gerer" ci-dessus, qui continue d'ouvrir le
@@ -1809,6 +1859,7 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
       },
       signal,
       waitIfPaused,
+      manualSearchDirs: manualModsSearchDirs(),
     });
     logStore.pushLog({
       source: "launcher",
@@ -1882,7 +1933,7 @@ ipcMain.handle("server:install", async (event, slug, displayName) => {
       return { ok: false, cancelled: true };
     }
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec de l'installation de "${slug}" : ${task.error}` });
-    return { ok: false, error: task.error, frozen: error?.code === "frozen" };
+    return { ok: false, error: task.error, frozen: error?.code === "frozen", ...modpackErrorFields(error) };
   }
 });
 
@@ -1977,7 +2028,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     if (cancelled) return { ok: false, cancelled: true };
     const message = error instanceof Error ? error.message : "Erreur inconnue";
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement de "${slug}" : ${message}` });
-    return { ok: false, error: message, frozen: error?.code === "frozen" };
+    return { ok: false, error: message, frozen: error?.code === "frozen", ...modpackErrorFields(error) };
   } finally {
     gameLaunchInProgress = false;
   }
@@ -2261,12 +2312,14 @@ ipcMain.handle("selftest:run", async (event, slug) => {
           onProgress,
           signal: task.controller.signal,
           waitIfPaused: taskWaitIfPaused(task),
+          manualSearchDirs: manualModsSearchDirs(),
         });
       } else {
         vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
       }
     } catch (error) {
-      report("modpack", "fail", { error: error instanceof Error ? error.message : String(error) });
+      // Mods bloques : la liste est montree au proprietaire sous le controle (14/10).
+      report("modpack", "fail", { error: error instanceof Error ? error.message : String(error), ...modpackErrorFields(error) });
     }
     // Moddé : le téléchargement du modpack (mods inclus) est entièrement fini à cet instant — on
     // peut juger ce check tout de suite, sans attendre le lancement. Bug trouvé le 2026-10-13 (test
@@ -2288,6 +2341,18 @@ ipcMain.handle("selftest:run", async (event, slug) => {
     // l'erreur rencontree ici est elle-meme une information utile pour le proprietaire. Pour un
     // serveur moddé le check #2 est déjà tranché (voir plus haut) et n'est plus réévalué ici —
     // seul le vanilla décide encore son check #2 à ce stade (voir plus bas).
+    // Serveur moddé dont le pack n'a pas pu s'installer (14/10) : ne plus lancer Minecraft
+    // vanilla à la place, ce lancement ne prouverait rien sur le pack testé.
+    if (server.type === "modded" && server.curseforgeModpackId && !modded) {
+      if (task.status === "active" || task.status === "paused") {
+        task.status = "error";
+        task.error = "Modpack incomplet";
+        broadcastTasks();
+      }
+      report("gameStarted", "skipped", { incompletePack: true });
+      logStore.pushLog({ source: "launcher", message: `Auto-test de publication terminé pour "${slug}" : échoué (modpack incomplet)` });
+      return { ok: true, checks, detectedVersion, allPassed: false };
+    }
     report("gameStarted", "running");
     let gameJava = modded?.javaPath;
     if (!gameJava) {

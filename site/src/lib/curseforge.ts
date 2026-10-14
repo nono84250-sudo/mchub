@@ -174,6 +174,10 @@ export type CurseforgeFileInfo = {
   downloadUrl: string | null;
   fileLength: number;
   sha1: string | null;
+  // Seulement pour un fichier sans downloadUrl (14/10) : nom du mod et page CurseForge du
+  // fichier, que le launcher montre au joueur pour qu'il le telecharge lui-meme.
+  modName?: string | null;
+  pageUrl?: string | null;
 };
 
 function toFileInfo(file: CurseforgeFileRaw): CurseforgeFileInfo {
@@ -239,5 +243,43 @@ export async function getFilesInfo(fileIds: number[]): Promise<CurseforgeFileInf
     });
     files.push(...response.data.map(toFileInfo));
   }
+  await addBlockedModPages(files);
   return files;
+}
+
+// Mods dont l'auteur interdit le telechargement par les autres launchers (downloadUrl vide) :
+// on ajoute leur nom et la page CurseForge du fichier, pour que le joueur puisse le telecharger
+// lui-meme (voir launcher/src/modpack.js). Un appel de plus, seulement s'il y a de tels mods.
+// En cas d'echec (cle limitee a la recherche...), le launcher se contente d'une recherche
+// CurseForge par nom de fichier : pas de quoi faire echouer la route.
+async function addBlockedModPages(files: CurseforgeFileInfo[]) {
+  const modIds = [...new Set(files.filter((f) => !f.downloadUrl).map((f) => f.modId))];
+  if (!modIds.length) return;
+  type Mod = { id: number; name: string; links?: { websiteUrl?: string | null } };
+  try {
+    const mods = new Map<number, Mod>();
+    for (let i = 0; i < modIds.length; i += 100) {
+      const response = await curseforgeRequest<{ data: Mod[] }>("/v1/mods", { method: "POST", body: { modIds: modIds.slice(i, i + 100) } });
+      for (const mod of response.data) mods.set(mod.id, mod);
+    }
+    for (const file of files) {
+      if (file.downloadUrl) continue;
+      const mod = mods.get(file.modId);
+      file.modName = mod?.name ?? null;
+      file.pageUrl = curseforgeFilePage(mod?.links?.websiteUrl, file.id);
+    }
+  } catch (error) {
+    console.error("Pages des mods bloqués CurseForge indisponibles :", error);
+  }
+}
+
+function curseforgeFilePage(websiteUrl: string | null | undefined, fileId: number): string | null {
+  if (!websiteUrl) return null;
+  try {
+    const url = new URL(websiteUrl);
+    if (url.protocol !== "https:" || url.hostname !== "www.curseforge.com") return null;
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}/files/${fileId}`;
+  } catch {
+    return null;
+  }
 }

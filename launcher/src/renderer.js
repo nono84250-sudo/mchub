@@ -810,6 +810,16 @@ async function launchServer(server) {
   } else {
     fill.classList.add("error");
     label.textContent = result.error;
+    if (result.code === "manual_mods" && Array.isArray(result.manualMods)) {
+      // Mods a ajouter a la main (14/10) : la fenetre explique quoi faire, et « Réessayer »
+      // relance tout de suite (la barre est liberee avant, sinon son minuteur la bloquerait
+      // en plein milieu du nouveau lancement).
+      label.textContent = t("manualMods.playbar", { count: result.manualMods.length });
+      playBtn.disabled = !selectedFavoriteSlug;
+      setPlaybarBusy(false);
+      const choice = await showManualModsModal(result.manualMods);
+      return choice === "retry" ? launchServer(server) : result;
+    }
     if (result.frozen) {
       await showModal({
         title: t("modal.frozenTitle"),
@@ -854,6 +864,7 @@ async function joinServer(server, joinBtn) {
 // la rejette aussi de son cote, par securite).
 async function installServerStandalone(server, btn) {
   btn.disabled = true;
+  let retry = false;
   try {
     const result = await window.mchub.installServer(server.slug, server.name);
     if (result?.ok) {
@@ -862,7 +873,9 @@ async function installServerStandalone(server, btn) {
       btn.remove();
       return;
     }
-    if (result?.frozen) {
+    if (result?.code === "manual_mods" && Array.isArray(result.manualMods)) {
+      retry = (await showManualModsModal(result.manualMods)) === "retry";
+    } else if (result?.frozen) {
       await showModal({
         title: t("modal.frozenTitle"),
         body: t("modal.frozenBody", { name: server.name }),
@@ -872,6 +885,114 @@ async function installServerStandalone(server, btn) {
   } finally {
     if (document.body.contains(btn)) btn.disabled = false;
   }
+  if (retry && document.body.contains(btn)) await installServerStandalone(server, btn);
+}
+
+// Fenetre des mods qu'un modpack CurseForge interdit de telecharger par les autres launchers
+// (14/10, preview validee par Rushi) : lien vers la page de chaque mod, dossier Telechargements
+// ou les deposer, puis « Réessayer » (main.js/modpack.js les y retrouvent et verifient leur
+// empreinte). Un fichier retire de CurseForge ne se rattrape pas : seul « Fermer » est propose.
+// Resout "retry" ou "close".
+function boldLabelIn(el, text, label) {
+  const at = label ? text.indexOf(label) : -1;
+  if (at < 0) {
+    el.textContent = text;
+    return;
+  }
+  const strong = document.createElement("b");
+  strong.textContent = label;
+  el.append(text.slice(0, at), strong, text.slice(at + label.length));
+}
+
+function showManualModsModal(manualMods) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("manual-mods-overlay");
+    const stepsEl = document.getElementById("manual-mods-steps");
+    const listEl2 = document.getElementById("manual-mods-list");
+    const actionsEl = document.getElementById("manual-mods-actions");
+    const blocked = manualMods.filter((mod) => mod.reason !== "removed");
+    const removed = manualMods.filter((mod) => mod.reason === "removed");
+    const onlyRemoved = blocked.length === 0;
+
+    document.getElementById("manual-mods-title").textContent = onlyRemoved
+      ? t("manualMods.removedTitle")
+      : t("manualMods.title", { count: blocked.length });
+    document.getElementById("manual-mods-body").textContent = onlyRemoved ? t("manualMods.removedBody") : t("manualMods.body");
+    document.getElementById("manual-mods-note").textContent = onlyRemoved ? t("manualMods.removedNote") : t("manualMods.note");
+
+    stepsEl.innerHTML = "";
+    stepsEl.hidden = onlyRemoved;
+    for (const [key, label] of [
+      ["manualMods.step1", t("manualMods.openPage")],
+      ["manualMods.step2", t("manualMods.downloadsWord")],
+      ["manualMods.step3", t("manualMods.retry")],
+    ]) {
+      const li = document.createElement("li");
+      boldLabelIn(li, t(key), label);
+      stepsEl.append(li);
+    }
+
+    listEl2.innerHTML = "";
+    for (const mod of [...blocked, ...removed]) {
+      const row = document.createElement("div");
+      row.className = "manual-mod";
+      const text = document.createElement("div");
+      text.className = "manual-mod-text";
+      const name = document.createElement("span");
+      name.className = "manual-mod-name";
+      name.textContent = mod.modName || mod.fileName || t("manualMods.fileFallback", { id: mod.fileId });
+      const file = document.createElement("span");
+      file.className = "manual-mod-file";
+      file.textContent = mod.fileName || "—";
+      // Sans nom de mod connu, le nom de fichier sert deja de titre : pas besoin de le repeter.
+      file.hidden = !mod.modName && Boolean(mod.fileName);
+      text.append(name, file);
+      const chip = document.createElement("span");
+      const gone = mod.reason === "removed";
+      chip.className = `manual-mod-chip ${gone ? "gone" : "todo"}`;
+      chip.textContent = gone ? t("manualMods.notFound") : t("manualMods.toDownload");
+      row.append(text, chip);
+      if (!gone) {
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "btn-secondary";
+        open.textContent = t("manualMods.openPage");
+        open.addEventListener("click", () => {
+          window.mchub.openModPage(mod.pageUrl, mod.modName || mod.fileName);
+          open.textContent = `✓ ${t("manualMods.openPage")}`;
+        });
+        row.append(open);
+      }
+      listEl2.append(row);
+    }
+
+    actionsEl.innerHTML = "";
+    const makeButton = (label, className, onClick) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = className;
+      button.textContent = label;
+      button.addEventListener("click", onClick);
+      actionsEl.append(button);
+      return button;
+    };
+    const finish = (choice) => {
+      overlay.hidden = true;
+      document.body.classList.remove("modal-blocking");
+      resolve(choice);
+    };
+    if (onlyRemoved) {
+      makeButton(t("manualMods.close"), "join-btn push", () => finish("close"));
+    } else {
+      makeButton(t("manualMods.openDownloads"), "btn-secondary", () => window.mchub.openDownloadsFolder());
+      makeButton(t("manualMods.close"), "btn-secondary push", () => finish("close"));
+      makeButton(t("manualMods.retry"), "join-btn", () => finish("retry"));
+    }
+
+    overlay.querySelector(".modal-box").classList.add("pop-in");
+    overlay.hidden = false;
+    document.body.classList.add("modal-blocking");
+  });
 }
 
 async function openDetail(slug) {
@@ -4301,7 +4422,29 @@ function selfTestStepRowHtml(step, status, detail) {
       ${icon}
       <span style="flex:1;">${escapeHtml(label)}</span>
       <span style="color:${color};font-size:12.5px;">${escapeHtml(statusText)}</span>
-    </div>`;
+    </div>${selfTestDetailHtml(step, status, detail)}`;
+}
+
+// Explication sous un controle (14/10) : avant, un echec n'affichait que « échoué », sans dire
+// pourquoi. Mods bloques par CurseForge : leur liste et le conseil au proprietaire.
+function selfTestDetailHtml(step, status, detail) {
+  let text = "";
+  if (step.key === "modpack" && status === "fail" && detail) {
+    const mods = Array.isArray(detail.manualMods) ? detail.manualMods : [];
+    const blocked = mods.filter((mod) => mod.reason !== "removed");
+    if (blocked.length) {
+      const names = blocked.map((mod) => mod.modName || mod.fileName || t("manualMods.fileFallback", { id: mod.fileId }));
+      text = t("selfTest.manualModsDetail", { count: blocked.length, names: names.slice(0, 8).join(", ") + (names.length > 8 ? "…" : "") });
+    } else if (mods.length) {
+      text = t("selfTest.removedModsDetail");
+    } else if (typeof detail.error === "string") {
+      text = detail.error.slice(0, 300);
+    }
+  } else if (step.key === "gameStarted" && status === "skipped" && detail?.incompletePack) {
+    text = t("selfTest.incompletePack");
+  }
+  if (!text) return "";
+  return `<div style="margin:-4px 0 0 30px;font-size:12.5px;color:var(--muted);line-height:1.45;">${escapeHtml(text)}</div>`;
 }
 
 function renderSelfTestChecklist(statuses, details) {
