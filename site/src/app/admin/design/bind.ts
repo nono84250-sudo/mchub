@@ -53,6 +53,28 @@ export function markLabel(html: string, label: string, kind: "nb" | "pr" = "nb")
   return html.split(`>${label}<`).join(`><span class="${cls}">${label}</span><`);
 }
 
+// Retire entierement la <section> qui contient `heading` (blocs de la maquette qui n'existent
+// pas dans le projet : rien de factice ne doit s'afficher en production, demande de Rushi
+// 2026-10-14).
+function removeSection(html: string, heading: string): string {
+  const at = html.indexOf(heading);
+  if (at < 0) return html;
+  const start = html.lastIndexOf("<section", at);
+  const end = balancedEnd(html, start, "section");
+  if (start < 0 || end < 0) return html;
+  return html.slice(0, start) + html.slice(end);
+}
+
+// Retire la ligne "libelle / valeur" d'une carte de la maquette (ex. "Peak online").
+function removeInfoRow(html: string, label: string): string {
+  const at = html.indexOf(`white-space:nowrap;">${label}</span>`);
+  if (at < 0) return html;
+  const start = html.lastIndexOf("<div", at);
+  const end = balancedEnd(html, start, "div");
+  if (start < 0 || end < 0) return html;
+  return html.slice(0, start) + html.slice(end);
+}
+
 export function replaceOnce(html: string, from: string, to: string): string {
   const at = html.indexOf(from);
   if (at < 0) return html;
@@ -306,10 +328,9 @@ function pagerHtml2(action: string, f: PlayerFilters, from: number, to: number, 
   );
 }
 
-// Fiche d'un joueur : pas encore branchee sur les vraies donnees (prochaine etape), mais
-// classee ici element par element — jaune (pr) pour ce qui est facilement faisable avec ce
-// qui existe deja, rouge (nb) pour ce qui demanderait un systeme qui n'existe pas du tout
-// (avertissements, abonnements, gel/verrouillage de compte, IP, notes de moderation...).
+// Fiche d'un joueur : tout ce qui reste affiche vient de vraies donnees. Les blocs de la
+// maquette sans equivalent dans le projet (abonnement, paiement, version du launcher, IP,
+// 2FA) sont retires, pas marques (2026-10-14 : rien de factice en production).
 export type PlayerServerRow = { name: string; slug: string; address: string; published: boolean; isPrivate: boolean; frozen: boolean; openReports: number };
 export type PlayerWarningRow = { id: string; reason: string; createdBy: string; createdAt: string };
 export type AdminNoteRow = { id: string; text: string; createdBy: string; createdAt: string };
@@ -359,9 +380,8 @@ export function playerDetailHtml(data: {
       '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Active</span>',
       '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--danger) 16%, transparent);color:var(--danger);"><i class="ph ph-lock-simple" style="font-size:11px;"></i>Verrouillé</span>',
     );
-  } else {
-    html = markLabel(html, "Active", "nb");
   }
+  // Sinon "Active" reste tel quel : un compte non verrouille est bien actif.
   if (data.serversTotal === 0) html = replaceOnce(html, '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:var(--color-accent-800);color:var(--color-accent-100);">Server owner</span>', "");
 
   // Ligne d'identite : pas d'email (connexion Microsoft uniquement, jamais stocke) ; "Last
@@ -405,8 +425,15 @@ export function playerDetailHtml(data: {
     'letter-spacing:-.01em;">2</div><div style="font-size:12px;color:var(--muted)">1 frozen</div>',
     `letter-spacing:-.01em;">${fmt(data.serversTotal)}</div><div style="font-size:12px;color:var(--muted)">${data.serversFrozen > 0 ? `${fmt(data.serversFrozen)} gelé(s)` : "Aucun gelé"}</div>`,
   );
-  html = markLabel(html, "Subscription", "nb"); // laisse affiche en rouge : pas d'abonnements pour l'instant (site gratuit)
-  html = replaceOnce(html, 'letter-spacing:-.01em;">Pro</div><div style="font-size:12px;color:var(--muted)">Monthly · renews Oct 12</div>', 'letter-spacing:-.01em;"><span class="nb">Pro</span></div><div style="font-size:12px;color:var(--muted)"><span class="nb">Monthly · renews Oct 12</span></div>');
+  // Pas d'abonnement (site gratuit) : la tuile "Subscription" de la maquette est retiree et la
+  // ligne passe de quatre a trois tuiles.
+  const crownAt = html.indexOf('<i class="ph ph-crown"');
+  if (crownAt >= 0) {
+    const tileStart = html.lastIndexOf('<div style="display:flex;flex-direction:column;gap:10px;padding:18px 20px;', crownAt);
+    const tileEnd = balancedEnd(html, tileStart, "div");
+    if (tileStart >= 0 && tileEnd >= 0) html = html.slice(0, tileStart) + html.slice(tileEnd);
+  }
+  html = replaceOnce(html, "grid-template-columns:repeat(4,minmax(0,1fr))", "grid-template-columns:repeat(3,minmax(0,1fr))");
   // "Reports against" -> en realite "signalements sur ses serveurs" (rien ne modelise un
   // signalement contre le joueur lui-meme dans ce projet).
   html = replaceOnce(
@@ -421,17 +448,19 @@ export function playerDetailHtml(data: {
   html = replaceSectionBody(html, ">Servers owned</h2>", playerServersSectionHtml(data));
 
   html = replaceSectionBody(html, ">Warnings</h2>", playerWarningsSectionHtml(data));
-  html = markSectionNotBuilt(html, ">Subscription</h2>", "nb");
+  // Carte "Subscription" (plan, paiement, Refund/Cancel) : aucun abonnement ni paiement dans le
+  // projet, retiree — jamais de faux numero de carte a l'ecran.
+  html = removeSection(html, ">Subscription</h2>");
 
-  // Compte : l'UUID est reel. Last IP et 2FA sont retires (jamais suivi, et le site n'a pas de
-  // 2FA — Microsoft gere deja l'authentification). Launcher (version/OS) reste a construire.
+  // Compte : l'UUID est reel. Last IP, 2FA et Launcher sont retires (IP et version du launcher
+  // jamais enregistrees, et le site n'a pas de 2FA — Microsoft gere deja l'authentification).
   html = replaceOnce(
     html,
     'text-align:right;min-width:0;"><span style="font:12px ui-monospace,Menlo,monospace;">8f2c…a91e</span>',
     `text-align:right;min-width:0;"><span style="font:12px ui-monospace,Menlo,monospace;">${data.minecraftUuid ? escapeHtml(data.minecraftUuid) : "—"}</span>`,
   );
   html = replaceOnce(html, '<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;"><span style="color:var(--muted);white-space:nowrap;">Last IP</span><span style="text-align:right;min-width:0;">83.12.•••.•• · France</span></div>', "");
-  html = replaceOnce(html, '<span style="color:var(--muted);white-space:nowrap;">Launcher</span><span style="text-align:right;min-width:0;">1.4.2 · Windows</span>', '<span style="color:var(--muted);white-space:nowrap;">Launcher</span><span style="text-align:right;min-width:0;"><span class="nb">1.4.2 · Windows</span></span>');
+  html = removeInfoRow(html, "Launcher");
   html = replaceOnce(html, '<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;"><span style="color:var(--muted);white-space:nowrap;">2FA</span><span style="text-align:right;min-width:0;">Off</span></div>', "");
 
   html = replaceSectionBody(html, ">Staff notes</h2>", playerNotesSectionHtml(data));
@@ -836,8 +865,9 @@ export function serverDetailHtml(data: {
       `</div>`;
     html = html.slice(0, barStart) + newBar + html.slice(barEnd);
   }
-  // Published content fait doublon avec l'edition cote proprietaire : reste non branche (rouge).
-  html = markSectionNotBuilt(html, "Published content", "nb");
+  // Published content (maquette "Aetherfall", boutons sans action) fait doublon avec l'edition
+  // cote proprietaire : retire (2026-10-14 : rien de factice en production).
+  html = removeSection(html, ">Published content</h2>");
   html = replaceModerationHistorySection(html, data.behaviorReports);
   html = replaceReportsSection(html, data.reports);
   html = replaceStatsSection(html, { createdAt: data.createdAt, launchCount: data.launchCount });
@@ -1207,15 +1237,15 @@ export function verificationHtml(data: {
 
 // Created et Launcher joins viennent de vraies colonnes (createdAt, launchCount). Players (30 d)
 // et Peak online ne sont pas suivis (aucun comptage de joueurs dans le temps, voir le commentaire
-// sur ServerEvent dans contract.prisma) ; Plan vient des abonnements, pas encore construits —
-// les trois gardent leur valeur de maquette, marquee "non branchee".
+// sur ServerEvent dans contract.prisma) et Plan viendrait d'abonnements qui n'existent pas :
+// les trois lignes de la maquette sont retirees (2026-10-14).
 function replaceStatsSection(html: string, data: { createdAt: string; launchCount: number }): string {
   const created = new Date(data.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
   html = replaceOnce(html, '<span style="text-align:right;min-width:0;">Mar 4, 2026</span>', `<span style="text-align:right;min-width:0;">${created}</span>`);
-  html = replaceOnce(html, '<span style="text-align:right;min-width:0;">4,812</span>', `<span style="text-align:right;min-width:0;"><span class="nb">4,812</span></span>`);
-  html = replaceOnce(html, '<span style="text-align:right;min-width:0;">150</span>', `<span style="text-align:right;min-width:0;"><span class="nb">150</span></span>`);
+  html = removeInfoRow(html, "Players (30 d)");
+  html = removeInfoRow(html, "Peak online");
   html = replaceOnce(html, '<span style="text-align:right;min-width:0;">12,390</span>', `<span style="text-align:right;min-width:0;">${fmt(data.launchCount)}</span>`);
-  html = replaceOnce(html, '<span style="text-align:right;min-width:0;">Pro</span>', `<span style="text-align:right;min-width:0;"><span class="nb">Pro</span></span>`);
+  html = removeInfoRow(html, "Plan");
   return html;
 }
 

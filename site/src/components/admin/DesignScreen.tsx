@@ -63,10 +63,10 @@ function addContactNavItem(html: string): string {
   return html.split(marker).join(item + marker);
 }
 
-// Rend le menu cliquable (même style, même libellés) et marque "Amis" comme non branché.
+// Rend le menu cliquable (même style, même libellés). "Amis" (maquette, sans page admin) reste
+// un simple libellé, de toute façon masqué par hideNavItems.
 function linkNav(html: string): string {
   return html.replace(/<span style="flex:1">([^<]+)<\/span>/g, (match, label: string) => {
-    if (label === "Amis") return `<span class="nb" style="flex:1">${label}</span>`;
     const href = NAV_LINKS[label];
     return href ? `<a href="${href}" style="flex:1;color:inherit;text-decoration:none">${label}</a>` : match;
   });
@@ -131,16 +131,12 @@ function removeTopbarSearch(html: string): string {
   return html.slice(0, start) + html.slice(end);
 }
 
-// Icone de cloche : ne menait nulle part et n'etait pas marquee, alors que la page
-// Notifications qu'elle devrait ouvrir est elle-meme entierement maquette (non branchee).
-// On la relie a cette page et on la marque en rouge, pour que rien ne paraisse fonctionnel
-// sans l'etre.
+// Icone de cloche : elle menait a /admin/notifications, page desactivee qui renvoie vers
+// Serveurs — un bouton qui ne fait rien. Retiree (2026-10-14 : rien de factice en production).
 function markTopbarBell(html: string): string {
   const marker =
     '<span style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--color-divider);display:flex;align-items:center;justify-content:center;color:var(--muted);"><i class="ph ph-bell" style="font-size:15px;"></i></span>';
-  return html.split(marker).join(
-    '<a href="/admin/notifications" style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--color-divider);display:flex;align-items:center;justify-content:center;color:var(--muted);text-decoration:none;"><i class="ph ph-bell" style="font-size:15px;"></i></a>',
-  );
+  return html.split(marker).join("");
 }
 
 // Carte utilisateur en bas de la sidebar : la maquette affiche en dur "Alex Kade" / "Owner"

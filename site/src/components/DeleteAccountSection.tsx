@@ -64,7 +64,7 @@ export function DeleteAccountSection() {
             </p>
             <p className="mt-2 text-sm text-foreground">
               Si vous supprimez votre compte, cela supprimera définitivement tout son contenu : vos serveurs, leurs
-              modpacks, votre abonnement éventuel, etc. Impossible à annuler.
+              modpacks, etc. Impossible à annuler.
             </p>
             <label className="mt-4 block text-xs text-muted">
               Écrivez <span className="font-semibold text-foreground">supprimer</span> pour valider

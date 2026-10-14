@@ -26,7 +26,9 @@ const TOP_BUTTON: React.CSSProperties = {
   flexShrink: 0,
 };
 const SMALL_BUTTON: React.CSSProperties = { ...TOP_BUTTON, padding: "6px 12px", font: "500 12.5px var(--font-heading)" };
-const PRIMARY: React.CSSProperties = { ...TOP_BUTTON, borderColor: "var(--color-accent)", color: "var(--color-accent)" };
+// border complet (pas borderColor seul) : React refuse de melanger la propriete raccourcie
+// "border" et "borderColor" sur un meme element (avertissement en console, 2026-10-14).
+const PRIMARY: React.CSSProperties = { ...TOP_BUTTON, border: "1px solid var(--color-accent)", color: "var(--color-accent)" };
 const BOX: React.CSSProperties = { border: "1px solid var(--color-divider)", background: "var(--color-bg)", borderRadius: "var(--radius-md)" };
 
 function download(name: string, content: string, type: string) {
