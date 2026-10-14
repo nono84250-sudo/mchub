@@ -35,6 +35,7 @@ const NAV_LINKS: Record<string, string> = {
   "Packs curés": "/admin/packs",
   Administration: "/admin/administration",
   "Paramètres": "/admin/parametres",
+  Contact: "/admin/contact",
 };
 
 // 2026-10-10 : /admin/parametres (identifiants du compte admin + interrupteurs des sources de
@@ -46,6 +47,18 @@ function addSettingsNavItem(html: string): string {
     '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-shield-star" style="font-size:17px;"></i><span style="flex:1">Administration</span></div>';
   const item =
     '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-gear" style="font-size:17px;"></i><span style="flex:1">Paramètres</span></div>';
+  return html.split(marker).join(marker + item);
+}
+
+// 2026-10-14 : /admin/contact (messages du formulaire de contact public, voir
+// lib/contactMessages.ts) — meme raisonnement et meme methode que addSettingsNavItem
+// ci-dessus, la maquette d'origine n'a pas d'entree "Contact" non plus. Inseree juste apres
+// "Paramètres" (donc apres que addSettingsNavItem ait tourne).
+function addContactNavItem(html: string): string {
+  const marker =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-gear" style="font-size:17px;"></i><span style="flex:1">Paramètres</span></div>';
+  const item =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-envelope" style="font-size:17px;"></i><span style="flex:1">Contact</span></div>';
   return html.split(marker).join(marker + item);
 }
 
@@ -63,7 +76,10 @@ function linkNav(html: string): string {
 // accessibles par URL directe (aucune route retiree) — seules ces entrees disparaissent
 // du menu. Servers/Vérification/Paramètres restent visibles (migration D1 en cours,
 // utile de garder un oeil dessus ; Vérification reste la seule porte d'entree des serveurs).
-const HIDDEN_NAV_LABELS = ["Overview", "Notifications", "News", "Players", "Reports", "Packs curés", "Administration", "Amis"];
+// 2026-10-13 : "Reports" retiree de cette liste (remise dans le menu) — reactivee pour le
+// process de recours (point 4 de la checklist), retiree du perimetre reduit du 2026-10-12
+// sans que ce soit volontaire.
+const HIDDEN_NAV_LABELS = ["Overview", "Notifications", "News", "Players", "Packs curés", "Administration", "Amis"];
 
 function hideNavItems(html: string): string {
   let result = html;
@@ -148,12 +164,14 @@ export async function buildScreenContent({ name, html, markAll }: { name: keyof 
     getCurrentAdmin(),
     getStaffRoleLabels(),
   ]);
-  // markNavBadges et addSettingsNavItem doivent tourner avant linkNav : celui-ci transforme
-  // le <span style="flex:1"> du libelle en <a>, ce qui change sa balise fermante et casse
-  // tout remplacement litteral fait apres coup.
+  // markNavBadges, addSettingsNavItem et addContactNavItem doivent tourner avant linkNav :
+  // celui-ci transforme le <span style="flex:1"> du libelle en <a>, ce qui change sa balise
+  // fermante et casse tout remplacement litteral fait apres coup.
   let content = markUserCard(
     markTopbarBell(
-      removeTopbarSearch(hideNavItems(reorderNav(linkNav(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))))),
+      removeTopbarSearch(
+        hideNavItems(reorderNav(linkNav(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))))),
+      ),
     ),
     admin,
     roleLabels,

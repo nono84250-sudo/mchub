@@ -8,7 +8,10 @@ import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 const SNAPSHOT_SECONDS = 60;
 // ponytail: tests par lots de 10 ; ça tient tant qu'il y a quelques centaines de serveurs. Au-delà,
 // passer à un cron qui mesure en continu.
-const CONCURRENCY = 10;
+// Exporte (2026-10-13) : /api/cron/recheck-reachability reutilise le MEME decoupage en lots
+// plutot que d'en inventer un nouveau (voir ce fichier) — seule source de verite pour la taille
+// d'un lot de pings simultanes.
+export const CONCURRENCY = 10;
 
 export type StatusSnapshot = {
   generatedAt: string;

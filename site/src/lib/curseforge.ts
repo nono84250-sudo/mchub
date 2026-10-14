@@ -1,5 +1,5 @@
 import "server-only";
-import type { ModpackSearchResult } from "@/lib/modpack-types";
+import type { ModpackChannel, ModpackSearchResult } from "@/lib/modpack-types";
 
 // Recherche de modpacks via l'API officielle CurseForge (console.curseforge.com) —
 // necessite une cle API (CURSEFORGE_API_KEY dans .env, jamais exposee au
@@ -10,13 +10,20 @@ const MINECRAFT_GAME_ID = 432;
 const MODPACK_CLASS_ID = 4471;
 
 
+// releaseType de l'API CurseForge (confirme en testant la vraie reponse de /v1/mods/{id}/files
+// le 2026-10-12) : 1 = Release, 2 = Beta, 3 = Alpha. Jamais d'alpha propose automatiquement,
+// ni en recherche ni a l'installation (voir CHANNEL_RELEASE_TYPES ci-dessous).
+type CurseforgeReleaseType = 1 | 2 | 3;
+
+type CurseforgeSearchFile = { displayName: string; fileName: string; gameVersions?: string[]; releaseType?: CurseforgeReleaseType; fileDate?: string };
+
 type CurseforgeSearchResponse = {
   data: {
     id: number;
     name: string;
     summary: string;
     logo: { thumbnailUrl: string } | null;
-    latestFiles: { displayName: string; fileName: string; gameVersions?: string[] }[];
+    latestFiles: CurseforgeSearchFile[];
     latestFilesIndexes?: { gameVersion: string; modLoader?: number }[];
   }[];
 };
@@ -28,8 +35,8 @@ type CurseforgeSearchResponse = {
 const KNOWN_LOADERS = ["NeoForge", "Forge", "Fabric", "Quilt"];
 const LOADER_BY_ID: Record<number, string> = { 1: "Forge", 4: "Fabric", 5: "Quilt", 6: "NeoForge" };
 
-function describeLatestFile(mod: CurseforgeSearchResponse["data"][number]) {
-  const gameVersions = mod.latestFiles[0]?.gameVersions ?? [];
+function describeLatestFile(mod: CurseforgeSearchResponse["data"][number], file: CurseforgeSearchFile | undefined) {
+  const gameVersions = file?.gameVersions ?? [];
   const minecraftVersion = gameVersions.find((v) => /^\d+\.\d+(\.\d+)?$/.test(v)) ?? null;
 
   let loader = KNOWN_LOADERS.find((known) => gameVersions.some((v) => v.toLowerCase() === known.toLowerCase())) ?? null;
@@ -50,7 +57,12 @@ export class CurseforgeNotConfiguredError extends Error {
 // Pas de cache ici (contrairement a getMinecraftVersions) : une recherche
 // par texte libre a trop peu de chances de rehit pour que ça vaille le
 // budget mémoire du cache Next.js.
-export async function searchCurseforgeModpacks(query: string): Promise<ModpackSearchResult[]> {
+// `channel` (2026-10-13, canal beta) : en mode "release" (par defaut), comportement inchange
+// (fichier le plus recent de latestFiles, quel que soit son releaseType — aucune regression
+// pour les appelants existants). En mode "beta", NE montre que les modpacks qui ont reellement
+// une version beta (releaseType 2) — un modpack sans beta disparait de la liste plutot que de
+// reafficher sa derniere release (ModpackPicker.tsx affiche alors "Aucune version bêta trouvée").
+export async function searchCurseforgeModpacks(query: string, channel: ModpackChannel = "release"): Promise<ModpackSearchResult[]> {
   const apiKey = process.env.CURSEFORGE_API_KEY;
   if (!apiKey) throw new CurseforgeNotConfiguredError();
   if (!query.trim()) return [];
@@ -66,14 +78,26 @@ export async function searchCurseforgeModpacks(query: string): Promise<ModpackSe
   if (!res.ok) throw new Error(`Réponse ${res.status} de l'API CurseForge`);
 
   const body: CurseforgeSearchResponse = await res.json();
-  return body.data.map((mod) => ({
-    id: String(mod.id),
-    name: mod.name,
-    summary: mod.summary,
-    iconUrl: mod.logo?.thumbnailUrl ?? null,
-    latestVersion: mod.latestFiles[0]?.displayName ?? mod.latestFiles[0]?.fileName ?? null,
-    ...describeLatestFile(mod),
-  }));
+  const results: ModpackSearchResult[] = [];
+  for (const mod of body.data) {
+    let file: CurseforgeSearchFile | undefined;
+    if (channel === "beta") {
+      const betaFiles = mod.latestFiles.filter((f) => f.releaseType === 2);
+      file = [...betaFiles].sort((a, b) => (b.fileDate ?? "").localeCompare(a.fileDate ?? ""))[0];
+      if (!file) continue; // aucune beta pour ce modpack : exclu de la liste (jamais sa release a la place)
+    } else {
+      file = mod.latestFiles[0];
+    }
+    results.push({
+      id: String(mod.id),
+      name: mod.name,
+      summary: mod.summary,
+      iconUrl: mod.logo?.thumbnailUrl ?? null,
+      latestVersion: file?.displayName ?? file?.fileName ?? null,
+      ...describeLatestFile(mod, file),
+    });
+  }
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +155,14 @@ type CurseforgeFileRaw = {
   fileLength: number;
   hashes?: { value: string; algo: number }[];
   fileDate?: string;
+  releaseType?: CurseforgeReleaseType;
 };
+
+// Canal -> releaseType autorises (voir le commentaire sur CurseforgeReleaseType plus haut) :
+// "release" n'installe jamais que du stable, "beta" accepte aussi le beta pour qu'un serveur
+// qui a choisi ce canal continue de suivre les mises a jour meme si l'auteur ne publie plus
+// que des beta — jamais d'alpha dans un cas comme dans l'autre.
+const CHANNEL_RELEASE_TYPES: Record<ModpackChannel, CurseforgeReleaseType[]> = { release: [1], beta: [1, 2] };
 
 export type CurseforgeFileInfo = {
   id: number;
@@ -165,7 +196,7 @@ function toFileInfo(file: CurseforgeFileRaw): CurseforgeFileInfo {
  * par son nom dans la recherche : avec une cle limitee a la recherche, le
  * detail d'un modpack par identifiant est refuse.
  */
-export async function getModpackInstallFile(modpackId: string, hints: { name?: string | null }) {
+export async function getModpackInstallFile(modpackId: string, hints: { name?: string | null }, channel: ModpackChannel = "release") {
   type Mod = { id: number; name: string; latestFiles: CurseforgeFileRaw[] };
 
   let mod: Mod | undefined;
@@ -184,7 +215,11 @@ export async function getModpackInstallFile(modpackId: string, hints: { name?: s
     if (!mod) throw error;
   }
 
-  const candidates = mod.latestFiles.filter((f) => f.downloadUrl);
+  // Filtre par canal AVANT de choisir le plus recent (voir CHANNEL_RELEASE_TYPES) : un fichier
+  // sans releaseType connu (ancienne reponse, champ absent) est traite comme une release, pour
+  // ne jamais bloquer l'installation d'un modpack dont l'API ne renvoie pas cette info.
+  const allowedTypes = CHANNEL_RELEASE_TYPES[channel];
+  const candidates = mod.latestFiles.filter((f) => f.downloadUrl && (f.releaseType === undefined || allowedTypes.includes(f.releaseType)));
   const file = [...candidates].sort((a, b) => (b.fileDate ?? "").localeCompare(a.fileDate ?? ""))[0];
   if (!file) {
     throw new Error("Aucun fichier téléchargeable pour ce modpack (son auteur a peut-être interdit la redistribution).");

@@ -8,7 +8,7 @@ import { resetInviteCode } from "@/lib/actions/servers";
 import { ImageDropzone } from "@/components/ImageDropzone";
 import { ModpackPicker, type ModpackValue } from "@/components/ModpackPicker";
 import { MinecraftVersionField } from "@/components/MinecraftVersionField";
-import { DEFAULT_MODPACK_SOURCE, type ModpackSource } from "@/lib/modpack-types";
+import { DEFAULT_MODPACK_CHANNEL, DEFAULT_MODPACK_SOURCE, type ModpackChannel, type ModpackSource } from "@/lib/modpack-types";
 import { supportsAutoConnect } from "@/lib/minecraft-version-constants";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -24,6 +24,7 @@ type ServerFormValues = {
   ip: string;
   curseforgeModpackId: string;
   modpackSource: ModpackSource;
+  modpackChannel: ModpackChannel;
   curseforgeModpackName: string;
   curseforgeModpackVersion: string;
   recommendedRamGB: string;
@@ -42,6 +43,7 @@ const EMPTY_VALUES: ServerFormValues = {
   ip: "",
   curseforgeModpackId: "",
   modpackSource: DEFAULT_MODPACK_SOURCE,
+  modpackChannel: DEFAULT_MODPACK_CHANNEL,
   curseforgeModpackName: "",
   curseforgeModpackVersion: "",
   recommendedRamGB: "",
@@ -93,6 +95,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
     name: values.curseforgeModpackName,
     version: values.curseforgeModpackVersion,
     source: values.modpackSource,
+    channel: values.modpackChannel,
   });
   // Version "manuelle" (champ Vanilla/Autre) suivie en direct pour l'avertissement
   // autoConnect ci-dessous — values.minecraftVersion seul ne capte pas les changements de
@@ -381,6 +384,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
             name: values.curseforgeModpackName,
             version: values.curseforgeModpackVersion,
             source: values.modpackSource,
+            channel: values.modpackChannel,
           }}
           onChange={setModpack}
           sourceStates={sourceStates}

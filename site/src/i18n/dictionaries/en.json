@@ -8,11 +8,14 @@
     "logout": "Sign out",
     "login": "Sign in",
     "openMenu": "Open menu",
-    "closeMenu": "Close menu"
+    "closeMenu": "Close menu",
+    "friends": "Friends",
+    "contact": "Contact"
   },
   "footer": {
     "tagline": "the Minecraft server toolkit.",
-    "servers": "Servers"
+    "servers": "Servers",
+    "contact": "Contact"
   },
   "home": {
     "badge": "Minecraft/Xbox access approved — the launcher is online",
@@ -74,7 +77,9 @@
     "visibilityPrivate": "Private",
     "navServers": "Servers",
     "navNotifications": "Notifications",
+    "navFriends": "Friends",
     "navNews": "News",
+    "navSettings": "Settings",
     "newsTitle": "News",
     "newsEmpty": "No news for now — site announcements will show up here.",
     "notificationsTitle": "Notifications",
@@ -86,6 +91,7 @@
     "notifServerFrozenTitle": "{server} was frozen",
     "notifVerificationApprovedTitle": "{server} was approved",
     "notifVerificationRejectedTitle": "{server} was rejected",
+    "notifInstanceBackOnlineTitle": "{server} is back online",
     "notifAdminMessageTitle": "Message from the team about {server}",
     "notifReportResolvedTitle": "Report resolved — {server}",
     "notifReportRepliedTitle": "Reply to your report — {server}",
@@ -122,10 +128,27 @@
     "ramUnit": "GB",
     "joinNote": "To join this server, open it from the Omniscient launcher — the connection address isn't shown here."
   },
+  "freshness": {
+    "fresh": "Recently verified",
+    "check": "Should be re-checked",
+    "stale": "Verified {days} days ago",
+    "never": "Not tested yet"
+  },
   "account": {
     "title": "Account",
     "microsoftLinked": "Signed in via Microsoft/Xbox",
     "logout": "Sign out"
+  },
+  "friends": {
+    "title": "Friends",
+    "addPlaceholder": "Minecraft username…",
+    "addButton": "Add",
+    "adding": "Adding…",
+    "addFeedback": "Done — check the list below.",
+    "empty": "No friends added yet.",
+    "online": "Online",
+    "offline": "Offline",
+    "remove": "Remove"
   },
   "language": {
     "label": "Language",
@@ -170,6 +193,7 @@
     "playersOnlineStat": "Players online",
     "statRightNow": "right now",
     "detailStatus": "Status",
+    "detailFreshness": "Test freshness",
     "detailVisibility": "Visibility",
     "detailAddress": "Connection address",
     "detailVersion": "Minecraft version",
@@ -196,7 +220,11 @@
     "pendingVerification": "Pending verification",
     "pendingVerificationHint": "An admin needs to approve this server before it's visible and joinable by players.",
     "rejectedVerification": "Rejected",
-    "detailVerificationReason": "Rejection reason"
+    "detailVerificationReason": "Rejection reason",
+    "appealRequest": "Request a second opinion",
+    "appealRequestConfirm": "Confirm the request? An admin must decide within 72h, otherwise the server will be unfrozen automatically.",
+    "appealPendingSecondOpinion": "Second opinion requested — another admin must decide by {date}.",
+    "appealPendingReflection": "Reconsideration period requested — the freeze will be reviewed by {date} (only one active admin for now, no second opinion possible)."
   },
   "reports": {
     "title": "Reports",
@@ -311,6 +339,9 @@
     "modpackSearchPlaceholder": "Search a modpack on {source}…",
     "modpackSearching": "Searching…",
     "modpackNoResults": "No modpack found for this search.",
+    "modpackChannelBeta": "Enable the beta channel",
+    "modpackChannelBetaHint": "Also shows beta versions of the modpack, in addition to stable versions.",
+    "modpackNoBetaFound": "No beta version found for this search.",
     "modpackVerified": "verified",
     "modpackChosen": "Selected modpack ({name})",
     "modpackChange": "Change",
@@ -320,5 +351,15 @@
     "modpackIdLabel": "Modpack ID",
     "modpackNameLabel": "Modpack name",
     "modpackVersionLabel": "Modpack version"
+  },
+  "contact": {
+    "title": "Contact",
+    "subtitle": "A question, a problem, a suggestion? Write to us, we'll reply by email if needed.",
+    "nameLabel": "Name",
+    "emailLabel": "Email",
+    "messageLabel": "Message",
+    "send": "Send",
+    "sending": "Sending…",
+    "success": "Message sent — thanks, we'll reply if needed."
   }
 }

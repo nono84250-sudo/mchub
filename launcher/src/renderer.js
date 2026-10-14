@@ -29,6 +29,11 @@ const navServersBtn = document.getElementById("nav-servers");
 const navFavoritesBtn = document.getElementById("nav-favorites");
 const navRecentBtn = document.getElementById("nav-recent");
 const navMyInstancesBtn = document.getElementById("nav-my-instances");
+// Systeme d'amis, phase 1 (2026-10-14) : pas une vue (jamais de classe "active"), juste le
+// declencheur du panneau deroulant #friends-dropdown — voir wireFriends() plus bas, et
+// renderAccountHeader()/renderGuestHeader() pour sa visibilite (compte Microsoft requis, comme
+// nav-settings).
+const navFriendsBtn = document.getElementById("nav-friends");
 const navSettingsBtn = document.getElementById("nav-settings");
 // D'ou vient la fiche detail actuellement affichee (liste "Serveurs" ou
 // page "Favoris") — pour que le bouton "Retour" ramene au bon endroit.
@@ -1014,6 +1019,7 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
   // en mode visiteur, renderGuestHeader() l'avait deplace tout en bas, a la
   // place de l'avatar absent — voir ce commentaire la-bas.
   navSettingsBtn.hidden = false;
+  navFriendsBtn.closest(".friends-menu").hidden = false;
   if (currentProfile && currentProfile.id !== profile.id) {
     myInstancesServers = [];
     myJoinedServers = [];
@@ -1401,6 +1407,7 @@ const NOTIF_COLORS = {
   broadcast_promotion: "#5fd3a0",
   verification_approved: "#5fd3a0",
   verification_rejected: "var(--danger)",
+  instance_back_online: "#5fd3a0",
 };
 const BROADCAST_TITLE_KEYS = {
   broadcast_announcement: "broadcastAnnouncementTitle",
@@ -1420,7 +1427,9 @@ function notifItemHtml(notif) {
       ? t("notifications.verificationApprovedTitle", { server: notif.serverName })
       : notif.type === "verification_rejected"
         ? t("notifications.verificationRejectedTitle", { server: notif.serverName })
-        : broadcastKey
+        : notif.type === "instance_back_online"
+          ? t("notifications.instanceBackOnlineTitle", { server: notif.serverName })
+          : broadcastKey
           ? t(`notifications.${broadcastKey}`)
           : isAdmin
             ? t("notifications.adminMessageTitle", { server: notif.serverName })
@@ -1734,6 +1743,110 @@ function wireNotifications() {
     await refreshNotifications();
   });
   wireDismissOnEscape(panel, trigger);
+}
+
+// --- Panneau "Amis" (systeme d'amis, phase 1, 2026-10-14) ---
+// Statut binaire en ligne/hors ligne uniquement (pas de "absent"/"invisible"/"ne pas
+// deranger", scope valide par l'utilisateur) ; ajout direct et reciproque, pas de demande a
+// accepter/refuser. Chargee a la demande (a l'ouverture du panneau), pas de badge/compteur
+// proactif comme les notifications — bien plus simple, coherent avec "un panneau simple"
+// demande pour cette V1.
+let friendsList = [];
+
+function friendRowHtml(friend) {
+  return `
+    <div class="friends-item" data-id="${escapeHtml(friend.userId)}">
+      <span class="friends-item-name">
+        <span class="status-dot${friend.online ? " online" : ""}"></span>
+        ${escapeHtml(friend.minecraftUsername || "?")}
+      </span>
+      <button type="button" class="icon-btn friends-item-remove" data-id="${escapeHtml(friend.userId)}" title="${t("friends.remove")}" aria-label="${t("friends.remove")}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+      </button>
+    </div>`;
+}
+
+function renderFriendsList() {
+  const listEl = document.getElementById("friends-list");
+  if (friendsList.length === 0) {
+    listEl.className = "friends-empty";
+    listEl.textContent = t("friends.empty");
+    return;
+  }
+  listEl.className = "";
+  listEl.innerHTML = friendsList.map(friendRowHtml).join("");
+}
+
+async function refreshFriends() {
+  if (!signedIn) return;
+  const result = await window.mchub.friends.list();
+  if (!result.ok) return;
+  friendsList = result.friends;
+  renderFriendsList();
+}
+
+function wireFriends() {
+  const trigger = navFriendsBtn;
+  const panel = document.getElementById("friends-dropdown");
+  const form = document.getElementById("friends-add-form");
+  const input = document.getElementById("friends-add-input");
+  const submitBtn = document.getElementById("friends-add-submit");
+  const feedbackEl = document.getElementById("friends-feedback");
+  const listEl = document.getElementById("friends-list");
+
+  trigger.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const wasHidden = panel.hidden;
+    panel.hidden = !panel.hidden;
+    if (wasHidden) await refreshFriends();
+  });
+  // Meme raisonnement que notif-panel/tasks-panel ci-dessus : sans ca, tout clic a l'interieur
+  // (champ, bouton Ajouter, croix de retrait) remonterait jusqu'au listener document et
+  // refermerait le panneau avant meme que l'action ait un effet visible.
+  panel.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("click", () => {
+    panel.hidden = true;
+  });
+  wireDismissOnEscape(panel, trigger);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = input.value.trim();
+    if (!username) return;
+    submitBtn.disabled = true;
+    feedbackEl.hidden = true;
+    const result = await window.mchub.friends.add(username);
+    submitBtn.disabled = false;
+    if (!result.ok) {
+      feedbackEl.textContent = result.error || t("friends.addError");
+      feedbackEl.hidden = false;
+      return;
+    }
+    input.value = "";
+    // Message TOUJOURS le meme (anti-enumeration, voir addFriendByUsername cote site) : ne dit
+    // jamais si le pseudo existait vraiment ou etait deja ami — seul le rafraichissement de la
+    // liste ci-dessous dira si ca a marche.
+    feedbackEl.textContent = t("friends.addFeedback");
+    feedbackEl.hidden = false;
+    await refreshFriends();
+  });
+
+  listEl.addEventListener("click", async (event) => {
+    const removeBtn = event.target.closest(".friends-item-remove");
+    if (!removeBtn) return;
+    removeBtn.disabled = true;
+    await window.mchub.friends.remove(removeBtn.dataset.id);
+    await refreshFriends();
+  });
+}
+
+// Heartbeat de presence : greffe sur le cycle de 60s existant (scheduleRefresh(sendPresenceHeartbeat)
+// plus bas, meme intervalle que silentRefreshList — REFRESH_INTERVAL_MS), jamais un intervalle a
+// part. Echec silencieux (voir presence:heartbeat cote main.js, qui ne rejette jamais) : un
+// heartbeat rate ne fait que retarder le passage "hors ligne" d'un ami, jamais a signaler au joueur.
+async function sendPresenceHeartbeat() {
+  if (!signedIn) return;
+  await window.mchub.sendPresenceHeartbeat();
 }
 
 // Bascule entre la vue "serveurs" (liste/détail) et la vue "paramètres" dans
@@ -2145,6 +2258,7 @@ function instanceCardHtml(server) {
       <div class="instance-card-actions">
         ${canSelfTest(server) ? `<button type="button" class="btn-secondary my-instance-selftest" data-slug="${escapeHtml(server.slug)}">${t("myInstances.selfTestButton")}</button>` : ""}
         ${status !== "paused" ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>` : ""}
+        <button type="button" class="btn-secondary my-instance-channel" data-slug="${escapeHtml(server.slug)}">${t("myInstances.channelButton")}</button>
         <button type="button" class="btn-secondary my-instance-manage" data-id="${escapeHtml(server.id)}">${t("myInstances.manage")} ↗</button>
       </div>
     </div>`;
@@ -2170,6 +2284,7 @@ function joinedCardHtml(server) {
       </div>
       <div class="instance-card-actions">
         <button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>
+        <button type="button" class="btn-secondary my-instance-channel" data-slug="${escapeHtml(server.slug)}">${t("myInstances.channelButton")}</button>
         <button type="button" class="btn-secondary my-instance-leave" data-slug="${escapeHtml(server.slug)}">${t("myInstances.leave")}</button>
       </div>
     </div>`;
@@ -2252,6 +2367,146 @@ function askJoinCode(errorMessage) {
     confirmBtn.addEventListener("click", onConfirm);
     cancelBtn.addEventListener("click", onCancel);
     input.addEventListener("keydown", onKey);
+  });
+}
+
+// Reglages d'une instance (petite fenetre "Reglages", Mes instances, 2026-10-13) — structures
+// en LISTE plutot qu'en champs fixes : chaque reglage sait lui-meme s'il s'applique au serveur
+// courant (appliesTo) et comment se charger/s'enregistrer (load/save), pour qu'un futur reglage
+// s'ajoute a ce tableau sans reecrire la fenetre ni son flux (openInstanceSettingsModal
+// ci-dessous). Canal du modpack (reserve au PROPRIETAIRE d'un serveur modde, voir
+// servers:getChannel/setChannel) et, depuis le point 9, suivi de statut (ouvert a TOUTE
+// instance — possedee ou rejointe — voir servers:getWatch/setWatch dans main.js).
+const INSTANCE_SETTINGS_FIELDS = [
+  {
+    id: "modpackChannel",
+    appliesTo: (server, ctx) => ctx.owned && server.type === "modded",
+    load: (server) => window.mchub.getServerChannel(server.slug).then((r) => (r.ok ? { ok: true, value: r.modpackChannel } : r)),
+    save: (server, value) => window.mchub.setServerChannel(server.slug, value),
+    renderHtml: (value) => `
+      <div style="margin-top:12px;text-align:left;">
+        <label for="instance-setting-modpackChannel" style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">${t("channelSettings.channelFieldLabel")}</label>
+        <select id="instance-setting-modpackChannel" class="settings-input" style="width:100%;">
+          <option value="release" ${value === "beta" ? "" : "selected"}>${t("channelSettings.release")}</option>
+          <option value="beta" ${value === "beta" ? "selected" : ""}>${t("channelSettings.beta")}</option>
+        </select>
+      </div>`,
+    readValue: () => document.getElementById("instance-setting-modpackChannel").value,
+  },
+  // Point 9 : case decochee par defaut, s'applique a TOUTE instance (possedee ou rejointe),
+  // pas seulement les favoris existants — un seul declencheur pour l'instant (hors ligne ->
+  // en ligne, voir /api/cron/process-instance-watch), jamais le pic de joueurs ni le modpack
+  // mis a jour (reportes a plus tard).
+  {
+    id: "notifyOnStatusChange",
+    appliesTo: () => true,
+    load: (server) => window.mchub.getServerWatch(server.slug).then((r) => (r.ok ? { ok: true, value: r.notifyOnStatusChange } : r)),
+    save: (server, value) => window.mchub.setServerWatch(server.slug, value),
+    renderHtml: (value) => `
+      <div style="margin-top:12px;text-align:left;">
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" id="instance-setting-notifyOnStatusChange" ${value ? "checked" : ""} style="margin-top:2px;" />
+          <span>${t("channelSettings.watchFieldLabel")}</span>
+        </label>
+        <p style="font-size:12px;color:var(--muted);margin:4px 0 0 24px;">${t("channelSettings.watchFieldHelp")}</p>
+      </div>`,
+    readValue: () => document.getElementById("instance-setting-notifyOnStatusChange").checked,
+  },
+];
+
+// Petite fenetre "Reglages" d'une instance (reutilise le modal de confirmation generique, meme
+// pattern que askJoinCode ci-dessus) : charge les reglages applicables (voir appliesTo/load de
+// chaque champ ci-dessus), les affiche via INSTANCE_SETTINGS_FIELDS, et les enregistre sur
+// confirmation. Distincte du bouton "Gerer" (openManageServer), qui continue d'ouvrir le site
+// dans le navigateur. `owned` : true pour une instance de l'onglet "Tout"/possedee (filtre
+// appliesTo du canal modpack), false pour une instance "Rejoint" — ce joueur n'en est jamais
+// proprietaire, voir joinedCardHtml.
+async function openInstanceSettingsModal(server, { owned = true } = {}) {
+  const overlay = document.getElementById("modal-overlay");
+  const confirmBtn = document.getElementById("modal-confirm");
+  const cancelBtn = document.getElementById("modal-cancel");
+  const checkboxRow = document.getElementById("modal-checkbox-row");
+  const bodyEl = document.getElementById("modal-body");
+
+  const fields = INSTANCE_SETTINGS_FIELDS.filter((field) => field.appliesTo(server, { owned }));
+
+  document.getElementById("modal-title").textContent = t("channelSettings.title", { name: server.name });
+  checkboxRow.hidden = true;
+  bodyEl.textContent = t("channelSettings.loading");
+  bodyEl.style.color = "";
+  cancelBtn.hidden = false;
+  cancelBtn.textContent = t("common.cancel");
+  confirmBtn.hidden = true;
+  overlay.hidden = false;
+
+  const cleanup = () => {
+    overlay.hidden = true;
+    bodyEl.style.color = "";
+    confirmBtn.hidden = false;
+    confirmBtn.disabled = false;
+    document.getElementById("instance-settings-fields")?.remove();
+  };
+
+  const currentValues = {};
+  for (const field of fields) {
+    const result = await field.load(server);
+    if (!result.ok) {
+      bodyEl.textContent = result.error || t("channelSettings.loadError");
+      bodyEl.style.color = "var(--danger)";
+      cancelBtn.textContent = t("common.close");
+      await new Promise((resolve) => {
+        const onCancel = () => {
+          cancelBtn.removeEventListener("click", onCancel);
+          cleanup();
+          resolve();
+        };
+        cancelBtn.addEventListener("click", onCancel);
+      });
+      return;
+    }
+    currentValues[field.id] = result.value;
+  }
+
+  // La description du canal du modpack ne s'applique qu'a ce reglage precis — vide sinon (le
+  // texte d'aide de la case de suivi, juste en dessous d'elle, suffit dans ce cas).
+  bodyEl.textContent = fields.some((field) => field.id === "modpackChannel") ? t("channelSettings.description") : "";
+  const fieldsContainer = document.createElement("div");
+  fieldsContainer.id = "instance-settings-fields";
+  fieldsContainer.innerHTML = fields.map((field) => field.renderHtml(currentValues[field.id])).join("");
+  bodyEl.after(fieldsContainer);
+
+  confirmBtn.hidden = false;
+  confirmBtn.textContent = t("channelSettings.save");
+  overlay.querySelector(".modal-box").classList.add("pop-in");
+
+  await new Promise((resolve) => {
+    const onConfirm = async () => {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = t("channelSettings.saving");
+      const values = Object.fromEntries(fields.map((field) => [field.id, field.readValue()]));
+      for (const field of fields) {
+        const save = await field.save(server, values[field.id]);
+        if (!save.ok) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = t("channelSettings.save");
+          bodyEl.textContent = save.error || t("channelSettings.saveError");
+          bodyEl.style.color = "var(--danger)";
+          return;
+        }
+      }
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      cleanup();
+      resolve();
+    };
+    const onCancel = () => {
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      cleanup();
+      resolve();
+    };
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
   });
 }
 
@@ -2388,6 +2643,19 @@ function renderMyInstancesGrid() {
       } catch {
         // Presse-papiers indisponible — pas bloquant pour une simple commodite.
       }
+    });
+  });
+
+  myInstancesPanelEl.querySelectorAll(".my-instance-channel").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      // Le bouton "Reglages" existe maintenant aussi sur les cartes "Rejoint" (point 9, suivi
+      // de statut ouvert a toute instance) — on cherche dans les deux pools, jamais les deux a
+      // la fois (un meme slug n'apparait que dans un seul des deux).
+      const owned = myInstancesServers.some((s) => s.slug === btn.dataset.slug);
+      const server = owned ? myInstancesServers.find((s) => s.slug === btn.dataset.slug) : myJoinedServers.find((s) => s.slug === btn.dataset.slug);
+      if (!server) return;
+      openInstanceSettingsModal(server, { owned });
     });
   });
 
@@ -3897,6 +4165,9 @@ async function attemptSignIn(remember) {
 // de laisser cet espace reserve a l'avatar completement vide.
 function renderGuestHeader() {
   navSettingsBtn.hidden = true;
+  // Amis = necessite un compte Microsoft (comme Parametres ci-dessus) : rien a afficher pour
+  // un visiteur sans session.
+  navFriendsBtn.closest(".friends-menu").hidden = true;
   msAccountEl.innerHTML = `
     <button id="ms-account-settings" class="sidebar-btn" data-i18n-title="nav.settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3930,6 +4201,7 @@ async function boot() {
   wireMcStatus();
   wireTasksMenu();
   wireNotifications();
+  wireFriends();
   wirePlaybar();
 
   // Ecran de demarrage : ne couvre que les verifications reelles qui
@@ -4060,3 +4332,13 @@ scheduleRefresh(silentRefreshList);
 // Notifications : toutes les 5 minutes (chaque appel interroge la base du site).
 scheduleRefresh(refreshNotifications, 300_000);
 scheduleRefresh(checkMaintenanceLoop, 120_000);
+// Presence (systeme d'amis) : MEME valeur de cycle que silentRefreshList ci-dessus
+// (REFRESH_INTERVAL_MS, 60s) — greffe dessus comme demande, pas un nouvel intervalle ni celui
+// des notifications (qui est a 5 min, pas 30s comme un ancien commentaire le pretendait a
+// tort). Delibérément PAS via scheduleRefresh() : ce helper ralentit a
+// REFRESH_PLAYING_INTERVAL_MS (5 min) pendant une partie, ce qui est le bon choix pour la liste
+// de serveurs (pas besoin de la rafraichir pendant que le joueur est en jeu) mais serait exactement
+// le mauvais choix ici — un ami en train de JOUER est le cas ou on veut le plus montrer "en
+// ligne", pas le laisser passer "hors ligne" apres 2 min (ONLINE_WINDOW_MS cote site) faute de
+// heartbeat. setInterval direct, jamais ralenti, jamais arrete.
+setInterval(sendPresenceHeartbeat, REFRESH_INTERVAL_MS);

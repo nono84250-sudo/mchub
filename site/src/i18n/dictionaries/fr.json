@@ -8,11 +8,14 @@
     "logout": "Se déconnecter",
     "login": "Se connecter",
     "openMenu": "Ouvrir le menu",
-    "closeMenu": "Fermer le menu"
+    "closeMenu": "Fermer le menu",
+    "friends": "Amis",
+    "contact": "Contact"
   },
   "footer": {
     "tagline": "la boîte à outils des serveurs Minecraft.",
-    "servers": "Serveurs"
+    "servers": "Serveurs",
+    "contact": "Contact"
   },
   "home": {
     "badge": "Accès Minecraft/Xbox approuvé — le launcher est en ligne",
@@ -74,7 +77,9 @@
     "visibilityPrivate": "Privé",
     "navServers": "Serveurs",
     "navNotifications": "Notifications",
+    "navFriends": "Amis",
     "navNews": "Actualités",
+    "navSettings": "Paramètres",
     "newsTitle": "Actualités",
     "newsEmpty": "Aucune actualité pour le moment — les annonces du site apparaîtront ici.",
     "notificationsTitle": "Notifications",
@@ -86,6 +91,7 @@
     "notifServerFrozenTitle": "{server} a été gelé",
     "notifVerificationApprovedTitle": "{server} a été approuvé",
     "notifVerificationRejectedTitle": "{server} a été refusé",
+    "notifInstanceBackOnlineTitle": "{server} est de nouveau en ligne",
     "notifAdminMessageTitle": "Message de l'équipe à propos de {server}",
     "notifReportResolvedTitle": "Signalement résolu — {server}",
     "notifReportRepliedTitle": "Réponse à ton signalement — {server}",
@@ -122,10 +128,27 @@
     "ramUnit": "Go",
     "joinNote": "Pour rejoindre ce serveur, ouvre-le depuis le launcher Omniscient — l'adresse de connexion n'est pas affichée ici."
   },
+  "freshness": {
+    "fresh": "Vérifié récemment",
+    "check": "À vérifier",
+    "stale": "Vérifié il y a {days} jours",
+    "never": "Pas encore testé"
+  },
   "account": {
     "title": "Compte",
     "microsoftLinked": "Connecté via Microsoft/Xbox",
     "logout": "Se déconnecter"
+  },
+  "friends": {
+    "title": "Amis",
+    "addPlaceholder": "Pseudo Minecraft…",
+    "addButton": "Ajouter",
+    "adding": "Ajout…",
+    "addFeedback": "C'est fait — vérifie la liste ci-dessous.",
+    "empty": "Pas encore d'ami ajouté.",
+    "online": "En ligne",
+    "offline": "Hors ligne",
+    "remove": "Retirer"
   },
   "language": {
     "label": "Langue",
@@ -170,6 +193,7 @@
     "playersOnlineStat": "Joueurs en ligne",
     "statRightNow": "en ce moment",
     "detailStatus": "Statut",
+    "detailFreshness": "Fraîcheur du test",
     "detailVisibility": "Visibilité",
     "detailAddress": "Adresse de connexion",
     "detailVersion": "Version de Minecraft",
@@ -196,7 +220,11 @@
     "pendingVerification": "En attente de vérification",
     "pendingVerificationHint": "Un administrateur doit valider ce serveur avant qu'il ne soit visible et rejoignable par les joueurs.",
     "rejectedVerification": "Refusé",
-    "detailVerificationReason": "Motif du refus"
+    "detailVerificationReason": "Motif du refus",
+    "appealRequest": "Demander un second avis",
+    "appealRequestConfirm": "Confirmer la demande ? Un administrateur devra se prononcer dans les 72h, sans quoi le serveur sera dégelé automatiquement.",
+    "appealPendingSecondOpinion": "Second avis demandé — un autre administrateur doit statuer avant le {date}.",
+    "appealPendingReflection": "Délai de réflexion demandé — le gel sera réexaminé avant le {date} (un seul administrateur actif pour l'instant, pas de second avis possible)."
   },
   "reports": {
     "title": "Signalements",
@@ -311,6 +339,9 @@
     "modpackSearchPlaceholder": "Rechercher un modpack sur {source}…",
     "modpackSearching": "Recherche…",
     "modpackNoResults": "Aucun modpack trouvé pour cette recherche.",
+    "modpackChannelBeta": "Activer le canal bêta",
+    "modpackChannelBetaHint": "Montre aussi les versions bêta du modpack, en plus des versions stables.",
+    "modpackNoBetaFound": "Aucune version bêta trouvée pour cette recherche.",
     "modpackVerified": "vérifié",
     "modpackChosen": "Modpack choisi ({name})",
     "modpackChange": "Changer",
@@ -320,5 +351,15 @@
     "modpackIdLabel": "Identifiant du modpack",
     "modpackNameLabel": "Nom du modpack",
     "modpackVersionLabel": "Version du modpack"
+  },
+  "contact": {
+    "title": "Contact",
+    "subtitle": "Une question, un problème, une suggestion ? Écris-nous, on te répond directement par email.",
+    "nameLabel": "Nom",
+    "emailLabel": "Email",
+    "messageLabel": "Message",
+    "send": "Envoyer",
+    "sending": "Envoi…",
+    "success": "Message envoyé — merci, on te répond si besoin."
   }
 }

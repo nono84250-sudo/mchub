@@ -292,6 +292,37 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     z-index: 10;
   }
+
+  /* Panneau "Amis" (systeme d'amis, phase 1, 2026-10-14) : meme principe que
+     .account-dropdown ci-dessus (ancre a droite du bouton de la sidebar), mais aligne en
+     haut (top:0) plutot qu'en bas — ce bouton n'est pas le dernier de la sidebar. */
+  .friends-menu { position: relative; }
+  .friends-dropdown {
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 300px;
+    max-height: 420px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    z-index: 20;
+  }
+  .friends-add-row { display: flex; gap: 6px; padding: 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .friends-add-row input { flex: 1 1 auto; min-width: 0; }
+  .friends-add-row button { flex-shrink: 0; white-space: nowrap; }
+  .friends-feedback { margin: 0; padding: 8px 12px 0; font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
+  .friends-list-scroll { overflow-y: auto; padding: 8px; min-height: 0; }
+  .friends-empty { padding: 16px; text-align: center; font-size: 12.5px; color: var(--muted); }
+  .friends-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+  .friends-item + .friends-item { margin-top: 2px; }
+  .friends-item:hover { background: var(--surface-raised); }
+  .friends-item-name { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .friends-item-name .status-dot { margin: 0; flex-shrink: 0; }
+  .friends-item-remove { flex-shrink: 0; }
   .skin-face-wrap, .mini-skin-face-wrap {
     position: relative;
     border-radius: 6px;
@@ -1639,6 +1670,35 @@
           <rect x="3" y="3" width="18" height="4" rx="1" /><rect x="3" y="10" width="18" height="4" rx="1" /><rect x="3" y="17" width="18" height="4" rx="1" />
         </svg>
       </button>
+      <!-- Systeme d'amis, phase 1 (2026-10-14) : pas une "vue" comme les boutons ci-dessus
+           (jamais de classe "active", ne touche jamais aux panneaux de vue) — un simple
+           declencheur de panneau deroulant, meme pattern que #ms-account/.account-dropdown
+           juste en dessous, voir wireFriends() dans renderer.js. -->
+      <div class="friends-menu">
+        <button id="nav-friends" class="sidebar-btn" type="button" data-i18n-title="nav.friends">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+        </button>
+        <div class="friends-dropdown" id="friends-dropdown" hidden>
+          <form class="friends-add-row" id="friends-add-form">
+            <input
+              type="text"
+              id="friends-add-input"
+              class="settings-input"
+              data-i18n-placeholder="friends.addPlaceholder"
+              placeholder="Pseudo Minecraft…"
+              autocomplete="off"
+            />
+            <button type="submit" class="btn-secondary" id="friends-add-submit" data-i18n="friends.addButton">Ajouter</button>
+          </form>
+          <p class="friends-feedback" id="friends-feedback" hidden></p>
+          <div class="friends-list-scroll">
+            <div id="friends-list" class="friends-empty" data-i18n="friends.empty">Pas encore d'ami ajouté.</div>
+          </div>
+        </div>
+      </div>
       <button id="nav-settings" class="sidebar-btn" data-i18n-title="nav.settings" style="margin-top: auto;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3" />

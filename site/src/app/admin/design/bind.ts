@@ -4,6 +4,7 @@
 import { SCREENS } from "./screens";
 import type { ReportSummary, ReportStatus, BehaviorReportSummary, BehaviorIssue } from "@/lib/reports";
 import type { PendingServerSummary, VerificationDetail, VerificationStatus } from "@/lib/verification";
+import type { AppealHistoryEntry } from "@/lib/appeals";
 import { formatAdminTime } from "@/lib/timezone";
 
 export const escapeHtml = (value: string) =>
@@ -768,8 +769,19 @@ export function serverDetailHtml(data: {
   reports: ReportSummary[];
   behaviorReports: Omit<BehaviorReportSummary, "serverName">[];
   ownerId: string;
+  appealStatus: string | null;
+  appealAssignedAdminId: string | null;
+  appealHistory: AppealHistoryEntry[];
+  currentAdminUsername: string;
 }): string {
   const frozen = data.frozenAt !== null;
+  // Recours en cours : si un admin DIFFERENT de celui qui a gele est assigne, quiconque n'est
+  // pas ce dernier (le second avis attendu, ou un autre admin qui regarde) voit une lecture a
+  // l'aveugle — motif factuel et etat du serveur seulement, jamais le nom de qui a gele (pas de
+  // ton accusateur). L'auto-revision (appealAssignedAdminId === null, un seul admin actif)
+  // n'a pas ce probleme : c'est deja la meme personne.
+  const appealPending = data.appealStatus === "pending";
+  const blindAppealReview = appealPending && data.appealAssignedAdminId !== null && data.currentAdminUsername !== data.frozenBy;
   let html = SCREENS["server-detail"];
   html = replaceOnce(html, ">Aetherfall</h1>", `>${escapeHtml(data.name)}</h1>`);
   html = replaceOnce(html, "Servers / Aetherfall", `Servers / ${escapeHtml(data.name)}`);
@@ -789,16 +801,18 @@ export function serverDetailHtml(data: {
   );
 
   // Bandeau de gel : celui de la maquette, rempli avec le vrai gel. Retiré si le serveur n'est pas gelé.
+  // Lecture a l'aveugle (blindAppealReview) : pas de "Gelé par X", juste la date et le motif.
   const bannerStart = html.indexOf('<div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;');
   if (bannerStart >= 0) {
     const bannerEnd = balancedEnd(html, bannerStart, "div");
-    const by = escapeHtml(data.frozenBy ?? "—");
     const when = data.frozenAt ? escapeHtml(new Date(data.frozenAt).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })) : "";
+    const title = blindAppealReview ? `Gelé le ${when}` : `Gelé par ${escapeHtml(data.frozenBy ?? "—")} · ${when}`;
     const banner =
       `<div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb, #8ac3e0 35%, transparent);background:color-mix(in srgb, #8ac3e0 7%, transparent);">` +
       `<i class="ph ph-snowflake" style="font-size:18px;color:#8ac3e0;margin-top:1px"></i>` +
-      `<div style="display:flex;flex-direction:column;gap:3px;font-size:13px;"><span style="font-weight:500;">Gelé par ${by} · ${when}</span>` +
-      `<span style="color:var(--muted);line-height:1.5;">Masqué de l'annuaire et de la recherche. Les connexions sont bloquées dans le launcher, y compris depuis les favoris et raccourcis. Motif : ${escapeHtml(data.frozenReason ?? "")}</span></div></div>`;
+      `<div style="display:flex;flex-direction:column;gap:3px;font-size:13px;"><span style="font-weight:500;">${title}</span>` +
+      `<span style="color:var(--muted);line-height:1.5;">Masqué de l'annuaire et de la recherche. Les connexions sont bloquées dans le launcher, y compris depuis les favoris et raccourcis. Motif : ${escapeHtml(data.frozenReason ?? "")}</span></div></div>` +
+      (appealPending ? appealReviewHtml({ id: data.id, blindReview: blindAppealReview, hasAssignedAdmin: data.appealAssignedAdminId !== null, history: data.appealHistory }) : "");
     html = html.slice(0, bannerStart) + (frozen ? banner : "") + html.slice(bannerEnd);
   }
 
@@ -1200,6 +1214,33 @@ function replaceStatsSection(html: string, data: { createdAt: string; launchCoun
   html = replaceOnce(html, '<span style="text-align:right;min-width:0;">12,390</span>', `<span style="text-align:right;min-width:0;">${fmt(data.launchCount)}</span>`);
   html = replaceOnce(html, '<span style="text-align:right;min-width:0;">Pro</span>', `<span style="text-align:right;min-width:0;"><span class="nb">Pro</span></span>`);
   return html;
+}
+
+// Bloc "Recours" affiché sous le bandeau de gel quand le propriétaire a demandé un second avis
+// (voir lib/appeals.ts, serverDetailHtml) : "Confirmer le gel" clôt le recours sans rien changer
+// (/appeal-confirm) ; "Annuler le gel" réutilise la route unfreeze existante, qui clôt le recours
+// elle-même quand il y en a un en cours (voir unfreeze/route.ts). blindReview masque déjà le
+// "Gelé par X" du bandeau au-dessus (voir serverDetailHtml) — ce bloc n'a donc rien d'autre à
+// cacher, juste l'historique et les deux actions.
+function appealReviewHtml(data: { id: string; blindReview: boolean; hasAssignedAdmin: boolean; history: { at: string; text: string }[] }): string {
+  const id = escapeHtml(data.id);
+  const title = data.hasAssignedAdmin ? "Recours — second avis demandé" : "Recours — délai de réflexion demandé";
+  const note = data.blindReview
+    ? "Lecture à l'aveugle : seuls le motif et l'état du serveur sont montrés ci-dessus, pas qui a prononcé le gel."
+    : "Un seul administrateur actif : c'est à toi de réexaminer ta propre décision après le délai de réflexion.";
+  const historyRows = data.history.length
+    ? data.history.map((h) => `<div style="display:flex;gap:8px;"><span style="flex-shrink:0;color:var(--muted2);">${timeAgo(h.at)}</span><span>${escapeHtml(h.text)}</span></div>`).join("")
+    : `<span>Aucun évènement.</span>`;
+  return (
+    `<div style="margin-top:12px;display:flex;flex-direction:column;gap:12px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);">` +
+    `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-scales" style="font-size:16px;color:var(--color-accent);"></i><span style="font-weight:500;font-size:13.5px;">${title}</span></div>` +
+    `<p style="margin:0;font-size:12.5px;color:var(--muted);line-height:1.5;">${note}</p>` +
+    `<div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--muted);">${historyRows}</div>` +
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
+    `<form method="post" action="/api/admin/servers/${id}/appeal-confirm"><button type="submit" style="border:1px solid transparent;color:var(--danger);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;">Confirmer le gel</button></form>` +
+    `<form method="post" action="/api/admin/servers/${id}/unfreeze"><input type="hidden" name="notify" value="on" /><button type="submit" style="${CONFIRM}color:#8ac3e0;border-color:#8ac3e0;">Annuler le gel</button></form>` +
+    `</div></div>`
+  );
 }
 
 // Bouton « Dégeler » : ouvre une confirmation centrée (pop-up native). La case « message au

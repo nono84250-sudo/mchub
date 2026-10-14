@@ -6,6 +6,9 @@
     "crons": ["*/5 * * * *"]
   },
   "vars": {
-    "SITE_URL": "http://localhost:3000"
+    // 2026-10-13 : pointe desormais vers la vraie prod (le Worker n'a pas d'acces reseau au PC
+    // de dev, localhost ne marchait jamais une fois deploye) — "wrangler deploy" reste un geste
+    // manuel, cette valeur ne prend effet qu'au prochain deploiement reel du Worker.
+    "SITE_URL": "https://omniscientlauncher.com"
   }
 }

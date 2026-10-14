@@ -6,7 +6,11 @@ import { db } from "@/lib/db";
 import { getServerActivity } from "@/lib/server-activity";
 import { getServerStatus } from "@/lib/server-status";
 import { getT } from "@/i18n/getDictionary";
+import { t } from "@/i18n/t";
 import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
+import { getFreshness, freshnessChipStyle } from "@/lib/freshness";
+import { requestAppeal } from "@/lib/actions/servers";
+import { AppealRequestButton } from "@/components/AppealRequestButton";
 
 export const metadata = { title: "Vue d'ensemble — Omniscient" };
 
@@ -47,6 +51,10 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
   ]);
   const views30 = activity.reduce((sum, point) => sum + point.views, 0);
   const launches30 = activity.reduce((sum, point) => sum + point.launches, 0);
+
+  // Badge de fraicheur (voir lib/freshness.ts) : meme niveau/wording que la fiche publique
+  // (ServerDetailView.tsx), affiche ici cote proprietaire a cote du statut existant.
+  const freshness = getFreshness(server.selfTestPassedAt);
 
   const createdOn = new Date(server.createdAt).toLocaleDateString(locale, {
     day: "numeric",
@@ -111,6 +119,21 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
             {server.frozenReason ? (
               <span className="whitespace-pre-wrap break-words text-[13.5px] text-foreground">{server.frozenReason}</span>
             ) : null}
+            {server.appealStatus === "pending" ? (
+              <p className="pt-1 text-[13.5px] text-muted">
+                {t(dict, server.appealAssignedAdminId ? "manage.appealPendingSecondOpinion" : "manage.appealPendingReflection", {
+                  date: server.appealDeadline ? new Date(server.appealDeadline).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" }) : "—",
+                })}
+              </p>
+            ) : (
+              <div className="pt-1">
+                <AppealRequestButton
+                  onRequest={requestAppeal.bind(null, server.id)}
+                  label={dict.manage.appealRequest}
+                  confirmText={dict.manage.appealRequestConfirm}
+                />
+              </div>
+            )}
           </div>
         ) : null}
         {!server.frozenAt && server.verificationStatus === "pending" ? (
@@ -126,6 +149,11 @@ export default async function ManageServerOverviewPage({ params }: PageProps<"/m
             ) : null}
           </div>
         ) : null}
+        <DetailRow label={dict.manage.detailFreshness}>
+          <span className="tag-chip" style={freshnessChipStyle(freshness.level)}>
+            {t(dict, `freshness.${freshness.level}`, { days: freshness.days })}
+          </span>
+        </DetailRow>
         <DetailRow label={dict.manage.detailVisibility}>
           <span className="inline-flex items-center gap-1.5 text-[13.5px] font-medium text-foreground">
             {server.isPrivate ? <LockSimple className="h-4 w-4" /> : <GlobeHemisphereWest className="h-4 w-4" />}

@@ -8,8 +8,9 @@ import { deleteR2ImageIfOwned, deleteAllR2Images } from "@/lib/serverImages";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { slugify } from "@/lib/slug";
 import { generateUniqueInviteCode } from "@/lib/inviteCode";
-import type { ModpackSource } from "@/lib/modpack-types";
+import { DEFAULT_MODPACK_CHANNEL, type ModpackChannel, type ModpackSource } from "@/lib/modpack-types";
 import { runAndStoreChecks } from "@/lib/verification";
+import { requestServerAppeal } from "@/lib/appeals";
 
 export type ServerActionState = { error: string } | undefined;
 
@@ -27,6 +28,7 @@ type ServerFormValues = {
   curseforgeModpackName: string | null;
   curseforgeModpackVersion: string | null;
   modpackSource: ModpackSource;
+  modpackChannel: ModpackChannel;
   recommendedRamGB: number | null;
   autoConnect: boolean;
 };
@@ -61,6 +63,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   const curseforgeModpackName = String(formData.get("curseforgeModpackName") ?? "").trim() || null;
   const curseforgeModpackVersion = String(formData.get("curseforgeModpackVersion") ?? "").trim() || null;
   const modpackSource: ModpackSource = formData.get("modpackSource") === "modrinth" ? "modrinth" : "curseforge";
+  const modpackChannel: ModpackChannel = formData.get("modpackChannel") === "beta" ? "beta" : DEFAULT_MODPACK_CHANNEL;
   const recommendedRamRaw = String(formData.get("recommendedRamGB") ?? "").trim();
   const recommendedRamGB = recommendedRamRaw ? Number(recommendedRamRaw) : null;
   // Coche par defaut (meme logique qu'un checkbox HTML absent du FormData quand decoche) :
@@ -99,6 +102,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
     curseforgeModpackName: type === "modded" ? curseforgeModpackName : null,
     curseforgeModpackVersion: type === "modded" ? curseforgeModpackVersion : null,
     modpackSource: type === "modded" ? modpackSource : "curseforge",
+    modpackChannel: type === "modded" ? modpackChannel : DEFAULT_MODPACK_CHANNEL,
     recommendedRamGB,
     autoConnect,
   };
@@ -182,7 +186,11 @@ export async function updateServer(
     parsed.minecraftVersion !== owned.minecraftVersion ||
     parsed.curseforgeModpackId !== owned.curseforgeModpackId ||
     parsed.curseforgeModpackVersion !== owned.curseforgeModpackVersion ||
-    parsed.modpackSource !== owned.modpackSource;
+    parsed.modpackSource !== owned.modpackSource ||
+    // Canal release/beta (2026-10-13) : change quel fichier est installe (voir
+    // getModpackInstallFile/getModrinthModpackInstallFile), donc meme raisonnement que
+    // modpackSource ci-dessus.
+    parsed.modpackChannel !== owned.modpackChannel;
 
   // Passer PRIVE -> PUBLIC exige un auto-test de publication reussi dans le launcher (voir
   // selfTestPassedAt / /api/launcher/servers/[slug]/self-test) — sans ca, on reste prive quoi
@@ -321,6 +329,7 @@ export async function duplicateServer(serverId: string) {
     curseforgeModpackName: source.curseforgeModpackName,
     curseforgeModpackVersion: source.curseforgeModpackVersion,
     modpackSource: source.modpackSource,
+    modpackChannel: source.modpackChannel,
     recommendedRamGB: source.recommendedRamGB,
     autoConnect: source.autoConnect,
     // Une fiche mise en pause reste en pause dans sa copie — sans ça, un
@@ -337,6 +346,19 @@ export async function duplicateServer(serverId: string) {
   updateTag(SERVERS_CACHE_TAG);
   revalidatePath("/dashboard");
   redirect(`/manage/${copy.id}`);
+}
+
+// "Demander un second avis" (manage/[id]/page.tsx, serveur gelé) : voir lib/appeals.ts pour la
+// mécanique complète (délai de 72h, assignation d'un admin différent quand c'est possible).
+export async function requestAppeal(serverId: string): Promise<ServerActionState> {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const result = await requestServerAppeal(serverId, session.user.id);
+  if (result?.error) return result;
+
+  revalidatePath(`/manage/${serverId}`);
+  return undefined;
 }
 
 // Invalide l'ancien lien/code d'invitation (voir le commentaire sur

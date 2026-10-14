@@ -703,6 +703,150 @@ ipcMain.handle("instances:listInstalled", async () => {
 ipcMain.handle("servers:openManage", (_event, serverId) => {
   if (typeof serverId === "string" && serverId) shell.openExternal(`${SITE_URL}/manage/${encodeURIComponent(serverId)}`);
 });
+// Petite fenetre "Reglages" d'une instance (Mes instances, 2026-10-13) : lit/modifie le canal
+// du modpack (release/beta, voir server.modpackChannel et /api/launcher/servers/[slug]/channel)
+// SANS ouvrir le site — nouveau bouton distinct de "Gerer" ci-dessus, qui continue d'ouvrir le
+// navigateur comme avant. Meme pattern reseau que selftest:report (pas de retry de session,
+// reglage rarement utilise).
+ipcMain.handle("servers:getChannel", async (_event, slug) => {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/channel`, {
+      headers: launcherAuthHeaders(),
+    });
+    return { ok: true, modpackChannel: data.modpackChannel };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+ipcMain.handle("servers:setChannel", async (_event, { slug, modpackChannel }) => {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/channel`, {
+      method: "PATCH",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ modpackChannel }),
+    });
+    return { ok: true, modpackChannel: data.modpackChannel };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+// Case "Me prevenir du changement de statut de cette instance" (point 9, meme petite fenetre
+// "Reglages" que getChannel/setChannel ci-dessus, voir INSTANCE_SETTINGS_FIELDS cote renderer).
+// Contrairement au canal du modpack, PAS reserve au proprietaire : s'applique a TOUTE instance
+// de "Mes instances" (possedee OU rejointe) — exige donc juste une session Microsoft active
+// (meme controle que servers:mine), jamais une preuve de propriete. L'UUID envoye au site est
+// celui du profil Minecraft/Xbox DEJA connu du launcher (currentSession), jamais saisi par
+// l'utilisateur : /api/launcher/servers/[slug]/watch le revérifie de toute facon (voir
+// verifyLauncherIdentity cote site).
+ipcMain.handle("servers:getWatch", async (_event, slug) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    const data = await fetchJson(
+      `${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/watch?minecraftUuid=${encodeURIComponent(uuid)}`,
+      { headers: launcherAuthHeaders() },
+    );
+    return { ok: true, notifyOnStatusChange: !!data.notifyOnStatusChange };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+ipcMain.handle("servers:setWatch", async (_event, { slug, notifyOnStatusChange }) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/watch`, {
+      method: "PATCH",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid, notifyOnStatusChange: !!notifyOnStatusChange }),
+    });
+    return { ok: true, notifyOnStatusChange: !!data.notifyOnStatusChange };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+// Systeme d'amis, phase 1 (2026-10-14) : panneau "Amis" de la sidebar (voir nav-friends dans
+// index.html / wireFriends dans renderer.js). Comme servers:getWatch/setWatch ci-dessus, exige
+// juste une session Microsoft active (pas de preuve de propriete a verifier ici) — l'UUID et le
+// pseudo envoyes au site sont ceux du profil DEJA connu du launcher (currentSession), jamais
+// saisis par l'utilisateur.
+ipcMain.handle("friends:list", async () => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    const data = await fetchJson(
+      `${SITE_URL}/api/launcher/friends?minecraftUuid=${encodeURIComponent(uuid)}`,
+      { headers: launcherAuthHeaders() },
+    );
+    return { ok: true, friends: data.friends ?? [] };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+// Reponse TOUJOURS { ok: true } quoi qu'il arrive cote site (pseudo introuvable, deja ami —
+// voir addFriendByUsername dans lib/friends.ts cote site) : anti-enumeration, le renderer ne
+// doit jamais pouvoir distinguer ces cas d'apres cet appel, seul un rafraichissement de la
+// liste (friends:list) dit si ca a vraiment ajoute quelqu'un. error/ok:false ici ne couvre que
+// les pannes reseau/validation (pseudo vide), jamais "pseudo introuvable".
+ipcMain.handle("friends:add", async (_event, minecraftUsername) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    await fetchJson(`${SITE_URL}/api/launcher/friends`, {
+      method: "POST",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, targetUsername: minecraftUsername }),
+    });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+ipcMain.handle("friends:remove", async (_event, friendUserId) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    await fetchJson(`${SITE_URL}/api/launcher/friends/${encodeURIComponent(friendUserId)}`, {
+      method: "DELETE",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid }),
+    });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+// Heartbeat de presence (voir lib/presence.ts cote site) : greffe sur le cycle de 60s existant
+// du launcher (REFRESH_INTERVAL_MS/scheduleRefresh dans renderer.js), jamais un intervalle a
+// part. Echec silencieux cote renderer (voir sendPresenceHeartbeat la-bas) : un heartbeat rate
+// ne fait que retarder un peu le passage "hors ligne" d'un ami, jamais a signaler au joueur.
+ipcMain.handle("presence:heartbeat", async () => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    await fetchJson(`${SITE_URL}/api/launcher/presence`, {
+      method: "POST",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: currentSession.profile.id, minecraftUsername: currentSession.profile.name }),
+    });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
 // Pour construire le lien d'invitation (copie dans le presse-papier depuis
 // "Mes instances") sans dupliquer la logique SITE_URL cote renderer.
 ipcMain.handle("app:getSiteUrl", () => SITE_URL);
@@ -1907,15 +2051,26 @@ ipcMain.handle("selftest:run", async (event, slug) => {
     } catch (error) {
       report("modpack", "fail", { error: error instanceof Error ? error.message : String(error) });
     }
+    // Moddé : le téléchargement du modpack (mods inclus) est entièrement fini à cet instant — on
+    // peut juger ce check tout de suite, sans attendre le lancement. Bug trouvé le 2026-10-13 (test
+    // réel du propriétaire, 5 mods bloqués par CurseForge) : si installModpack échouait, "modded"
+    // restait vide, launchMinecraft() se rabattait alors silencieusement sur du Minecraft vanilla
+    // (aucun rapport avec le modpack testé), et le succès de CE lancement de secours écrasait
+    // l'échec pourtant réel du check modpack plus bas. Le vanilla, lui, reste décidé par le
+    // lancement (ensureVanillaVersion ne télécharge que JSON+jar, pas bibliothèques/assets).
+    if (server.type === "modded" && server.curseforgeModpackId && modded) {
+      checks.modpackInstalled = true;
+      report("modpack", "pass");
+    }
     if (bailIfAborted("gameStarted")) return { ok: true, checks, detectedVersion, allPassed: false, aborted: true };
 
     // 3. Jeu démarré (RAM correcte) — launchMinecraft() ne résout qu'une fois Minecraft
     // réellement démarré (started = true / onGameState(true)), avec la RAM des réglages
     // actuels du joueur (c'est bien SA configuration qui doit être testée, pas une valeur
     // arbitraire). Tente de lancer meme si le check #2 a echoue (fichiers manquants, etc.) :
-    // l'erreur rencontree ici est elle-meme une information utile pour le proprietaire — et si
-    // malgre tout le lancement reussit (bibliotheques/assets reinstalles au passage), le check
-    // #2 est valide a cet instant, pas avant (voir plus haut).
+    // l'erreur rencontree ici est elle-meme une information utile pour le proprietaire. Pour un
+    // serveur moddé le check #2 est déjà tranché (voir plus haut) et n'est plus réévalué ici —
+    // seul le vanilla décide encore son check #2 à ce stade (voir plus bas).
     report("gameStarted", "running");
     let gameJava = modded?.javaPath;
     if (!gameJava) {
@@ -1956,11 +2111,14 @@ ipcMain.handle("selftest:run", async (event, slug) => {
         customVersion: modded?.customVersion,
         customJvmArgs: modded?.jvmArgs,
       });
-      // Preuve que les fichiers sont reellement la (voir le commentaire du check #2) : atteint
-      // uniquement si minecraft-launcher-core a fini de telecharger/verifier bibliotheques et
-      // assets avant de demarrer le processus.
-      checks.modpackInstalled = true;
-      report("modpack", "pass");
+      // Vanilla seulement : la preuve que bibliothèques/assets sont bien là ne vient que d'ici
+      // (voir le commentaire du check #2 plus haut). Pour un serveur moddé, ce check a déjà été
+      // tranché juste après installModpack() — ne plus l'écraser ici avec un lancement de
+      // secours qui n'a jamais rapport au modpack réellement testé.
+      if (!(server.type === "modded" && server.curseforgeModpackId)) {
+        checks.modpackInstalled = true;
+        report("modpack", "pass");
+      }
       checks.gameStarted = true;
       report("gameStarted", "pass");
       discordPresence.setPlayingActivity(server.name);

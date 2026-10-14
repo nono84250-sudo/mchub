@@ -37,6 +37,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
     ip: server.ip,
     curseforgeModpackId: server.curseforgeModpackId ?? "",
     modpackSource: server.modpackSource,
+    modpackChannel: server.modpackChannel,
     curseforgeModpackName: server.curseforgeModpackName ?? "",
     curseforgeModpackVersion: server.curseforgeModpackVersion ?? "",
     recommendedRamGB: server.recommendedRamGB?.toString() ?? "",

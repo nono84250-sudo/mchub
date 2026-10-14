@@ -86,7 +86,32 @@ CREATE TABLE "server" (
   -- est de toute facon toujours ajoutee a la liste Multijoueur (servers.dat), que la case soit
   -- cochee ou non. Vrai par defaut : comportement de lancement inchange pour les fiches
   -- existantes (decision du 2026-10-10).
-  "autoConnect"              INTEGER NOT NULL DEFAULT 1
+  "autoConnect"              INTEGER NOT NULL DEFAULT 1,
+  -- Recours contre un gel (voir lib/appeals.ts) : "second avis obligatoire à effet suspensif"
+  -- plutot qu'une messagerie — reutilise le pattern verificationStatus/verificationHistory
+  -- ci-dessus. Ajoutees par ALTER TABLE, pas de CHECK sur appealStatus (meme raisonnement que
+  -- verificationStatus). NULL = jamais demande ; 'pending' = en attente d'une decision ;
+  -- 'resolved' = tranche (gel confirme, annule, ou auto-degele apres 72h sans decision, voir
+  -- appealHistory et /api/cron/process-appeals).
+  "appealStatus"             TEXT,
+  "appealRequestedAt"        TEXT,
+  -- Instant UTC a partir duquel /api/cron/process-appeals degele automatiquement si personne
+  -- n'a tranche (appelee toutes les 5 min par cron-worker/src/index.js).
+  "appealDeadline"           TEXT,
+  -- Admin charge de statuer (id, pas username comme frozenBy), choisi a la demande du
+  -- proprietaire parmi les admins AUTRES que frozenBy : vrai "second avis" si un autre admin
+  -- existe. Reste NULL s'il n'y a qu'un seul admin actif — c'est alors le meme admin qui gele
+  -- qui reexamine passe le delai (auto-revision, jamais affichee comme un second avis au
+  -- proprietaire, voir lib/appeals.ts).
+  "appealAssignedAdminId"    TEXT,
+  "appealHistory"            TEXT NOT NULL DEFAULT '[]',
+  -- Canal de suivi du modpack (CurseForge ET Modrinth, voir lib/curseforge.ts et
+  -- lib/modrinth.ts) : ajoutee par ALTER TABLE, meme raisonnement que verificationStatus
+  -- ci-dessus — pas de CHECK, valeurs applicatives 'release' (defaut, stable uniquement) ou
+  -- 'beta' (accepte aussi les versions beta du modpack, en plus des releases). Choisi dans
+  -- ModpackPicker.tsx (creation/edition) ou depuis le launcher (voir
+  -- /api/launcher/servers/[slug]/channel) — les deux ecrivent la meme colonne.
+  "modpackChannel"           TEXT NOT NULL DEFAULT 'release'
 );
 CREATE INDEX "server_ownerId_idx" ON "server"("ownerId");
 
@@ -125,7 +150,11 @@ CREATE INDEX "report_category_status_createdAt_idx" ON "report"("category", "sta
 CREATE TABLE "notification" (
   "id"                     TEXT PRIMARY KEY,
   "recipientMinecraftUuid" TEXT NOT NULL,
-  "type"                   TEXT NOT NULL CHECK ("type" IN ('report_replied', 'report_resolved', 'server_frozen', 'admin_info', 'admin_warning', 'admin_error', 'broadcast_announcement', 'broadcast_maintenance', 'broadcast_alert', 'broadcast_promotion', 'verification_approved', 'verification_rejected')),
+  -- 'instance_back_online' ajoute le 2026-10-14 (point 9, suivi de statut d'instance) : la table
+  -- a ete RECREEE (CREATE + INSERT SELECT + DROP + RENAME, pas un simple ALTER) car SQLite ne
+  -- permet pas de modifier un CHECK existant — donnees existantes verifiees avant/apres (voir
+  -- lib/instanceWatch.ts et /api/cron/process-instance-watch).
+  "type"                   TEXT NOT NULL CHECK ("type" IN ('report_replied', 'report_resolved', 'server_frozen', 'admin_info', 'admin_warning', 'admin_error', 'broadcast_announcement', 'broadcast_maintenance', 'broadcast_alert', 'broadcast_promotion', 'verification_approved', 'verification_rejected', 'instance_back_online')),
   "serverName"             TEXT NOT NULL,
   "message"                TEXT,
   "read"                   INTEGER NOT NULL DEFAULT 0,
@@ -136,6 +165,27 @@ CREATE TABLE "notification" (
   "eventAt"                TEXT
 );
 CREATE INDEX "notification_recipient_read_createdAt_idx" ON "notification"("recipientMinecraftUuid", "read", "createdAt");
+
+-- Suivi par joueur/instance (point 9, 2026-10-14) : case "Me prevenir du changement de statut
+-- de cette instance" (voir INSTANCE_SETTINGS_FIELDS cote launcher et /api/launcher/servers/[slug]/watch).
+-- S'applique a TOUTE instance de "Mes instances" (possedee OU rejointe), pas seulement les
+-- favoris — d'ou une table dediee plutot qu'une colonne sur server (qui n'a qu'UN proprietaire).
+-- lastKnownOnline retient le dernier etat mesure par /api/cron/process-instance-watch pour ne
+-- notifier QUE la transition hors-ligne -> en-ligne (jamais l'inverse, voir ce fichier), sans
+-- redondance si le serveur reste en ligne sur plusieurs passages du cron.
+CREATE TABLE "instanceWatch" (
+  "id"                   TEXT PRIMARY KEY,
+  "minecraftUuid"        TEXT NOT NULL,
+  "serverId"             TEXT NOT NULL REFERENCES "server"("id") ON DELETE CASCADE,
+  "notifyOnStatusChange" INTEGER NOT NULL DEFAULT 0,
+  "lastKnownOnline"      INTEGER NOT NULL DEFAULT 0,
+  "createdAt"            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+-- Une ligne par (joueur, serveur) : la route watch fait un select avant insert/update sur cette
+-- paire (pas d'UPSERT natif cote petite couche db.ts, voir lib/instanceWatch.ts).
+CREATE UNIQUE INDEX "instanceWatch_minecraftUuid_serverId_idx" ON "instanceWatch"("minecraftUuid", "serverId");
+-- Filtre principal du cron (WHERE notifyOnStatusChange = 1).
+CREATE INDEX "instanceWatch_notify_idx" ON "instanceWatch"("notifyOnStatusChange");
 
 CREATE TABLE "platformSetting" (
   "key"       TEXT PRIMARY KEY,
@@ -197,6 +247,37 @@ CREATE TABLE "adminNote" (
 );
 CREATE INDEX "adminNote_userId_createdAt_idx" ON "adminNote"("userId", "createdAt");
 
+-- Amities (systeme d'amis phase 1, 2026-10-14, voir lib/friends.ts) : ajout direct et
+-- reciproque, PAS de demande a accepter/refuser (confirme par l'utilisateur) -- une ligne par
+-- paire, jamais deux (A-B et B-A). Deduplication par l'application : lib/friends.ts range
+-- toujours les deux id dans le meme ordre (le plus petit en userId1) avant d'ecrire, donc
+-- l'index unique ci-dessous suffit a empecher un doublon quel que soit l'ordre d'ajout.
+-- Suppression par l'un OU l'autre = une seule ligne a retirer, l'amitie disparait des deux
+-- cotes (pas de "pending", pas de statut).
+CREATE TABLE "friendship" (
+  "id"        TEXT PRIMARY KEY,
+  "userId1"   TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "userId2"   TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE UNIQUE INDEX "friendship_pair_idx" ON "friendship"("userId1", "userId2");
+-- Recherche "de qui suis-je l'ami" dans l'autre sens (userId2) : userId1 est deja couvert par
+-- l'index unique ci-dessus (prefixe de gauche).
+CREATE INDEX "friendship_userId2_idx" ON "friendship"("userId2");
+
+-- Presence (heartbeat envoye par le launcher, 2026-10-14, voir /api/launcher/presence) :
+-- table SEPAREE de "user" expres -- ecrite a chaque cycle de 60s du launcher (REFRESH_INTERVAL_MS
+-- cote renderer.js) pour TOUS les joueurs connectes, alors que "user" reste une table peu
+-- ecrite (connexion, changement de pseudo). Le statut "en ligne" n'est PAS stocke ici : calcule
+-- a la LECTURE (lastSeenAt dans les ~2 dernieres minutes, soit 2x le cycle de 60s, marge pour un
+-- cycle manque) par lib/presence.ts.
+CREATE TABLE "userPresence" (
+  "userId"     TEXT PRIMARY KEY REFERENCES "user"("id") ON DELETE CASCADE,
+  "lastSeenAt" TEXT NOT NULL,
+  "createdAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
 -- Articles d'actualite (panel admin /admin/news), affiches sur la page "Actualites" du
 -- dashboard une fois publies. Pas de type/auteur/image pour l'instant (voir la maquette,
 -- volontairement simplifie).
@@ -209,3 +290,19 @@ CREATE TABLE "news" (
   "createdAt"   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX "news_published_publishedAt_idx" ON "news"("published", "publishedAt");
+
+-- Formulaire de contact public (/contact), 2026-10-14 : aucun email n'est envoye (aucune
+-- infra de ce genre dans ce projet, voir lib/db.ts) -- le message est juste enregistre ici
+-- et lu depuis le panel admin (/admin/contact), meme esprit que "report" plus haut mais sans
+-- lien avec un serveur ni un compte (visiteur public, pas forcement connecte). Pas de CHECK
+-- sur "status" (valeurs applicatives 'new'/'read'), meme raisonnement que verificationStatus
+-- ci-dessus.
+CREATE TABLE "contactMessage" (
+  "id"        TEXT PRIMARY KEY,
+  "name"      TEXT NOT NULL,
+  "email"     TEXT NOT NULL,
+  "message"   TEXT NOT NULL,
+  "status"    TEXT NOT NULL DEFAULT 'new',
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX "contactMessage_status_createdAt_idx" ON "contactMessage"("status", "createdAt");

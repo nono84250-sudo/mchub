@@ -58,6 +58,10 @@ export type PublicServerDetail = PublicServerSummary & {
   curseforgeModpackVersion: string | null;
   recommendedRamGB: number | null;
   backgroundUrl: string | null;
+  // Badge de fraicheur (voir lib/freshness.ts) : date du dernier auto-test de publication
+  // reussi depuis le launcher, jamais null->"jamais teste" pour une fiche deja approuvee avant
+  // l'existence de ce controle (voir le commentaire sur selfTestPassedAt dans schema.sql).
+  selfTestPassedAt: string | null;
 };
 
 // Filtre et tri faits en JS plutot que dans la requete : a l'echelle d'un
@@ -358,6 +362,7 @@ const loadPublishedServerBySlug = unstable_cache(
     "viewCount",
     "isPrivate",
     "inviteCode",
+    "selfTestPassedAt",
   )
     .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug, published: true, verificationStatus: "approved" })
@@ -396,6 +401,7 @@ export async function getPublicServerBySlug(slug: string, proof: PrivateServerPr
     recommendedRamGB: row.recommendedRamGB,
     createdAt: row.createdAt,
     viewCount: row.viewCount,
+    selfTestPassedAt: row.selfTestPassedAt,
   };
 }
 

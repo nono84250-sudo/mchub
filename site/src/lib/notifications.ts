@@ -17,7 +17,11 @@ export type NotificationType =
   | "broadcast_alert"
   | "broadcast_promotion"
   | "verification_approved"
-  | "verification_rejected";
+  | "verification_rejected"
+  // Point 9 (suivi de statut d'instance, 2026-10-14) : une instance suivie (voir
+  // lib/instanceWatch.ts) repasse en ligne apres avoir ete hors ligne. CHECK recree sur
+  // "notification" pour l'accepter (voir schema.sql) — donnees existantes preservees.
+  | "instance_back_online";
 
 export type NotificationSummary = {
   id: string;

@@ -1,5 +1,5 @@
 import "server-only";
-import type { ModpackInstallFile, ModpackSearchResult } from "@/lib/modpack-types";
+import type { ModpackChannel, ModpackInstallFile, ModpackSearchResult } from "@/lib/modpack-types";
 
 // API publique de Modrinth (https://docs.modrinth.com) : aucune cle ni compte
 // n'est necessaire pour lire et telecharger — seul un User-Agent qui identifie
@@ -44,7 +44,11 @@ const isReleaseGameVersion = (v: string) => /^\d+\.\d+(\.\d+)?$/.test(v);
  * recherche ne donne pas la derniere version d'un modpack, il faut aller la
  * chercher pour afficher sa version de Minecraft et son chargeur.
  */
-export async function searchModrinthModpacks(query: string): Promise<ModpackSearchResult[]> {
+// `channel` (2026-10-13, canal beta) : en mode "release" (par defaut), comportement inchange.
+// En mode "beta", NE montre que les modpacks qui ont reellement une version beta — un modpack
+// sans beta disparait de la liste plutot que de reafficher sa derniere release (voir
+// ModpackPicker.tsx, "Aucune version bêta trouvée").
+export async function searchModrinthModpacks(query: string, channel: ModpackChannel = "release"): Promise<ModpackSearchResult[]> {
   if (!query.trim()) return [];
 
   const params = new URLSearchParams({
@@ -57,6 +61,31 @@ export async function searchModrinthModpacks(query: string): Promise<ModpackSear
     hits: { project_id: string; title: string; description: string; icon_url: string | null }[];
   }>(`/search?${params}`);
   if (!hits.length) return [];
+
+  if (channel === "beta") {
+    // Ni /search ni /projects n'indiquent le type de version : il faut la liste complete de
+    // CHAQUE resultat pour savoir laquelle est une beta (meme endpoint que
+    // getModrinthModpackInstallFile, un appel par resultat — borne a 8 par la recherche).
+    const perProject = await Promise.all(
+      hits.map((hit) => modrinthRequest<ModrinthVersion[]>(`/project/${encodeURIComponent(hit.project_id)}/version`).catch(() => [])),
+    );
+    const betaResults: ModpackSearchResult[] = [];
+    hits.forEach((hit, i) => {
+      const betas = perProject[i].filter((v) => v.version_type === "beta");
+      const latest = [...betas].sort((a, b) => b.date_published.localeCompare(a.date_published))[0];
+      if (!latest) return; // aucune beta pour ce modpack : exclu de la liste
+      betaResults.push({
+        id: hit.project_id,
+        name: hit.title,
+        summary: hit.description,
+        iconUrl: hit.icon_url,
+        latestVersion: latest.version_number,
+        minecraftVersion: latest.game_versions.find(isReleaseGameVersion) ?? null,
+        loader: describeLoader(latest.loaders),
+      });
+    });
+    return betaResults;
+  }
 
   // Le tableau `versions` d'un projet est chronologique : la derniere entree est la plus recente.
   const projects = await modrinthRequest<{ id: string; versions: string[] }[]>(
@@ -89,9 +118,14 @@ export async function searchModrinthModpacks(query: string): Promise<ModpackSear
  * doit toujours suivre (voir le commentaire sur curseforgeModpackVersion dans
  * contract.prisma). Les versions stables passent avant les beta/alpha.
  */
+// `channel` (2026-10-13) : "release" ne choisit qu'une version "release" (comportement
+// d'avant, repli sur la plus recente si aucune release n'existe) ; "beta" accepte aussi les
+// versions "beta" (jamais alpha) pour qu'un serveur sur ce canal continue de suivre les mises
+// a jour meme si l'auteur ne publie plus que des beta.
 export async function getModrinthModpackInstallFile(
   projectIdOrSlug: string,
   hints: { minecraftVersion?: string | null },
+  channel: ModpackChannel = "release",
 ): Promise<{ modpack: { id: string; name: string }; file: ModpackInstallFile }> {
   const id = encodeURIComponent(projectIdOrSlug);
   const [project, versions] = await Promise.all([
@@ -102,7 +136,8 @@ export async function getModrinthModpackInstallFile(
   const byNewest = [...versions].sort((a, b) => b.date_published.localeCompare(a.date_published));
   const compatible = hints.minecraftVersion ? byNewest.filter((v) => v.game_versions.includes(hints.minecraftVersion!)) : byNewest;
   const pool = compatible.length ? compatible : byNewest;
-  const chosen = pool.find((v) => v.version_type === "release") ?? pool[0];
+  const allowedTypes: ModrinthVersion["version_type"][] = channel === "beta" ? ["release", "beta"] : ["release"];
+  const chosen = pool.find((v) => allowedTypes.includes(v.version_type)) ?? pool[0];
   if (!chosen) throw new Error("Ce modpack Modrinth n'a aucune version publiée.");
 
   const file = chosen.files.find((f) => f.primary) ?? chosen.files[0];

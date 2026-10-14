@@ -20,6 +20,9 @@ export async function Footer() {
           <Link href="/servers" className="hover:text-foreground transition-colors">
             {dict.footer.servers}
           </Link>
+          <Link href="/contact" className="hover:text-foreground transition-colors">
+            {dict.footer.contact}
+          </Link>
           <ThemeSwitcher />
           <LanguageSwitcher />
         </div>

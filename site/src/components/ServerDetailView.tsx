@@ -2,6 +2,8 @@ import { ServerStatus } from "@/components/ServerStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { ViewTracker } from "@/components/ViewTracker";
 import { getT } from "@/i18n/getDictionary";
+import { t } from "@/i18n/t";
+import { getFreshness, freshnessChipStyle } from "@/lib/freshness";
 import type { PublicServerDetail } from "@/lib/public-servers";
 
 // Fiche d'un serveur, partagee entre /servers/[slug] (serveur public) et
@@ -9,6 +11,9 @@ import type { PublicServerDetail } from "@/lib/public-servers";
 // canSeeServer dans public-servers.ts). Le rendu ne change pas.
 export async function ServerDetailView({ slug, server }: { slug: string; server: PublicServerDetail }) {
   const { dict } = await getT();
+  // Badge de fraicheur (voir lib/freshness.ts) : niveau et wording partages avec
+  // manage/[id]/page.tsx (console de gestion du proprietaire), calcules une seule fois.
+  const freshness = getFreshness(server.selfTestPassedAt);
 
   return (
     <div className="relative">
@@ -42,8 +47,11 @@ export async function ServerDetailView({ slug, server }: { slug: string; server:
 
       <div className="pl-[72px] min-h-[34px]">
         <h1 className="text-3xl font-heading font-bold tracking-tight text-foreground">{server.name}</h1>
-        <div className="mt-1">
+        <div className="mt-1 flex flex-wrap items-center gap-2">
           <ServerStatus playerCount={server.playerCount} playerCapacity={server.playerCapacity} />
+          <span className="tag-chip" style={freshnessChipStyle(freshness.level)}>
+            {t(dict, `freshness.${freshness.level}`, { days: freshness.days })}
+          </span>
         </div>
       </div>
 
