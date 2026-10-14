@@ -2981,6 +2981,17 @@ async function joinByCodeFlow() {
   }
 }
 
+// Rejoindre un de SES serveurs par code reste possible (14/10, demande de Rushi : il teste ses
+// codes ainsi) et suit la procedure normale. Mais a chaque chargement de Mes instances, un
+// serveur qu'il possede deja n'apparait plus dans « Rejoint » (ni dans son compteur) : il est
+// deja dans « Tout ». Simple masquage a l'affichage : l'entree locale (settings.joinedServers)
+// n'est pas effacee, donc rien n'est perdu si le serveur change un jour de proprietaire, et ni
+// le serveur ni les donnees d'autres joueurs ne sont touches.
+function withoutOwnedServers(joined, owned) {
+  const ownedSlugs = new Set((owned || []).map((server) => server.slug));
+  return (joined || []).filter((server) => !ownedSlugs.has(server.slug));
+}
+
 // Generique : utilise par "Mes instances" et par la liste publique des serveurs (voir
 // renderFilteredList) — chaque appelant fournit sa propre page courante et ses propres id
 // de boutons, pour ne jamais confondre les deux pagers (tous deux presents dans le DOM a la
@@ -3318,7 +3329,7 @@ async function renderMyInstancesList() {
     return;
   }
   myInstancesServers = ownedResult.servers;
-  myJoinedServers = joinedResult.ok ? joinedResult.servers : [];
+  myJoinedServers = withoutOwnedServers(joinedResult.ok ? joinedResult.servers : [], myInstancesServers);
 
   // Toujours "Tout" a l'ouverture (meme sans aucun serveur possede ni rejoint
   // : l'onglet "Rejoint" doit rester atteignable pour entrer un code).
