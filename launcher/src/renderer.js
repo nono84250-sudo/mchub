@@ -1024,13 +1024,13 @@ function showManualModsModal(manualMods) {
       chip.className = `manual-mod-chip ${gone ? "gone" : "todo"}`;
       chip.textContent = gone ? t("manualMods.notFound") : t("manualMods.toDownload");
       row.append(text, chip);
-      if (!gone) {
+      if (!gone && mod.pageUrl) {
         const open = document.createElement("button");
         open.type = "button";
         open.className = "btn-secondary";
         open.textContent = t("manualMods.openPage");
         open.addEventListener("click", () => {
-          window.mchub.openModPage(mod.pageUrl, mod.modName || mod.fileName);
+          window.mchub.openModPage(mod.pageUrl);
           open.textContent = `✓ ${t("manualMods.openPage")}`;
         });
         row.append(open);

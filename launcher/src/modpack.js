@@ -332,7 +332,7 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
         modId: info.modId,
         modName: typeof info.modName === "string" ? info.modName : null,
         fileName: info.fileName,
-        pageUrl: safeCurseforgeUrl(info.pageUrl),
+        pageUrl: safeCurseforgeUrl(info.pageUrl) || curseforgeProjectUrl(info.modId),
         reason: "blocked",
       });
     }
@@ -350,6 +350,14 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
 }
 
 // Seules les pages du site de CurseForge sont ouvertes depuis la liste des mods bloques.
+// Repli quand le site ne donne pas la page exacte du fichier (site en ligne pas encore a jour) :
+// https://www.curseforge.com/projects/<id du projet> redirige vers la page du mod. L'id vient du
+// manifeste, donc c'est toujours le bon mod, contrairement a une recherche par nom (plusieurs
+// mods peuvent porter le meme nom). On ouvre seulement la page : le joueur telecharge lui-meme.
+function curseforgeProjectUrl(modId) {
+  return Number.isInteger(modId) && modId > 0 ? `https://www.curseforge.com/projects/${modId}` : null;
+}
+
 function safeCurseforgeUrl(value) {
   try {
     const url = new URL(value);

@@ -884,22 +884,16 @@ function modpackErrorFields(error) {
   };
 }
 
-// Page CurseForge d'un mod bloque : uniquement https://www.curseforge.com. Sans lien connu (site
-// pas encore a jour, cle limitee), une recherche CurseForge par nom.
-ipcMain.handle("modpack:openModPage", (_event, pageUrl, searchName) => {
-  let url = null;
+// Page CurseForge d'un mod bloque : uniquement https://www.curseforge.com. Le lien vient de
+// modpack.js (page exacte du fichier donnee par le site, sinon page du projet par son id). Plus
+// de recherche par nom (14/10, Rushi) : plusieurs mods peuvent porter le meme nom.
+ipcMain.handle("modpack:openModPage", (_event, pageUrl) => {
   try {
     const parsed = new URL(pageUrl);
-    if (parsed.protocol === "https:" && parsed.hostname === "www.curseforge.com") url = parsed.href;
+    if (parsed.protocol === "https:" && parsed.hostname === "www.curseforge.com") shell.openExternal(parsed.href);
   } catch {
-    // pas de lien valable : recherche par nom ci-dessous
+    // pas de lien valable : rien a ouvrir
   }
-  if (!url && typeof searchName === "string" && searchName.trim()) {
-    // Nom de fichier ("balm-neoforge-1.21.1-21.0.20.jar") : on garde le debut, avant la version.
-    const words = searchName.trim().replace(/\.(jar|zip)$/i, "").split(/[-_ ](?=v?\d)/)[0];
-    url = `https://www.curseforge.com/minecraft/search?search=${encodeURIComponent(words.slice(0, 100))}`;
-  }
-  if (url) shell.openExternal(url);
 });
 
 ipcMain.handle("modpack:openDownloads", () => {
