@@ -2257,7 +2257,9 @@ async function showHomeView() {
 }
 
 // Slugs de serveurs mis en avant par l'equipe (gratuit, jamais paye) pour la colonne "A la une"
-// de l'accueil. Vide = le serveur le plus actif non deja affiche.
+// de l'accueil. Vide = le serveur le plus actif non deja affiche. Decision de Rushi (14/10) :
+// la carte dit « Le plus actif » (home.teamPick) ; si un slug est ajoute ici un jour, changer
+// aussi ce libelle, sinon il serait faux.
 const TEAM_PICK_SLUGS = [];
 
 async function renderHomeView() {
