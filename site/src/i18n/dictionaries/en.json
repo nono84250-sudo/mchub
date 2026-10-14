@@ -34,7 +34,7 @@
   "download": {
     "title": "Get the",
     "titleAccent": "Omniscient Launcher",
-    "subtitle": "Sign in with your Microsoft/Xbox account, browse servers, and join a modpack in one click. Available on Windows, macOS and Linux.",
+    "subtitle": "Sign in with your Microsoft/Xbox account, browse servers, and join a modpack in one click. Available on Windows, with macOS and Linux coming soon.",
     "ctaDownloadFor": "Download for {os}",
     "ctaComingSoonFor": "Coming soon on {os}",
     "ctaDownloadWindowsInstead": "Download for Windows instead",

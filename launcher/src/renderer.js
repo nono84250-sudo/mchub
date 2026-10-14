@@ -1755,6 +1755,19 @@ function wireNotifications() {
 let friendsList = [];
 let friendsIncoming = [];
 let friendsOutgoing = [];
+// Etat du chargement (audit 14/10, K2) : avant, une panne s'affichait comme « Pas encore
+// d'amis », et les listes du compte precedent restaient affichees apres un changement de compte.
+// friendsOwnerId = compte a qui appartiennent les listes ci-dessus.
+let friendsStatus = "idle"; // "idle" | "loaded" | "error"
+let friendsOwnerId = null;
+
+function resetFriendsState() {
+  friendsList = [];
+  friendsIncoming = [];
+  friendsOutgoing = [];
+  friendsStatus = "idle";
+  friendsOwnerId = null;
+}
 
 function friendRowHtml(friend) {
   const name = friend.minecraftUsername || "?";
@@ -1806,7 +1819,17 @@ function friendsSectionHtml(titleKey, items, rowHtml = friendRowHtml) {
 
 function renderFriendsList() {
   const listEl = document.getElementById("friends-list");
-  if (friendsList.length === 0 && friendsIncoming.length === 0 && friendsOutgoing.length === 0) {
+  if (friendsOwnerId !== (currentProfile?.id ?? null)) resetFriendsState();
+  const nothing = friendsList.length === 0 && friendsIncoming.length === 0 && friendsOutgoing.length === 0;
+  if (nothing && friendsStatus !== "loaded") {
+    listEl.innerHTML = `
+      <div class="friends-empty">
+        <h3>${t(friendsStatus === "error" ? "friends.loadError" : "friends.loading")}</h3>
+        ${friendsStatus === "error" ? `<p>${t("friends.loadErrorHint")}</p>` : ""}
+      </div>`;
+    return;
+  }
+  if (nothing) {
     listEl.innerHTML = `
       <div class="friends-empty">
         <span class="friends-empty-icon">
@@ -1831,11 +1854,22 @@ function renderFriendsList() {
 
 async function refreshFriends() {
   if (!signedIn) return;
+  const ownerId = currentProfile?.id ?? null;
   const result = await window.mchub.friends.list();
-  if (!result.ok) return;
+  // Compte change ou deconnecte pendant la requete : la reponse ne le concerne plus.
+  if (!signedIn || (currentProfile?.id ?? null) !== ownerId) return;
+  if (friendsOwnerId !== ownerId) resetFriendsState();
+  friendsOwnerId = ownerId;
+  if (!result.ok) {
+    // Les listes deja affichees restent (panne passagere) ; sinon, message d'erreur.
+    if (friendsStatus !== "loaded") friendsStatus = "error";
+    renderFriendsList();
+    return;
+  }
   friendsList = result.friends;
   friendsIncoming = result.incoming;
   friendsOutgoing = result.outgoing;
+  friendsStatus = "loaded";
   renderFriendsList();
 }
 
@@ -1903,8 +1937,15 @@ function wireFriends() {
     const btn = event.target.closest(".friends-item-remove, .friends-request-accept, .friends-request-decline, .friends-request-cancel");
     if (!btn) return;
     btn.closest(".friends-item").querySelectorAll("button").forEach((b) => (b.disabled = true));
-    if (btn.classList.contains("friends-request-accept")) await window.mchub.friends.accept(btn.dataset.id);
-    else await window.mchub.friends.remove(btn.dataset.id);
+    feedbackEl.hidden = true;
+    const result = btn.classList.contains("friends-request-accept")
+      ? await window.mchub.friends.accept(btn.dataset.id)
+      : await window.mchub.friends.remove(btn.dataset.id);
+    // Echec d'Accepter/Refuser/Retirer : dit au joueur que rien n'a change (avant : silencieux).
+    if (!result?.ok) {
+      feedbackEl.textContent = t("friends.actionError");
+      feedbackEl.hidden = false;
+    }
     await refreshFriends();
   });
 }
@@ -2618,14 +2659,19 @@ const INSTANCE_SETTINGS_FIELDS = [
 // Espace le re-cliquait, et chaque appel ajoutait ses propres sections et ses propres
 // ecouteurs (un clic sur Enregistrer sauvegardait alors autant de fois).
 let instanceSettingsOpen = false;
+// Jeton de generation (audit 14/10, K1) : apres « Annuler » pendant le chargement, la fenetre
+// est liberee tout de suite (l'engrenage repond de nouveau) alors que les requetes en cours
+// finissent en arriere-plan ; leur fin ne doit pas liberer le verrou d'une fenetre plus recente.
+let instanceSettingsGeneration = 0;
 
 async function openInstanceSettingsModal(server, options) {
   if (instanceSettingsOpen) return;
   instanceSettingsOpen = true;
+  const generation = ++instanceSettingsGeneration;
   try {
     await showInstanceSettingsModal(server, options);
   } finally {
-    instanceSettingsOpen = false;
+    if (generation === instanceSettingsGeneration) instanceSettingsOpen = false;
   }
 }
 
@@ -2707,7 +2753,10 @@ async function showInstanceSettingsModal(server, { owned = true } = {}) {
     let cancelledWhileLoading = false;
     const onLoadingCancel = () => {
       cancelledWhileLoading = true;
+      // L'ecouteur est retire ici : la boucle ci-dessous sort par `return` sans l'atteindre.
+      cancelBtn.removeEventListener("click", onLoadingCancel);
       cleanup();
+      instanceSettingsOpen = false;
     };
     cancelBtn.addEventListener("click", onLoadingCancel);
     let failure = null;
@@ -3619,7 +3668,7 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
       <div class="settings-row">
         <span>
           <span class="settings-row-label">${t("settings.launcherVersion")}</span>
-          <p class="settings-row-desc">${t("settings.upToDate")}</p>
+          <p class="settings-row-desc">${t(UPDATE_PHASE_TEXT[lastUpdatePhase] || "settings.updateNotChecked")}</p>
         </span>
         <span class="join-note">${settings.appVersion ? `v${settings.appVersion.split("-")[0]}` : "—"}</span>
       </div>
@@ -4493,6 +4542,8 @@ function startBackToGuestCountdown(countdownEl, seconds) {
 // de laisser cet espace reserve a l'avatar completement vide.
 function renderGuestHeader() {
   navSettingsBtn.hidden = true;
+  // Plus de compte : les listes d'amis du compte precedent ne doivent plus etre affichees.
+  resetFriendsState();
   // Amis = necessite un compte Microsoft (comme Parametres ci-dessus) : rien a afficher pour
   // un visiteur sans session.
   navFriendsBtn.hidden = true;
@@ -4508,6 +4559,12 @@ function renderGuestHeader() {
   document.getElementById("ms-account-settings").addEventListener("click", showSettingsView);
   window.i18n.applyStaticI18n(msAccountEl);
 }
+
+// Dernier etat connu de la verification de mise a jour (au demarrage), affiche dans Parametres
+// a cote de la version. Avant le 14/10, « À jour. » s'affichait toujours, meme apres un echec ou
+// sans verification (audit, T9). null = pas de verification (lancement en dev, hors app packagee).
+let lastUpdatePhase = null;
+const UPDATE_PHASE_TEXT = { "up-to-date": "settings.upToDate", error: "settings.updateCheckFailed" };
 
 async function boot() {
   // Langue/theme appliques avant tout le reste : le reste de boot() (et tout
@@ -4547,6 +4604,7 @@ async function boot() {
   bootstrapProgressEl.style.width = "15%";
   let updateReadyToInstall = false;
   const stopUpdateStatus = window.mchub.updates.onStatus((status) => {
+    lastUpdatePhase = status.phase;
     if (status.phase === "downloading") {
       bootstrapStatusEl.textContent = status.percent
         ? t("bootstrap.downloadingUpdateProgress", { percent: status.percent })

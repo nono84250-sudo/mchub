@@ -1929,6 +1929,8 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) win.webContents.send("game:state", running);
         }
+        // Jeu ferme : Discord revient sur « Parcourt les serveurs » (audit 14/10, K3).
+        if (!running) discordPresence.setBrowsingActivity();
         // Le launcher s'était caché pendant la partie (réglage « garder le launcher ouvert » décoché) :
         // il se réaffiche tout seul quand le jeu se ferme.
         if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
@@ -2090,6 +2092,7 @@ ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) win.webContents.send("game:state", running);
         }
+        if (!running) discordPresence.setBrowsingActivity();
         if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
@@ -2312,6 +2315,7 @@ ipcMain.handle("selftest:run", async (event, slug) => {
           for (const win of BrowserWindow.getAllWindows()) {
             if (!win.isDestroyed()) win.webContents.send("game:state", running);
           }
+          if (!running) discordPresence.setBrowsingActivity();
         },
         authorization: currentSession.authorization,
         version: modded?.minecraftVersion ?? server.minecraftVersion,
@@ -2401,7 +2405,11 @@ app.whenReady().then(async () => {
   createWindow();
   globalShortcut.register("CommandOrControl+Shift+D", () => createConsoleWindow());
   const startupSettings = settingsStore.loadSettings();
-  discordPresence.init(DISCORD_CLIENT_ID, { enabled: startupSettings.discordPresence !== false, locale: startupSettings.locale });
+  discordPresence.init(DISCORD_CLIENT_ID, {
+    enabled: startupSettings.discordPresence !== false,
+    locale: startupSettings.locale,
+    log: (level, message) => logStore.pushLog({ level, source: "launcher", message }),
+  });
   discordPresence.setBrowsingActivity();
 }).catch((error) => {
   // Exception inattendue pendant le demarrage (createWindow/setContentSecurityPolicy/

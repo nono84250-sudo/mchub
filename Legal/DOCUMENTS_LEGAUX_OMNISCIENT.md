@@ -1,3 +1,5 @@
+> **Obsolète depuis le 14/10/2026.** Ce brouillon parle encore de droit français, de CNIL, de SIRET et d'un abonnement payant. Les textes réellement publiés, à envoyer à l'avocat, sont dans `TEXTES_PUBLIES_A_RELIRE.md` (même dossier). Ce fichier est gardé seulement pour ses idées de mentions légales.
+
 # DOCUMENTS LÉGAUX — OMNISCIENT
 
 **Brouillon à relire — version 0.2 — rédigé le 26 septembre 2026, mis à jour le 14 octobre 2026 (politique de confidentialité, mentions légales art. 3, CGU art. 14 : faits corrigés d'après le code ; les choix juridiques restent marqués [À DÉCIDER])**

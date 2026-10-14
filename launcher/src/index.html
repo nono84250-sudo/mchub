@@ -710,7 +710,9 @@
      1600 px pour les pages composees (Accueil, Parametres). Au-dela, la place en trop
      devient une marge egale de chaque cote. La page Amis garde son .detail d'origine. */
   #account-panel.detail { max-width: 720px; margin-inline: auto; }
-  #detail.detail, #favorites-panel.detail, #recent-panel.detail, #my-instances-panel.detail { max-width: 1120px; margin-inline: auto; }
+  /* Par id seul (audit 14/10, K4) : le renderer remplace la classe de Favoris/Recents
+     (server-list) et de Mes instances (instances-view), la largeur max ne s'appliquait plus. */
+  #detail, #favorites-panel, #recent-panel, #my-instances-panel { max-width: 1120px; margin-inline: auto; }
   #home-panel.detail, #settings-panel.detail { max-width: 1600px; margin-inline: auto; container-type: inline-size; }
 
   /* Accueil : colonne principale + colonne "A la une" a droite des 70rem. */
@@ -1748,7 +1750,7 @@
       <p class="join-note" id="report-privacy-note" style="color: var(--muted);" data-i18n="report.privacyTechnical">L'historique reste visible par le propriétaire.</p>
 
       <div class="modal-actions">
-        <button id="report-cancel" class="btn-secondary" type="button" data-i18n="report.cancel">Annuler</button>
+        <button id="report-cancel" class="btn-secondary" type="button" data-i18n="common.cancel">Annuler</button>
         <button id="report-send" class="join-btn" type="button" data-i18n="report.send">Envoyer</button>
       </div>
     </div>

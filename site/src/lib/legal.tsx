@@ -42,7 +42,7 @@ const DeletionFr = () => (
     propriétaires, jusqu&apos;à la suppression de ces fiches : pour les faire effacer aussi, écrivez-nous. Vous pouvez
     aussi demander la suppression par e-mail à <Mail />.
     {" "}Si le launcher était connecté, il vous déconnecte dans la minute et ne recrée pas votre compte tout seul :
-    pour cela, nous gardons seulement une empreinte chiffrée de votre identifiant Minecraft et la date de suppression.
+    pour cela, nous gardons seulement une empreinte (hachage SHA-256) de votre identifiant Minecraft et la date de suppression.
     Un nouveau compte n&apos;est créé que si vous vous reconnectez avec Microsoft, sur le site ou dans le launcher, ou
     si vous envoyez une demande d&apos;ami depuis le launcher ; l&apos;empreinte est alors effacée.
   </p>
@@ -57,7 +57,7 @@ const DeletionEn = () => (
     filed on other owners&apos; listings remain, tied to your Minecraft identifier, until those listings are deleted:
     write to us to have them erased too. You can also ask for deletion by email at <Mail />.
     {" "}If the launcher was signed in, it signs you out within a minute and does not recreate your account on its
-    own: for that, we only keep an encrypted fingerprint of your Minecraft identifier and the deletion date. A new
+    own: for that, we only keep a fingerprint (SHA-256 hash) of your Minecraft identifier and the deletion date. A new
     account is only created if you sign in with Microsoft again, on the website or in the launcher, or send a friend
     request from the launcher; the fingerprint is then erased.
   </p>
@@ -189,7 +189,7 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 Votre adresse IP sert seulement, en mémoire, à limiter l&apos;envoi à 5 messages par heure.
               </>,
               <>
-                <B>Compte supprimé</B> : une empreinte chiffrée (SHA-256) de votre identifiant Minecraft et la date de
+                <B>Compte supprimé</B> : une empreinte (hachage SHA-256) de votre identifiant Minecraft et la date de
                 suppression, rien d&apos;autre. But : que le launcher ne recrée pas votre compte tout seul (voir 9).
               </>,
               <>
@@ -505,7 +505,7 @@ function privacyEn(): LegalPage {
                 address is only used, in memory, to limit sending to 5 messages per hour.
               </>,
               <>
-                <B>Deleted account</B>: an encrypted fingerprint (SHA-256) of your Minecraft identifier and the deletion
+                <B>Deleted account</B>: a fingerprint (SHA-256 hash) of your Minecraft identifier and the deletion
                 date, nothing else. Purpose: making sure the launcher does not recreate your account on its own (see 9).
               </>,
               <>

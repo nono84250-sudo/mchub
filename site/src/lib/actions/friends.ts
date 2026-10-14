@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { acceptFriendRequest, removeFriend, sendFriendRequest } from "@/lib/friends";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export type AddFriendState = { error?: string; done?: boolean } | undefined;
 
@@ -20,6 +21,14 @@ export async function addFriendAction(_prevState: AddFriendState, formData: Form
 
   const username = String(formData.get("username") ?? "").trim();
   if (!username) return { error: "Entre un pseudo Minecraft." };
+
+  // L'anti-enumeration compte sur une limite de debit (audit 14/10, S5) : sans elle, essayer des
+  // milliers de pseudos depuis le site revelait quels comptes existent (ils apparaissent dans
+  // "Demandes envoyees"). Meme palier que le launcher (10/min), plus un plafond horaire. Par
+  // compte : la reponse ne depend jamais du pseudo vise.
+  const perMinute = checkRateLimit(`friends-write:${session.user.id}`, 10, 60_000);
+  const perHour = checkRateLimit(`friends-write-hour:${session.user.id}`, 60, 60 * 60_000);
+  if (perMinute.limited || perHour.limited) return { error: "Trop de demandes envoyées, réessaie dans un moment." };
 
   await sendFriendRequest(session.user.id, username);
   revalidatePath(FRIENDS_PAGE_PATH);

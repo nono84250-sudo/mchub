@@ -30,6 +30,10 @@ let locale = "fr";
 // Derniere activite demandee par main.js, gardee sous forme brute (pas encore traduite) pour
 // pouvoir la renvoyer quand le joueur rallume l'interrupteur ou change de langue.
 let lastRequest = null;
+// Journal de la console de debug (fourni par main.js) : permet de verifier que l'identifiant
+// Discord est bien lu et que la connexion se fait (Ctrl+Maj+D). Un seul message par etat.
+let log = () => {};
+let loggedFailure = false;
 
 // Texte envoye a Discord, dans la langue du launcher (ce que les amis du joueur lisent).
 const TEXTS = {
@@ -73,6 +77,8 @@ function connect(clientId) {
   thisClient.on("ready", () => {
     if (client !== thisClient) return;
     ready = true;
+    loggedFailure = false;
+    log("info", "Discord connecté : l'activité s'affiche sur le profil du joueur.");
     if (pendingActivity) {
       thisClient.user?.setActivity(pendingActivity).catch(() => {});
     }
@@ -89,6 +95,10 @@ function connect(clientId) {
   thisClient.login().catch(() => {
     if (client !== thisClient) return;
     ready = false;
+    if (!loggedFailure) {
+      loggedFailure = true;
+      log("warn", "Discord non joignable (application Discord fermée ?) : nouvel essai toutes les 20 s.");
+    }
     scheduleReconnect(clientId);
   });
 }
@@ -97,7 +107,15 @@ function init(clientId, options = {}) {
   appClientId = clientId || null;
   enabled = options.enabled !== false;
   locale = options.locale === "en" ? "en" : "fr";
-  if (!appClientId || !enabled) return; // Rich Presence desactivee, voir commentaire en tete de fichier.
+  if (typeof options.log === "function") log = options.log;
+  if (!appClientId) {
+    log("warn", "Discord désactivé : DISCORD_CLIENT_ID absent du .env du launcher.");
+    return;
+  }
+  if (!enabled) {
+    log("info", "Discord désactivé par le joueur (Paramètres, Divers).");
+    return;
+  }
   connect(appClientId);
 }
 
