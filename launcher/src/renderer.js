@@ -2983,13 +2983,18 @@ async function joinByCodeFlow() {
 
 // Rejoindre un de SES serveurs par code reste possible (14/10, demande de Rushi : il teste ses
 // codes ainsi) et suit la procedure normale. Mais a chaque chargement de Mes instances, un
-// serveur qu'il possede deja n'apparait plus dans « Rejoint » (ni dans son compteur) : il est
-// deja dans « Tout ». Simple masquage a l'affichage : l'entree locale (settings.joinedServers)
-// n'est pas effacee, donc rien n'est perdu si le serveur change un jour de proprietaire, et ni
-// le serveur ni les donnees d'autres joueurs ne sont touches.
+// serveur qu'il possede deja est retire de « Rejoint » (et de son compteur) : il est deja dans
+// « Tout ». Seule l'entree de la liste locale des rejoints (settings.joinedServers, sur ce PC)
+// est supprimee, via servers:leaveJoined : ni le serveur ni les donnees d'autres joueurs ne sont
+// touches. Le proprietaire n'a pas besoin du code pour lancer son serveur (son jeton suffit).
 function withoutOwnedServers(joined, owned) {
   const ownedSlugs = new Set((owned || []).map((server) => server.slug));
   return (joined || []).filter((server) => !ownedSlugs.has(server.slug));
+}
+
+function ownedJoinedSlugs(joined, owned) {
+  const ownedSlugs = new Set((owned || []).map((server) => server.slug));
+  return (joined || []).filter((server) => ownedSlugs.has(server.slug)).map((server) => server.slug);
 }
 
 // Generique : utilise par "Mes instances" et par la liste publique des serveurs (voir
@@ -3329,7 +3334,13 @@ async function renderMyInstancesList() {
     return;
   }
   myInstancesServers = ownedResult.servers;
-  myJoinedServers = withoutOwnedServers(joinedResult.ok ? joinedResult.servers : [], myInstancesServers);
+  const joinedServers = joinedResult.ok ? joinedResult.servers : [];
+  myJoinedServers = withoutOwnedServers(joinedServers, myInstancesServers);
+  // Retire aussi ces serveurs de la liste sauvegardee des rejoints (settings.joinedServers),
+  // sinon ils revenaient des le code suivant (retour de test de Rushi, 14/10).
+  await Promise.all(
+    ownedJoinedSlugs(joinedServers, myInstancesServers).map((slug) => window.mchub.leaveJoinedServer(slug).catch(() => {})),
+  );
 
   // Toujours "Tout" a l'ouverture (meme sans aucun serveur possede ni rejoint
   // : l'onglet "Rejoint" doit rester atteignable pour entrer un code).
