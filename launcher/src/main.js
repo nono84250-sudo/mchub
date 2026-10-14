@@ -737,7 +737,24 @@ ipcMain.handle("servers:get", async (_event, slug) => {
     // Serveur privé rejoint : le code d'invitation est nécessaire pour voir la fiche.
     const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, { headers: inviteHeaders(slug) });
     return { ok: true, server: data.server };
-  } catch (error) {
+  } catch (publicError) {
+    let error = publicError;
+    // 404 public sur un serveur que le joueur connecté peut quand même voir (14/10, bug « Récents
+    // vide ») : le SIEN (privé, en pause, en attente de vérification), absent de l'annuaire
+    // public. Sans ce second essai, le renderer le croyait supprimé et l'effaçait des Récents et
+    // des Favoris (pruneDeadSlug), alors que le menu rapide le montrait encore. Même route que
+    // le lancement ; l'IP est retirée, comme dans la fiche publique.
+    if (publicError?.status === 404 && publicError?.code !== "frozen" && currentSession) {
+      try {
+        const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
+          headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+        });
+        const { ip: _ip, ...server } = data.server || {};
+        if (data.server) return { ok: true, server };
+      } catch (ownerError) {
+        error = ownerError;
+      }
+    }
     // Serveur gelé : signalé pour afficher « gelé » plutôt que « introuvable ». notFound
     // distingue un vrai 404 (fiche supprimée, voir resolveServersBySlug côté renderer) d'une
     // panne réseau/timeout, qu'il ne faut surtout pas confondre avec une suppression.

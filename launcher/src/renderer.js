@@ -2373,7 +2373,20 @@ async function pruneDeadSlug(slug) {
   const settings = await window.mchub.settings.get();
   const favoriteServers = (settings.favoriteServers || []).filter((s) => s !== slug);
   const recentlyPlayed = (settings.recentlyPlayed || []).filter((s) => s !== slug);
-  await window.mchub.settings.set({ favoriteServers, recentlyPlayed });
+  // Le « dernier joué » du menu rapide suit la même règle (14/10) : avant, il gardait un serveur
+  // retiré des Récents, d'où deux listes qui ne disaient pas la même chose.
+  const patch = { favoriteServers, recentlyPlayed };
+  if (settings.lastPlayedSlug === slug) patch.lastPlayedSlug = null;
+  await window.mchub.settings.set(patch);
+}
+
+// Slugs de la page Récents (14/10) : la liste enregistrée, ou à défaut le « dernier joué » du
+// menu rapide — un joueur dont les Récents avaient été vidés à tort (voir servers:get côté
+// main.js) retrouve au moins ce serveur, comme dans le menu rapide.
+function recentSlugsFromSettings(settings) {
+  const recent = Array.isArray(settings?.recentlyPlayed) ? settings.recentlyPlayed : [];
+  if (recent.length) return recent;
+  return settings?.lastPlayedSlug ? [settings.lastPlayedSlug] : [];
 }
 
 async function showFavoritesView() {
@@ -2468,7 +2481,7 @@ async function showRecentView() {
 
 async function renderRecentList() {
   const settings = await window.mchub.settings.get();
-  const recentSlugs = settings.recentlyPlayed || [];
+  const recentSlugs = recentSlugsFromSettings(settings);
 
   if (recentSlugs.length === 0) {
     renderPageEmpty(recentPanelEl, "recent", "nav.recent");
