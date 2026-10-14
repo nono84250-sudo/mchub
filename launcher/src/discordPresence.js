@@ -78,7 +78,7 @@ function connect(clientId) {
     if (client !== thisClient) return;
     ready = true;
     loggedFailure = false;
-    log("info", "Discord connecté : l'activité s'affiche sur le profil du joueur.");
+    log("debug", "Discord connecté : l'activité s'affiche sur le profil du joueur.");
     if (pendingActivity) {
       thisClient.user?.setActivity(pendingActivity).catch(() => {});
     }
