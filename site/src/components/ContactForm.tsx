@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { submitContactMessage } from "@/lib/actions/contact";
 import { useI18n } from "@/i18n/I18nProvider";
+import { CONTACT_SUBJECTS } from "@/lib/contactSubjects";
 
 // Formulaire de contact public (/contact) : enregistre juste le message en base, aucun
 // email n'est envoye (voir lib/actions/contact.ts). Honeypot "website" cache visuellement et
@@ -34,6 +35,22 @@ export function ContactForm() {
       </div>
 
       <div className="flex flex-col gap-1.5">
+        <label htmlFor="subject" className="field-label">
+          {t("contact.subjectLabel")}
+        </label>
+        <select id="subject" name="subject" required defaultValue="" className="field-input">
+          <option value="" disabled>
+            {t("contact.subjectChoose")}
+          </option>
+          {CONTACT_SUBJECTS.map((subject) => (
+            <option key={subject.id} value={subject.id}>
+              {t(subject.labelKey)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
         <label htmlFor="message" className="field-label">
           {t("contact.messageLabel")}
         </label>
@@ -46,6 +63,11 @@ export function ContactForm() {
         <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" />
       </div>
 
+      <label className="flex items-start gap-2 text-sm text-foreground cursor-pointer">
+        <input type="checkbox" name="consent" value="yes" required className="mt-0.5" />
+        {t("contact.consent")}
+      </label>
+
       {error ? (
         <p role="alert" className="text-sm text-danger">
           {error}
@@ -55,6 +77,8 @@ export function ContactForm() {
       <button type="submit" disabled={pending} className="btn-primary self-start text-sm">
         {pending ? t("contact.sending") : t("contact.send")}
       </button>
+
+      <p className="text-xs text-muted">{t("contact.privacyNotice")}</p>
     </form>
   );
 }
