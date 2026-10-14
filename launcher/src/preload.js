@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("mchub", {
   checkMaintenance: () => ipcRenderer.invoke("maintenance:check"),
   verifyMaintenanceCode: (code) => ipcRenderer.invoke("maintenance:verifyCode", code),
   listServers: () => ipcRenderer.invoke("servers:list"),
+  clearServerCache: () => ipcRenderer.invoke("servers:clearCache"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
   // Bouton "Installer" d'une fiche (2026-10-11) : pour savoir s'il faut encore
   // l'afficher pour CE serveur precis — voir servers:installStatus.

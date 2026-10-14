@@ -376,8 +376,10 @@ listSearchInputEl.addEventListener("input", () => {
 const listRefreshBtn = document.getElementById("list-refresh");
 const LIST_REFRESH_COOLDOWN_S = 30;
 let listRefreshTimer = null;
-listRefreshBtn.addEventListener("click", () => {
+listRefreshBtn.addEventListener("click", async () => {
   if (listRefreshTimer) return;
+  // « Actualiser » : seule façon voulue de passer outre le cache d'une minute (voir main.js).
+  await window.mchub.clearServerCache();
   let left = LIST_REFRESH_COOLDOWN_S;
   const label = t("serverList.refresh");
   listRefreshBtn.disabled = true;
@@ -2274,15 +2276,19 @@ async function renderHomeView() {
     currentProfile ? window.mchub.listMyServers() : Promise.resolve({ ok: false, servers: [] }),
   ]);
 
-  const continueServer = settings.lastPlayedSlug ? (await resolveServersBySlug([settings.lastPlayedSlug]))[0] : null;
-  const favoriteServers = favoriteSlugs.length > 0 ? await resolveServersBySlug(favoriteSlugs.slice(0, 4)) : [];
+  // En même temps plutôt que l'une après l'autre (14/10) : l'accueil attendait la somme des trois.
+  const [continueResolved, favoriteServers, listResult] = await Promise.all([
+    settings.lastPlayedSlug ? resolveServersBySlug([settings.lastPlayedSlug]) : Promise.resolve([]),
+    favoriteSlugs.length > 0 ? resolveServersBySlug(favoriteSlugs.slice(0, 4)) : Promise.resolve([]),
+    fetchServerList(),
+  ]);
+  const continueServer = continueResolved[0] || null;
   const myServers = myServersResult.ok ? myServersResult.servers.slice(0, 4) : [];
 
   // Joueur sans historique : au lieu d'une phrase grise, les serveurs les plus actifs du moment.
   // "A la une" (colonne de droite, grand ecran) : place reservee a la future mise en avant
   // payante, remplie pour l'instant par un "Choix de l'equipe" gratuit — slug force dans
   // TEAM_PICK_SLUGS s'il existe, sinon le serveur le plus actif qui n'est pas deja affiche.
-  const listResult = await fetchServerList();
   const busiest = (listResult.ok ? listResult.servers : [])
     .filter((s) => (s.playerCount ?? 0) > 0)
     .sort((a, b) => (b.playerCount ?? 0) - (a.playerCount ?? 0));

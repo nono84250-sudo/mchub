@@ -296,6 +296,7 @@ let sessionRemembered = false;
 
 function setSession(profile, authorization, { freshLogin = false } = {}) {
   currentSession = { profile, authorization };
+  clearServerCaches();
   pendingFreshLoginUuid = freshLogin ? profile.id : null;
   requestLauncherSession();
   return profile;
@@ -723,9 +724,66 @@ ipcMain.handle("diagnostics:clearCache", () => {
 // Toutes les requêtes réseau vers le site passent par le processus principal
 // (jamais par le renderer) : évite le CORS et garde le renderer sans accès
 // réseau direct, conformément aux bonnes pratiques Electron.
+// Cache des lectures « serveurs » (règle de Rushi, 14/10) : le launcher ne redemande pas au site
+// ce qu'il sait depuis moins d'une minute. Un « introuvable » ou « gelé » (404/403) est gardé
+// 30 s, pour ne plus refaire à chaque page la rafale de 404 des serveurs privés ou en pause.
+// Une panne réseau n'est jamais gardée. Vidé quand le joueur agit (rejoindre, quitter,
+// Actualiser, test de publication, changement de compte) : voir clearServerCaches. Le lancement
+// et l'installation lisent toujours le site en direct.
+const SERVER_CACHE_MS = 60_000;
+const SERVER_MISS_CACHE_MS = 30_000;
+const serverCache = new Map();
+// Demandes en cours : deux pages qui veulent la même fiche au même moment n'en font qu'une.
+const serverInFlight = new Map();
+
+async function cachedFetch(key, load) {
+  const hit = serverCache.get(key);
+  if (hit && Date.now() - hit.at < (hit.error ? SERVER_MISS_CACHE_MS : SERVER_CACHE_MS)) {
+    if (hit.error) throw hit.error;
+    return hit.data;
+  }
+  if (serverInFlight.has(key)) return serverInFlight.get(key);
+  const generation = serverCacheGeneration;
+  const pending = (async () => {
+    try {
+      const data = await load();
+      if (generation === serverCacheGeneration) serverCache.set(key, { at: Date.now(), data });
+      return data;
+    } catch (error) {
+      if ((error?.status === 404 || error?.status === 403) && generation === serverCacheGeneration) {
+        serverCache.set(key, { at: Date.now(), error });
+      }
+      throw error;
+    } finally {
+      serverInFlight.delete(key);
+    }
+  })();
+  serverInFlight.set(key, pending);
+  return pending;
+}
+
+function clearFriendsCache() {
+  for (const key of serverCache.keys()) if (key.startsWith("friends:")) serverCache.delete(key);
+  for (const key of serverInFlight.keys()) if (key.startsWith("friends:")) serverInFlight.delete(key);
+}
+
+// Une réponse partie avant un vidage n'est pas remise en cache (elle peut dater d'avant l'action).
+let serverCacheGeneration = 0;
+
+function clearServerCaches() {
+  serverCacheGeneration++;
+  serverCache.clear();
+  serverInFlight.clear();
+}
+
+ipcMain.handle("servers:clearCache", () => {
+  clearServerCaches();
+  return { ok: true };
+});
+
 ipcMain.handle("servers:list", async () => {
   try {
-    const data = await fetchJson(`${SITE_URL}/api/public/servers`);
+    const data = await cachedFetch("list", () => fetchJson(`${SITE_URL}/api/public/servers`));
     return { ok: true, servers: data.servers };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -735,7 +793,9 @@ ipcMain.handle("servers:list", async () => {
 ipcMain.handle("servers:get", async (_event, slug) => {
   try {
     // Serveur privé rejoint : le code d'invitation est nécessaire pour voir la fiche.
-    const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, { headers: inviteHeaders(slug) });
+    const data = await cachedFetch(`public:${slug}`, () =>
+      fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, { headers: inviteHeaders(slug) }),
+    );
     return { ok: true, server: data.server };
   } catch (publicError) {
     let error = publicError;
@@ -746,11 +806,15 @@ ipcMain.handle("servers:get", async (_event, slug) => {
     // le lancement ; l'IP est retirée, comme dans la fiche publique.
     if (publicError?.status === 404 && publicError?.code !== "frozen" && currentSession) {
       try {
-        const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
-          headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
-        });
+        const data = await cachedFetch(`owner:${currentSession.profile.id}:${slug}`, () =>
+          fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
+            headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+          }),
+        );
         const { ip: _ip, ...server } = data.server || {};
-        if (data.server) return { ok: true, server };
+        // Cette route ne renvoie pas le slug : sans lui, « Jouer » partait avec un slug
+        // undefined (GET /api/launcher/servers/undefined vu dans les logs du 14/10).
+        if (data.server) return { ok: true, server: { ...server, slug } };
       } catch (ownerError) {
         error = ownerError;
       }
@@ -790,9 +854,7 @@ ipcMain.handle("servers:installStatus", async (_event, slug) => {
 // aucun compte n'est encore lie, plutot qu'une erreur — cas normal pour la
 // plupart des joueurs (uniquement les proprietaires de serveur ont besoin
 // de cette liaison).
-// Résultat gardé 60 secondes par compte : évite de redemander le site à chaque ouverture.
-let mineCache = null;
-const MINE_CACHE_MS = 60_000;
+// Résultat gardé 60 secondes par compte (cachedFetch) : évite de redemander le site à chaque ouverture.
 
 ipcMain.handle("servers:mine", async () => {
   if (!currentSession) {
@@ -800,18 +862,17 @@ ipcMain.handle("servers:mine", async () => {
     return { ok: false, status: 401, error: "Pas de compte Microsoft connecté." };
   }
   const uuid = currentSession.profile.id;
-  if (mineCache && mineCache.uuid === uuid && Date.now() - mineCache.at < MINE_CACHE_MS) {
-    return { ok: true, servers: mineCache.servers };
-  }
   try {
-    const data = await withSessionRetry(() =>
-      fetchJson(
-        `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(uuid)}`,
-        { headers: launcherAuthHeaders() },
-      ),
-    );
-    mineCache = { uuid, at: Date.now(), servers: data.servers };
-    logStore.pushLog({ source: "launcher", message: `Mes instances : ${data.servers?.length ?? 0} serveur(s) chargé(s)` });
+    const data = await cachedFetch(`mine:${uuid}`, async () => {
+      const fresh = await withSessionRetry(() =>
+        fetchJson(
+          `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(uuid)}`,
+          { headers: launcherAuthHeaders() },
+        ),
+      );
+      logStore.pushLog({ source: "launcher", message: `Mes instances : ${fresh.servers?.length ?? 0} serveur(s) chargé(s)` });
+      return fresh;
+    });
     return { ok: true, servers: data.servers };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
@@ -978,9 +1039,9 @@ ipcMain.handle("friends:list", async () => {
   }
   try {
     const uuid = currentSession.profile.id;
-    const data = await fetchJson(
-      `${SITE_URL}/api/launcher/friends?minecraftUuid=${encodeURIComponent(uuid)}`,
-      { headers: launcherAuthHeaders() },
+    // Même règle d'une minute que les serveurs ; vidé après ajouter / accepter / retirer.
+    const data = await cachedFetch(`friends:${uuid}`, () =>
+      fetchJson(`${SITE_URL}/api/launcher/friends?minecraftUuid=${encodeURIComponent(uuid)}`, { headers: launcherAuthHeaders() }),
     );
     return { ok: true, friends: data.friends ?? [], incoming: data.incoming ?? [], outgoing: data.outgoing ?? [] };
   } catch (error) {
@@ -1004,6 +1065,7 @@ ipcMain.handle("friends:add", async (_event, minecraftUsername) => {
       headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, targetUsername: minecraftUsername }),
     });
+    clearFriendsCache();
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -1021,6 +1083,7 @@ ipcMain.handle("friends:accept", async (_event, friendUserId) => {
       headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ minecraftUuid: uuid }),
     });
+    clearFriendsCache();
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -1038,6 +1101,7 @@ ipcMain.handle("friends:remove", async (_event, friendUserId) => {
       headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ minecraftUuid: uuid }),
     });
+    clearFriendsCache();
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -1180,6 +1244,7 @@ async function joinServerByCode(code) {
       headers: { "X-Invite-Code": trimmed },
     });
     addJoinedServer(slug, trimmed);
+    clearServerCaches();
     return { ok: true, server: data.server };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -1190,6 +1255,7 @@ ipcMain.handle("servers:joinByCode", (_event, code) => joinServerByCode(code));
 
 ipcMain.handle("servers:leaveJoined", (_event, slug) => {
   removeJoinedServer(slug);
+  clearServerCaches();
   return { ok: true };
 });
 
@@ -1201,9 +1267,10 @@ ipcMain.handle("servers:listJoined", async () => {
   const servers = await Promise.all(
     joined.map(async (j) => {
       try {
-        const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(j.slug)}`, {
-          headers: inviteHeaders(j.slug),
-        });
+        // Même cache que servers:get : rouvrir « Mes instances » ne redemande plus chaque fiche.
+        const data = await cachedFetch(`public:${j.slug}`, () =>
+          fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(j.slug)}`, { headers: inviteHeaders(j.slug) }),
+        );
         return data.server;
       } catch {
         return null;
@@ -2453,10 +2520,10 @@ ipcMain.handle("selftest:report", async (_event, { slug, checks, detectedVersion
       body: JSON.stringify({ checks, detectedVersion }),
     });
     // 2026-10-11 : un test reussi envoie maintenant directement la fiche en file d'attente
-    // (isPrivate passe a false cote site, voir self-test/route.ts) — sans vider mineCache,
-    // "Mes instances" pouvait reafficher "Tester pour publication" jusqu'a 60s (MINE_CACHE_MS)
+    // (isPrivate passe a false cote site, voir self-test/route.ts) — sans vider le cache,
+    // "Mes instances" pouvait reafficher "Tester pour publication" jusqu'a 60s (SERVER_CACHE_MS)
     // apres une demande reussie, le temps que le cache expire tout seul.
-    if (data.passed) mineCache = null;
+    if (data.passed) clearServerCaches();
     return { ok: true, passed: !!data.passed };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
