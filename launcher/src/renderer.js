@@ -7,6 +7,7 @@ const appEl = document.getElementById("app");
 const statusEl = document.getElementById("status");
 const listEl = document.getElementById("list");
 const listTitleEl = document.getElementById("list-title");
+const guestBannerEl = document.getElementById("guest-banner");
 const listToolbarEl = document.getElementById("list-toolbar");
 const listSearchInputEl = document.getElementById("list-search-input");
 const sortRecentBtn = document.getElementById("sort-recent");
@@ -355,6 +356,7 @@ async function renderList(servers) {
   listEl.hidden = false;
   listToolbarEl.hidden = servers.length === 0;
   listTitleEl.hidden = servers.length === 0;
+  updateGuestBanner(true);
   allServers = servers;
 
   if (servers.length === 0) {
@@ -1076,6 +1078,7 @@ async function openDetail(slug) {
   friendsPanelEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
+  updateGuestBanner(false);
   statusEl.hidden = true;
   listEl.hidden = true;
   detailEl.hidden = false;
@@ -1305,6 +1308,7 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
 
 function enterApp(profile, opts) {
   signedIn = true;
+  updateGuestBanner(false);
   gateEl.hidden = true;
   appEl.hidden = false;
   renderAccountHeader(profile, opts);
@@ -2074,6 +2078,7 @@ async function showFriendsView() {
   listEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
+  updateGuestBanner(false);
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -2193,8 +2198,22 @@ function showServersView() {
   navMyInstancesBtn.classList.remove("active");
   navFriendsBtn.classList.remove("active");
   navServersBtn.classList.add("active");
+  updateGuestBanner(true);
   loadServers();
 }
+
+// Bandeau "Tu navigues en visiteur" en haut de l'annuaire (2026-10-15) : seulement en mode
+// visiteur, dans la vue Serveurs. "Plus tard" le masque jusqu'au prochain demarrage (simple
+// variable en memoire, rien d'enregistre). Les autres vues appellent updateGuestBanner(false).
+let guestBannerDismissed = false;
+function updateGuestBanner(inServersView) {
+  guestBannerEl.hidden = !inServersView || signedIn || guestBannerDismissed;
+}
+document.getElementById("guest-banner-signin").addEventListener("click", () => attemptSignIn(true));
+document.getElementById("guest-banner-later").addEventListener("click", () => {
+  guestBannerDismissed = true;
+  updateGuestBanner(false);
+});
 
 // Accueil (voir "01b Home" dans Design/archive/2026-09-23/Omniscient Launcher
 // Mockups.dc.html — retire par megarde du dernier export, mais toujours voulu) —
@@ -2240,6 +2259,7 @@ async function showHomeView() {
   listEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
+  updateGuestBanner(false);
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -2487,6 +2507,7 @@ async function showFavoritesView() {
   listEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
+  updateGuestBanner(false);
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -2554,6 +2575,7 @@ async function showRecentView() {
   listEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
+  updateGuestBanner(false);
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -3270,6 +3292,7 @@ async function showMyInstancesView() {
   listEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
+  updateGuestBanner(false);
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -3479,6 +3502,7 @@ async function showSettingsView() {
   listEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
+  updateGuestBanner(false);
   detailEl.hidden = true;
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
@@ -4101,6 +4125,7 @@ async function showAccountView() {
   listEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
+  updateGuestBanner(false);
   detailEl.hidden = true;
   settingsPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
@@ -4806,10 +4831,9 @@ function startBackToGuestCountdown(countdownEl, seconds) {
   );
 }
 
-// Barre laterale quand personne n'est connecte : pas de bouton "Se connecter"
-// ici (un texte ne tient pas dans cet espace de 56px prevu pour une icone
-// ronde ; la connexion se declenche d'elle-meme au clic sur "Jouer", voir
-// launchServer()/attemptSignIn()). "Parametres" prend la place de l'avatar
+// Barre laterale quand personne n'est connecte : un bouton-icone "Se connecter"
+// (2026-10-15, avant il n'y avait que le clic sur "Jouer" pour se connecter,
+// voir launchServer()/attemptSignIn()), au-dessus de "Parametres". Celui-ci prend la place de l'avatar
 // absent (2026-10-11, retour utilisateur : le laisser dans sa position
 // habituelle laissait un trou vide a la toute fin de la sidebar) plutot que
 // de laisser cet espace reserve a l'avatar completement vide.
@@ -4822,6 +4846,13 @@ function renderGuestHeader() {
   navFriendsBtn.hidden = true;
   if (!friendsPanelEl.hidden) showHomeView();
   msAccountEl.innerHTML = `
+    <button id="ms-account-signin" class="sidebar-btn signin-btn" data-i18n-title="nav.signIn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+        <polyline points="10 17 15 12 10 7" />
+        <line x1="15" y1="12" x2="3" y2="12" />
+      </svg>
+    </button>
     <button id="ms-account-settings" class="sidebar-btn" data-i18n-title="nav.settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3" />
@@ -4829,6 +4860,7 @@ function renderGuestHeader() {
       </svg>
     </button>
   `;
+  document.getElementById("ms-account-signin").addEventListener("click", () => attemptSignIn(true));
   document.getElementById("ms-account-settings").addEventListener("click", showSettingsView);
   window.i18n.applyStaticI18n(msAccountEl);
 }

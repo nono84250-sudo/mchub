@@ -178,6 +178,40 @@
      #ms-account UNIQUEMENT quand #nav-settings est cache, pour ne pas
      affecter le mode connecte (qui garde son propre margin-top:auto). */
   #nav-settings[hidden] + #ms-account { margin-top: auto; }
+  /* Mode visiteur (2026-10-15) : bouton "Se connecter" au-dessus de Parametres dans
+     #ms-account, pour qu'un visiteur puisse se connecter sans passer par "Jouer". */
+  #ms-account:has(.signin-btn) { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .sidebar-btn.signin-btn { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .sidebar-btn.signin-btn:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 26%, transparent); }
+  /* Bandeau visiteur en haut de l'annuaire (2026-10-15) : voir updateGuestBanner() dans renderer.js. */
+  .guest-banner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .guest-banner[hidden] { display: none; }
+  .guest-banner-text { flex: 1 1 260px; min-width: 0; }
+  .guest-banner-text h3 { margin: 0 0 4px; font-size: 14px; color: var(--foreground); }
+  .guest-banner-text p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .guest-banner-actions { display: flex; align-items: center; gap: 8px; }
+  .guest-banner-signin {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border: none; border-radius: 8px; cursor: pointer;
+    background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 600;
+  }
+  .guest-banner-signin:hover { background: var(--accent-hover); }
+  .guest-banner-signin .ms-logo { width: 14px; height: 14px; flex: none; }
+  .guest-banner-later {
+    padding: 8px 10px; border: none; border-radius: 8px; cursor: pointer;
+    background: none; color: var(--muted); font: inherit; font-size: 13px;
+  }
+  .guest-banner-later:hover { color: var(--foreground); background: var(--surface-raised); }
   .sidebar-btn.active { background: var(--accent-fill); color: var(--accent-foreground); }
 
   .settings-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; max-width: 280px; }
@@ -1872,6 +1906,19 @@
     </nav>
     <div class="app-content" style="flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0;">
     <main>
+      <div id="guest-banner" class="guest-banner" hidden>
+        <div class="guest-banner-text">
+          <h3 data-i18n="guest.bannerTitle">Tu navigues en visiteur</h3>
+          <p data-i18n="guest.bannerText">Connecte-toi avec ton compte Microsoft pour jouer, garder tes favoris, retrouver tes instances et ajouter des amis.</p>
+        </div>
+        <div class="guest-banner-actions">
+          <button type="button" id="guest-banner-signin" class="guest-banner-signin">
+            <svg class="ms-logo" viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022" /><rect x="11" y="1" width="9" height="9" fill="#7fba00" /><rect x="1" y="11" width="9" height="9" fill="#00a4ef" /><rect x="11" y="11" width="9" height="9" fill="#ffb900" /></svg>
+            <span data-i18n="guest.signInMicrosoft">Se connecter avec Microsoft</span>
+          </button>
+          <button type="button" id="guest-banner-later" class="guest-banner-later" data-i18n="guest.later">Plus tard</button>
+        </div>
+      </div>
       <div id="status" data-i18n="serverList.loading">Chargement des serveurs…</div>
       <div id="list-title" hidden><h2 data-i18n="nav.servers">Serveurs</h2></div>
       <div id="list-toolbar" class="list-toolbar" hidden>
