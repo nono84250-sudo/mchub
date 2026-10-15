@@ -98,6 +98,13 @@ const DICTIONARIES = {
       myInstances: "Mes instances",
       friends: "Amis",
       settings: "Paramètres",
+      signIn: "Se connecter",
+    },
+    guest: {
+      bannerTitle: "Tu navigues en visiteur",
+      bannerText: "Connecte-toi avec ton compte Microsoft pour jouer, garder tes favoris, retrouver tes instances et ajouter des amis.",
+      signInMicrosoft: "Se connecter avec Microsoft",
+      later: "Plus tard",
     },
     home: {
       greeting: "Bonjour {name}",
@@ -662,6 +669,13 @@ const DICTIONARIES = {
       myInstances: "My instances",
       friends: "Friends",
       settings: "Settings",
+      signIn: "Sign in",
+    },
+    guest: {
+      bannerTitle: "You're browsing as a guest",
+      bannerText: "Sign in with your Microsoft account to play, keep your favorites, find your instances and add friends.",
+      signInMicrosoft: "Sign in with Microsoft",
+      later: "Later",
     },
     home: {
       greeting: "Hi {name}",
