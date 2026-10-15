@@ -15,6 +15,24 @@ export const metadata = { title: "Paramètres — Omniscient" };
 // autres (signale par l'utilisateur). AdminCredentialsForm et AdminSourceToggles sont de
 // vrais composants client interactifs : ils ne peuvent pas passer par le HTML statique de
 // DesignScreen (dangerouslySetInnerHTML), d'ou ce cadre dedie plutot que DesignScreen.
+// 2026-10-15 : cartes en grille plutôt qu'une par ligne (demande de Rushi). Les colonnes suivent
+// la largeur de la zone de contenu (container query), pas celle de l'écran, pour tenir compte de
+// la barre latérale : 1 colonne sur mobile, 2 dès ~640px (Identifiants à gauche, Double auth +
+// Sources empilées à droite), 3 dès ~1100px ; la carte Staff (tableau) toujours sur toute la largeur.
+const SETTINGS_GRID_CSS = `
+.settings-wrap { container-type: inline-size; }
+.settings-grid { display: grid; gap: 20px; align-items: start; grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "cred" "tfa" "staff" "src"; }
+.settings-cred { grid-area: cred; } .settings-tfa { grid-area: tfa; }
+.settings-staff { grid-area: staff; } .settings-src { grid-area: src; }
+@container (min-width: 640px) {
+  .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "cred tfa" "cred src" "staff staff"; }
+}
+@container (min-width: 1100px) {
+  .settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "cred tfa src" "staff staff staff"; }
+}
+`;
+
 export default async function AdminSettings({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const admin = await requireAdmin();
   const params = await searchParams;
@@ -36,24 +54,28 @@ export default async function AdminSettings({ searchParams }: { searchParams: Pr
     border: "1px solid var(--color-divider)",
     borderRadius: "var(--radius-lg)",
     padding: 22,
+    minWidth: 0,
   };
 
   return (
     <AdminChrome>
+      <style>{SETTINGS_GRID_CSS}</style>
+      <div className="settings-wrap">
       <h1 style={{ margin: "0 0 20px", fontSize: 22, fontWeight: 500 }}>Paramètres</h1>
 
-      <section style={{ ...cardStyle, marginBottom: 20 }}>
+      <div className="settings-grid">
+      <section className="settings-cred" style={cardStyle}>
         <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 500 }}>Identifiants du compte</h2>
         <AdminCredentialsForm firstLogin={false} currentUsername={admin.username} />
       </section>
 
-      <section style={{ ...cardStyle, marginBottom: 20 }}>
+      <section className="settings-tfa" style={cardStyle}>
         <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 500 }}>Double authentification</h2>
         <AdminRecoveryCodesCard />
       </section>
 
       {roleLabels && (
-        <section style={{ ...cardStyle, marginBottom: 20 }}>
+        <section className="settings-staff" style={cardStyle}>
           <h2 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 500 }}>Staff</h2>
           <p style={{ margin: "0 0 14px", fontSize: 13, color: "var(--muted)" }}>
             Double authentification de chaque compte. « Réinitialiser » sert quand un membre a perdu son téléphone et ses codes de secours :
@@ -111,10 +133,12 @@ export default async function AdminSettings({ searchParams }: { searchParams: Pr
         </section>
       )}
 
-      <section style={cardStyle}>
+      <section className="settings-src" style={cardStyle}>
         <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 500 }}>Sources de modpacks</h2>
         <AdminSourceToggles initial={sources} />
       </section>
+      </div>
+      </div>
     </AdminChrome>
   );
 }
