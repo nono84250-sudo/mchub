@@ -12,7 +12,7 @@ const COLORS: Record<string, string> = {
 
 // Bannière du site, posée par un admin depuis /admin/notifications (voir platformSettings.ts).
 // Pas de croix pour la fermer : elle doit rester visible tant qu'un admin ne la retire pas
-// lui-même (voir le bouton "Retirer" sur cette page). Lue à chaque rendu, sans cache.
+// lui-même (voir le bouton "Retirer" sur cette page). En cache, vidé dès qu'un admin la change (voir getSiteBanner).
 export async function SiteBanner() {
   const banner = await getSiteBanner();
   if (!banner) return null;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { checkSlugVisibility, getServerWithIpBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
+import { getServerWithIpBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
@@ -30,19 +30,15 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   // Visibilite d'ABORD (audit §1.4) : le check "gelé" ne doit s'exécuter qu'une fois confirmé
   // que l'appelant peut voir ce slug, sinon un slug privé/inconnu gelé répondrait "gelé" plutôt
   // que "introuvable" — révélant qu'un serveur privé existe sans aucune preuve d'accès.
-  const visibility = await checkSlugVisibility(slug, proof);
-  if (!visibility.visible) {
+  // getServerWithIpBySlug renvoie null tant que la visibilité n'est pas confirmée.
+  const found = await getServerWithIpBySlug(slug, proof);
+  if (!found) {
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
   }
-  if (visibility.frozenAt) {
+  if (found.frozenAt) {
     // Serveur gelé par l'équipe : le launcher reçoit un message clair, pas un simple « introuvable ».
     return NextResponse.json({ error: "Ce serveur est gelé par l'équipe Omniscient.", code: "frozen" }, { status: 403 });
   }
 
-  const server = await getServerWithIpBySlug(slug, proof);
-  if (!server) {
-    return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
-  }
-
-  return NextResponse.json({ server });
+  return NextResponse.json({ server: found.server });
 }

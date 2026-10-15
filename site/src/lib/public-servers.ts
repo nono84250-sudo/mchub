@@ -280,7 +280,13 @@ export async function checkSlugVisibility(slug: string, proof: PrivateServerProo
 // Seule fonction du fichier qui renvoie `ip` — réservée à la route
 // /api/launcher/servers/[slug], protégée par LAUNCHER_API_KEY. Ne jamais
 // exposer ce résultat via une route publique.
-export async function getServerWithIpBySlug(slug: string, proof: PrivateServerProof = {}): Promise<LauncherServerDetail | null> {
+// Renvoie aussi `frozenAt` (serveur gele par l'equipe), lu dans la MEME requete : la route
+// lisait avant la meme ligne deux fois (checkSlugVisibility puis ici, stress test du 15/10).
+// frozenAt n'est donne qu'APRES le controle de visibilite (audit §1.4).
+export async function getServerWithIpBySlug(
+  slug: string,
+  proof: PrivateServerProof = {},
+): Promise<{ server: LauncherServerDetail; frozenAt: string | null } | null> {
   const row = await db.orm.public.Server.select(
     "name",
     "type",
@@ -293,6 +299,7 @@ export async function getServerWithIpBySlug(slug: string, proof: PrivateServerPr
     "inviteCode",
     "published",
     "verificationStatus",
+    "frozenAt",
   )
     .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug })
@@ -307,14 +314,17 @@ export async function getServerWithIpBySlug(slug: string, proof: PrivateServerPr
   if (!row || !(await isVisibleRow(row, proof))) return null;
 
   return {
-    name: row.name,
-    type: row.type,
-    ip: row.ip,
-    minecraftVersion: row.minecraftVersion,
-    curseforgeModpackId: row.curseforgeModpackId,
-    recommendedRamGB: row.recommendedRamGB,
-    autoConnect: row.autoConnect,
-    isPrivate: row.isPrivate,
+    frozenAt: row.frozenAt,
+    server: {
+      name: row.name,
+      type: row.type,
+      ip: row.ip,
+      minecraftVersion: row.minecraftVersion,
+      curseforgeModpackId: row.curseforgeModpackId,
+      recommendedRamGB: row.recommendedRamGB,
+      autoConnect: row.autoConnect,
+      isPrivate: row.isPrivate,
+    },
   };
 }
 

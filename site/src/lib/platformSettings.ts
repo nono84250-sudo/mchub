@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { db, execSql } from "@/lib/db";
 
 // Réglages globaux de la plateforme (table platformSetting), modifiables depuis
@@ -37,12 +38,21 @@ export async function allSourceStates(): Promise<Record<Source, boolean>> {
 const BANNER_KEY = "site.banner";
 export type SiteBanner = { type: "announcement" | "maintenance" | "alert" | "promotion"; text: string } | null;
 
+// Lue sur CHAQUE page du site : en cache (5 min, et vide des qu'un admin la change via
+// setSiteBanner), sinon chaque page vue coutait un appel D1 (stress test du 15/10).
+const BANNER_CACHE_TAG = "site-banner";
+const loadSiteBanner = unstable_cache(
+  async () => (await db.orm.public.PlatformSetting.select("value").where({ key: BANNER_KEY }).first())?.value ?? null,
+  ["site-banner"],
+  { revalidate: 300, tags: [BANNER_CACHE_TAG] },
+);
+
 export async function getSiteBanner(): Promise<SiteBanner> {
-  const row = await db.orm.public.PlatformSetting.select("value").where({ key: BANNER_KEY }).first();
-  if (!row) return null;
   try {
-    return JSON.parse(row.value) as SiteBanner;
+    const value = await loadSiteBanner();
+    return value ? (JSON.parse(value) as SiteBanner) : null;
   } catch {
+    // Base injoignable (limite Cloudflare...) : la page s'affiche sans bannière plutôt qu'en erreur.
     return null;
   }
 }
@@ -50,12 +60,13 @@ export async function getSiteBanner(): Promise<SiteBanner> {
 export async function setSiteBanner(banner: SiteBanner): Promise<void> {
   if (banner === null) {
     await db.orm.public.PlatformSetting.where({ key: BANNER_KEY }).delete();
-    return;
+  } else {
+    await execSql(
+      'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"',
+      [BANNER_KEY, JSON.stringify(banner), new Date().toISOString()],
+    );
   }
-  await execSql(
-    'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"',
-    [BANNER_KEY, JSON.stringify(banner), new Date().toISOString()],
-  );
+  revalidateTag(BANNER_CACHE_TAG, { expire: 0 });
 }
 
 // Mode maintenance du launcher (panel admin, voir /admin/notifications) : bloque l'ecran
