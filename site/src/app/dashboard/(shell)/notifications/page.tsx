@@ -15,7 +15,7 @@ export const metadata = { title: "Notifications — Omniscient" };
 function categoryFor(type: NotificationType): "announcements" | "servers" | "account" {
   if (type.startsWith("broadcast_")) return "announcements";
   if (type.startsWith("admin_")) return "account";
-  return "servers"; // report_replied / report_resolved / server_frozen / verification_*
+  return "servers"; // report_replied / report_resolved / server_frozen / verification_* / instance_back_online
 }
 
 function titleFor(dict: Dictionary, n: NotificationSummary): string {
@@ -26,6 +26,8 @@ function titleFor(dict: Dictionary, n: NotificationSummary): string {
       return t(dict, "dashboard.notifVerificationApprovedTitle", { server: n.serverName });
     case "verification_rejected":
       return t(dict, "dashboard.notifVerificationRejectedTitle", { server: n.serverName });
+    case "instance_back_online":
+      return t(dict, "dashboard.notifInstanceBackOnlineTitle", { server: n.serverName });
     case "broadcast_announcement":
       return dict.dashboard.notifBroadcastAnnouncementTitle;
     case "broadcast_maintenance":

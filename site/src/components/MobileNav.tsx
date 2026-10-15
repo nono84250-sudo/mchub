@@ -44,6 +44,13 @@ export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
           >
             {t("nav.download")}
           </Link>
+          <Link
+            href="/contact"
+            onClick={() => setOpen(false)}
+            className="rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-raised hover:text-foreground"
+          >
+            {t("nav.contact")}
+          </Link>
 
           {loggedIn ? (
             <>
@@ -55,7 +62,7 @@ export function MobileNav({ loggedIn }: { loggedIn: boolean }) {
                 {t("nav.mySpace")}
               </Link>
               <Link
-                href="/account"
+                href="/dashboard/parametres"
                 onClick={() => setOpen(false)}
                 className="rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-raised hover:text-foreground"
               >

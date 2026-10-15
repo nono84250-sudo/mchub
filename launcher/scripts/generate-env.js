@@ -8,10 +8,23 @@ const fs = require("node:fs");
 const path = require("node:path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
-const required = ["LAUNCHER_API_KEY"];
+const required = ["LAUNCHER_API_KEY", "MCHUB_SITE_URL"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length > 0) {
   console.error(`[generate-env] Variable(s) manquante(s) dans .env avant le build : ${missing.join(", ")}`);
+  process.exit(1);
+}
+
+// Audit 14/10 (B8) : sans MCHUB_SITE_URL, le launcher distribue visait http://localhost:3000
+// sans prevenir. Un build publie doit viser une adresse https publique.
+let siteUrl;
+try {
+  siteUrl = new URL(process.env.MCHUB_SITE_URL);
+} catch {
+  siteUrl = null;
+}
+if (!siteUrl || siteUrl.protocol !== "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(siteUrl.hostname)) {
+  console.error(`[generate-env] MCHUB_SITE_URL doit etre une adresse https publique (ex. https://omniscientlauncher.com), recu : ${process.env.MCHUB_SITE_URL}`);
   process.exit(1);
 }
 
@@ -19,7 +32,7 @@ const content = `// Genere automatiquement par scripts/generate-env.js juste ava
 // build — ne pas editer a la main, ne jamais committer (voir .gitignore).
 module.exports = {
   LAUNCHER_API_KEY: ${JSON.stringify(process.env.LAUNCHER_API_KEY)},
-  MCHUB_SITE_URL: ${JSON.stringify(process.env.MCHUB_SITE_URL || "http://localhost:3000")},
+  MCHUB_SITE_URL: ${JSON.stringify(siteUrl.origin)},
   // Optionnel (voir discordPresence.js) : Rich Presence desactive proprement
   // si absent, jamais bloquant pour le build.
   DISCORD_CLIENT_ID: ${JSON.stringify(process.env.DISCORD_CLIENT_ID || "")},

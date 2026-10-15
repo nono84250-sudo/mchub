@@ -85,7 +85,7 @@ export function AccountMenu() {
       {open ? (
         <div className="absolute right-0 top-full mt-2 w-56 rounded-lg border border-border bg-surface p-1.5 shadow-lg">
           <Link
-            href="/account"
+            href="/dashboard/parametres"
             className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-raised"
             onClick={() => setOpen(false)}
           >
@@ -97,6 +97,13 @@ export function AccountMenu() {
             onClick={() => setOpen(false)}
           >
             {t("nav.dashboard")}
+          </Link>
+          <Link
+            href="/dashboard/amis"
+            className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-raised"
+            onClick={() => setOpen(false)}
+          >
+            {t("nav.friends")}
           </Link>
 
           <div className="my-1.5 border-t border-border" />

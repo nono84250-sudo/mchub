@@ -15,9 +15,9 @@ const listeners = new Set();
 let nextId = 1;
 // "info" par defaut : suffisant pour du support courant sans noyer le
 // fichier de "debug" (tres verbeux, cote MCLC notamment) — voir
-// Parametres > Debogage > "Niveau de log", qui ne filtre que le FICHIER,
-// jamais le tampon en memoire ni la console (on veut tout voir en direct
-// quand elle est ouverte).
+// Parametres > Debogage > "Niveau de log". Il filtre le FICHIER ; en plus, les
+// lignes "debug" ne sont gardees nulle part (ni tampon ni console) tant que ce
+// niveau n'est pas choisi (voir pushLog).
 let minFileLevel = "info";
 
 function logsDir() {
@@ -63,6 +63,10 @@ function appendToFile(entry) {
 }
 
 function pushLog({ level = "info", source = "launcher", message }) {
+  // Traces de débogage (14/10, demande de Rushi) : masquées partout (console de debug comprise)
+  // sauf si le joueur choisit « Debug » dans Paramètres > Débogage > Niveau de log. Les erreurs,
+  // avertissements et messages utiles (niveau info) restent toujours visibles.
+  if (level === "debug" && minFileLevel !== "debug") return null;
   const entry = {
     id: nextId++,
     ts: Date.now(),

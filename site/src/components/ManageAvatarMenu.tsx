@@ -47,7 +47,7 @@ export function ManageAvatarMenu({ name }: { name: string }) {
             {t("manage.backToSite")}
           </Link>
           <Link
-            href="/account"
+            href="/dashboard/parametres"
             className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-raised"
             onClick={() => setOpen(false)}
           >

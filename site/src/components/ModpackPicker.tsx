@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { MagnifyingGlass, CheckCircle, Info } from "@phosphor-icons/react";
 import { searchModpacks } from "@/lib/actions/modpacks";
 import {
+  DEFAULT_MODPACK_CHANNEL,
   DEFAULT_MODPACK_SOURCE,
   MODPACK_SOURCES,
+  type ModpackChannel,
   type ModpackSearchResult,
   type ModpackSource,
 } from "@/lib/modpack-types";
@@ -20,6 +22,9 @@ export type ModpackValue = {
   source: ModpackSource;
   minecraftVersion?: string | null;
   loader?: string | null;
+  // Canal de suivi (release/beta, voir server.modpackChannel) — toujours connu, meme en
+  // saisie manuelle (defaut "release").
+  channel: ModpackChannel;
 };
 
 type Chosen = ModpackValue & { iconUrl: string | null; verified: boolean };
@@ -60,13 +65,18 @@ export function ModpackPicker({
   const [searchState, setSearchState] = useState<"idle" | "searching" | "error" | "not-configured">("idle");
   const [manualEntry, setManualEntry] = useState(false);
   const [manual, setManual] = useState<{ id: string; name: string }>({ id: "", name: "" });
+  // Canal de suivi (release/beta) : persiste dans le champ cache modpackChannel ci-dessous,
+  // attendu par createServer/updateServer (voir lib/actions/servers.ts). Independant de
+  // source/chosen — change seulement ce que la recherche renvoie (voir l'effet ci-dessous),
+  // jamais le modpack deja choisi.
+  const [channel, setChannel] = useState<ModpackChannel>(defaultValue?.channel ?? DEFAULT_MODPACK_CHANNEL);
   const sourceLabel = SOURCE_LABELS[source];
 
   useEffect(() => {
     if (manualEntry || chosen || !query.trim()) return;
     let cancelled = false;
     const timeout = setTimeout(async () => {
-      const result = await searchModpacks(query, source);
+      const result = await searchModpacks(query, source, channel);
       if (cancelled) return;
       if (result.ok) {
         setResults(result.results);
@@ -80,17 +90,17 @@ export function ModpackPicker({
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [query, source, manualEntry, chosen]);
+  }, [query, source, channel, manualEntry, chosen]);
 
   const value: ModpackValue = manualEntry
-    ? { ...manual, version: "", source }
+    ? { ...manual, version: "", source, channel }
     : chosen
-      ? chosen
-      : { id: "", name: "", version: "", source };
+      ? { ...chosen, channel }
+      : { id: "", name: "", version: "", source, channel };
   const { id, name, version, minecraftVersion, loader } = value;
   useEffect(() => {
-    onChange?.({ id, name, version, source, minecraftVersion, loader });
-  }, [id, name, version, source, minecraftVersion, loader, onChange]);
+    onChange?.({ id, name, version, source, minecraftVersion, loader, channel });
+  }, [id, name, version, source, minecraftVersion, loader, channel, onChange]);
 
   // Un identifiant n'a de sens que dans sa source : changer de source repart de zéro.
   function changeSource(next: ModpackSource) {
@@ -102,6 +112,15 @@ export function ModpackPicker({
     setSearchState("idle");
     setManualEntry(false);
     setManual({ id: "", name: "" });
+  }
+
+  // Changer de canal pendant une recherche en cours invalide les resultats affiches (ils
+  // viennent de l'ancien canal) — jamais le modpack deja choisi (voir `value` ci-dessus, qui
+  // applique toujours le canal courant par-dessus).
+  function changeChannel(next: ModpackChannel) {
+    if (next === channel) return;
+    setChannel(next);
+    setResults([]);
   }
 
   function startManualEntry() {
@@ -117,6 +136,7 @@ export function ModpackPicker({
       <input type="hidden" name="curseforgeModpackId" value={id} />
       <input type="hidden" name="curseforgeModpackName" value={name} />
       <input type="hidden" name="curseforgeModpackVersion" value={version} />
+      <input type="hidden" name="modpackChannel" value={channel} />
 
       <span className="field-label">{t("wizard.modpackSourceLabel")}</span>
       <div role="radiogroup" aria-label={t("wizard.modpackSourceLabel")} className="inline-flex w-fit overflow-hidden rounded-md border border-border">
@@ -153,6 +173,16 @@ export function ModpackPicker({
           {source === "modrinth" ? t("wizard.modpackModrinthHint") : t("wizard.modpackCurseforgeHint")}
         </p>
       )}
+
+      <label className="mb-1 flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        <input
+          type="checkbox"
+          checked={channel === "beta"}
+          onChange={(e) => changeChannel(e.target.checked ? "beta" : "release")}
+        />
+        {t("wizard.modpackChannelBeta")}
+      </label>
+      <p className="mb-1 text-xs text-muted2">{t("wizard.modpackChannelBetaHint")}</p>
 
       {manualEntry ? (
         <div className="flex flex-col gap-4">
@@ -231,6 +261,7 @@ export function ModpackPicker({
                       name: mod.name,
                       version: mod.latestVersion ?? "",
                       source,
+                      channel,
                       minecraftVersion: mod.minecraftVersion,
                       loader: mod.loader,
                       iconUrl: mod.iconUrl,
@@ -259,7 +290,7 @@ export function ModpackPicker({
               ))}
             </div>
           ) : query.trim() && searchState === "idle" ? (
-            <p className="text-xs text-muted">{t("wizard.modpackNoResults")}</p>
+            <p className="text-xs text-muted">{channel === "beta" ? t("wizard.modpackNoBetaFound") : t("wizard.modpackNoResults")}</p>
           ) : null}
 
           <button type="button" onClick={startManualEntry} className="mt-1.5 self-start text-xs text-accent underline">

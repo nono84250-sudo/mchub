@@ -33,6 +33,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
     "curseforgeModpackName",
     "curseforgeModpackVersion",
     "modpackSource",
+    "modpackChannel",
     "published",
     "verificationStatus",
     "isPrivate",
@@ -60,8 +61,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
     // revenir corriger quoi que ce soit dans ses parametres.
     const { modpack, file } =
       server.modpackSource === "modrinth"
-        ? await getModrinthModpackInstallFile(server.curseforgeModpackId, { minecraftVersion: server.minecraftVersion })
-        : await getModpackInstallFile(server.curseforgeModpackId, { name: server.curseforgeModpackName });
+        ? await getModrinthModpackInstallFile(server.curseforgeModpackId, { minecraftVersion: server.minecraftVersion }, server.modpackChannel)
+        : await getModpackInstallFile(server.curseforgeModpackId, { name: server.curseforgeModpackName }, server.modpackChannel);
 
     // Met a jour l'affichage (fiche publique, Parametres) avec la version
     // reellement resolue, seulement quand elle a change — evite une ecriture

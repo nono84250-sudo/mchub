@@ -1,5 +1,40 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
-const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session, screen } = require("electron");
+
+// Verrou de navigation (audit 14/10, L1). Avant : un lien glisse sur la fenetre, ou un
+// window.open, chargeait une page distante DANS la fenetre du launcher, avec le preload, donc
+// avec toute l'API window.mchub (lancer un serveur piege, envoyer des demandes d'ami...).
+//  - Aucune page ne peut ouvrir de nouvelle fenetre (toutes les webContents, celle de la
+//    connexion Microsoft comprise : elle n'en a pas besoin).
+//  - Les fenetres du launcher (principale, console) ne naviguent jamais ailleurs : voir
+//    lockAppNavigation, appele a leur creation. La fenetre Microsoft garde sa navigation
+//    (pages de connexion), surveillee par msAuth.js.
+//  - Chaque appel IPC doit venir d'une page locale (file://) : une page distante qui
+//    reussirait malgre tout a se charger ne peut rien demander au processus principal.
+app.on("web-contents-created", (_event, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  contents.on("will-attach-webview", (event) => event.preventDefault());
+});
+
+function lockAppNavigation(contents) {
+  contents.on("will-navigate", (event) => event.preventDefault());
+  contents.on("will-redirect", (event) => event.preventDefault());
+}
+
+function isLocalSender(event) {
+  try {
+    return new URL(event.senderFrame?.url ?? "").protocol === "file:";
+  } catch {
+    return false;
+  }
+}
+
+const registerIpcHandler = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, listener) =>
+  registerIpcHandler(channel, (event, ...args) => {
+    if (!isLocalSender(event)) throw new Error("Appel refusé : origine non autorisée");
+    return listener(event, ...args);
+  });
 
 // Verrou mono-instance : relancer le launcher pendant qu'une instance tourne deja creait
 // jusqu'ici un second process totalement independant (deux lancements Minecraft simultanes
@@ -96,8 +131,10 @@ try {
 let SITE_URL = process.env.MCHUB_SITE_URL || generatedEnv.MCHUB_SITE_URL || "http://localhost:3000";
 // Adresses de secours du site de production : si l'adresse principale ne
 // répond pas au démarrage, le launcher prend la première qui répond. Pas
-// utilisées pour le développement en local (localhost).
-const FALLBACK_SITE_URLS = ["https://omniscient-theta.vercel.app", "https://omniscientlauncher.com"];
+// utilisées pour le développement en local (localhost). Le vrai domaine d'abord (audit 14/10,
+// B8) : les liens d'invitation copiés reprennent l'adresse retenue, l'ancienne adresse
+// vercel.app ne sert qu'en dernier recours.
+const FALLBACK_SITE_URLS = ["https://omniscientlauncher.com", "https://omniscient-theta.vercel.app"];
 
 async function pickSiteUrl() {
   if (!SITE_URL.startsWith("https://")) return;
@@ -160,6 +197,10 @@ const REQUEST_TIMEOUT_MS = 8000;
 // cet appel-ci (et les suivants) jusqu'a ce que le nouvel echange reussisse.
 let launcherSession = null; // { uuid, token, expiresAt (ms) }
 let launcherSessionRequest = null;
+// UUID du joueur qui vient de se connecter avec le bouton Microsoft (pas une reprise de
+// session ni un renouvellement) : le prochain echange le signale au site (freshLogin), qui
+// recree alors son compte s'il l'avait supprime. Garde jusqu'a un echange reussi.
+let pendingFreshLoginUuid = null;
 const LAUNCHER_SESSION_USABLE_MARGIN_MS = 30_000;
 
 function usableLauncherSessionToken() {
@@ -174,6 +215,7 @@ function requestLauncherSession() {
   if (!currentSession || launcherSessionRequest) return;
   const uuid = currentSession.profile.id;
   const mojangToken = currentSession.authorization.access_token;
+  const freshLogin = pendingFreshLoginUuid === uuid;
   launcherSessionRequest = (async () => {
     try {
       const res = await fetch(`${SITE_URL}/api/launcher/session`, {
@@ -183,7 +225,7 @@ function requestLauncherSession() {
           Authorization: `Bearer ${LAUNCHER_API_KEY}`,
           "X-Minecraft-Token": mojangToken,
         },
-        body: JSON.stringify({ minecraftUuid: uuid }),
+        body: JSON.stringify({ minecraftUuid: uuid, ...(freshLogin ? { freshLogin: true } : {}) }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) {
@@ -191,10 +233,11 @@ function requestLauncherSession() {
         return;
       }
       const data = await res.json();
+      if (freshLogin && pendingFreshLoginUuid === uuid) pendingFreshLoginUuid = null;
       // Joueur deconnecte pendant l'echange : on ne garde pas sa session.
       if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
-      logStore.pushLog({ source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
+      logStore.pushLog({ level: "debug", source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
     } catch (error) {
       // Sans importance : les requetes continuent avec le jeton Mojang.
       logStore.pushLog({ level: "warn", source: "launcher", message: `Session launcher : échange impossible (${error.message}), repli sur le jeton Mojang` });
@@ -251,8 +294,10 @@ let currentSession = null;
 // lui, pas de renouvellement silencieux (comportement d'avant).
 let sessionRemembered = false;
 
-function setSession(profile, authorization) {
+function setSession(profile, authorization, { freshLogin = false } = {}) {
   currentSession = { profile, authorization };
+  clearServerCaches();
+  pendingFreshLoginUuid = freshLogin ? profile.id : null;
   requestLauncherSession();
   return profile;
 }
@@ -355,12 +400,72 @@ const BOOTSTRAP_SIZE = { width: 420, height: 376 };
 const APP_SIZE = { width: 1100, height: 720 };
 const APP_MIN_SIZE = { width: 720, height: 480 };
 
+// Taille/position de la fenetre : ouverture agrandie au tout premier lancement,
+// puis on rouvre comme le joueur l'a laissee (taille normale + agrandie ou non),
+// sur le meme ecran. Fichier a part (pas settings.json) : "Reinitialiser les
+// parametres" ne doit pas faire oublier la disposition de la fenetre.
+function windowStateFile() {
+  return path.join(app.getPath("userData"), "window-state.json");
+}
+
+function loadWindowState() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(windowStateFile(), "utf8"));
+    const ok = ["x", "y", "width", "height"].every((k) => Number.isFinite(raw[k]));
+    if (!ok || raw.width < 200 || raw.height < 200) return null;
+    return { x: raw.x, y: raw.y, width: raw.width, height: raw.height, maximized: !!raw.maximized };
+  } catch {
+    return null;
+  }
+}
+
+function saveWindowState(win) {
+  try {
+    if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return;
+    const b = win.getNormalBounds();
+    const data = { x: b.x, y: b.y, width: b.width, height: b.height, maximized: win.isMaximized() };
+    const file = windowStateFile();
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify(data));
+    fs.renameSync(`${file}.tmp`, file);
+  } catch {
+    // Purement du confort : ne jamais empecher la fermeture a cause de ca.
+  }
+}
+
+// Ramene une taille/position dans la zone de travail d'un ecran : la fenetre
+// ne depasse jamais l'ecran (cas du 1080p a 150 %, ou 1100x720 etait trop haut).
+function fitBoundsToWorkArea(bounds, workArea) {
+  const width = Math.min(bounds.width, workArea.width);
+  const height = Math.min(bounds.height, workArea.height);
+  const x = Math.min(Math.max(bounds.x, workArea.x), workArea.x + workArea.width - width);
+  const y = Math.min(Math.max(bounds.y, workArea.y), workArea.y + workArea.height - height);
+  return { x, y, width, height };
+}
+
+function pickStartDisplay(saved) {
+  if (saved) return screen.getDisplayMatching(saved);
+  return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+}
+
+// Remet une fenetre normale (non agrandie) entierement sur un ecran existant,
+// par ex. apres le debranchement d'un ecran ou un changement d'echelle Windows.
+function ensureWindowVisible(win) {
+  if (win.isDestroyed() || win.isMaximized() || win.isMinimized()) return;
+  const b = win.getBounds();
+  const fitted = fitBoundsToWorkArea(b, screen.getDisplayMatching(b).workArea);
+  if (fitted.x !== b.x || fitted.y !== b.y || fitted.width !== b.width || fitted.height !== b.height) win.setBounds(fitted);
+}
+
+const expandedWindows = new WeakSet();
+
 function createWindow() {
+  const startWorkArea = pickStartDisplay(loadWindowState()).workArea;
   const win = new BrowserWindow({
     width: BOOTSTRAP_SIZE.width,
     height: BOOTSTRAP_SIZE.height,
+    x: Math.round(startWorkArea.x + (startWorkArea.width - BOOTSTRAP_SIZE.width) / 2),
+    y: Math.round(startWorkArea.y + (startWorkArea.height - BOOTSTRAP_SIZE.height) / 2),
     resizable: false,
-    center: true,
     backgroundColor: "#070c16",
     frame: false,
     icon: path.join(__dirname, "..", "build", "icon.png"),
@@ -379,11 +484,29 @@ function createWindow() {
   };
   win.on("maximize", sendMaximizedState);
   win.on("unmaximize", sendMaximizedState);
+  // Memorise la disposition une fois la fenetre passee en taille d'appli (pas
+  // pendant le splash 420x376, qui ecraserait la vraie taille du joueur).
+  let saveTimer = null;
+  const scheduleSave = () => {
+    if (!expandedWindows.has(win)) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveWindowState(win), 400);
+  };
+  win.on("resize", scheduleSave);
+  win.on("move", scheduleSave);
+  win.on("maximize", scheduleSave);
+  win.on("unmaximize", scheduleSave);
+  win.on("restore", () => ensureWindowVisible(win));
+  win.on("close", () => {
+    clearTimeout(saveTimer);
+    if (expandedWindows.has(win)) saveWindowState(win);
+  });
   // Fermer le launcher ferme aussi la console de debug, sinon elle garde l'appli ouverte.
   win.on("closed", () => {
     if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.close();
   });
 
+  lockAppNavigation(win.webContents);
   win.loadFile(path.join(__dirname, "index.html"));
 
   wireAutoUpdater(win);
@@ -432,6 +555,7 @@ function createConsoleWindow() {
     consoleWindow = null;
   });
 
+  lockAppNavigation(consoleWindow.webContents);
   consoleWindow.loadFile(path.join(__dirname, "debug-console.html"));
   return consoleWindow;
 }
@@ -600,9 +724,66 @@ ipcMain.handle("diagnostics:clearCache", () => {
 // Toutes les requêtes réseau vers le site passent par le processus principal
 // (jamais par le renderer) : évite le CORS et garde le renderer sans accès
 // réseau direct, conformément aux bonnes pratiques Electron.
+// Cache des lectures « serveurs » (règle de Rushi, 14/10) : le launcher ne redemande pas au site
+// ce qu'il sait depuis moins d'une minute. Un « introuvable » ou « gelé » (404/403) est gardé
+// 30 s, pour ne plus refaire à chaque page la rafale de 404 des serveurs privés ou en pause.
+// Une panne réseau n'est jamais gardée. Vidé quand le joueur agit (rejoindre, quitter,
+// Actualiser, test de publication, changement de compte) : voir clearServerCaches. Le lancement
+// et l'installation lisent toujours le site en direct.
+const SERVER_CACHE_MS = 60_000;
+const SERVER_MISS_CACHE_MS = 30_000;
+const serverCache = new Map();
+// Demandes en cours : deux pages qui veulent la même fiche au même moment n'en font qu'une.
+const serverInFlight = new Map();
+
+async function cachedFetch(key, load) {
+  const hit = serverCache.get(key);
+  if (hit && Date.now() - hit.at < (hit.error ? SERVER_MISS_CACHE_MS : SERVER_CACHE_MS)) {
+    if (hit.error) throw hit.error;
+    return hit.data;
+  }
+  if (serverInFlight.has(key)) return serverInFlight.get(key);
+  const generation = serverCacheGeneration;
+  const pending = (async () => {
+    try {
+      const data = await load();
+      if (generation === serverCacheGeneration) serverCache.set(key, { at: Date.now(), data });
+      return data;
+    } catch (error) {
+      if ((error?.status === 404 || error?.status === 403) && generation === serverCacheGeneration) {
+        serverCache.set(key, { at: Date.now(), error });
+      }
+      throw error;
+    } finally {
+      serverInFlight.delete(key);
+    }
+  })();
+  serverInFlight.set(key, pending);
+  return pending;
+}
+
+function clearFriendsCache() {
+  for (const key of serverCache.keys()) if (key.startsWith("friends:")) serverCache.delete(key);
+  for (const key of serverInFlight.keys()) if (key.startsWith("friends:")) serverInFlight.delete(key);
+}
+
+// Une réponse partie avant un vidage n'est pas remise en cache (elle peut dater d'avant l'action).
+let serverCacheGeneration = 0;
+
+function clearServerCaches() {
+  serverCacheGeneration++;
+  serverCache.clear();
+  serverInFlight.clear();
+}
+
+ipcMain.handle("servers:clearCache", () => {
+  clearServerCaches();
+  return { ok: true };
+});
+
 ipcMain.handle("servers:list", async () => {
   try {
-    const data = await fetchJson(`${SITE_URL}/api/public/servers`);
+    const data = await cachedFetch("list", () => fetchJson(`${SITE_URL}/api/public/servers`));
     return { ok: true, servers: data.servers };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -612,9 +793,32 @@ ipcMain.handle("servers:list", async () => {
 ipcMain.handle("servers:get", async (_event, slug) => {
   try {
     // Serveur privé rejoint : le code d'invitation est nécessaire pour voir la fiche.
-    const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, { headers: inviteHeaders(slug) });
+    const data = await cachedFetch(`public:${slug}`, () =>
+      fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, { headers: inviteHeaders(slug) }),
+    );
     return { ok: true, server: data.server };
-  } catch (error) {
+  } catch (publicError) {
+    let error = publicError;
+    // 404 public sur un serveur que le joueur connecté peut quand même voir (14/10, bug « Récents
+    // vide ») : le SIEN (privé, en pause, en attente de vérification), absent de l'annuaire
+    // public. Sans ce second essai, le renderer le croyait supprimé et l'effaçait des Récents et
+    // des Favoris (pruneDeadSlug), alors que le menu rapide le montrait encore. Même route que
+    // le lancement ; l'IP est retirée, comme dans la fiche publique.
+    if (publicError?.status === 404 && publicError?.code !== "frozen" && currentSession) {
+      try {
+        const data = await cachedFetch(`owner:${currentSession.profile.id}:${slug}`, () =>
+          fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
+            headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+          }),
+        );
+        const { ip: _ip, ...server } = data.server || {};
+        // Cette route ne renvoie pas le slug : sans lui, « Jouer » partait avec un slug
+        // undefined (GET /api/launcher/servers/undefined vu dans les logs du 14/10).
+        if (data.server) return { ok: true, server: { ...server, slug } };
+      } catch (ownerError) {
+        error = ownerError;
+      }
+    }
     // Serveur gelé : signalé pour afficher « gelé » plutôt que « introuvable ». notFound
     // distingue un vrai 404 (fiche supprimée, voir resolveServersBySlug côté renderer) d'une
     // panne réseau/timeout, qu'il ne faut surtout pas confondre avec une suppression.
@@ -650,9 +854,7 @@ ipcMain.handle("servers:installStatus", async (_event, slug) => {
 // aucun compte n'est encore lie, plutot qu'une erreur — cas normal pour la
 // plupart des joueurs (uniquement les proprietaires de serveur ont besoin
 // de cette liaison).
-// Résultat gardé 60 secondes par compte : évite de redemander le site à chaque ouverture.
-let mineCache = null;
-const MINE_CACHE_MS = 60_000;
+// Résultat gardé 60 secondes par compte (cachedFetch) : évite de redemander le site à chaque ouverture.
 
 ipcMain.handle("servers:mine", async () => {
   if (!currentSession) {
@@ -660,18 +862,17 @@ ipcMain.handle("servers:mine", async () => {
     return { ok: false, status: 401, error: "Pas de compte Microsoft connecté." };
   }
   const uuid = currentSession.profile.id;
-  if (mineCache && mineCache.uuid === uuid && Date.now() - mineCache.at < MINE_CACHE_MS) {
-    return { ok: true, servers: mineCache.servers };
-  }
   try {
-    const data = await withSessionRetry(() =>
-      fetchJson(
-        `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(uuid)}`,
-        { headers: launcherAuthHeaders() },
-      ),
-    );
-    mineCache = { uuid, at: Date.now(), servers: data.servers };
-    logStore.pushLog({ source: "launcher", message: `Mes instances : ${data.servers?.length ?? 0} serveur(s) chargé(s)` });
+    const data = await cachedFetch(`mine:${uuid}`, async () => {
+      const fresh = await withSessionRetry(() =>
+        fetchJson(
+          `${SITE_URL}/api/launcher/servers/mine?minecraftUuid=${encodeURIComponent(uuid)}`,
+          { headers: launcherAuthHeaders() },
+        ),
+      );
+      logStore.pushLog({ level: "debug", source: "launcher", message: `Mes instances : ${fresh.servers?.length ?? 0} serveur(s) chargé(s)` });
+      return fresh;
+    });
     return { ok: true, servers: data.servers };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
@@ -703,6 +904,246 @@ ipcMain.handle("instances:listInstalled", async () => {
 ipcMain.handle("servers:openManage", (_event, serverId) => {
   if (typeof serverId === "string" && serverId) shell.openExternal(`${SITE_URL}/manage/${encodeURIComponent(serverId)}`);
 });
+
+// Parametres > Divers > A propos (exige par les regles Discord pour developpeurs : la politique
+// de confidentialite doit etre accessible depuis l'application). Adresses fixes du site en ligne,
+// pas SITE_URL : en developpement, SITE_URL pointe sur localhost, ou ces pages peuvent manquer.
+// Le renderer ne choisit qu'une cle, jamais une adresse.
+const LEGAL_URLS = {
+  terms: "https://omniscientlauncher.com/cgu",
+  privacy: "https://omniscientlauncher.com/confidentialite",
+};
+ipcMain.handle("app:openLegal", (_event, page) => {
+  const url = Object.hasOwn(LEGAL_URLS, page) ? LEGAL_URLS[page] : null;
+  if (url) shell.openExternal(url);
+});
+
+// Mods qu'un modpack CurseForge interdit de telecharger par les autres launchers (14/10) : le
+// joueur les telecharge lui-meme et les laisse dans son dossier Telechargements, ou
+// installModpack les retrouve (taille + empreinte SHA-1, voir modpack.js/findManualFiles).
+function manualModsSearchDirs() {
+  try {
+    return [app.getPath("downloads")];
+  } catch {
+    return [];
+  }
+}
+
+// Champs d'erreur transmis au renderer pour la fenetre des mods bloques. Les liens sont
+// re-verifies a l'ouverture (modpack:openModPage), jamais ouverts tels quels.
+function modpackErrorFields(error) {
+  if (error?.code !== "manual_mods" || !Array.isArray(error.manualMods)) return {};
+  return {
+    code: "manual_mods",
+    manualMods: error.manualMods.slice(0, 200).map((mod) => ({
+      fileId: mod.fileId,
+      modName: mod.modName || null,
+      fileName: mod.fileName || null,
+      pageUrl: mod.pageUrl || null,
+      reason: mod.reason === "removed" ? "removed" : "blocked",
+    })),
+  };
+}
+
+// Page CurseForge d'un mod bloque : uniquement https://www.curseforge.com. Le lien vient de
+// modpack.js (page exacte du fichier donnee par le site, sinon page du projet par son id). Plus
+// de recherche par nom (14/10, Rushi) : plusieurs mods peuvent porter le meme nom.
+ipcMain.handle("modpack:openModPage", (_event, pageUrl) => {
+  try {
+    const parsed = new URL(pageUrl);
+    if (parsed.protocol === "https:" && parsed.hostname === "www.curseforge.com") shell.openExternal(parsed.href);
+  } catch {
+    // pas de lien valable : rien a ouvrir
+  }
+});
+
+ipcMain.handle("modpack:openDownloads", () => {
+  const [downloads] = manualModsSearchDirs();
+  if (downloads) shell.openPath(downloads);
+});
+// Petite fenetre "Reglages" d'une instance (Mes instances, 2026-10-13) : lit/modifie le canal
+// du modpack (release/beta, voir server.modpackChannel et /api/launcher/servers/[slug]/channel)
+// SANS ouvrir le site — nouveau bouton distinct de "Gerer" ci-dessus, qui continue d'ouvrir le
+// navigateur comme avant. Meme pattern reseau que selftest:report (pas de retry de session,
+// reglage rarement utilise).
+ipcMain.handle("servers:getChannel", async (_event, slug) => {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/channel`, {
+      headers: launcherAuthHeaders(),
+    });
+    return { ok: true, modpackChannel: data.modpackChannel };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+ipcMain.handle("servers:setChannel", async (_event, { slug, modpackChannel }) => {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/channel`, {
+      method: "PATCH",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ modpackChannel }),
+    });
+    return { ok: true, modpackChannel: data.modpackChannel };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+// Case "Me prevenir du changement de statut de cette instance" (point 9, meme petite fenetre
+// "Reglages" que getChannel/setChannel ci-dessus, voir INSTANCE_SETTINGS_FIELDS cote renderer).
+// Contrairement au canal du modpack, PAS reserve au proprietaire : s'applique a TOUTE instance
+// de "Mes instances" (possedee OU rejointe) — exige donc juste une session Microsoft active
+// (meme controle que servers:mine), jamais une preuve de propriete. L'UUID envoye au site est
+// celui du profil Minecraft/Xbox DEJA connu du launcher (currentSession), jamais saisi par
+// l'utilisateur : /api/launcher/servers/[slug]/watch le revérifie de toute facon (voir
+// verifyLauncherIdentity cote site).
+ipcMain.handle("servers:getWatch", async (_event, slug) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    const data = await fetchJson(
+      `${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/watch?minecraftUuid=${encodeURIComponent(uuid)}`,
+      { headers: launcherAuthHeaders() },
+    );
+    return { ok: true, notifyOnStatusChange: !!data.notifyOnStatusChange };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+ipcMain.handle("servers:setWatch", async (_event, { slug, notifyOnStatusChange }) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/watch`, {
+      method: "PATCH",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid, notifyOnStatusChange: !!notifyOnStatusChange }),
+    });
+    return { ok: true, notifyOnStatusChange: !!data.notifyOnStatusChange };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+// Systeme d'amis (2026-10-14, demande puis accord) : page "Amis" de la sidebar (voir nav-friends dans
+// index.html / wireFriends dans renderer.js). Comme servers:getWatch/setWatch ci-dessus, exige
+// juste une session Microsoft active (pas de preuve de propriete a verifier ici) — l'UUID et le
+// pseudo envoyes au site sont ceux du profil DEJA connu du launcher (currentSession), jamais
+// saisis par l'utilisateur.
+ipcMain.handle("friends:list", async () => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    // Même règle d'une minute que les serveurs ; vidé après ajouter / accepter / retirer.
+    const data = await cachedFetch(`friends:${uuid}`, () =>
+      fetchJson(`${SITE_URL}/api/launcher/friends?minecraftUuid=${encodeURIComponent(uuid)}`, { headers: launcherAuthHeaders() }),
+    );
+    return { ok: true, friends: data.friends ?? [], incoming: data.incoming ?? [], outgoing: data.outgoing ?? [] };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+// Envoie une DEMANDE d'ami (l'autre joueur doit l'accepter). Reponse TOUJOURS { ok: true } quoi
+// qu'il arrive cote site (pseudo introuvable, deja ami — voir sendFriendRequest dans
+// lib/friends.ts cote site) : anti-enumeration, le renderer ne
+// doit jamais pouvoir distinguer ces cas d'apres cet appel, seul un rafraichissement de la
+// liste (friends:list) dit si ca a vraiment ajoute quelqu'un. error/ok:false ici ne couvre que
+// les pannes reseau/validation (pseudo vide), jamais "pseudo introuvable".
+ipcMain.handle("friends:add", async (_event, minecraftUsername) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    await fetchJson(`${SITE_URL}/api/launcher/friends`, {
+      method: "POST",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, targetUsername: minecraftUsername }),
+    });
+    clearFriendsCache();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+// Accepter une demande recue (seul le destinataire peut, verifie cote site).
+ipcMain.handle("friends:accept", async (_event, friendUserId) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    await fetchJson(`${SITE_URL}/api/launcher/friends/${encodeURIComponent(friendUserId)}`, {
+      method: "POST",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid }),
+    });
+    clearFriendsCache();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+// Retirer un ami, refuser une demande recue ou annuler une demande envoyee (meme route DELETE).
+ipcMain.handle("friends:remove", async (_event, friendUserId) => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    await fetchJson(`${SITE_URL}/api/launcher/friends/${encodeURIComponent(friendUserId)}`, {
+      method: "DELETE",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid }),
+    });
+    clearFriendsCache();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+// Heartbeat de presence (voir lib/presence.ts cote site) : greffe sur le cycle de 60s existant
+// du launcher (REFRESH_INTERVAL_MS/scheduleRefresh dans renderer.js), jamais un intervalle a
+// part. Echec silencieux cote renderer (voir sendPresenceHeartbeat la-bas) : un heartbeat rate
+// ne fait que retarder un peu le passage "hors ligne" d'un ami, jamais a signaler au joueur.
+ipcMain.handle("presence:heartbeat", async () => {
+  if (!currentSession) {
+    return { ok: false, error: "Pas de compte Microsoft connecté." };
+  }
+  try {
+    const uuid = currentSession.profile.id;
+    const result = await fetchJson(`${SITE_URL}/api/launcher/presence`, {
+      method: "POST",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name }),
+    });
+    // Compte Omniscient supprime par le joueur (sur le site) alors que le launcher etait encore
+    // connecte : le site ne le recree pas tout seul. On deconnecte et on oublie ce compte, pour
+    // que seule une vraie connexion Microsoft le recree (freshLogin, voir setSession).
+    if (result?.accountDeleted && currentSession?.profile.id === uuid) {
+      logStore.pushLog({ level: "warn", source: "launcher", message: "Compte Omniscient supprimé : déconnexion du launcher" });
+      try {
+        sessionStore.forgetAccount(uuid);
+      } catch {
+        // Le fichier local n'a pas pu etre mis a jour : la session est quand meme coupee.
+      }
+      launcherSession = null;
+      pendingFreshLoginUuid = null;
+      currentSession = null;
+      sessionRemembered = false;
+      return { ok: true, accountDeleted: true };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
 // Pour construire le lien d'invitation (copie dans le presse-papier depuis
 // "Mes instances") sans dupliquer la logique SITE_URL cote renderer.
 ipcMain.handle("app:getSiteUrl", () => SITE_URL);
@@ -775,6 +1216,13 @@ function inviteHeaders(slug) {
   return joined?.inviteCode ? { "X-Invite-Code": joined.inviteCode } : {};
 }
 
+// Presence Discord : un serveur prive n'est jamais nomme. Le site le dit (server.isPrivate) ;
+// en plus, un serveur rejoint par code d'invitation compte comme prive, pour qu'un site plus
+// ancien (sans isPrivate dans sa reponse) ne fasse jamais afficher son nom.
+function isPrivateServer(server, slug) {
+  return server?.isPrivate === true || Boolean(inviteHeaders(slug)["X-Invite-Code"]);
+}
+
 // Resout un code d'invitation (voir site/src/app/api/launcher/servers/join/
 // [code]/route.ts) puis l'ajoute aux serveurs rejoints localement. Pas besoin
 // de session Minecraft : resoudre un code est volontairement anonyme, comme
@@ -796,6 +1244,7 @@ async function joinServerByCode(code) {
       headers: { "X-Invite-Code": trimmed },
     });
     addJoinedServer(slug, trimmed);
+    clearServerCaches();
     return { ok: true, server: data.server };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -806,6 +1255,7 @@ ipcMain.handle("servers:joinByCode", (_event, code) => joinServerByCode(code));
 
 ipcMain.handle("servers:leaveJoined", (_event, slug) => {
   removeJoinedServer(slug);
+  clearServerCaches();
   return { ok: true };
 });
 
@@ -817,9 +1267,10 @@ ipcMain.handle("servers:listJoined", async () => {
   const servers = await Promise.all(
     joined.map(async (j) => {
       try {
-        const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(j.slug)}`, {
-          headers: inviteHeaders(j.slug),
-        });
+        // Même cache que servers:get : rouvrir « Mes instances » ne redemande plus chaque fiche.
+        const data = await cachedFetch(`public:${j.slug}`, () =>
+          fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(j.slug)}`, { headers: inviteHeaders(j.slug) }),
+        );
         return data.server;
       } catch {
         return null;
@@ -927,7 +1378,7 @@ ipcMain.handle("auth:signIn", async (_event, remember) => {
     // Toujours défini avant la tentative de sauvegarde : si le compte
     // signIn a réussi, cette réponse doit rester "ok" même si la
     // persistance échoue ensuite (écriture disque, coffre indisponible...).
-    setSession(profile, authorization);
+    setSession(profile, authorization, { freshLogin: true });
 
     let remembered = false;
     if (remember && refreshToken) {
@@ -1132,6 +1583,8 @@ ipcMain.handle("window:minimize", (event) => {
 ipcMain.handle("window:toggleMaximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
+  // Pendant le splash la fenetre n'est pas redimensionnable : pas d'agrandissement non plus.
+  if (!win.isResizable()) return;
   if (win.isMaximized()) win.unmaximize();
   else win.maximize();
 });
@@ -1151,10 +1604,37 @@ ipcMain.handle("window:isMaximized", (event) => {
 ipcMain.handle("window:expandFromBootstrap", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
+  // Appele deux fois par le renderer quand l'installation de Java echoue puis
+  // reussit : on ne fait l'agrandissement qu'une fois.
+  if (expandedWindows.has(win)) return;
+  const saved = loadWindowState();
+  const workArea = screen.getDisplayMatching(win.getBounds()).workArea;
+  let bounds;
+  let maximize;
+  if (saved) {
+    bounds = fitBoundsToWorkArea(saved, workArea);
+    maximize = saved.maximized;
+  } else {
+    // Premier lancement : taille normale bornee a 90 % de l'ecran (c'est elle que
+    // retrouve le bouton "Restaurer"), puis agrandie.
+    const width = Math.min(APP_SIZE.width, Math.floor(workArea.width * 0.9));
+    const height = Math.min(APP_SIZE.height, Math.floor(workArea.height * 0.9));
+    bounds = fitBoundsToWorkArea(
+      { x: workArea.x + Math.round((workArea.width - width) / 2), y: workArea.y + Math.round((workArea.height - height) / 2), width, height },
+      workArea,
+    );
+    maximize = true;
+  }
   win.setResizable(true);
-  win.setMinimumSize(APP_MIN_SIZE.width, APP_MIN_SIZE.height);
-  win.setSize(APP_SIZE.width, APP_SIZE.height);
-  win.center();
+  win.setMinimumSize(Math.min(APP_MIN_SIZE.width, workArea.width), Math.min(APP_MIN_SIZE.height, workArea.height));
+  win.setBounds(bounds);
+  // Echelle Windows differente selon l'ecran : la taille posee peut etre relue
+  // autrement, on la repose une fois.
+  const got = win.getBounds();
+  if (got.width !== bounds.width || got.height !== bounds.height) win.setBounds(bounds);
+  expandedWindows.add(win);
+  if (maximize) win.maximize();
+  logStore.pushLog({ level: "debug", source: "launcher", message: `[fenetre] ${JSON.stringify(bounds)} agrandie=${maximize}` });
 });
 
 // Suggestion simple et prudente : la moitie de la RAM systeme, plafonnee a
@@ -1178,12 +1658,18 @@ ipcMain.handle("settings:get", () => ({
 ipcMain.handle("settings:set", (_event, partial) => {
   const next = settingsStore.saveSettings(partial || {});
   if (partial && partial.logLevel !== undefined) logStore.setMinFileLevel(next.logLevel);
+  // Effet immediat sur Discord, sans redemarrer : interrupteur coupe = presence effacee tout de
+  // suite ; changement de langue = texte Discord retraduit.
+  if (partial && partial.discordPresence !== undefined) discordPresence.setEnabled(next.discordPresence);
+  if (partial && partial.locale !== undefined) discordPresence.setLocale(next.locale);
   return next;
 });
 
 ipcMain.handle("settings:reset", () => {
   const next = settingsStore.resetSettings();
   logStore.setMinFileLevel(next.logLevel);
+  discordPresence.setEnabled(next.discordPresence);
+  discordPresence.setLocale(next.locale);
   return next;
 });
 
@@ -1451,6 +1937,7 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
       },
       signal,
       waitIfPaused,
+      manualSearchDirs: manualModsSearchDirs(),
     });
     logStore.pushLog({
       source: "launcher",
@@ -1524,7 +2011,7 @@ ipcMain.handle("server:install", async (event, slug, displayName) => {
       return { ok: false, cancelled: true };
     }
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec de l'installation de "${slug}" : ${task.error}` });
-    return { ok: false, error: task.error, frozen: error?.code === "frozen" };
+    return { ok: false, error: task.error, frozen: error?.code === "frozen", ...modpackErrorFields(error) };
   }
 });
 
@@ -1571,6 +2058,8 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) win.webContents.send("game:state", running);
         }
+        // Jeu ferme : Discord revient sur « Parcourt les serveurs » (audit 14/10, K3).
+        if (!running) discordPresence.setBrowsingActivity();
         // Le launcher s'était caché pendant la partie (réglage « garder le launcher ouvert » décoché) :
         // il se réaffiche tout seul quand le jeu se ferme.
         if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
@@ -1597,7 +2086,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       customJvmArgs: modded?.jvmArgs,
     });
 
-    discordPresence.setPlayingActivity(server.name);
+    discordPresence.setPlayingActivity(server.name, modded?.modpackName, { isPrivate: isPrivateServer(server, slug) });
 
     // Compteur indicatif pour la page de gestion du serveur (site) — ne
     // doit jamais faire echouer un lancement par ailleurs reussi.
@@ -1617,7 +2106,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     if (cancelled) return { ok: false, cancelled: true };
     const message = error instanceof Error ? error.message : "Erreur inconnue";
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement de "${slug}" : ${message}` });
-    return { ok: false, error: message, frozen: error?.code === "frozen" };
+    return { ok: false, error: message, frozen: error?.code === "frozen", ...modpackErrorFields(error) };
   } finally {
     gameLaunchInProgress = false;
   }
@@ -1732,6 +2221,7 @@ ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) win.webContents.send("game:state", running);
         }
+        if (!running) discordPresence.setBrowsingActivity();
         if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
@@ -1900,12 +2390,25 @@ ipcMain.handle("selftest:run", async (event, slug) => {
           onProgress,
           signal: task.controller.signal,
           waitIfPaused: taskWaitIfPaused(task),
+          manualSearchDirs: manualModsSearchDirs(),
         });
       } else {
         vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
       }
     } catch (error) {
-      report("modpack", "fail", { error: error instanceof Error ? error.message : String(error) });
+      // Mods bloques : la liste est montree au proprietaire sous le controle (14/10).
+      report("modpack", "fail", { error: error instanceof Error ? error.message : String(error), ...modpackErrorFields(error) });
+    }
+    // Moddé : le téléchargement du modpack (mods inclus) est entièrement fini à cet instant — on
+    // peut juger ce check tout de suite, sans attendre le lancement. Bug trouvé le 2026-10-13 (test
+    // réel du propriétaire, 5 mods bloqués par CurseForge) : si installModpack échouait, "modded"
+    // restait vide, launchMinecraft() se rabattait alors silencieusement sur du Minecraft vanilla
+    // (aucun rapport avec le modpack testé), et le succès de CE lancement de secours écrasait
+    // l'échec pourtant réel du check modpack plus bas. Le vanilla, lui, reste décidé par le
+    // lancement (ensureVanillaVersion ne télécharge que JSON+jar, pas bibliothèques/assets).
+    if (server.type === "modded" && server.curseforgeModpackId && modded) {
+      checks.modpackInstalled = true;
+      report("modpack", "pass");
     }
     if (bailIfAborted("gameStarted")) return { ok: true, checks, detectedVersion, allPassed: false, aborted: true };
 
@@ -1913,9 +2416,21 @@ ipcMain.handle("selftest:run", async (event, slug) => {
     // réellement démarré (started = true / onGameState(true)), avec la RAM des réglages
     // actuels du joueur (c'est bien SA configuration qui doit être testée, pas une valeur
     // arbitraire). Tente de lancer meme si le check #2 a echoue (fichiers manquants, etc.) :
-    // l'erreur rencontree ici est elle-meme une information utile pour le proprietaire — et si
-    // malgre tout le lancement reussit (bibliotheques/assets reinstalles au passage), le check
-    // #2 est valide a cet instant, pas avant (voir plus haut).
+    // l'erreur rencontree ici est elle-meme une information utile pour le proprietaire. Pour un
+    // serveur moddé le check #2 est déjà tranché (voir plus haut) et n'est plus réévalué ici —
+    // seul le vanilla décide encore son check #2 à ce stade (voir plus bas).
+    // Serveur moddé dont le pack n'a pas pu s'installer (14/10) : ne plus lancer Minecraft
+    // vanilla à la place, ce lancement ne prouverait rien sur le pack testé.
+    if (server.type === "modded" && server.curseforgeModpackId && !modded) {
+      if (task.status === "active" || task.status === "paused") {
+        task.status = "error";
+        task.error = "Modpack incomplet";
+        broadcastTasks();
+      }
+      report("gameStarted", "skipped", { incompletePack: true });
+      logStore.pushLog({ source: "launcher", message: `Auto-test de publication terminé pour "${slug}" : échoué (modpack incomplet)` });
+      return { ok: true, checks, detectedVersion, allPassed: false };
+    }
     report("gameStarted", "running");
     let gameJava = modded?.javaPath;
     if (!gameJava) {
@@ -1943,6 +2458,7 @@ ipcMain.handle("selftest:run", async (event, slug) => {
           for (const win of BrowserWindow.getAllWindows()) {
             if (!win.isDestroyed()) win.webContents.send("game:state", running);
           }
+          if (!running) discordPresence.setBrowsingActivity();
         },
         authorization: currentSession.authorization,
         version: modded?.minecraftVersion ?? server.minecraftVersion,
@@ -1956,14 +2472,17 @@ ipcMain.handle("selftest:run", async (event, slug) => {
         customVersion: modded?.customVersion,
         customJvmArgs: modded?.jvmArgs,
       });
-      // Preuve que les fichiers sont reellement la (voir le commentaire du check #2) : atteint
-      // uniquement si minecraft-launcher-core a fini de telecharger/verifier bibliotheques et
-      // assets avant de demarrer le processus.
-      checks.modpackInstalled = true;
-      report("modpack", "pass");
+      // Vanilla seulement : la preuve que bibliothèques/assets sont bien là ne vient que d'ici
+      // (voir le commentaire du check #2 plus haut). Pour un serveur moddé, ce check a déjà été
+      // tranché juste après installModpack() — ne plus l'écraser ici avec un lancement de
+      // secours qui n'a jamais rapport au modpack réellement testé.
+      if (!(server.type === "modded" && server.curseforgeModpackId)) {
+        checks.modpackInstalled = true;
+        report("modpack", "pass");
+      }
       checks.gameStarted = true;
       report("gameStarted", "pass");
-      discordPresence.setPlayingActivity(server.name);
+      discordPresence.setPlayingActivity(server.name, modded?.modpackName, { isPrivate: isPrivateServer(server, slug) });
     } catch (error) {
       report("gameStarted", "fail", { error: error instanceof Error ? error.message : String(error) });
     }
@@ -2001,10 +2520,10 @@ ipcMain.handle("selftest:report", async (_event, { slug, checks, detectedVersion
       body: JSON.stringify({ checks, detectedVersion }),
     });
     // 2026-10-11 : un test reussi envoie maintenant directement la fiche en file d'attente
-    // (isPrivate passe a false cote site, voir self-test/route.ts) — sans vider mineCache,
-    // "Mes instances" pouvait reafficher "Tester pour publication" jusqu'a 60s (MINE_CACHE_MS)
+    // (isPrivate passe a false cote site, voir self-test/route.ts) — sans vider le cache,
+    // "Mes instances" pouvait reafficher "Tester pour publication" jusqu'a 60s (SERVER_CACHE_MS)
     // apres une demande reussie, le temps que le cache expire tout seul.
-    if (data.passed) mineCache = null;
+    if (data.passed) clearServerCaches();
     return { ok: true, passed: !!data.passed };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -2028,7 +2547,12 @@ app.whenReady().then(async () => {
   logStore.pushLog({ source: "launcher", message: `Démarrage d'Omniscient Launcher ${app.getVersion()}` });
   createWindow();
   globalShortcut.register("CommandOrControl+Shift+D", () => createConsoleWindow());
-  discordPresence.init(DISCORD_CLIENT_ID);
+  const startupSettings = settingsStore.loadSettings();
+  discordPresence.init(DISCORD_CLIENT_ID, {
+    enabled: startupSettings.discordPresence !== false,
+    locale: startupSettings.locale,
+    log: (level, message) => logStore.pushLog({ level, source: "launcher", message }),
+  });
   discordPresence.setBrowsingActivity();
 }).catch((error) => {
   // Exception inattendue pendant le demarrage (createWindow/setContentSecurityPolicy/

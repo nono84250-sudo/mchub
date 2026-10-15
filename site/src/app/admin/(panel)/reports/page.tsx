@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { DesignScreen } from "@/components/admin/DesignScreen";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { reportsHtml, type BehaviorReportDetail } from "@/app/admin/design/bind";
@@ -6,15 +5,10 @@ import { listBehaviorReports, getBehaviorReportDetail } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 
-export default async function Reports() {
-  await requireAdmin();
-  // 2026-10-12 : page desactivee temporairement (perimetre admin reduit), voir
-  // administration/page.tsx. Logique d'origine conservee ci-dessous (ReportsOriginal, non
-  // utilisee) pour reactivation future sans tout reecrire.
-  redirect("/admin/servers");
-}
-
-async function ReportsOriginal({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+// 2026-10-13 : réactivée (retirée du périmètre réduit du 2026-10-12 sans faire exprès,
+// signalé par l'utilisateur) — nécessaire pour construire le process de recours (point 4 de
+// la checklist), qui réutilisera ce même système de Reports avec une nouvelle catégorie.
+export default async function Reports({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requireAdmin();
   const params = await searchParams;
   const status = params.status === "resolved" ? "resolved" : "open";

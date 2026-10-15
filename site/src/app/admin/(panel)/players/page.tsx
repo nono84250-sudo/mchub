@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { DesignScreen } from "@/components/admin/DesignScreen";
 import { requireAdmin } from "@/app/admin/design/guard";
@@ -8,15 +7,9 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 10;
 
-export default async function AdminPlayers() {
-  await requireAdmin();
-  // 2026-10-12 : page desactivee temporairement (perimetre admin reduit), voir
-  // administration/page.tsx. Logique d'origine conservee ci-dessous (AdminPlayersOriginal,
-  // non utilisee) pour reactivation future sans tout reecrire.
-  redirect("/admin/servers");
-}
-
-async function AdminPlayersOriginal({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+// 2026-10-12 : page desactivee (perimetre admin reduit) ; reactivee le 2026-10-14 avec la fiche
+// joueur (bouton « Récupérer les données du joueur »), et remise dans le menu.
+export default async function AdminPlayers({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requireAdmin();
   const params = await searchParams;
   const q = (params.q ?? "").trim().slice(0, 100);

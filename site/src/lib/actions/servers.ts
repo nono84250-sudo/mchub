@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
@@ -8,10 +9,15 @@ import { deleteR2ImageIfOwned, deleteAllR2Images } from "@/lib/serverImages";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { slugify } from "@/lib/slug";
 import { generateUniqueInviteCode } from "@/lib/inviteCode";
-import type { ModpackSource } from "@/lib/modpack-types";
+import { DEFAULT_MODPACK_CHANNEL, type ModpackChannel, type ModpackSource } from "@/lib/modpack-types";
 import { runAndStoreChecks } from "@/lib/verification";
+import { requestServerAppeal } from "@/lib/appeals";
+import { addressUsedByFrozenServer } from "@/lib/frozenAddress";
 
 export type ServerActionState = { error: string } | undefined;
+
+// Second audit du 14/10 (I2) : adresse deja utilisee par un serveur gele (voir lib/frozenAddress.ts).
+const FROZEN_ADDRESS_ERROR = "Cette adresse est celle d'un serveur gelé par l'équipe : elle ne peut pas être utilisée pour une autre fiche.";
 
 type ServerFormValues = {
   name: string;
@@ -27,27 +33,49 @@ type ServerFormValues = {
   curseforgeModpackName: string | null;
   curseforgeModpackVersion: string | null;
   modpackSource: ModpackSource;
+  modpackChannel: ModpackChannel;
   recommendedRamGB: number | null;
   autoConnect: boolean;
 };
 
-// Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher :
-// seule une adresse http(s) absolue, sans guillemets, chevrons, espaces ni
-// backticks, est acceptee. http est permis uniquement pour que /api/upload (voir
-// route.ts, qui renvoie l'origine de la requete) fonctionne en dev local ; couvre
-// aussi les valeurs legacy pointant vers des CDN https (R2, ex-Vercel Blob).
-function isSafeImageUrl(url: string | null): boolean {
+// Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher. Depuis le
+// passage a R2 (ImageDropzone -> /api/upload), le formulaire n'envoie plus que l'URL renvoyee
+// par /api/upload : <origine du site>/api/images/<uuid>.<ext>. 2026-10-14 : la validation
+// acceptait encore n'importe quelle adresse http(s) — un formulaire forge a la main pouvait
+// donc poser une image hebergee ailleurs (contenu modifiable apres coup, IP des joueurs vue
+// par ce site tiers, http non chiffre). Desormais seule notre propre URL d'image est acceptee :
+// meme hote que la requete en cours, chemin /api/images/<uuid>.<ext> exact, https (http
+// seulement sur localhost, pour le dev local). Exception : une valeur DEJA enregistree sur la
+// fiche (anciennes URLs ex-Vercel Blob) reste acceptee telle quelle a la modification, pour ne
+// pas bloquer l'enregistrement d'une fiche existante — elle ne peut pas etre remplacee par une
+// autre URL externe.
+const OWN_IMAGE_PATH = /^\/api\/images\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/;
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1"]);
+
+function isOwnImageUrl(url: string | null, host: string | null, previous?: string | null): boolean {
   if (url === null) return true;
-  if (!/^https?:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
+  if (previous && url === previous) return true;
+  if (!host || !/^https?:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
   try {
-    const protocol = new URL(url).protocol;
-    return protocol === "https:" || protocol === "http:";
+    const parsed = new URL(url);
+    const secure = parsed.protocol === "https:" || (parsed.protocol === "http:" && LOCAL_HOSTNAMES.has(parsed.hostname));
+    return secure && parsed.host === host && OWN_IMAGE_PATH.test(parsed.pathname) && !parsed.search && !parsed.hash;
   } catch {
     return false;
   }
 }
 
-function readForm(formData: FormData): ServerFormValues | { error: string } {
+async function requestHost(): Promise<string | null> {
+  return (await headers()).get("host");
+}
+
+type PreviousImages = { bannerUrl: string | null; iconUrl: string | null; backgroundUrl: string | null };
+
+function readForm(
+  formData: FormData,
+  host: string | null,
+  previous?: PreviousImages,
+): ServerFormValues | { error: string } {
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const bannerUrl = String(formData.get("bannerUrl") ?? "").trim() || null;
@@ -61,6 +89,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   const curseforgeModpackName = String(formData.get("curseforgeModpackName") ?? "").trim() || null;
   const curseforgeModpackVersion = String(formData.get("curseforgeModpackVersion") ?? "").trim() || null;
   const modpackSource: ModpackSource = formData.get("modpackSource") === "modrinth" ? "modrinth" : "curseforge";
+  const modpackChannel: ModpackChannel = formData.get("modpackChannel") === "beta" ? "beta" : DEFAULT_MODPACK_CHANNEL;
   const recommendedRamRaw = String(formData.get("recommendedRamGB") ?? "").trim();
   const recommendedRamGB = recommendedRamRaw ? Number(recommendedRamRaw) : null;
   // Coche par defaut (meme logique qu'un checkbox HTML absent du FormData quand decoche) :
@@ -71,8 +100,12 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   if (!name || !description || !minecraftVersion || !ip) {
     return { error: "Nom, description, version et IP sont obligatoires." };
   }
-  if (!isSafeImageUrl(bannerUrl) || !isSafeImageUrl(iconUrl) || !isSafeImageUrl(backgroundUrl)) {
-    return { error: "Les images (bannière, icône, fond) doivent être des adresses https valides." };
+  if (
+    !isOwnImageUrl(bannerUrl, host, previous?.bannerUrl) ||
+    !isOwnImageUrl(iconUrl, host, previous?.iconUrl) ||
+    !isOwnImageUrl(backgroundUrl, host, previous?.backgroundUrl)
+  ) {
+    return { error: "Les images (bannière, icône, fond) doivent être envoyées depuis ce formulaire." };
   }
   if (type === "modded" && !curseforgeModpackId) {
     return { error: "Un serveur moddé doit indiquer son modpack (CurseForge ou Modrinth)." };
@@ -99,6 +132,7 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
     curseforgeModpackName: type === "modded" ? curseforgeModpackName : null,
     curseforgeModpackVersion: type === "modded" ? curseforgeModpackVersion : null,
     modpackSource: type === "modded" ? modpackSource : "curseforge",
+    modpackChannel: type === "modded" ? modpackChannel : DEFAULT_MODPACK_CHANNEL,
     recommendedRamGB,
     autoConnect,
   };
@@ -129,8 +163,9 @@ export async function createServer(_prevState: ServerActionState, formData: Form
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const parsed = readForm(formData);
+  const parsed = readForm(formData, await requestHost());
   if ("error" in parsed) return parsed;
+  if (await addressUsedByFrozenServer(parsed.ip)) return { error: FROZEN_ADDRESS_ERROR };
 
   const slug = await uniqueSlugFor(parsed.name);
   // Toute nouvelle fiche est privee, quoi qu'en dise le formulaire (visibilite retiree de
@@ -171,8 +206,9 @@ export async function updateServer(
   const owned = await getOwnedServer(serverId, session.user.id);
   if (!owned) return { error: "Ce serveur n'existe pas ou ne t'appartient pas." };
 
-  const parsed = readForm(formData);
+  const parsed = readForm(formData, await requestHost(), owned);
   if ("error" in parsed) return parsed;
+  if (parsed.ip !== owned.ip && (await addressUsedByFrozenServer(parsed.ip, serverId))) return { error: FROZEN_ADDRESS_ERROR };
 
   // Un changement d'IP, de version declaree ou de modpack rend l'auto-test precedent caduc —
   // meme esprit que runAndStoreChecks ci-dessous pour le controle automatique du site : une
@@ -182,7 +218,11 @@ export async function updateServer(
     parsed.minecraftVersion !== owned.minecraftVersion ||
     parsed.curseforgeModpackId !== owned.curseforgeModpackId ||
     parsed.curseforgeModpackVersion !== owned.curseforgeModpackVersion ||
-    parsed.modpackSource !== owned.modpackSource;
+    parsed.modpackSource !== owned.modpackSource ||
+    // Canal release/beta (2026-10-13) : change quel fichier est installe (voir
+    // getModpackInstallFile/getModrinthModpackInstallFile), donc meme raisonnement que
+    // modpackSource ci-dessus.
+    parsed.modpackChannel !== owned.modpackChannel;
 
   // Passer PRIVE -> PUBLIC exige un auto-test de publication reussi dans le launcher (voir
   // selfTestPassedAt / /api/launcher/servers/[slug]/self-test) — sans ca, on reste prive quoi
@@ -290,12 +330,16 @@ export async function toggleServerPublished(serverId: string): Promise<ServerAct
 
 // Cree une copie de la fiche (nouveau slug, meme configuration sauf le nom)
 // — pratique pour publier plusieurs serveurs similaires sans tout ressaisir.
-export async function duplicateServer(serverId: string) {
+export async function duplicateServer(serverId: string): Promise<ServerActionState> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
   const source = await getOwnedServer(serverId, session.user.id);
   if (!source) redirect("/dashboard");
+  // Audit 14/10 (S1) : la copie d'un serveur gele n'etait pas gelee. Le proprietaire pouvait
+  // la passer en prive, partager le code d'invitation et revenir en ligne sans controle.
+  if (source.frozenAt) return { error: "Ce serveur est gelé par l'équipe : il ne peut pas être dupliqué." };
+  if (await addressUsedByFrozenServer(source.ip, source.id)) return { error: FROZEN_ADDRESS_ERROR };
 
   const name = `${source.name} (copie)`;
   const slug = await uniqueSlugFor(name);
@@ -321,6 +365,7 @@ export async function duplicateServer(serverId: string) {
     curseforgeModpackName: source.curseforgeModpackName,
     curseforgeModpackVersion: source.curseforgeModpackVersion,
     modpackSource: source.modpackSource,
+    modpackChannel: source.modpackChannel,
     recommendedRamGB: source.recommendedRamGB,
     autoConnect: source.autoConnect,
     // Une fiche mise en pause reste en pause dans sa copie — sans ça, un
@@ -337,6 +382,19 @@ export async function duplicateServer(serverId: string) {
   updateTag(SERVERS_CACHE_TAG);
   revalidatePath("/dashboard");
   redirect(`/manage/${copy.id}`);
+}
+
+// "Demander un second avis" (manage/[id]/page.tsx, serveur gelé) : voir lib/appeals.ts pour la
+// mécanique complète (délai de 72h, assignation d'un admin différent quand c'est possible).
+export async function requestAppeal(serverId: string): Promise<ServerActionState> {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const result = await requestServerAppeal(serverId, session.user.id);
+  if (result?.error) return result;
+
+  revalidatePath(`/manage/${serverId}`);
+  return undefined;
 }
 
 // Invalide l'ancien lien/code d'invitation (voir le commentaire sur

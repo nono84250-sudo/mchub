@@ -10,6 +10,15 @@ export const MODPACK_SOURCES: readonly ModpackSource[] = ["curseforge", "modrint
 // telechargeables automatiquement, contrairement a CurseForge.
 export const DEFAULT_MODPACK_SOURCE: ModpackSource = "modrinth";
 
+// Canal de suivi du modpack (colonne server.modpackChannel, les deux sources) : "release"
+// n'installe/n'affiche jamais que des versions stables ; "beta" accepte aussi les versions
+// beta (CurseForge releaseType 1 ou 2, Modrinth version_type "release" ou "beta"), jamais les
+// alpha. Choisi dans ModpackPicker.tsx (toggle "canal beta") ou depuis le launcher (voir
+// /api/launcher/servers/[slug]/channel).
+export type ModpackChannel = "release" | "beta";
+
+export const DEFAULT_MODPACK_CHANNEL: ModpackChannel = "release";
+
 export type ModpackSearchResult = {
   id: string;
   name: string;

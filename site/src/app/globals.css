@@ -5,7 +5,8 @@
      quasi neutre, un seul accent blurple utilise comme trait/lueur plutot
      que comme aplat. Memes noms de variables qu'avant pour ne pas avoir a
      toucher chaque composant — seules les valeurs changent. */
-  /* Chargee via <link> Google Fonts dans layout.tsx (pas next/font/google) :
+  /* Chargee via <link> vers /fonts/inter/inter.css dans layout.tsx (police
+     hebergee sur le site, plus Google Fonts ; pas next/font/google) :
      un bug de resolution Turbopack sur ce poste empechait next/font de
      fonctionner ("Module not found: @vercel/turbopack-next/..."). */
   --font-inter: "Inter", Arial, Helvetica, sans-serif;

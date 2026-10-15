@@ -8,7 +8,9 @@
     "logout": "Sign out",
     "login": "Sign in",
     "openMenu": "Open menu",
-    "closeMenu": "Close menu"
+    "closeMenu": "Close menu",
+    "friends": "Friends",
+    "contact": "Contact"
   },
   "footer": {
     "tagline": "the Minecraft server toolkit.",
@@ -32,7 +34,7 @@
   "download": {
     "title": "Get the",
     "titleAccent": "Omniscient Launcher",
-    "subtitle": "Sign in with your Microsoft/Xbox account, browse servers, and join a modpack in one click. Available on Windows, macOS and Linux.",
+    "subtitle": "Sign in with your Microsoft/Xbox account, browse servers, and join a modpack in one click. Available on Windows, with macOS and Linux coming soon.",
     "ctaDownloadFor": "Download for {os}",
     "ctaComingSoonFor": "Coming soon on {os}",
     "ctaDownloadWindowsInstead": "Download for Windows instead",
@@ -75,7 +77,9 @@
     "visibilityPrivate": "Private",
     "navServers": "Servers",
     "navNotifications": "Notifications",
+    "navFriends": "Friends",
     "navNews": "News",
+    "navSettings": "Settings",
     "newsTitle": "News",
     "newsEmpty": "No news for now — site announcements will show up here.",
     "notificationsTitle": "Notifications",
@@ -87,6 +91,7 @@
     "notifServerFrozenTitle": "{server} was frozen",
     "notifVerificationApprovedTitle": "{server} was approved",
     "notifVerificationRejectedTitle": "{server} was rejected",
+    "notifInstanceBackOnlineTitle": "{server} is back online",
     "notifAdminMessageTitle": "Message from the team about {server}",
     "notifReportResolvedTitle": "Report resolved — {server}",
     "notifReportRepliedTitle": "Reply to your report — {server}",
@@ -123,10 +128,49 @@
     "ramUnit": "GB",
     "joinNote": "To join this server, open it from the Omniscient launcher — the connection address isn't shown here."
   },
+  "freshness": {
+    "fresh": "Recently verified",
+    "check": "Should be re-checked",
+    "stale": "Verified {days} days ago",
+    "never": "Not tested yet"
+  },
   "account": {
     "title": "Account",
     "microsoftLinked": "Signed in via Microsoft/Xbox",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "deleteTitle": "Delete my account",
+    "deleteHint": "Permanent: your account and everything in it will be erased.",
+    "deleteDialogLabel": "Permanently delete the account",
+    "deleteWarning": "Warning: this cannot be undone",
+    "deleteBody": "Deleting your account permanently erases everything in it: your servers, their modpacks, your friends and the servers you follow. This cannot be undone.",
+    "deleteConfirmWord": "delete",
+    "deleteConfirmBefore": "Type",
+    "deleteConfirmAfter": "to confirm",
+    "deleteCancel": "Cancel",
+    "deleteConfirm": "Delete permanently",
+    "deletePending": "Deleting…",
+    "deleteErrorConfirm": "Type “delete” to confirm.",
+    "deleteErrorSession": "Session expired, please sign in again.",
+    "deleteErrorNotFound": "Account not found.",
+    "deleteErrorGeneric": "Something went wrong, please try again in a moment."
+  },
+  "friends": {
+    "title": "Friends",
+    "addPlaceholder": "Minecraft username…",
+    "addButton": "Send request",
+    "adding": "Sending…",
+    "addFeedback": "If this player uses Omniscient, they'll get your request.",
+    "empty": "No friends yet. Send a request with a Minecraft username: your friend will need to accept it.",
+    "online": "Online",
+    "offline": "Offline",
+    "remove": "Remove",
+    "sectionIncoming": "Requests received",
+    "sectionOutgoing": "Requests sent",
+    "incomingHint": "wants to add you as a friend",
+    "outgoingHint": "waiting for a reply",
+    "accept": "Accept",
+    "decline": "Decline",
+    "cancel": "Cancel request"
   },
   "language": {
     "label": "Language",
@@ -171,6 +215,7 @@
     "playersOnlineStat": "Players online",
     "statRightNow": "right now",
     "detailStatus": "Status",
+    "detailFreshness": "Test freshness",
     "detailVisibility": "Visibility",
     "detailAddress": "Connection address",
     "detailVersion": "Minecraft version",
@@ -197,7 +242,12 @@
     "pendingVerification": "Pending verification",
     "pendingVerificationHint": "An admin needs to approve this server before it's visible and joinable by players.",
     "rejectedVerification": "Rejected",
-    "detailVerificationReason": "Rejection reason"
+    "detailVerificationReason": "Rejection reason",
+    "appealRequest": "Request a second opinion",
+    "appealRequestConfirm": "Confirm the request? An admin must decide within 72h, otherwise the server will be unfrozen automatically. Only one appeal is allowed per freeze.",
+    "appealPendingSecondOpinion": "Second opinion requested — another admin must decide by {date}.",
+    "appealPendingReflection": "Reconsideration period requested — the freeze will be reviewed by {date} (only one active admin for now, no second opinion possible).",
+    "appealUsed": "The appeal for this freeze has already been used: the team's decision is final."
   },
   "reports": {
     "title": "Reports",
@@ -312,6 +362,9 @@
     "modpackSearchPlaceholder": "Search a modpack on {source}…",
     "modpackSearching": "Searching…",
     "modpackNoResults": "No modpack found for this search.",
+    "modpackChannelBeta": "Enable the beta channel",
+    "modpackChannelBetaHint": "Also shows beta versions of the modpack, in addition to stable versions.",
+    "modpackNoBetaFound": "No beta version found for this search.",
     "modpackVerified": "verified",
     "modpackChosen": "Selected modpack ({name})",
     "modpackChange": "Change",

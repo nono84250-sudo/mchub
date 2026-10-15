@@ -1,4 +1,5 @@
 import { db, execSql } from "@/lib/db";
+import { normalizeMinecraftUuid } from "@/lib/launcherSession";
 
 // Alertes personnelles pour un joueur (cloche du launcher) — distinctes des
 // Actualites (diffusion admin identique pour tout le monde). Voir le
@@ -17,7 +18,11 @@ export type NotificationType =
   | "broadcast_alert"
   | "broadcast_promotion"
   | "verification_approved"
-  | "verification_rejected";
+  | "verification_rejected"
+  // Point 9 (suivi de statut d'instance, 2026-10-14) : une instance suivie (voir
+  // lib/instanceWatch.ts) repasse en ligne apres avoir ete hors ligne. CHECK recree sur
+  // "notification" pour l'accepter (voir schema.sql) — donnees existantes preservees.
+  | "instance_back_online";
 
 export type NotificationSummary = {
   id: string;
@@ -39,7 +44,7 @@ export async function createNotification(input: {
   eventAt?: string | null;
 }) {
   return db.orm.public.Notification.create({
-    recipientMinecraftUuid: input.recipientMinecraftUuid,
+    recipientMinecraftUuid: normalizeMinecraftUuid(input.recipientMinecraftUuid),
     type: input.type,
     serverName: input.serverName,
     message: input.message ?? null,
@@ -105,7 +110,7 @@ export async function broadcastNotification(input: {
 // pagination, meme raisonnement que listReportsForServer.
 export async function listNotificationsForRecipient(minecraftUuid: string): Promise<NotificationSummary[]> {
   return db.orm.public.Notification.select("id", "type", "serverName", "message", "read", "createdAt", "eventAt")
-    .where({ recipientMinecraftUuid: minecraftUuid })
+    .where({ recipientMinecraftUuid: normalizeMinecraftUuid(minecraftUuid) })
     .orderBy((n) => n.createdAt.desc())
     .limit(30)
     .all();
@@ -115,7 +120,7 @@ export async function listNotificationsForRecipient(minecraftUuid: string): Prom
 // de la couche ORM est un aller-retour reseau separe — multiplier par le nombre de
 // notifications rendait "Tout marquer comme lu"/"Effacer les lues" visiblement lent.
 export async function markNotificationsRead(minecraftUuid: string) {
-  await execSql('UPDATE "notification" SET "read" = 1 WHERE "recipientMinecraftUuid" = ? AND "read" = 0', [minecraftUuid]);
+  await execSql('UPDATE "notification" SET "read" = 1 WHERE "recipientMinecraftUuid" = ? AND "read" = 0', [normalizeMinecraftUuid(minecraftUuid)]);
 }
 
 // Verifie que la notification appartient bien au joueur qui demande sa
@@ -123,10 +128,10 @@ export async function markNotificationsRead(minecraftUuid: string) {
 // (visible cote client) suffirait a supprimer celle de n'importe qui.
 export async function deleteNotification(id: string, minecraftUuid: string) {
   const notif = await db.orm.public.Notification.where({ id }).first();
-  if (!notif || notif.recipientMinecraftUuid !== minecraftUuid) return;
+  if (!notif || notif.recipientMinecraftUuid !== normalizeMinecraftUuid(minecraftUuid)) return;
   await db.orm.public.Notification.where({ id }).delete();
 }
 
 export async function deleteReadNotifications(minecraftUuid: string) {
-  await execSql('DELETE FROM "notification" WHERE "recipientMinecraftUuid" = ? AND "read" = 1', [minecraftUuid]);
+  await execSql('DELETE FROM "notification" WHERE "recipientMinecraftUuid" = ? AND "read" = 1', [normalizeMinecraftUuid(minecraftUuid)]);
 }

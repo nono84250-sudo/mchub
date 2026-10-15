@@ -18,6 +18,7 @@ const accountPanelEl = document.getElementById("account-panel");
 const favoritesPanelEl = document.getElementById("favorites-panel");
 const recentPanelEl = document.getElementById("recent-panel");
 const myInstancesPanelEl = document.getElementById("my-instances-panel");
+const friendsPanelEl = document.getElementById("friends-panel");
 const homePanelEl = document.getElementById("home-panel");
 const javaGateEl = document.getElementById("java-gate");
 const bootstrapEl = document.getElementById("bootstrap");
@@ -29,6 +30,10 @@ const navServersBtn = document.getElementById("nav-servers");
 const navFavoritesBtn = document.getElementById("nav-favorites");
 const navRecentBtn = document.getElementById("nav-recent");
 const navMyInstancesBtn = document.getElementById("nav-my-instances");
+// Systeme d'amis, phase 1 (2026-10-14) : vue plein ecran #friends-panel (voir showFriendsView()
+// plus bas), et renderAccountHeader()/renderGuestHeader() pour sa visibilite (compte Microsoft
+// requis, comme nav-settings).
+const navFriendsBtn = document.getElementById("nav-friends");
 const navSettingsBtn = document.getElementById("nav-settings");
 // D'ou vient la fiche detail actuellement affichee (liste "Serveurs" ou
 // page "Favoris") — pour que le bouton "Retour" ramene au bon endroit.
@@ -149,8 +154,10 @@ function isOwnServer(server) {
 
 // Ligne serveur partagee entre la liste principale, "Favoris" et "Recents" —
 // meme rendu partout, seule la source de la liste de serveurs change.
-function serverRowHtml(server, isFav) {
+// `playedAt` (page Recents seulement) : date de la derniere partie, affichee avant les joueurs.
+function serverRowHtml(server, isFav, playedAt = null) {
   const ownerTag = isOwnServer(server) ? `<span class="owner-tag">${t("serverCard.owner")}</span>` : "";
+  const played = playedAt ? playedLabel(playedAt, Date.now()) : null;
   return `
     <div class="row" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0">
       <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverIconInner(server)}</span>
@@ -162,9 +169,75 @@ function serverRowHtml(server, isFav) {
         </div>
         <p>${escapeHtml(server.description || "")}</p>
       </div>
+      ${played ? `<div class="row-played">${escapeHtml(played.day)}<small>${escapeHtml(played.time)}</small></div>` : ""}
       <div class="players">${playersLabel(server)}</div>
       ${favoriteBtnHtml(server.slug, isFav)}
     </div>`;
+}
+
+// --- Recents (14/10, preview validee par Rushi) ------------------------------
+// 10 serveurs au plus, joues ces 7 derniers jours, avec la date de la derniere partie. Tout
+// reste local (settings.recentlyPlayed + settings.recentPlayedAt), aucune requete au site.
+const RECENT_MAX = 10;
+const RECENT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function datesForSlugs(dates, slugs) {
+  const out = {};
+  for (const slug of slugs) if (typeof dates?.[slug] === "number") out[slug] = dates[slug];
+  return out;
+}
+
+// Liste a afficher, et ce qu'il faut reecrire dans les reglages (`patch`, null si rien) :
+// les serveurs de plus de 7 jours sortent de la liste. Un serveur enregistre avant les dates
+// (ancienne version) recoit la date d'aujourd'hui : il reste 7 jours, puis sort comme les autres.
+// Liste vide mais « dernier joue » connu (voir recentSlugsFromSettings) : celui-ci est repris.
+// Le « dernier joue » (menu rapide, accueil) suit la meme regle des 7 jours (second audit du
+// 14/10) : sa date est gardee meme hors de la liste, et il est efface une fois trop vieux.
+// Avant, le repli lui redonnait la date du jour a chaque ouverture et il ne sortait jamais.
+function recentEntries(settings, now) {
+  const slugs = recentSlugsFromSettings(settings).slice(0, RECENT_MAX);
+  const last = settings?.lastPlayedSlug || null;
+  const dates = { ...(settings?.recentPlayedAt || {}) };
+  let changed = !Array.isArray(settings?.recentlyPlayed) || settings.recentlyPlayed.length !== slugs.length;
+  for (const slug of last && !slugs.includes(last) ? [...slugs, last] : slugs) {
+    if (typeof dates[slug] !== "number" || dates[slug] > now) {
+      dates[slug] = now;
+      changed = true;
+    }
+  }
+  const kept = slugs.filter((slug) => now - dates[slug] < RECENT_MAX_AGE_MS).sort((a, b) => dates[b] - dates[a]);
+  if (kept.length !== slugs.length) changed = true;
+  const lastExpired = !!last && now - dates[last] >= RECENT_MAX_AGE_MS;
+  if (lastExpired) changed = true;
+  const recentPlayedAt = datesForSlugs(dates, last && !lastExpired && !kept.includes(last) ? [...kept, last] : kept);
+  return {
+    entries: kept.map((slug) => ({ slug, playedAt: recentPlayedAt[slug] })),
+    patch: changed ? { recentlyPlayed: kept, recentPlayedAt, ...(lastExpired ? { lastPlayedSlug: null } : {}) } : null,
+  };
+}
+
+// Reglages avec la regle des 7 jours deja appliquee (et enregistree) : utilise par l'accueil et
+// le menu rapide, pour que le « dernier joue » sorte aussi sans passer par la page Recents.
+async function settingsWithFreshRecents() {
+  const settings = await window.mchub.settings.get();
+  const { patch } = recentEntries(settings, Date.now());
+  if (!patch) return settings;
+  await window.mchub.settings.set(patch);
+  return { ...settings, ...patch };
+}
+
+// « Aujourd'hui / Hier / Il y a 3 jours » compte en jours du calendrier (pas en tranches de
+// 24 h) : une partie d'hier soir reste « Hier » ce matin.
+function playedLabel(playedAt, now) {
+  const startOfDay = (ms) => {
+    const d = new Date(ms);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  const days = Math.max(0, Math.round((startOfDay(now) - startOfDay(playedAt)) / 86_400_000));
+  const day = days === 0 ? t("recent.today") : days === 1 ? t("recent.yesterday") : t("recent.daysAgo", { count: days });
+  const time = new Date(playedAt).toLocaleTimeString(window.i18n.getLocale() === "en" ? "en-US" : "fr-FR", { hour: "2-digit", minute: "2-digit" });
+  return { day, time: t("recent.at", { time }) };
 }
 
 // Liste principale "Serveurs" uniquement : recherche + tri cote client sur
@@ -221,9 +294,12 @@ function skeletonDetailHtml() {
     <div class="sk-line" style="height: 12px; width: 70%; margin-top: 8px;"></div>`;
 }
 
-async function renderRowsInto(container, servers, origin, onFavoriteToggled) {
+// `playedAtBySlug` : page Recents seulement (date de la derniere partie de chaque serveur).
+async function renderRowsInto(container, servers, origin, onFavoriteToggled, playedAtBySlug = null) {
   const favorites = await getFavoriteSlugs();
-  container.innerHTML = servers.map((server) => serverRowHtml(server, favorites.includes(server.slug))).join("");
+  container.innerHTML = servers
+    .map((server) => serverRowHtml(server, favorites.includes(server.slug), playedAtBySlug?.[server.slug] ?? null))
+    .join("");
 
   container.querySelectorAll(".row").forEach((row) => {
     onRowActivate(row, () => {
@@ -300,8 +376,10 @@ listSearchInputEl.addEventListener("input", () => {
 const listRefreshBtn = document.getElementById("list-refresh");
 const LIST_REFRESH_COOLDOWN_S = 30;
 let listRefreshTimer = null;
-listRefreshBtn.addEventListener("click", () => {
+listRefreshBtn.addEventListener("click", async () => {
   if (listRefreshTimer) return;
+  // « Actualiser » : seule façon voulue de passer outre le cache d'une minute (voir main.js).
+  await window.mchub.clearServerCache();
   let left = LIST_REFRESH_COOLDOWN_S;
   const label = t("serverList.refresh");
   listRefreshBtn.disabled = true;
@@ -782,8 +860,9 @@ async function launchServer(server) {
     const settings = await window.mchub.settings.get();
     const playCounts = { ...(settings.playCounts || {}) };
     playCounts[server.slug] = (playCounts[server.slug] || 0) + 1;
-    const recentlyPlayed = [server.slug, ...(settings.recentlyPlayed || []).filter((s) => s !== server.slug)].slice(0, 10);
-    await window.mchub.settings.set({ playCounts, lastPlayedSlug: server.slug, recentlyPlayed });
+    const recentlyPlayed = [server.slug, ...(settings.recentlyPlayed || []).filter((s) => s !== server.slug)].slice(0, RECENT_MAX);
+    const recentPlayedAt = datesForSlugs({ ...(settings.recentPlayedAt || {}), [server.slug]: Date.now() }, recentlyPlayed);
+    await window.mchub.settings.set({ playCounts, lastPlayedSlug: server.slug, recentlyPlayed, recentPlayedAt });
     selectedFavoriteSlug = server.slug;
     await refreshPlaybarFavorites();
 
@@ -805,6 +884,16 @@ async function launchServer(server) {
   } else {
     fill.classList.add("error");
     label.textContent = result.error;
+    if (result.code === "manual_mods" && Array.isArray(result.manualMods)) {
+      // Mods a ajouter a la main (14/10) : la fenetre explique quoi faire, et « Réessayer »
+      // relance tout de suite (la barre est liberee avant, sinon son minuteur la bloquerait
+      // en plein milieu du nouveau lancement).
+      label.textContent = t("manualMods.playbar", { count: result.manualMods.length });
+      playBtn.disabled = !selectedFavoriteSlug;
+      setPlaybarBusy(false);
+      const choice = await showManualModsModal(result.manualMods);
+      return choice === "retry" ? launchServer(server) : result;
+    }
     if (result.frozen) {
       await showModal({
         title: t("modal.frozenTitle"),
@@ -849,6 +938,7 @@ async function joinServer(server, joinBtn) {
 // la rejette aussi de son cote, par securite).
 async function installServerStandalone(server, btn) {
   btn.disabled = true;
+  let retry = false;
   try {
     const result = await window.mchub.installServer(server.slug, server.name);
     if (result?.ok) {
@@ -857,7 +947,9 @@ async function installServerStandalone(server, btn) {
       btn.remove();
       return;
     }
-    if (result?.frozen) {
+    if (result?.code === "manual_mods" && Array.isArray(result.manualMods)) {
+      retry = (await showManualModsModal(result.manualMods)) === "retry";
+    } else if (result?.frozen) {
       await showModal({
         title: t("modal.frozenTitle"),
         body: t("modal.frozenBody", { name: server.name }),
@@ -867,12 +959,121 @@ async function installServerStandalone(server, btn) {
   } finally {
     if (document.body.contains(btn)) btn.disabled = false;
   }
+  if (retry && document.body.contains(btn)) await installServerStandalone(server, btn);
+}
+
+// Fenetre des mods qu'un modpack CurseForge interdit de telecharger par les autres launchers
+// (14/10, preview validee par Rushi) : lien vers la page de chaque mod, dossier Telechargements
+// ou les deposer, puis « Réessayer » (main.js/modpack.js les y retrouvent et verifient leur
+// empreinte). Un fichier retire de CurseForge ne se rattrape pas : seul « Fermer » est propose.
+// Resout "retry" ou "close".
+function boldLabelIn(el, text, label) {
+  const at = label ? text.indexOf(label) : -1;
+  if (at < 0) {
+    el.textContent = text;
+    return;
+  }
+  const strong = document.createElement("b");
+  strong.textContent = label;
+  el.append(text.slice(0, at), strong, text.slice(at + label.length));
+}
+
+function showManualModsModal(manualMods) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("manual-mods-overlay");
+    const stepsEl = document.getElementById("manual-mods-steps");
+    const listEl2 = document.getElementById("manual-mods-list");
+    const actionsEl = document.getElementById("manual-mods-actions");
+    const blocked = manualMods.filter((mod) => mod.reason !== "removed");
+    const removed = manualMods.filter((mod) => mod.reason === "removed");
+    const onlyRemoved = blocked.length === 0;
+
+    document.getElementById("manual-mods-title").textContent = onlyRemoved
+      ? t("manualMods.removedTitle")
+      : t("manualMods.title", { count: blocked.length });
+    document.getElementById("manual-mods-body").textContent = onlyRemoved ? t("manualMods.removedBody") : t("manualMods.body");
+    document.getElementById("manual-mods-note").textContent = onlyRemoved ? t("manualMods.removedNote") : t("manualMods.note");
+
+    stepsEl.innerHTML = "";
+    stepsEl.hidden = onlyRemoved;
+    for (const [key, label] of [
+      ["manualMods.step1", t("manualMods.openPage")],
+      ["manualMods.step2", t("manualMods.downloadsWord")],
+      ["manualMods.step3", t("manualMods.retry")],
+    ]) {
+      const li = document.createElement("li");
+      boldLabelIn(li, t(key), label);
+      stepsEl.append(li);
+    }
+
+    listEl2.innerHTML = "";
+    for (const mod of [...blocked, ...removed]) {
+      const row = document.createElement("div");
+      row.className = "manual-mod";
+      const text = document.createElement("div");
+      text.className = "manual-mod-text";
+      const name = document.createElement("span");
+      name.className = "manual-mod-name";
+      name.textContent = mod.modName || mod.fileName || t("manualMods.fileFallback", { id: mod.fileId });
+      const file = document.createElement("span");
+      file.className = "manual-mod-file";
+      file.textContent = mod.fileName || "—";
+      // Sans nom de mod connu, le nom de fichier sert deja de titre : pas besoin de le repeter.
+      file.hidden = !mod.modName && Boolean(mod.fileName);
+      text.append(name, file);
+      const chip = document.createElement("span");
+      const gone = mod.reason === "removed";
+      chip.className = `manual-mod-chip ${gone ? "gone" : "todo"}`;
+      chip.textContent = gone ? t("manualMods.notFound") : t("manualMods.toDownload");
+      row.append(text, chip);
+      if (!gone && mod.pageUrl) {
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "btn-secondary";
+        open.textContent = t("manualMods.openPage");
+        open.addEventListener("click", () => {
+          window.mchub.openModPage(mod.pageUrl);
+          open.textContent = `✓ ${t("manualMods.openPage")}`;
+        });
+        row.append(open);
+      }
+      listEl2.append(row);
+    }
+
+    actionsEl.innerHTML = "";
+    const makeButton = (label, className, onClick) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = className;
+      button.textContent = label;
+      button.addEventListener("click", onClick);
+      actionsEl.append(button);
+      return button;
+    };
+    const finish = (choice) => {
+      overlay.hidden = true;
+      document.body.classList.remove("modal-blocking");
+      resolve(choice);
+    };
+    if (onlyRemoved) {
+      makeButton(t("manualMods.close"), "join-btn push", () => finish("close"));
+    } else {
+      makeButton(t("manualMods.openDownloads"), "btn-secondary", () => window.mchub.openDownloadsFolder());
+      makeButton(t("manualMods.close"), "btn-secondary push", () => finish("close"));
+      makeButton(t("manualMods.retry"), "join-btn", () => finish("retry"));
+    }
+
+    overlay.querySelector(".modal-box").classList.add("pop-in");
+    overlay.hidden = false;
+    document.body.classList.add("modal-blocking");
+  });
 }
 
 async function openDetail(slug) {
   homePanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   listToolbarEl.hidden = true;
   listTitleEl.hidden = true;
   statusEl.hidden = true;
@@ -1014,6 +1215,7 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
   // en mode visiteur, renderGuestHeader() l'avait deplace tout en bas, a la
   // place de l'avatar absent — voir ce commentaire la-bas.
   navSettingsBtn.hidden = false;
+  navFriendsBtn.hidden = false;
   if (currentProfile && currentProfile.id !== profile.id) {
     myInstancesServers = [];
     myJoinedServers = [];
@@ -1401,6 +1603,7 @@ const NOTIF_COLORS = {
   broadcast_promotion: "#5fd3a0",
   verification_approved: "#5fd3a0",
   verification_rejected: "var(--danger)",
+  instance_back_online: "#5fd3a0",
 };
 const BROADCAST_TITLE_KEYS = {
   broadcast_announcement: "broadcastAnnouncementTitle",
@@ -1420,7 +1623,9 @@ function notifItemHtml(notif) {
       ? t("notifications.verificationApprovedTitle", { server: notif.serverName })
       : notif.type === "verification_rejected"
         ? t("notifications.verificationRejectedTitle", { server: notif.serverName })
-        : broadcastKey
+        : notif.type === "instance_back_online"
+          ? t("notifications.instanceBackOnlineTitle", { server: notif.serverName })
+          : broadcastKey
           ? t(`notifications.${broadcastKey}`)
           : isAdmin
             ? t("notifications.adminMessageTitle", { server: notif.serverName })
@@ -1736,6 +1941,240 @@ function wireNotifications() {
   wireDismissOnEscape(panel, trigger);
 }
 
+// --- Page "Amis" (systeme d'amis, 2026-10-14) ---
+// Statut binaire en ligne/hors ligne uniquement (pas de "absent"/"invisible"/"ne pas
+// deranger", scope valide par l'utilisateur), visible des seuls amis acceptes. Demande puis
+// accord (corrige le 2026-10-14, avant : ajout direct sans accord) : sections "Demandes
+// recues" (Accepter/Refuser), amis en ligne/hors ligne, puis "Demandes envoyees" (Annuler).
+// Chargee a l'ouverture de la page, pas de badge/compteur proactif comme les notifications.
+let friendsList = [];
+let friendsIncoming = [];
+let friendsOutgoing = [];
+// Etat du chargement (audit 14/10, K2) : avant, une panne s'affichait comme « Pas encore
+// d'amis », et les listes du compte precedent restaient affichees apres un changement de compte.
+// friendsOwnerId = compte a qui appartiennent les listes ci-dessus.
+let friendsStatus = "idle"; // "idle" | "loaded" | "error"
+let friendsOwnerId = null;
+
+function resetFriendsState() {
+  friendsList = [];
+  friendsIncoming = [];
+  friendsOutgoing = [];
+  friendsStatus = "idle";
+  friendsOwnerId = null;
+}
+
+function friendRowHtml(friend) {
+  const name = friend.minecraftUsername || "?";
+  return `
+    <div class="friends-item${friend.online ? "" : " offline"}" data-id="${escapeHtml(friend.userId)}">
+      <span class="friends-item-avatar">
+        ${escapeHtml(name.charAt(0).toUpperCase())}
+        <span class="status-dot${friend.online ? " online" : ""}"></span>
+      </span>
+      <span class="friends-item-text">
+        <span class="friends-item-name">${escapeHtml(name)}</span>
+        <span class="friends-item-status${friend.online ? " online" : ""}">${t(friend.online ? "friends.online" : "friends.offline")}</span>
+      </span>
+      <button type="button" class="icon-btn friends-item-remove" data-id="${escapeHtml(friend.userId)}" title="${t("friends.remove")}" aria-label="${t("friends.remove")}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+      </button>
+    </div>`;
+}
+
+// Demande en attente : pas de pastille ni de statut en ligne (l'autre joueur n'a pas encore
+// accepte, ou c'est moi qui n'ai pas encore repondu).
+function friendRequestRowHtml(request, kind) {
+  const name = request.minecraftUsername || "?";
+  const id = escapeHtml(request.userId);
+  const actions =
+    kind === "incoming"
+      ? `<button type="button" class="join-btn friends-request-btn friends-request-accept" data-id="${id}">${t("friends.accept")}</button>
+         <button type="button" class="friends-request-btn ghost friends-request-decline" data-id="${id}">${t("friends.decline")}</button>`
+      : `<button type="button" class="friends-request-btn ghost friends-request-cancel" data-id="${id}">${t("friends.cancel")}</button>`;
+  return `
+    <div class="friends-item friends-request ${kind}" data-id="${id}">
+      <span class="friends-item-avatar">${escapeHtml(name.charAt(0).toUpperCase())}</span>
+      <span class="friends-item-text">
+        <span class="friends-item-name">${escapeHtml(name)}</span>
+        <span class="friends-item-status">${t(kind === "incoming" ? "friends.incomingHint" : "friends.outgoingHint")}</span>
+      </span>
+      <span class="friends-request-actions">${actions}</span>
+    </div>`;
+}
+
+function friendsSectionHtml(titleKey, items, rowHtml = friendRowHtml) {
+  if (items.length === 0) return "";
+  return `
+    <section class="friends-section">
+      <h3 class="friends-section-title">${t(titleKey)} <span class="count">${items.length}</span></h3>
+      <div class="friends-grid">${items.map(rowHtml).join("")}</div>
+    </section>`;
+}
+
+function renderFriendsList() {
+  const listEl = document.getElementById("friends-list");
+  if (friendsOwnerId !== (currentProfile?.id ?? null)) resetFriendsState();
+  const nothing = friendsList.length === 0 && friendsIncoming.length === 0 && friendsOutgoing.length === 0;
+  if (nothing && friendsStatus !== "loaded") {
+    listEl.innerHTML = `
+      <div class="friends-empty">
+        <h3>${t(friendsStatus === "error" ? "friends.loadError" : "friends.loading")}</h3>
+        ${friendsStatus === "error" ? `<p>${t("friends.loadErrorHint")}</p>` : ""}
+      </div>`;
+    return;
+  }
+  if (nothing) {
+    listEl.innerHTML = `
+      <div class="friends-empty">
+        <span class="friends-empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+        </span>
+        <h3>${t("friends.empty")}</h3>
+        <p>${t("friends.emptyHint")}</p>
+      </div>`;
+    return;
+  }
+  const online = friendsList.filter((f) => f.online);
+  const offline = friendsList.filter((f) => !f.online);
+  listEl.innerHTML =
+    friendsSectionHtml("friends.sectionIncoming", friendsIncoming, (r) => friendRequestRowHtml(r, "incoming")) +
+    friendsSectionHtml("friends.sectionOnline", online) +
+    friendsSectionHtml("friends.sectionOffline", offline) +
+    friendsSectionHtml("friends.sectionOutgoing", friendsOutgoing, (r) => friendRequestRowHtml(r, "outgoing"));
+}
+
+async function refreshFriends() {
+  if (!signedIn) return;
+  const ownerId = currentProfile?.id ?? null;
+  const result = await window.mchub.friends.list();
+  // Compte change ou deconnecte pendant la requete : la reponse ne le concerne plus.
+  if (!signedIn || (currentProfile?.id ?? null) !== ownerId) return;
+  if (friendsOwnerId !== ownerId) resetFriendsState();
+  friendsOwnerId = ownerId;
+  if (!result.ok) {
+    // Les listes deja affichees restent (panne passagere) ; sinon, message d'erreur.
+    if (friendsStatus !== "loaded") friendsStatus = "error";
+    renderFriendsList();
+    return;
+  }
+  friendsList = result.friends;
+  friendsIncoming = result.incoming;
+  friendsOutgoing = result.outgoing;
+  friendsStatus = "loaded";
+  renderFriendsList();
+}
+
+async function showFriendsView() {
+  homePanelEl.hidden = true;
+  statusEl.hidden = true;
+  listEl.hidden = true;
+  listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
+  detailEl.hidden = true;
+  settingsPanelEl.hidden = true;
+  accountPanelEl.hidden = true;
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = false;
+  navHomeBtn.classList.remove("active");
+  navServersBtn.classList.remove("active");
+  navSettingsBtn.classList.remove("active");
+  navFavoritesBtn.classList.remove("active");
+  navRecentBtn.classList.remove("active");
+  navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.add("active");
+  document.getElementById("friends-feedback").hidden = true;
+  // Etat vide affiche tout de suite (la page n'est jamais blanche), remplace par la vraie liste
+  // des que l'API repond.
+  renderFriendsList();
+  await refreshFriends();
+}
+
+function wireFriends() {
+  const form = document.getElementById("friends-add-form");
+  const input = document.getElementById("friends-add-input");
+  const submitBtn = document.getElementById("friends-add-submit");
+  const feedbackEl = document.getElementById("friends-feedback");
+  const listEl = document.getElementById("friends-list");
+
+  navFriendsBtn.addEventListener("click", showFriendsView);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = input.value.trim();
+    if (!username) return;
+    submitBtn.disabled = true;
+    feedbackEl.hidden = true;
+    const result = await window.mchub.friends.add(username);
+    submitBtn.disabled = false;
+    if (!result.ok) {
+      feedbackEl.textContent = result.error || t("friends.addError");
+      feedbackEl.hidden = false;
+      return;
+    }
+    input.value = "";
+    // Message TOUJOURS le meme (anti-enumeration, voir sendFriendRequest cote site) : ne dit
+    // jamais si le pseudo existait vraiment ou etait deja ami — la demande apparait ensuite dans
+    // "Demandes envoyees" si elle a bien ete creee.
+    feedbackEl.textContent = t("friends.addFeedback");
+    feedbackEl.hidden = false;
+    await refreshFriends();
+  });
+
+  // Retirer un ami, refuser une demande recue et annuler une demande envoyee passent tous par
+  // friends.remove (la ligne de la paire est supprimee cote site) ; seul Accepter a sa route.
+  listEl.addEventListener("click", async (event) => {
+    const btn = event.target.closest(".friends-item-remove, .friends-request-accept, .friends-request-decline, .friends-request-cancel");
+    if (!btn) return;
+    btn.closest(".friends-item").querySelectorAll("button").forEach((b) => (b.disabled = true));
+    feedbackEl.hidden = true;
+    const result = btn.classList.contains("friends-request-accept")
+      ? await window.mchub.friends.accept(btn.dataset.id)
+      : await window.mchub.friends.remove(btn.dataset.id);
+    // Echec d'Accepter/Refuser/Retirer : dit au joueur que rien n'a change (avant : silencieux).
+    if (!result?.ok) {
+      feedbackEl.textContent = t("friends.actionError");
+      feedbackEl.hidden = false;
+    }
+    await refreshFriends();
+  });
+}
+
+// Heartbeat de presence : greffe sur le cycle de 60s existant (scheduleRefresh(sendPresenceHeartbeat)
+// plus bas, meme intervalle que silentRefreshList — REFRESH_INTERVAL_MS), jamais un intervalle a
+// part. Echec silencieux (voir presence:heartbeat cote main.js, qui ne rejette jamais) : un
+// heartbeat rate ne fait que retarder le passage "hors ligne" d'un ami, jamais a signaler au joueur.
+async function sendPresenceHeartbeat() {
+  if (!signedIn) return;
+  const result = await window.mchub.sendPresenceHeartbeat();
+  if (result?.accountDeleted) handleAccountDeleted();
+}
+
+// Compte Omniscient supprime sur le site pendant que le launcher etait connecte (voir
+// presence:heartbeat dans main.js, qui a deja coupe et oublie la session) : meme retour au mode
+// visiteur que "Se deconnecter", avec l'ecran de connexion pour expliquer pourquoi. Se
+// reconnecter avec Microsoft recree un compte neuf.
+function handleAccountDeleted() {
+  signedIn = false;
+  currentProfile = null;
+  myInstancesServers = [];
+  myJoinedServers = [];
+  renderGuestHeader();
+  showServersView();
+  appEl.hidden = true;
+  gateEl.hidden = false;
+  setGateBusy(false);
+  gateMessageEl.textContent = t("gate.accountDeleted");
+  gateMessageEl.classList.remove("ms-error");
+  if (signInCountdownTimer) clearInterval(signInCountdownTimer);
+  startBackToGuestCountdown(document.getElementById("gate-countdown"), 15);
+}
+
 // Bascule entre la vue "serveurs" (liste/détail) et la vue "paramètres" dans
 // la barre latérale — deux destinations distinctes plutôt qu'un simple lien,
 // pour matcher la convention des launchers du genre (Lunar, Modrinth...).
@@ -1746,11 +2185,13 @@ function showServersView() {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   navHomeBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navServersBtn.classList.add("active");
   loadServers();
 }
@@ -1805,15 +2246,23 @@ async function showHomeView() {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   homePanelEl.hidden = false;
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navHomeBtn.classList.add("active");
   await renderHomeView();
 }
+
+// Slugs de serveurs mis en avant par l'equipe (gratuit, jamais paye) pour la colonne "A la une"
+// de l'accueil. Vide = le serveur le plus actif non deja affiche. Decision de Rushi (14/10) :
+// la carte dit « Le plus actif » (home.teamPick) ; si un slug est ajoute ici un jour, changer
+// aussi ce libelle, sinon il serait faux.
+const TEAM_PICK_SLUGS = [];
 
 async function renderHomeView() {
   homePanelEl.className = "detail";
@@ -1822,21 +2271,50 @@ async function renderHomeView() {
     ${skeletonListHtml(2)}`;
 
   const [settings, favoriteSlugs, myServersResult] = await Promise.all([
-    window.mchub.settings.get(),
+    settingsWithFreshRecents(),
     getFavoriteSlugs(),
     currentProfile ? window.mchub.listMyServers() : Promise.resolve({ ok: false, servers: [] }),
   ]);
 
-  const continueServer = settings.lastPlayedSlug ? (await resolveServersBySlug([settings.lastPlayedSlug]))[0] : null;
-  const favoriteServers = favoriteSlugs.length > 0 ? await resolveServersBySlug(favoriteSlugs.slice(0, 4)) : [];
+  // En même temps plutôt que l'une après l'autre (14/10) : l'accueil attendait la somme des trois.
+  const [continueResolved, favoriteServers, listResult] = await Promise.all([
+    settings.lastPlayedSlug ? resolveServersBySlug([settings.lastPlayedSlug]) : Promise.resolve([]),
+    favoriteSlugs.length > 0 ? resolveServersBySlug(favoriteSlugs.slice(0, 4)) : Promise.resolve([]),
+    fetchServerList(),
+  ]);
+  const continueServer = continueResolved[0] || null;
   const myServers = myServersResult.ok ? myServersResult.servers.slice(0, 4) : [];
+
+  // Joueur sans historique : au lieu d'une phrase grise, les serveurs les plus actifs du moment.
+  // "A la une" (colonne de droite, grand ecran) : place reservee a la future mise en avant
+  // payante, remplie pour l'instant par un "Choix de l'equipe" gratuit — slug force dans
+  // TEAM_PICK_SLUGS s'il existe, sinon le serveur le plus actif qui n'est pas deja affiche.
+  const busiest = (listResult.ok ? listResult.servers : [])
+    .filter((s) => (s.playerCount ?? 0) > 0)
+    .sort((a, b) => (b.playerCount ?? 0) - (a.playerCount ?? 0));
+  const shownSlugs = new Set([continueServer?.slug, ...favoriteServers.map((s) => s.slug)].filter(Boolean));
+  const whereServers = continueServer ? [] : busiest.slice(0, 3);
+  whereServers.forEach((s) => shownSlugs.add(s.slug));
+  const allKnown = listResult.ok ? listResult.servers : [];
+  const teamPick =
+    TEAM_PICK_SLUGS.map((slug) => allKnown.find((s) => s.slug === slug)).find(Boolean) ||
+    busiest.find((s) => !shownSlugs.has(s.slug)) ||
+    null;
 
   homePanelEl.innerHTML = `
     <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: escapeHtml(currentProfile ? currentProfile.name : "") })}</h2>
+    <div class="home-layout${teamPick ? " has-aside" : ""}">
+    <div class="home-main">
     ${
       continueServer
         ? homeContinueCardHtml(continueServer)
-        : `<p class="join-note" style="margin-bottom: 18px;">${t("home.noHistory")}</p>`
+        : whereServers.length > 0
+          ? `<div class="home-section">
+              <div class="home-section-header"><h3>${t("home.whereTitle")}</h3></div>
+              <p class="join-note" style="margin: 0 0 12px;">${t("home.whereSub")}</p>
+              <div class="server-list" id="home-where-list">${whereServers.map((s) => serverRowHtml(s, favoriteSlugs.includes(s.slug))).join("")}</div>
+            </div>`
+          : `<p class="join-note" style="margin-bottom: 18px;">${t("home.noHistory")}</p>`
     }
     <div class="home-section">
       <div class="home-section-header">
@@ -1846,7 +2324,7 @@ async function renderHomeView() {
       ${
         favoriteServers.length > 0
           ? `<div class="server-list" id="home-favorites-list">${favoriteServers.map((s) => serverRowHtml(s, true)).join("")}</div>`
-          : `<p class="join-note">${t("favorites.empty")}</p>`
+          : `<div class="home-empty-card"><p>${t("favorites.empty")}</p><button type="button" class="btn-secondary" id="home-browse-btn">${t("home.browseServers")}</button></div>`
       }
     </div>
     ${
@@ -1860,7 +2338,40 @@ async function renderHomeView() {
           </div>`
         : ""
     }
+    </div>
+    ${
+      teamPick
+        ? `<aside class="home-aside">
+            <div class="home-section" style="margin-bottom: 0;">
+              <div class="home-section-header"><h3>${t("home.featuredTitle")}</h3></div>
+              <div class="home-pick" id="home-pick" data-slug="${escapeHtml(teamPick.slug)}" role="button" tabindex="0">
+                <div class="home-pick-banner">${teamPick.bannerUrl ? `<img src="${escapeHtml(teamPick.bannerUrl)}" alt="" />` : ""}</div>
+                <div class="home-pick-body">
+                  <span class="home-pick-tag">${t("home.teamPick")}</span>
+                  <h3>${escapeHtml(teamPick.name)}</h3>
+                  <p>${t("home.teamPickDesc")}</p>
+                  <button type="button" class="btn-secondary">${t("home.viewPage")}</button>
+                </div>
+              </div>
+            </div>
+          </aside>`
+        : ""
+    }
+    </div>
   `;
+
+  const browseBtn = document.getElementById("home-browse-btn");
+  if (browseBtn) browseBtn.addEventListener("click", showServersView);
+  for (const el of [document.getElementById("home-where-list"), document.getElementById("home-pick")]) {
+    if (!el) continue;
+    const rows = el.classList.contains("home-pick") ? [el] : [...el.querySelectorAll(".row")];
+    rows.forEach((row) => {
+      onRowActivate(row, () => {
+        detailOrigin = "home";
+        openDetail(row.dataset.slug);
+      });
+    });
+  }
 
   const playBtn = homePanelEl.querySelector(".home-continue-play");
   if (playBtn) {
@@ -1919,9 +2430,17 @@ async function renderHomeView() {
 // confirme vraiment mort qu'avec un servers:get individuel (notFound=true, vrai 404) — seul ce
 // cas justifie de le retirer des favoris/recents (voir pruneDeadSlug ci-dessous), sinon on
 // garde l'ancien placeholder plutot que de perdre une fiche encore valide a tort.
+// Second audit du 14/10 : un de MES serveurs en pause (ou en attente) repond aussi 404, meme a
+// son proprietaire. Avant d'effacer un slug, on verifie donc qu'il n'est pas dans « Mes
+// instances » (servers:mine) ; si cette liste est illisible (hors ligne, pas connecte), on
+// garde le slug plutot que de risquer de l'effacer a tort.
 async function resolveServersBySlug(slugs) {
   const result = await fetchServerList();
   const allServers = result.ok ? result.servers : [];
+  let mine = null;
+  const myServers = () =>
+    (mine ||= currentProfile ? window.mchub.listMyServers().catch(() => ({ ok: false })) : Promise.resolve({ ok: false }));
+  const placeholder = (slug) => ({ slug, name: slug, description: "", type: "vanilla", playerCount: null, playerCapacity: null, bannerUrl: null });
   const resolved = await Promise.all(
     slugs.map(async (slug) => {
       const found = allServers.find((s) => s.slug === slug);
@@ -1929,10 +2448,14 @@ async function resolveServersBySlug(slugs) {
       const single = await window.mchub.getServer(slug);
       if (single.ok) return single.server;
       if (single.notFound) {
+        const owned = await myServers();
+        if (!owned?.ok) return placeholder(slug);
+        const own = (owned.servers || []).find((s) => s.slug === slug);
+        if (own) return { ...placeholder(slug), ...own };
         await pruneDeadSlug(slug);
         return null;
       }
-      return { slug, name: slug, description: "", type: "vanilla", playerCount: null, playerCapacity: null, bannerUrl: null };
+      return placeholder(slug);
     }),
   );
   return resolved.filter((s) => s !== null);
@@ -1942,7 +2465,20 @@ async function pruneDeadSlug(slug) {
   const settings = await window.mchub.settings.get();
   const favoriteServers = (settings.favoriteServers || []).filter((s) => s !== slug);
   const recentlyPlayed = (settings.recentlyPlayed || []).filter((s) => s !== slug);
-  await window.mchub.settings.set({ favoriteServers, recentlyPlayed });
+  // Le « dernier joué » du menu rapide suit la même règle (14/10) : avant, il gardait un serveur
+  // retiré des Récents, d'où deux listes qui ne disaient pas la même chose.
+  const patch = { favoriteServers, recentlyPlayed };
+  if (settings.lastPlayedSlug === slug) patch.lastPlayedSlug = null;
+  await window.mchub.settings.set(patch);
+}
+
+// Slugs de la page Récents (14/10) : la liste enregistrée, ou à défaut le « dernier joué » du
+// menu rapide — un joueur dont les Récents avaient été vidés à tort (voir servers:get côté
+// main.js) retrouve au moins ce serveur, comme dans le menu rapide.
+function recentSlugsFromSettings(settings) {
+  const recent = Array.isArray(settings?.recentlyPlayed) ? settings.recentlyPlayed : [];
+  if (recent.length) return recent;
+  return settings?.lastPlayedSlug ? [settings.lastPlayedSlug] : [];
 }
 
 async function showFavoritesView() {
@@ -1956,25 +2492,45 @@ async function showFavoritesView() {
   accountPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   favoritesPanelEl.hidden = false;
   navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navFavoritesBtn.classList.add("active");
   await renderFavoritesList();
+}
+
+// Etat vide des pages Favoris et Recents (preview validee le 2026-10-14) : grand bloc grise
+// centre, icone, titre, phrase et bouton vers la liste des serveurs. Textes en dur (i18n),
+// aucune donnee utilisateur dedans.
+const PAGE_EMPTY_ICONS = {
+  favorites: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  recent: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>',
+};
+
+function renderPageEmpty(panelEl, kind, titleKey) {
+  panelEl.className = "detail is-empty";
+  panelEl.innerHTML = `
+    <h2>${t(titleKey)}</h2>
+    <div class="page-empty">
+      <div class="page-empty-icon">${PAGE_EMPTY_ICONS[kind]}</div>
+      <h3>${t(`${kind}.emptyTitle`)}</h3>
+      <p>${t(`${kind}.emptyText`)}</p>
+      <button type="button" class="btn-secondary page-empty-browse">${t("home.browseServers")}</button>
+    </div>
+  `;
+  panelEl.querySelector(".page-empty-browse").addEventListener("click", showServersView);
 }
 
 async function renderFavoritesList() {
   const favorites = await getFavoriteSlugs();
 
   if (favorites.length === 0) {
-    favoritesPanelEl.className = "detail";
-    favoritesPanelEl.innerHTML = `
-      <h2>${t("nav.favorites")}</h2>
-      <p class="join-note">${t("favorites.empty")}</p>
-    `;
+    renderPageEmpty(favoritesPanelEl, "favorites", "nav.favorites");
     return;
   }
 
@@ -2003,26 +2559,27 @@ async function showRecentView() {
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   recentPanelEl.hidden = false;
   navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navRecentBtn.classList.add("active");
   await renderRecentList();
 }
 
 async function renderRecentList() {
   const settings = await window.mchub.settings.get();
-  const recentSlugs = settings.recentlyPlayed || [];
+  const { entries, patch } = recentEntries(settings, Date.now());
+  if (patch) await window.mchub.settings.set(patch);
+  const recentSlugs = entries.map((entry) => entry.slug);
+  const playedAtBySlug = Object.fromEntries(entries.map((entry) => [entry.slug, entry.playedAt]));
 
   if (recentSlugs.length === 0) {
-    recentPanelEl.className = "detail";
-    recentPanelEl.innerHTML = `
-      <h2>${t("nav.recent")}</h2>
-      <p class="join-note">${t("recent.empty")}</p>
-    `;
+    renderPageEmpty(recentPanelEl, "recent", "nav.recent");
     return;
   }
 
@@ -2037,7 +2594,7 @@ async function renderRecentList() {
     <h2>${t("nav.recent")}</h2>
     <p class="join-note">${t("recent.header")}</p>
     <div class="list-rows server-list"></div>`;
-  await renderRowsInto(recentPanelEl.querySelector(".list-rows"), recentServers, "recent", renderRecentList);
+  await renderRowsInto(recentPanelEl.querySelector(".list-rows"), recentServers, "recent", renderRecentList, playedAtBySlug);
 }
 
 // "Mes instances" : tous les serveurs du proprietaire connecte (publies OU
@@ -2125,6 +2682,24 @@ function canSelfTest(server) {
   return !server.frozenAt && server.isPrivate && !server.selfTestPassedAt;
 }
 
+// Option C des cartes « Mes instances » (validee par Rushi, 2026-10-14) : boutons compacts a
+// droite, en icones, avec une infobulle (data-tip, voir .instance-action dans index.html) ;
+// aria-label repete le nom pour les lecteurs d'ecran (pas de title : il doublerait l'infobulle).
+const INSTANCE_ICONS = {
+  play: '<svg viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z" /></svg>',
+  gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>',
+  flask: '<svg viewBox="0 0 24 24"><path d="M9 3h6" /><path d="M10 3v6.2L4.6 18.4A2 2 0 0 0 6.3 21.4h11.4a2 2 0 0 0 1.7-3L14 9.2V3" /><path d="M7.5 15h9" /></svg>',
+  external: '<svg viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>',
+  leave: '<svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></svg>',
+  key: '<svg viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 9.3-9.3" /><path d="m16 7 3 3" /><path d="m14 9 2 2" /></svg>',
+};
+
+// `label` : texte affiche a cote de l'icone (seulement quand l'icone seule ne suffit pas).
+function instanceActionHtml({ cls, icon, tip, label = "", data, extra = "" }) {
+  const attrs = Object.entries(data).map(([k, v]) => ` data-${k}="${escapeHtml(v)}"`).join("");
+  return `<button type="button" class="instance-action ${extra} ${cls}"${attrs} data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${INSTANCE_ICONS[icon]}${label ? `<span>${label}</span>` : ""}</button>`;
+}
+
 function instanceCardHtml(server) {
   const status = instanceStatus(server);
   const badgeKey = instanceBadgeKey(status, server);
@@ -2143,9 +2718,10 @@ function instanceCardHtml(server) {
         ${status === "public" && server.verificationStatus === "approved" ? "" : `<div class="instance-card-status">${statusLine}</div>`}
       </div>
       <div class="instance-card-actions">
-        ${canSelfTest(server) ? `<button type="button" class="btn-secondary my-instance-selftest" data-slug="${escapeHtml(server.slug)}">${t("myInstances.selfTestButton")}</button>` : ""}
-        ${status !== "paused" ? `<button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>` : ""}
-        <button type="button" class="btn-secondary my-instance-manage" data-id="${escapeHtml(server.id)}">${t("myInstances.manage")} ↗</button>
+        ${canSelfTest(server) ? instanceActionHtml({ cls: "my-instance-selftest", icon: "flask", tip: t("myInstances.selfTestButton"), label: t("myInstances.selfTestShort"), data: { slug: server.slug } }) : ""}
+        ${status !== "paused" ? instanceActionHtml({ cls: "my-instance-play", icon: "play", extra: "is-play", tip: t("myInstances.joinShort"), data: { slug: server.slug } }) : ""}
+        ${instanceActionHtml({ cls: "my-instance-channel", icon: "gear", tip: t("myInstances.channelButton"), data: { slug: server.slug } })}
+        ${instanceActionHtml({ cls: "my-instance-manage", icon: "external", tip: t("myInstances.manageTip"), data: { id: server.id } })}
       </div>
     </div>`;
 }
@@ -2169,8 +2745,9 @@ function joinedCardHtml(server) {
         <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)}</p>
       </div>
       <div class="instance-card-actions">
-        <button type="button" class="btn-secondary my-instance-play" data-slug="${escapeHtml(server.slug)}">${t("myInstances.joinShort")}</button>
-        <button type="button" class="btn-secondary my-instance-leave" data-slug="${escapeHtml(server.slug)}">${t("myInstances.leave")}</button>
+        ${instanceActionHtml({ cls: "my-instance-play", icon: "play", extra: "is-play", tip: t("myInstances.joinShort"), data: { slug: server.slug } })}
+        ${instanceActionHtml({ cls: "my-instance-channel", icon: "gear", tip: t("myInstances.channelButton"), data: { slug: server.slug } })}
+        ${instanceActionHtml({ cls: "my-instance-leave", icon: "leave", tip: t("myInstances.leave"), data: { slug: server.slug } })}
       </div>
     </div>`;
 }
@@ -2255,6 +2832,243 @@ function askJoinCode(errorMessage) {
   });
 }
 
+// Reglages d'une instance (petite fenetre "Reglages", Mes instances, 2026-10-13) — structures
+// en LISTE plutot qu'en champs fixes : chaque reglage sait lui-meme s'il s'applique au serveur
+// courant (appliesTo) et comment se charger/s'enregistrer (load/save), pour qu'un futur reglage
+// s'ajoute a ce tableau sans reecrire la fenetre ni son flux (openInstanceSettingsModal
+// ci-dessous). Canal du modpack (reserve au PROPRIETAIRE d'un serveur modde, voir
+// servers:getChannel/setChannel) et, depuis le point 9, suivi de statut (ouvert a TOUTE
+// instance — possedee ou rejointe — voir servers:getWatch/setWatch dans main.js).
+const INSTANCE_SETTINGS_FIELDS = [
+  {
+    id: "modpackChannel",
+    appliesTo: (server, ctx) => ctx.owned && server.type === "modded",
+    load: (server) => window.mchub.getServerChannel(server.slug).then((r) => (r.ok ? { ok: true, value: r.modpackChannel } : r)),
+    save: (server, value) => window.mchub.setServerChannel(server.slug, value),
+    renderHtml: (value) => `
+      <div style="margin-top:12px;text-align:left;">
+        <label for="instance-setting-modpackChannel" style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">${t("channelSettings.channelFieldLabel")}</label>
+        <select id="instance-setting-modpackChannel" class="settings-input" style="width:100%;">
+          <option value="release" ${value === "beta" ? "" : "selected"}>${t("channelSettings.release")}</option>
+          <option value="beta" ${value === "beta" ? "selected" : ""}>${t("channelSettings.beta")}</option>
+        </select>
+      </div>`,
+    readValue: () => document.getElementById("instance-setting-modpackChannel").value,
+  },
+  // Point 9 : case decochee par defaut, s'applique a TOUTE instance (possedee ou rejointe),
+  // pas seulement les favoris existants — un seul declencheur pour l'instant (hors ligne ->
+  // en ligne, voir /api/cron/process-instance-watch), jamais le pic de joueurs ni le modpack
+  // mis a jour (reportes a plus tard).
+  {
+    id: "notifyOnStatusChange",
+    appliesTo: () => true,
+    load: (server) => window.mchub.getServerWatch(server.slug).then((r) => (r.ok ? { ok: true, value: r.notifyOnStatusChange } : r)),
+    save: (server, value) => window.mchub.setServerWatch(server.slug, value),
+    renderHtml: (value) => `
+      <div style="margin-top:12px;text-align:left;">
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" id="instance-setting-notifyOnStatusChange" ${value ? "checked" : ""} style="margin-top:2px;" />
+          <span>${t("channelSettings.watchFieldLabel")}</span>
+        </label>
+        <p style="font-size:12px;color:var(--muted);margin:4px 0 0 24px;">${t("channelSettings.watchFieldHelp")}</p>
+      </div>`,
+    readValue: () => document.getElementById("instance-setting-notifyOnStatusChange").checked,
+  },
+];
+
+// Petite fenetre "Reglages" d'une instance (reutilise le modal de confirmation generique, meme
+// pattern que askJoinCode ci-dessus) : charge les reglages applicables (voir appliesTo/load de
+// chaque champ ci-dessus), les affiche via INSTANCE_SETTINGS_FIELDS, et les enregistre sur
+// confirmation. Distincte du bouton "Gerer" (openManageServer), qui continue d'ouvrir le site
+// dans le navigateur. `owned` : true pour une instance de l'onglet "Tout"/possedee (filtre
+// appliesTo du canal modpack), false pour une instance "Rejoint" — ce joueur n'en est jamais
+// proprietaire, voir joinedCardHtml.
+// Une seule fenetre Reglages a la fois (2026-10-14, bug vu par Rushi : sections repetees 2-3
+// fois). Pendant le chargement, l'engrenage derriere la fenetre gardait le focus : Entree ou
+// Espace le re-cliquait, et chaque appel ajoutait ses propres sections et ses propres
+// ecouteurs (un clic sur Enregistrer sauvegardait alors autant de fois).
+let instanceSettingsOpen = false;
+// Jeton de generation (audit 14/10, K1) : apres « Annuler » pendant le chargement, la fenetre
+// est liberee tout de suite (l'engrenage repond de nouveau) alors que les requetes en cours
+// finissent en arriere-plan ; leur fin ne doit pas liberer le verrou d'une fenetre plus recente.
+let instanceSettingsGeneration = 0;
+
+async function openInstanceSettingsModal(server, options) {
+  if (instanceSettingsOpen) return;
+  instanceSettingsOpen = true;
+  const generation = ++instanceSettingsGeneration;
+  try {
+    await showInstanceSettingsModal(server, options);
+  } finally {
+    if (generation === instanceSettingsGeneration) instanceSettingsOpen = false;
+  }
+}
+
+// Chargement de la fenetre (variante B validee par Rushi, 2026-10-14) : le losange Omniscient
+// qui pulse au centre, un message si le site tarde (apres 3 s), et en cas d'erreur un ecran
+// avec Reessayer / Fermer plutot qu'une simple ligne rouge.
+const SETTINGS_SLOW_DELAY_MS = 3000;
+const ICON_ALERT =
+  '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>';
+
+async function showInstanceSettingsModal(server, { owned = true } = {}) {
+  const overlay = document.getElementById("modal-overlay");
+  const confirmBtn = document.getElementById("modal-confirm");
+  const cancelBtn = document.getElementById("modal-cancel");
+  const checkboxRow = document.getElementById("modal-checkbox-row");
+  const bodyEl = document.getElementById("modal-body");
+
+  const fields = INSTANCE_SETTINGS_FIELDS.filter((field) => field.appliesTo(server, { owned }));
+
+  // Zone d'attente/erreur a part : #modal-body est un <p>, qui ne peut pas contenir de blocs.
+  document.getElementById("instance-settings-state")?.remove();
+  const stateEl = document.createElement("div");
+  stateEl.id = "instance-settings-state";
+  bodyEl.after(stateEl);
+
+  document.getElementById("modal-title").textContent = t("channelSettings.title", { name: server.name });
+  checkboxRow.hidden = true;
+  bodyEl.textContent = "";
+  bodyEl.hidden = true;
+  bodyEl.style.color = "";
+  cancelBtn.hidden = false;
+  overlay.querySelector(".modal-box").classList.add("pop-in");
+  overlay.hidden = false;
+
+  let slowTimer = null;
+  const cleanup = () => {
+    clearTimeout(slowTimer);
+    overlay.hidden = true;
+    bodyEl.hidden = false;
+    bodyEl.style.color = "";
+    confirmBtn.hidden = false;
+    confirmBtn.disabled = false;
+    stateEl.remove();
+    document.getElementById("instance-settings-fields")?.remove();
+  };
+
+  const showLoading = () => {
+    stateEl.innerHTML = `
+      <div class="settings-loader" role="status" aria-live="polite">
+        <div class="settings-loader-halo"><span class="settings-loader-mark"></span></div>
+        <span class="settings-loader-text">${t("channelSettings.loading")}</span>
+      </div>`;
+    cancelBtn.textContent = t("common.cancel");
+    confirmBtn.hidden = true;
+    clearTimeout(slowTimer);
+    slowTimer = setTimeout(() => {
+      stateEl.querySelector(".settings-loader")?.insertAdjacentHTML("beforeend", `<p class="settings-loader-slow">${t("channelSettings.slow")}</p>`);
+    }, SETTINGS_SLOW_DELAY_MS);
+  };
+
+  const showError = (message) => {
+    clearTimeout(slowTimer);
+    stateEl.innerHTML = `
+      <div class="settings-error" role="alert">
+        <span class="settings-error-icon">${ICON_ALERT}</span>
+        <p>${escapeHtml(message)}</p>
+      </div>`;
+    cancelBtn.textContent = t("common.close");
+    confirmBtn.hidden = false;
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = t("channelSettings.retry");
+  };
+
+  // Annuler marche aussi pendant le chargement (avant, le bouton ne faisait rien a ce stade) ;
+  // apres une erreur, Reessayer relance le chargement dans la meme fenetre.
+  const currentValues = {};
+  for (;;) {
+    showLoading();
+    let cancelledWhileLoading = false;
+    const onLoadingCancel = () => {
+      cancelledWhileLoading = true;
+      // L'ecouteur est retire ici : la boucle ci-dessous sort par `return` sans l'atteindre.
+      cancelBtn.removeEventListener("click", onLoadingCancel);
+      cleanup();
+      instanceSettingsOpen = false;
+    };
+    cancelBtn.addEventListener("click", onLoadingCancel);
+    let failure = null;
+    for (const field of fields) {
+      const result = await field.load(server);
+      if (cancelledWhileLoading) return;
+      if (!result.ok) {
+        failure = result.error || t("channelSettings.loadError");
+        break;
+      }
+      currentValues[field.id] = result.value;
+    }
+    cancelBtn.removeEventListener("click", onLoadingCancel);
+    if (!failure) break;
+
+    showError(failure);
+    const retry = await new Promise((resolve) => {
+      const onRetry = () => done(true);
+      const onClose = () => done(false);
+      const done = (value) => {
+        confirmBtn.removeEventListener("click", onRetry);
+        cancelBtn.removeEventListener("click", onClose);
+        resolve(value);
+      };
+      confirmBtn.addEventListener("click", onRetry);
+      cancelBtn.addEventListener("click", onClose);
+    });
+    if (!retry) {
+      cleanup();
+      return;
+    }
+  }
+
+  clearTimeout(slowTimer);
+  stateEl.innerHTML = "";
+  // La description du canal du modpack ne s'applique qu'a ce reglage precis — vide sinon (le
+  // texte d'aide de la case de suivi, juste en dessous d'elle, suffit dans ce cas).
+  const hasDescription = fields.some((field) => field.id === "modpackChannel");
+  bodyEl.textContent = hasDescription ? t("channelSettings.description") : "";
+  bodyEl.hidden = !hasDescription;
+  const fieldsContainer = document.createElement("div");
+  fieldsContainer.id = "instance-settings-fields";
+  fieldsContainer.className = "settings-fade-in";
+  document.getElementById("instance-settings-fields")?.remove();
+  fieldsContainer.innerHTML = fields.map((field) => field.renderHtml(currentValues[field.id])).join("");
+  stateEl.after(fieldsContainer);
+
+  cancelBtn.textContent = t("common.cancel");
+  confirmBtn.hidden = false;
+  confirmBtn.textContent = t("channelSettings.save");
+
+  await new Promise((resolve) => {
+    const onConfirm = async () => {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = t("channelSettings.saving");
+      const values = Object.fromEntries(fields.map((field) => [field.id, field.readValue()]));
+      for (const field of fields) {
+        const save = await field.save(server, values[field.id]);
+        if (!save.ok) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = t("channelSettings.save");
+          bodyEl.hidden = false;
+          bodyEl.textContent = save.error || t("channelSettings.saveError");
+          bodyEl.style.color = "var(--danger)";
+          return;
+        }
+      }
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      cleanup();
+      resolve();
+    };
+    const onCancel = () => {
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      cleanup();
+      resolve();
+    };
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+  });
+}
+
 // Boucle "Rejoindre" : redemande le code tant que le site le refuse, avec le
 // message d'erreur dans la meme fenetre. Un succes met a jour l'onglet Rejoint.
 async function joinByCodeFlow() {
@@ -2273,6 +3087,22 @@ async function joinByCodeFlow() {
     }
     error = result.error;
   }
+}
+
+// Rejoindre un de SES serveurs par code reste possible (14/10, demande de Rushi : il teste ses
+// codes ainsi) et suit la procedure normale. Mais a chaque chargement de Mes instances, un
+// serveur qu'il possede deja est retire de « Rejoint » (et de son compteur) : il est deja dans
+// « Tout ». Seule l'entree de la liste locale des rejoints (settings.joinedServers, sur ce PC)
+// est supprimee, via servers:leaveJoined : ni le serveur ni les donnees d'autres joueurs ne sont
+// touches. Le proprietaire n'a pas besoin du code pour lancer son serveur (son jeton suffit).
+function withoutOwnedServers(joined, owned) {
+  const ownedSlugs = new Set((owned || []).map((server) => server.slug));
+  return (joined || []).filter((server) => !ownedSlugs.has(server.slug));
+}
+
+function ownedJoinedSlugs(joined, owned) {
+  const ownedSlugs = new Set((owned || []).map((server) => server.slug));
+  return (joined || []).filter((server) => ownedSlugs.has(server.slug)).map((server) => server.slug);
 }
 
 // Generique : utilise par "Mes instances" et par la liste publique des serveurs (voir
@@ -2308,7 +3138,7 @@ function renderMyInstancesGrid() {
         <h2>${t("nav.myInstances")}</h2>
         <p class="join-note">${t("myInstances.subtitle")}</p>
       </div>
-      <button type="button" class="btn-secondary" id="my-instances-join">${t("myInstances.joinButton")}</button>
+      <button type="button" class="btn-secondary join-code-btn" id="my-instances-join">${INSTANCE_ICONS.key}${t("myInstances.joinByCodeButton")}</button>
     </div>
     ${instancesToolbarHtml(myInstancesServers, myJoinedServers.length, topPagerHtml(myInstancesPage, pageCount, "my-instances-pager"))}
     ${
@@ -2391,6 +3221,19 @@ function renderMyInstancesGrid() {
     });
   });
 
+  myInstancesPanelEl.querySelectorAll(".my-instance-channel").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      // Le bouton "Reglages" existe maintenant aussi sur les cartes "Rejoint" (point 9, suivi
+      // de statut ouvert a toute instance) — on cherche dans les deux pools, jamais les deux a
+      // la fois (un meme slug n'apparait que dans un seul des deux).
+      const owned = myInstancesServers.some((s) => s.slug === btn.dataset.slug);
+      const server = owned ? myInstancesServers.find((s) => s.slug === btn.dataset.slug) : myJoinedServers.find((s) => s.slug === btn.dataset.slug);
+      if (!server) return;
+      openInstanceSettingsModal(server, { owned });
+    });
+  });
+
   myInstancesPanelEl.querySelectorAll(".my-instance-manage").forEach((btn) => {
     btn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -2432,12 +3275,14 @@ async function showMyInstancesView() {
   accountPanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   myInstancesPanelEl.hidden = false;
   navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navMyInstancesBtn.classList.add("active");
   await renderMyInstancesList();
 }
@@ -2473,7 +3318,7 @@ function offlineInstanceCardHtml(instance) {
         <p>${t(instance.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(instance.minecraftVersion)}</p>
       </div>
       <div class="instance-card-actions">
-        <button type="button" class="btn-secondary my-instance-play-offline" data-slug="${escapeHtml(instance.slug)}">${t("myInstances.playOffline")}</button>
+        ${instanceActionHtml({ cls: "my-instance-play-offline", icon: "play", extra: "is-play", tip: t("myInstances.playOffline"), label: t("myInstances.playOffline"), data: { slug: instance.slug } })}
       </div>
     </div>`;
 }
@@ -2597,7 +3442,13 @@ async function renderMyInstancesList() {
     return;
   }
   myInstancesServers = ownedResult.servers;
-  myJoinedServers = joinedResult.ok ? joinedResult.servers : [];
+  const joinedServers = joinedResult.ok ? joinedResult.servers : [];
+  myJoinedServers = withoutOwnedServers(joinedServers, myInstancesServers);
+  // Retire aussi ces serveurs de la liste sauvegardee des rejoints (settings.joinedServers),
+  // sinon ils revenaient des le code suivant (retour de test de Rushi, 14/10).
+  await Promise.all(
+    ownedJoinedSlugs(joinedServers, myInstancesServers).map((slug) => window.mchub.leaveJoinedServer(slug).catch(() => {})),
+  );
 
   // Toujours "Tout" a l'ouverture (meme sans aucun serveur possede ni rejoint
   // : l'onglet "Rejoint" doit rester atteignable pour entrer un code).
@@ -2633,12 +3484,14 @@ async function showSettingsView() {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   settingsPanelEl.hidden = false;
   navHomeBtn.classList.remove("active");
   navServersBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navSettingsBtn.classList.add("active");
   await renderSettingsTab(activeSettingsTab);
 }
@@ -2656,6 +3509,8 @@ function wireSettingsNav() {
 async function renderSettingsTab(tab) {
   const contentEl = document.getElementById("settings-content");
   const settings = await window.mchub.settings.get();
+  // Seul le Debogage s'etale en grille sur la largeur ; les autres onglets gardent leur colonne etroite.
+  contentEl.classList.toggle("settings-content-wide", tab === "debug");
   if (tab === "language") return renderLanguageTab(contentEl, settings);
   if (tab === "memory") return renderMemoryTab(contentEl, settings);
   if (tab === "misc") return renderMiscTab(contentEl, settings);
@@ -2673,6 +3528,7 @@ function renderDebugTab(contentEl, settings) {
   const LOG_LEVELS = ["error", "warn", "info", "debug"];
 
   contentEl.innerHTML = `
+    <div class="settings-grid">
     <section class="settings-section">
       <h3 class="settings-row-desc" style="text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 0;">${t("debug.consoleSection")}</h3>
       <div class="settings-row">
@@ -2742,8 +3598,9 @@ function renderDebugTab(contentEl, settings) {
       </div>
       <div><button id="settings-copy-sysinfo" class="btn-secondary" type="button" hidden>${t("debug.copyToClipboard")}</button></div>
     </section>
+    </div>
 
-    <section class="settings-section">
+    <section class="settings-section settings-reset">
       <h3 class="settings-row-desc" style="text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 0;">${t("debug.resetSection")}</h3>
       <div class="settings-row">
         <span>
@@ -3062,7 +3919,7 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
       <div class="settings-row">
         <span>
           <span class="settings-row-label">${t("settings.launcherVersion")}</span>
-          <p class="settings-row-desc">${t("settings.upToDate")}</p>
+          <p class="settings-row-desc">${t(UPDATE_PHASE_TEXT[lastUpdatePhase] || "settings.updateNotChecked")}</p>
         </span>
         <span class="join-note">${settings.appVersion ? `v${settings.appVersion.split("-")[0]}` : "—"}</span>
       </div>
@@ -3080,6 +3937,29 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
       </div>
       ${betaPending ? `<p class="join-note">${t("settings.betaRestartNote")}</p><button type="button" class="join-btn" id="settings-beta-restart-btn">${t("language.restartButton")}</button>` : ""}
     </section>
+    <section class="settings-section">
+      <h3 class="settings-section-title">${t("settings.discordSection")}</h3>
+      <div class="settings-row">
+        <span>
+          <label class="settings-row-label" for="settings-discord-presence">${t("settings.discordPresence")}</label>
+          <p class="settings-row-desc">${t("settings.discordPresenceDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-discord-presence" ${settings.discordPresence !== false ? "checked" : ""} />
+      </div>
+    </section>
+    <section class="settings-section">
+      <h3 class="settings-section-title">${t("settings.aboutSection")}</h3>
+      <button type="button" class="settings-link-row" data-legal-page="terms">
+        <span><span class="settings-row-label">${t("settings.terms")}</span><p class="settings-link-url">omniscientlauncher.com/cgu</p></span>
+        <span class="settings-link-ext" aria-hidden="true">↗</span>
+      </button>
+      <div class="settings-divider"></div>
+      <button type="button" class="settings-link-row" data-legal-page="privacy">
+        <span><span class="settings-row-label">${t("settings.privacy")}</span><p class="settings-link-url">omniscientlauncher.com/confidentialite</p></span>
+        <span class="settings-link-ext" aria-hidden="true">↗</span>
+      </button>
+      <p class="join-note">${t("settings.aboutNote")}</p>
+    </section>
   `;
 
   document.getElementById("settings-open-folder").addEventListener("click", () => {
@@ -3090,6 +3970,14 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
     renderMiscTab(contentEl, { ...settings, betaChannel: event.target.checked }, { betaPending: true });
   });
   document.getElementById("settings-beta-restart-btn")?.addEventListener("click", () => window.mchub.restartApp());
+  // Enregistre avec les autres reglages ; main.js coupe ou rallume la presence Discord tout de suite.
+  document.getElementById("settings-discord-presence").addEventListener("change", async (event) => {
+    settings.discordPresence = event.target.checked;
+    await window.mchub.settings.set({ discordPresence: event.target.checked });
+  });
+  contentEl.querySelectorAll("[data-legal-page]").forEach((button) => {
+    button.addEventListener("click", () => window.mchub.openLegalPage(button.dataset.legalPage));
+  });
   refreshJavaStatus("settings-java-status", "settings-java-install");
 
   // "Reparer Java" : supprime les Java du launcher puis reinstalle les quatre.
@@ -3218,11 +4106,13 @@ async function showAccountView() {
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
   myInstancesPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
   accountPanelEl.hidden = false;
   navServersBtn.classList.remove("active");
   navFavoritesBtn.classList.remove("active");
   navRecentBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
+  navFriendsBtn.classList.remove("active");
   navSettingsBtn.classList.remove("active");
   await renderAccountPanel();
 }
@@ -3433,7 +4323,7 @@ async function refreshPlaybarFavorites() {
   const favPanel = document.getElementById("playbar-fav-panel");
   const playBtn = document.getElementById("playbar-play");
 
-  const settings = await window.mchub.settings.get();
+  const settings = await settingsWithFreshRecents();
   const favorites = settings.favoriteServers || [];
   const playCounts = settings.playCounts || {};
   const lastPlayedSlug = settings.lastPlayedSlug || null;
@@ -3662,7 +4552,29 @@ function selfTestStepRowHtml(step, status, detail) {
       ${icon}
       <span style="flex:1;">${escapeHtml(label)}</span>
       <span style="color:${color};font-size:12.5px;">${escapeHtml(statusText)}</span>
-    </div>`;
+    </div>${selfTestDetailHtml(step, status, detail)}`;
+}
+
+// Explication sous un controle (14/10) : avant, un echec n'affichait que « échoué », sans dire
+// pourquoi. Mods bloques par CurseForge : leur liste et le conseil au proprietaire.
+function selfTestDetailHtml(step, status, detail) {
+  let text = "";
+  if (step.key === "modpack" && status === "fail" && detail) {
+    const mods = Array.isArray(detail.manualMods) ? detail.manualMods : [];
+    const blocked = mods.filter((mod) => mod.reason !== "removed");
+    if (blocked.length) {
+      const names = blocked.map((mod) => mod.modName || mod.fileName || t("manualMods.fileFallback", { id: mod.fileId }));
+      text = t("selfTest.manualModsDetail", { count: blocked.length, names: names.slice(0, 8).join(", ") + (names.length > 8 ? "…" : "") });
+    } else if (mods.length) {
+      text = t("selfTest.removedModsDetail");
+    } else if (typeof detail.error === "string") {
+      text = detail.error.slice(0, 300);
+    }
+  } else if (step.key === "gameStarted" && status === "skipped" && detail?.incompletePack) {
+    text = t("selfTest.incompletePack");
+  }
+  if (!text) return "";
+  return `<div style="margin:-4px 0 0 30px;font-size:12.5px;color:var(--muted);line-height:1.45;">${escapeHtml(text)}</div>`;
 }
 
 function renderSelfTestChecklist(statuses, details) {
@@ -3847,11 +4759,18 @@ async function attemptSignIn(remember) {
     return false;
   }
 
+  startBackToGuestCountdown(countdownEl, 5);
+  return false;
+}
+
+// Compte a rebours de l'ecran de connexion vers le mode visiteur (echec de connexion, compte
+// Omniscient supprime) : le joueur n'y reste jamais bloque.
+function startBackToGuestCountdown(countdownEl, seconds) {
   // Retour automatique en mode visiteur apres un echec (2026-10-11) : rester
   // bloque sur l'ancien ecran de connexion casserait le principe de
   // navigation libre — le joueur peut toujours relancer la connexion plus
   // tard, au clic sur "Jouer" ou sur "Se connecter" en Parametres.
-  let remaining = 5;
+  let remaining = seconds;
   countdownEl.hidden = false;
   const tick = () => {
     countdownEl.textContent = t("gate.backToGuestIn", { seconds: remaining });
@@ -3885,7 +4804,6 @@ async function attemptSignIn(remember) {
     },
     { once: true },
   );
-  return false;
 }
 
 // Barre laterale quand personne n'est connecte : pas de bouton "Se connecter"
@@ -3897,6 +4815,12 @@ async function attemptSignIn(remember) {
 // de laisser cet espace reserve a l'avatar completement vide.
 function renderGuestHeader() {
   navSettingsBtn.hidden = true;
+  // Plus de compte : les listes d'amis du compte precedent ne doivent plus etre affichees.
+  resetFriendsState();
+  // Amis = necessite un compte Microsoft (comme Parametres ci-dessus) : rien a afficher pour
+  // un visiteur sans session.
+  navFriendsBtn.hidden = true;
+  if (!friendsPanelEl.hidden) showHomeView();
   msAccountEl.innerHTML = `
     <button id="ms-account-settings" class="sidebar-btn" data-i18n-title="nav.settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3908,6 +4832,12 @@ function renderGuestHeader() {
   document.getElementById("ms-account-settings").addEventListener("click", showSettingsView);
   window.i18n.applyStaticI18n(msAccountEl);
 }
+
+// Dernier etat connu de la verification de mise a jour (au demarrage), affiche dans Parametres
+// a cote de la version. Avant le 14/10, « À jour. » s'affichait toujours, meme apres un echec ou
+// sans verification (audit, T9). null = pas de verification (lancement en dev, hors app packagee).
+let lastUpdatePhase = null;
+const UPDATE_PHASE_TEXT = { "up-to-date": "settings.upToDate", error: "settings.updateCheckFailed" };
 
 async function boot() {
   // Langue/theme appliques avant tout le reste : le reste de boot() (et tout
@@ -3930,6 +4860,7 @@ async function boot() {
   wireMcStatus();
   wireTasksMenu();
   wireNotifications();
+  wireFriends();
   wirePlaybar();
 
   // Ecran de demarrage : ne couvre que les verifications reelles qui
@@ -3946,6 +4877,7 @@ async function boot() {
   bootstrapProgressEl.style.width = "15%";
   let updateReadyToInstall = false;
   const stopUpdateStatus = window.mchub.updates.onStatus((status) => {
+    lastUpdatePhase = status.phase;
     if (status.phase === "downloading") {
       bootstrapStatusEl.textContent = status.percent
         ? t("bootstrap.downloadingUpdateProgress", { percent: status.percent })
@@ -4060,3 +4992,13 @@ scheduleRefresh(silentRefreshList);
 // Notifications : toutes les 5 minutes (chaque appel interroge la base du site).
 scheduleRefresh(refreshNotifications, 300_000);
 scheduleRefresh(checkMaintenanceLoop, 120_000);
+// Presence (systeme d'amis) : MEME valeur de cycle que silentRefreshList ci-dessus
+// (REFRESH_INTERVAL_MS, 60s) — greffe dessus comme demande, pas un nouvel intervalle ni celui
+// des notifications (qui est a 5 min, pas 30s comme un ancien commentaire le pretendait a
+// tort). Delibérément PAS via scheduleRefresh() : ce helper ralentit a
+// REFRESH_PLAYING_INTERVAL_MS (5 min) pendant une partie, ce qui est le bon choix pour la liste
+// de serveurs (pas besoin de la rafraichir pendant que le joueur est en jeu) mais serait exactement
+// le mauvais choix ici — un ami en train de JOUER est le cas ou on veut le plus montrer "en
+// ligne", pas le laisser passer "hors ligne" apres 2 min (ONLINE_WINDOW_MS cote site) faute de
+// heartbeat. setInterval direct, jamais ralenti, jamais arrete.
+setInterval(sendPresenceHeartbeat, REFRESH_INTERVAL_MS);

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SquaresFour, Bell, Newspaper } from "@phosphor-icons/react";
+import { SquaresFour, Bell, Newspaper, Gear, Users } from "@phosphor-icons/react";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -13,7 +13,9 @@ export function DashboardNav() {
   const NAV_ITEMS: { href: string; label: string; icon: PhosphorIcon }[] = [
     { href: "/dashboard", label: t("dashboard.navServers"), icon: SquaresFour },
     { href: "/dashboard/notifications", label: t("dashboard.navNotifications"), icon: Bell },
+    { href: "/dashboard/amis", label: t("dashboard.navFriends"), icon: Users },
     { href: "/dashboard/news", label: t("dashboard.navNews"), icon: Newspaper },
+    { href: "/dashboard/parametres", label: t("dashboard.navSettings"), icon: Gear },
   ];
 
   return (

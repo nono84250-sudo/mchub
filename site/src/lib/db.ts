@@ -30,6 +30,9 @@ const TABLES: Record<string, string> = {
   PlayerWarning: "playerWarning",
   AdminNote: "adminNote",
   News: "news",
+  InstanceWatch: "instanceWatch",
+  Friendship: "friendship",
+  UserPresence: "userPresence",
   ContactMessage: "contactMessage",
 };
 // Colonnes booleennes : stockees en 0/1 dans D1, rendues en true/false.
@@ -39,9 +42,10 @@ const BOOLEAN_COLUMNS: Record<string, string[]> = {
   adminAccount: ["mustChangeCredentials"],
   scheduledBroadcast: ["banner", "blockLauncher"],
   news: ["published"],
+  instanceWatch: ["notifyOnStatusChange", "lastKnownOnline"],
 };
 // Tables avec un @updatedAt : mises a jour automatiquement a chaque update.
-const HAS_UPDATED_AT = new Set(["user", "server", "report", "platformSetting"]);
+const HAS_UPDATED_AT = new Set(["user", "server", "report", "platformSetting", "userPresence"]);
 // Relations belongsTo utilisees par include().
 const RELATIONS: Record<string, Record<string, { model: string; fk: string }>> = {
   Server: { owner: { model: "User", fk: "ownerId" } },

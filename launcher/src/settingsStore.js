@@ -39,6 +39,9 @@ const DEFAULTS = {
   // plus ancien (page "Recents" de la barre laterale) — deja limite en
   // taille par renderer.js avant d'etre enregistre.
   recentlyPlayed: [],
+  // Date (ms) de la derniere partie de chaque serveur de recentlyPlayed (14/10, page Recents
+  // avec la date, retrait apres 7 jours) — local seulement, jamais envoye au site.
+  recentPlayedAt: {},
   // Langue de l'UI (voir i18n.js) — seuls "fr"/"en" ont une vraie traduction
   // pour l'instant. Theme/accent (voir globals du launcher) : "system" suit
   // prefers-color-scheme, sinon "dark"/"light" force l'un ou l'autre.
@@ -59,6 +62,9 @@ const DEFAULTS = {
   // Applique au prochain demarrage : checkForUpdates() lit ce reglage a chaque
   // verification du bootstrap.
   betaChannel: false,
+  // Parametres > Divers > Discord : coupe = le launcher ne se connecte meme pas a Discord
+  // (voir discordPresence.js, setEnabled).
+  discordPresence: true,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -148,6 +154,7 @@ function saveSettings(partial) {
   if (filtered.openConsoleOnLaunch !== undefined) next.openConsoleOnLaunch = !!filtered.openConsoleOnLaunch;
   if (filtered.keepLauncherOpenWhilePlaying !== undefined) next.keepLauncherOpenWhilePlaying = !!filtered.keepLauncherOpenWhilePlaying;
   if (filtered.betaChannel !== undefined) next.betaChannel = !!filtered.betaChannel;
+  if (filtered.discordPresence !== undefined) next.discordPresence = !!filtered.discordPresence;
 
   writeSettingsFile(next);
   return next;

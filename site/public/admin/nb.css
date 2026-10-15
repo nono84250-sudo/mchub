@@ -16,9 +16,11 @@ nav[style*="width:232px"] { position: sticky !important; top: 0; height: 100vh; 
 /* "Proposition" sur un élément seul (dans un menu, par exemple). */
 .pr { outline: 1px dashed #e8c547; outline-offset: 3px; border-radius: 4px; position: relative; }
 
-/* Tableau des serveurs : défilement horizontal sur petit écran seulement, pour que le menu « ... » ne soit pas coupé sur grand écran. */
+/* Tableaux de l'admin (serveurs, joueurs, signalements) : défilement horizontal dans leur cadre
+   dès qu'il manque de place. Avant (2026-10-14), le défilement s'arrêtait à 1000 px de large pour
+   ne pas couper un menu « ... » qui n'existe plus : entre 1000 et ~1200 px (fenêtre à moitié
+   d'écran), le tableau des serveurs sortait de son cadre. */
 .srv-table { overflow-x: auto; }
-@media (min-width: 1000px) { .srv-table { overflow: visible; } }
 
 /* Ligne serveur cliquable : le lien couvre toute la ligne (voir serversHtml). */
 .srv-cover { position: absolute; inset: 0; border-radius: 6px; }

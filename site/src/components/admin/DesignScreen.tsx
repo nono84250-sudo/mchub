@@ -35,6 +35,7 @@ const NAV_LINKS: Record<string, string> = {
   "Packs curés": "/admin/packs",
   Administration: "/admin/administration",
   "Paramètres": "/admin/parametres",
+  Contact: "/admin/contact",
 };
 
 // 2026-10-10 : /admin/parametres (identifiants du compte admin + interrupteurs des sources de
@@ -49,10 +50,23 @@ function addSettingsNavItem(html: string): string {
   return html.split(marker).join(marker + item);
 }
 
-// Rend le menu cliquable (même style, même libellés) et marque "Amis" comme non branché.
+// 2026-10-14 : /admin/contact (messages du formulaire de contact public, voir
+// lib/contactMessages.ts) — meme raisonnement et meme methode que addSettingsNavItem
+// ci-dessus, la maquette d'origine n'a pas d'entree "Contact" non plus. Inseree juste AVANT
+// "Paramètres" (donc apres que addSettingsNavItem ait tourne) : Paramètres reste la toute
+// derniere ligne du menu (demande de Rushi, 2026-10-14).
+function addContactNavItem(html: string): string {
+  const marker =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-gear" style="font-size:17px;"></i><span style="flex:1">Paramètres</span></div>';
+  const item =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-envelope" style="font-size:17px;"></i><span style="flex:1">Contact</span></div>';
+  return html.split(marker).join(item + marker);
+}
+
+// Rend le menu cliquable (même style, même libellés). "Amis" (maquette, sans page admin) reste
+// un simple libellé, de toute façon masqué par hideNavItems.
 function linkNav(html: string): string {
   return html.replace(/<span style="flex:1">([^<]+)<\/span>/g, (match, label: string) => {
-    if (label === "Amis") return `<span class="nb" style="flex:1">${label}</span>`;
     const href = NAV_LINKS[label];
     return href ? `<a href="${href}" style="flex:1;color:inherit;text-decoration:none">${label}</a>` : match;
   });
@@ -63,7 +77,12 @@ function linkNav(html: string): string {
 // accessibles par URL directe (aucune route retiree) — seules ces entrees disparaissent
 // du menu. Servers/Vérification/Paramètres restent visibles (migration D1 en cours,
 // utile de garder un oeil dessus ; Vérification reste la seule porte d'entree des serveurs).
-const HIDDEN_NAV_LABELS = ["Overview", "Notifications", "News", "Players", "Reports", "Packs curés", "Administration", "Amis"];
+// 2026-10-13 : "Reports" retiree de cette liste (remise dans le menu) — reactivee pour le
+// process de recours (point 4 de la checklist), retiree du perimetre reduit du 2026-10-12
+// sans que ce soit volontaire.
+// 2026-10-14 : "Players" retiree aussi (remise dans le menu, demande de Rushi) — la liste des
+// joueurs mene a la fiche joueur, qui porte le bouton « Récupérer les données du joueur ».
+const HIDDEN_NAV_LABELS = ["Overview", "Notifications", "News", "Packs curés", "Administration", "Amis"];
 
 function hideNavItems(html: string): string {
   let result = html;
@@ -78,7 +97,7 @@ function hideNavItems(html: string): string {
   return result;
 }
 
-// Remonte l'entree "Players" du menu juste au-dessus de "Servers" — chaque ecran de la
+// Place l'entree "Players" du menu juste sous "Servers" — chaque ecran de la
 // maquette embarque sa propre copie du menu (meme ordre partout), donc ce reordonnancement
 // se fait ici une seule fois plutot que dans chaque ecran de screens.ts.
 function reorderNav(html: string): string {
@@ -93,8 +112,10 @@ function reorderNav(html: string): string {
   const serversAt = without.indexOf(">Servers<");
   if (serversAt < 0) return html;
   const serversStart = without.lastIndexOf("<div", serversAt);
-  if (serversStart < 0) return html;
-  return without.slice(0, serversStart) + item + without.slice(serversStart);
+  const serversEnd = balancedEnd(without, serversStart, "div");
+  if (serversStart < 0 || serversEnd < 0) return html;
+  // Juste SOUS "Servers" (demande de Rushi, 2026-10-14 ; avant : au-dessus).
+  return without.slice(0, serversEnd) + item + without.slice(serversEnd);
 }
 
 // Retire la barre de recherche de l'en-tete : purement visuelle (aucune recherche ne marche
@@ -110,16 +131,12 @@ function removeTopbarSearch(html: string): string {
   return html.slice(0, start) + html.slice(end);
 }
 
-// Icone de cloche : ne menait nulle part et n'etait pas marquee, alors que la page
-// Notifications qu'elle devrait ouvrir est elle-meme entierement maquette (non branchee).
-// On la relie a cette page et on la marque en rouge, pour que rien ne paraisse fonctionnel
-// sans l'etre.
+// Icone de cloche : elle menait a /admin/notifications, page desactivee qui renvoie vers
+// Serveurs — un bouton qui ne fait rien. Retiree (2026-10-14 : rien de factice en production).
 function markTopbarBell(html: string): string {
   const marker =
     '<span style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--color-divider);display:flex;align-items:center;justify-content:center;color:var(--muted);"><i class="ph ph-bell" style="font-size:15px;"></i></span>';
-  return html.split(marker).join(
-    '<a href="/admin/notifications" style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--color-divider);display:flex;align-items:center;justify-content:center;color:var(--muted);text-decoration:none;"><i class="ph ph-bell" style="font-size:15px;"></i></a>',
-  );
+  return html.split(marker).join("");
 }
 
 // Carte utilisateur en bas de la sidebar : la maquette affiche en dur "Alex Kade" / "Owner"
@@ -148,12 +165,14 @@ export async function buildScreenContent({ name, html, markAll }: { name: keyof 
     getCurrentAdmin(),
     getStaffRoleLabels(),
   ]);
-  // markNavBadges et addSettingsNavItem doivent tourner avant linkNav : celui-ci transforme
-  // le <span style="flex:1"> du libelle en <a>, ce qui change sa balise fermante et casse
-  // tout remplacement litteral fait apres coup.
+  // markNavBadges, addSettingsNavItem et addContactNavItem doivent tourner avant linkNav :
+  // celui-ci transforme le <span style="flex:1"> du libelle en <a>, ce qui change sa balise
+  // fermante et casse tout remplacement litteral fait apres coup.
   let content = markUserCard(
     markTopbarBell(
-      removeTopbarSearch(hideNavItems(reorderNav(linkNav(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))))),
+      removeTopbarSearch(
+        hideNavItems(reorderNav(linkNav(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))))),
+      ),
     ),
     admin,
     roleLabels,

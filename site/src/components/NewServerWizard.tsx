@@ -7,7 +7,7 @@ import type { ServerActionState } from "@/lib/actions/servers";
 import { ImageDropzone } from "@/components/ImageDropzone";
 import { ModpackPicker, type ModpackValue } from "@/components/ModpackPicker";
 import { MinecraftVersionField } from "@/components/MinecraftVersionField";
-import { DEFAULT_MODPACK_SOURCE, type ModpackSource } from "@/lib/modpack-types";
+import { DEFAULT_MODPACK_CHANNEL, DEFAULT_MODPACK_SOURCE, type ModpackSource } from "@/lib/modpack-types";
 import { supportsAutoConnect } from "@/lib/minecraft-version-constants";
 import { LogoMark } from "@/components/LogoMark";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -50,7 +50,7 @@ export function NewServerWizard({ action, versions, sourceStates }: Props) {
   // Modpack choisi dans <ModpackPicker> (recherche CurseForge ou saisie
   // manuelle) : l'assistant n'a besoin que de l'identifiant, pour ne pas
   // laisser continuer un serveur modde sans modpack.
-  const [modpack, setModpack] = useState<ModpackValue>({ id: "", name: "", version: "", source: DEFAULT_MODPACK_SOURCE });
+  const [modpack, setModpack] = useState<ModpackValue>({ id: "", name: "", version: "", source: DEFAULT_MODPACK_SOURCE, channel: DEFAULT_MODPACK_CHANNEL });
 
   // Version de Minecraft + chargeur du modpack choisi dans la recherche
   // CurseForge, montres sous le champ "Version de Minecraft" pour que le

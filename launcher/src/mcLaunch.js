@@ -109,7 +109,7 @@ async function launchMinecraft({
         source: "launcher",
         message: `Mojang demande Java ${vanilla.javaVersion?.majorVersion ?? "?"} (runtime ${vanilla.javaVersion?.component ?? "?"}) pour ${version}`,
       });
-      logStore.pushLog({ source: "launcher", message: `Options JVM de Mojang ajoutées : ${mojangArgs.join(" ")}` });
+      logStore.pushLog({ level: "debug", source: "launcher", message: `Options JVM de Mojang ajoutées : ${mojangArgs.join(" ")}` });
       jvmArgs = [...mojangArgs, ...jvmArgs];
     } catch (error) {
       logStore.pushLog({ level: "warn", source: "launcher", message: `Options Mojang non récupérées (${error.message}), lancement sans elles` });

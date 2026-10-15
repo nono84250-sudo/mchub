@@ -7,7 +7,7 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 // non) plutot que dans la barre de nav — voir AccountMenu.tsx pour l'acces
 // rapide propose en plus une fois connecte. "Publier un serveur" retire de
 // partout. Liens : seulement les pages legales (CGU, confidentialite), demandees
-// pour l'application Discord le 2026-10-14 ("Serveurs" retire).
+// pour l'application Discord le 2026-10-14 ("Serveurs" et "Contact" retires).
 export async function Footer() {
   const { dict } = await getT();
 

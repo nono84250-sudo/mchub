@@ -4,7 +4,10 @@ import { db } from "@/lib/db";
 // Alphabet sans caracteres ambigus (0/O, 1/I) : un code d'invitation
 // se lit et se retape a la main, y compris depuis le launcher.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const CODE_LENGTH = 5;
+// 8 caracteres depuis le 14/10 (audit S4) : 5 caracteres (32^5, environ 33 millions de codes)
+// se devinaient en quelques jours avec un petit reseau de machines. Les codes deja distribues
+// gardent leur longueur et restent valables ; "Nouveau code" en donne un de 8.
+const CODE_LENGTH = 8;
 
 function generateCode(): string {
   let code = "";
@@ -14,7 +17,7 @@ function generateCode(): string {
   return code;
 }
 
-// Genere un code unique (retente en cas de collision, improbable a 32^5
+// Genere un code unique (retente en cas de collision, improbable a 32^8
 // combinaisons mais verifiee par securite plutot que de s'appuyer
 // uniquement sur la contrainte unique en base).
 export async function generateUniqueInviteCode(): Promise<string> {
