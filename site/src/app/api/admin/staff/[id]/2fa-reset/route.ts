@@ -22,5 +22,5 @@ export async function POST(request: Request, ctx: RouteContext<"/api/admin/staff
        "totpLockedUntil" = NULL, "totpRecoveryCodes" = NULL, "passwordChangedAt" = ? WHERE "id" = ?`,
     [new Date().toISOString(), id],
   );
-  return NextResponse.redirect(new URL("/admin/administration?reset2fa=1", request.url), 303);
+  return NextResponse.redirect(new URL("/admin/parametres?reset2fa=1", request.url), 303);
 }

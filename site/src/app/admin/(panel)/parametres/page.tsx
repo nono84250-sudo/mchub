@@ -2,8 +2,10 @@ import { AdminChrome } from "@/components/admin/AdminChrome";
 import { AdminCredentialsForm } from "@/components/admin/AdminCredentialsForm";
 import { AdminSourceToggles } from "@/components/admin/AdminSourceToggles";
 import { AdminRecoveryCodesCard } from "@/components/admin/AdminTwoFactor";
+import { ConfirmSubmitButton } from "@/components/admin/ConfirmSubmitButton";
+import { db } from "@/lib/db";
 import { requireAdmin } from "@/app/admin/design/guard";
-import { allSourceStates } from "@/lib/platformSettings";
+import { allSourceStates, getStaffRoleLabels } from "@/lib/platformSettings";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Paramètres — Omniscient" };
@@ -13,8 +15,17 @@ export const metadata = { title: "Paramètres — Omniscient" };
 // autres (signale par l'utilisateur). AdminCredentialsForm et AdminSourceToggles sont de
 // vrais composants client interactifs : ils ne peuvent pas passer par le HTML statique de
 // DesignScreen (dangerouslySetInnerHTML), d'ou ce cadre dedie plutot que DesignScreen.
-export default async function AdminSettings() {
+export default async function AdminSettings({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const admin = await requireAdmin();
+  const params = await searchParams;
+  // Carte « Staff » (admins seulement, 2026-10-15) : la page Administration est désactivée depuis
+  // le 12/10, c'est donc ici qu'on voit qui a configuré sa 2FA et qu'on la remet à zéro pour un
+  // membre qui a perdu téléphone ET codes de secours (choix de Rushi).
+  const staff =
+    admin.role === "admin"
+      ? await db.orm.public.AdminAccount.select("id", "username", "role", "totpEnabledAt").orderBy((a) => a.createdAt.desc()).all()
+      : [];
+  const roleLabels = admin.role === "admin" ? await getStaffRoleLabels() : null;
   // 2026-10-10 : AdminSourceToggles existait, fonctionnel, mais n'etait rendu sur aucune page —
   // cette page de parametres admin (deja branchee sur le reste des reglages du compte) est
   // l'endroit le plus coherent pour les interrupteurs des sources de modpacks.
@@ -40,6 +51,65 @@ export default async function AdminSettings() {
         <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 500 }}>Double authentification</h2>
         <AdminRecoveryCodesCard />
       </section>
+
+      {roleLabels && (
+        <section style={{ ...cardStyle, marginBottom: 20 }}>
+          <h2 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 500 }}>Staff</h2>
+          <p style={{ margin: "0 0 14px", fontSize: 13, color: "var(--muted)" }}>
+            Double authentification de chaque compte. « Réinitialiser » sert quand un membre a perdu son téléphone et ses codes de secours :
+            il la reconfigure à sa prochaine connexion.
+          </p>
+          {params.reset2fa === "1" && (
+            <p role="status" style={{ margin: "0 0 12px", padding: "10px 12px", borderRadius: "var(--radius-md)", fontSize: 13, color: "var(--success)", background: "color-mix(in srgb, var(--success) 12%, transparent)" }}>
+              Double authentification réinitialisée : le membre la reconfigurera à sa prochaine connexion.
+            </p>
+          )}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: "left", fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted2)" }}>
+                  <th style={{ padding: "0 10px 8px 0", fontWeight: 500 }}>Membre</th>
+                  <th style={{ padding: "0 10px 8px", fontWeight: 500 }}>Rôle</th>
+                  <th style={{ padding: "0 10px 8px", fontWeight: 500 }}>Double auth.</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {staff.map((m) => {
+                  const on = !!m.totpEnabledAt;
+                  const color = on ? "var(--success)" : "var(--warn)";
+                  return (
+                    <tr key={m.id} style={{ borderTop: "1px solid var(--color-divider)" }}>
+                      <td style={{ padding: "10px 10px 10px 0", whiteSpace: "nowrap" }}>
+                        {m.username}
+                        {m.id === admin.id && <span style={{ color: "var(--muted)" }}> (toi)</span>}
+                      </td>
+                      <td style={{ padding: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>{m.role === "admin" ? roleLabels.admin : roleLabels.moderator}</td>
+                      <td style={{ padding: 10, whiteSpace: "nowrap" }}>
+                        <span style={{ fontSize: 12, padding: "2px 9px", borderRadius: 999, color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
+                          {on ? "Activée" : "À configurer"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "10px 0 10px 10px", textAlign: "right" }}>
+                        {on && m.id !== admin.id && (
+                          <form method="post" action={`/api/admin/staff/${m.id}/2fa-reset`}>
+                            <ConfirmSubmitButton
+                              confirmText={`${m.username} devra refaire la configuration (QR code) à sa prochaine connexion. Ses anciens codes ne marcheront plus. Continuer ?`}
+                              style={{ font: "inherit", fontSize: 12.5, padding: "5px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-divider)", background: "transparent", color: "var(--color-text)", cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              Réinitialiser
+                            </ConfirmSubmitButton>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section style={cardStyle}>
         <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 500 }}>Sources de modpacks</h2>
