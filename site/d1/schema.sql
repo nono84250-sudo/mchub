@@ -204,7 +204,17 @@ CREATE TABLE "adminAccount" (
   -- adminSession.ts, meme principe que user.sessionsValidAfter) — ajoutee par ALTER TABLE.
   -- Sans ca, un cookie de session vole restait valide jusqu'a 8h meme apres que l'admin ait
   -- change son mot de passe en pensant se proteger (trouve par l'audit du 2026-10-10).
-  "passwordChangedAt"     TEXT
+  "passwordChangedAt"     TEXT,
+  -- Double authentification (TOTP), obligatoire pour le staff (voir lib/adminTotp.ts) :
+  -- secret chiffre (AES-GCM, cle derivee de ADMIN_SESSION_SECRET), date d'activation (NULL =
+  -- pas encore configuree), dernier pas de 30 s utilise (anti-rejeu), compteur d'echecs et
+  -- blocage de 15 min, empreintes JSON des codes de secours restants.
+  "totpSecret"            TEXT,
+  "totpEnabledAt"         TEXT,
+  "totpLastStep"          INTEGER,
+  "totpFailedCount"       INTEGER NOT NULL DEFAULT 0,
+  "totpLockedUntil"       TEXT,
+  "totpRecoveryCodes"     TEXT
 );
 
 -- Diffusion programmee (panel admin, voir lib/scheduledBroadcasts.ts). "scheduledAt" est

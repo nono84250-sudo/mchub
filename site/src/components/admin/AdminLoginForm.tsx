@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-// Formulaire de connexion du panel admin. Après connexion : premier passage
-// obligatoire par le changement d'identifiants si le compte l'exige.
+// Formulaire de connexion du panel admin (mot de passe). La double authentification suit
+// toujours, sur /admin/double-authentification.
 export function AdminLoginForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -26,9 +26,9 @@ export function AdminLoginForm() {
       setError(data.error ?? "Connexion impossible.");
       return;
     }
-    // 2026-10-12 : Administration est desactivee (perimetre admin reduit) — Serveurs est
-    // la page d'entree par defaut.
-    router.push(data.mustChangeCredentials ? "/admin/premiere-connexion" : "/admin/servers");
+    // Etape 2 : code de double authentification (ou, pour un nouveau compte, d'abord ses
+    // propres identifiants puis la configuration de la 2FA).
+    router.push(data.next === "credentials" ? "/admin/premiere-connexion" : "/admin/double-authentification");
     router.refresh();
   }
 

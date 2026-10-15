@@ -62,6 +62,12 @@ const DEFAULTS = {
   // Applique au prochain demarrage : checkForUpdates() lit ce reglage a chaque
   // verification du bootstrap.
   betaChannel: false,
+  // Vrai des que le joueur a coche OU decoche lui-meme la case "Canal beta" (voir
+  // saveSettings). Tant que c'est faux, une version beta installee reste sur le canal
+  // beta (testeur qui a installe la beta directement, ou reglages reinitialises) ; une
+  // fois vrai, decocher la case ramene a la derniere version stable (main.js,
+  // checkForUpdates).
+  betaChannelChosen: false,
   // Parametres > Divers > Discord : coupe = le launcher ne se connecte meme pas a Discord
   // (voir discordPresence.js, setEnabled).
   discordPresence: true,
@@ -153,7 +159,11 @@ function saveSettings(partial) {
   if (filtered.logLevel !== undefined) next.logLevel = ["error", "warn", "info", "debug"].includes(filtered.logLevel) ? filtered.logLevel : current.logLevel;
   if (filtered.openConsoleOnLaunch !== undefined) next.openConsoleOnLaunch = !!filtered.openConsoleOnLaunch;
   if (filtered.keepLauncherOpenWhilePlaying !== undefined) next.keepLauncherOpenWhilePlaying = !!filtered.keepLauncherOpenWhilePlaying;
-  if (filtered.betaChannel !== undefined) next.betaChannel = !!filtered.betaChannel;
+  if (filtered.betaChannel !== undefined) {
+    next.betaChannel = !!filtered.betaChannel;
+    next.betaChannelChosen = true;
+  }
+  if (filtered.betaChannelChosen !== undefined) next.betaChannelChosen = !!filtered.betaChannelChosen;
   if (filtered.discordPresence !== undefined) next.discordPresence = !!filtered.discordPresence;
 
   writeSettingsFile(next);

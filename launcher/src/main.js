@@ -583,10 +583,13 @@ function wireAutoUpdater(win) {
   autoUpdater.on("checking-for-update", () => send({ phase: "checking" }));
   autoUpdater.on("update-available", (info) => {
     // Canal bêta : la dernière bêta publiée est toujours prise, quel que soit son
-    // numéro (la bêta fait autorité). Canal stable : une version plus ancienne
-    // (ex. 0.3.3 vue depuis une bêta) n'est jamais téléchargée ni installée.
+    // numéro (la bêta fait autorité). Canal stable : seule une version plus
+    // récente est prise, SAUF quand le joueur vient de décocher le canal bêta
+    // alors qu'une bêta tourne (ex. 0.4.0-beta.1) : il revient alors sur la
+    // dernière version stable publiée (ex. 0.3.3), même si son numéro est plus bas.
     const onBeta = autoUpdater.channel === "beta";
-    const isUpdate = onBeta ? info.version !== app.getVersion() : isNewerVersion(info.version, app.getVersion());
+    const leavingBeta = !onBeta && app.getVersion().includes("-") && !info.version.includes("-");
+    const isUpdate = onBeta ? info.version !== app.getVersion() : leavingBeta || isNewerVersion(info.version, app.getVersion());
     if (!isUpdate) {
       logStore.pushLog({ level: "warn", source: "launcher", message: `Mise à jour ignorée : v${info.version} n'est pas plus récente que v${app.getVersion()}` });
       autoUpdater.emit("update-not-available", info);
@@ -653,10 +656,18 @@ function checkForUpdates() {
       resolve();
       return;
     }
-    // Une version bêta reste sur le canal bêta, même si l'option est décochée.
-    const betaChannel = settingsStore.loadSettings().betaChannel || app.getVersion().includes("-beta");
+    // Le canal suit l'option des Réglages : une bêta installée dont le joueur a
+    // décoché l'option repasse sur le canal stable (retour à la dernière version
+    // stable, voir leavingBeta dans update-available).
+    // Sans choix explicite du joueur (betaChannelChosen faux), une bêta installée reste
+    // sur le canal bêta comme avant.
+    const settings = settingsStore.loadSettings();
+    const betaChannel = settings.betaChannelChosen ? !!settings.betaChannel : settings.betaChannel || app.getVersion().includes("-beta");
     autoUpdater.channel = betaChannel ? "beta" : "latest";
     autoUpdater.allowPrerelease = betaChannel;
+    // Le setter de channel active déjà allowDowngrade ; on le fixe explicitement
+    // car le retour bêta -> stable est un retour à un numéro plus bas.
+    autoUpdater.allowDowngrade = true;
     updateCheckResolve = resolve;
     autoUpdater.checkForUpdates().catch(() => resolve());
   });

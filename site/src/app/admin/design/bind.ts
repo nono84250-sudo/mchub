@@ -1495,8 +1495,15 @@ export function markAllSections(html: string, kind: "nb" | "pr" = "nb"): string 
 // Page Administration : gestion des comptes staff (admin/moderateur). La maquette propose une
 // matrice de permissions fine (Owner/Admin/Moderator/Editor/Support) qui n'a pas d'equivalent
 // ici (seulement deux roles, voir adminAuth.ts) : cette section reste donc "non branchee".
-export type StaffAccountRow = { id: string; username: string; role: "admin" | "moderator"; createdAt: string; mustChangeCredentials: boolean };
+export type StaffAccountRow = { id: string; username: string; role: "admin" | "moderator"; createdAt: string; mustChangeCredentials: boolean; totpEnabled: boolean };
 export type StaffRoleLabels = { admin: string; moderator: string };
+
+// Double authentification (obligatoire pour le staff, configuree a la premiere connexion).
+function staffTotpChip(totpEnabled: boolean): string {
+  return totpEnabled
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Activée</span>`
+    : `<span style="${CHIP}background:color-mix(in srgb, #e0c28a 16%, transparent);color:#e0c28a;">À configurer</span>`;
+}
 
 function staffStatusChip(mustChangeCredentials: boolean): string {
   return mustChangeCredentials
@@ -1524,6 +1531,12 @@ function manageStaffHtml(row: StaffAccountRow, isSelf: boolean, lastAdmin: boole
   const resetCredentials =
     `<form method="post" action="/api/admin/staff/${id}"><input type="hidden" name="role" value="${escapeHtml(row.role)}"><input type="hidden" name="resetCredentials" value="on">` +
     `<button type="submit" style="${item}">Forcer le changement des identifiants</button></form>`;
+  // Remise a zero de la 2FA (telephone ET codes de secours perdus) : le membre la reconfigure a
+  // sa prochaine connexion. Pas sur son propre compte (voir api/admin/staff/[id]/2fa-reset).
+  const reset2fa =
+    !isSelf && row.totpEnabled
+      ? `<form method="post" action="/api/admin/staff/${id}/2fa-reset" onsubmit="return confirm('${escapeHtml(row.username)} devra refaire la configuration (QR code) à sa prochaine connexion. Ses anciens codes ne marcheront plus. Continuer ?')"><button type="submit" style="${item}">Réinitialiser la double authentification</button></form>`
+      : "";
   const deleteItem =
     !isSelf && !lastAdmin
       ? `<form method="post" action="/api/admin/staff/${id}/delete" onsubmit="return confirm('Supprimer le compte ${escapeHtml(row.username)} ?')"><button type="submit" style="${item}color:var(--danger);">Supprimer le compte</button></form>`
@@ -1537,6 +1550,7 @@ function manageStaffHtml(row: StaffAccountRow, isSelf: boolean, lastAdmin: boole
     `<div style="position:absolute;right:0;top:100%;margin-top:4px;z-index:20;min-width:260px;padding:6px 0;border-radius:var(--radius-md);background:var(--color-surface);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);">` +
     changeRole +
     resetCredentials +
+    reset2fa +
     divider +
     deleteItem +
     `</div></details>`
@@ -1569,13 +1583,14 @@ function staffRowHtml(row: StaffAccountRow, isSelf: boolean, lastAdmin: boolean,
   const initial = escapeHtml(row.username.charAt(0).toUpperCase());
   const created = new Date(row.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
   return (
-    `<div style="display:grid;min-width:640px;grid-template-columns:minmax(0,1.8fr) 150px 140px 110px 40px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;">` +
+    `<div style="display:grid;min-width:760px;grid-template-columns:minmax(0,1.8fr) 150px 140px 120px 110px 40px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;">` +
     `<div style="min-width:0;"><div style="display:flex;align-items:center;gap:12px;min-width:0;">` +
     `<span style="width:32px;height:32px;flex-shrink:0;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;">${initial}</span>` +
     `<span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(row.username)}${isSelf ? ` <span style="color:var(--muted);font-weight:400;">(toi)</span>` : ""}</span>` +
     `</div></div>` +
     `<div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">${escapeHtml(roleLabels[row.role])}</span></div>` +
     `<div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">${created}</span></div>` +
+    `<div style="min-width:0;">${staffTotpChip(row.totpEnabled)}</div>` +
     `<div style="min-width:0;">${staffStatusChip(row.mustChangeCredentials)}</div>` +
     `<div style="min-width:0;display:flex;justify-content:flex-end;">${manageStaffHtml(row, isSelf, lastAdmin, roleLabels)}</div>` +
     `</div>`
@@ -1637,7 +1652,7 @@ function roleRowHtml(role: "admin" | "moderator", accountCount: number, roleLabe
   );
 }
 
-export function administrationHtml(data: { selfId: string; accounts: StaffAccountRow[]; adminCount: number; created: string | null; roleLabels: StaffRoleLabels }): string {
+export function administrationHtml(data: { selfId: string; accounts: StaffAccountRow[]; adminCount: number; created: string | null; reset2fa?: boolean; roleLabels: StaffRoleLabels }): string {
   let html = SCREENS.administration;
 
   html = replaceOnce(
@@ -1650,13 +1665,15 @@ export function administrationHtml(data: { selfId: string; accounts: StaffAccoun
 
   const createdNotice = data.created
     ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Compte « ${escapeHtml(data.created)} » créé.</div>`
-    : "";
+    : data.reset2fa
+      ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Double authentification réinitialisée : le membre la reconfigurera à sa prochaine connexion.</div>`
+      : "";
 
   const rows = data.accounts.map((a) => staffRowHtml(a, a.id === data.selfId, a.role === "admin" && data.adminCount <= 1, data.roleLabels));
   const table =
     `<div class="srv-table">` +
     createdNotice +
-    `<div style="display:grid;min-width:640px;grid-template-columns:minmax(0,1.8fr) 150px 140px 110px 40px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Member</span><span>Role</span><span>Created</span><span>Status</span><span></span></div>` +
+    `<div style="display:grid;min-width:760px;grid-template-columns:minmax(0,1.8fr) 150px 140px 120px 110px 40px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Member</span><span>Role</span><span>Created</span><span>Double auth.</span><span>Status</span><span></span></div>` +
     (rows.length ? rows.join("") : `<p style="margin:0;padding:14px;font-size:13px;color:var(--muted);">Aucun compte staff.</p>`) +
     `</div>` +
     // Ferme le menu "..." au clic exterieur — <details> seul ne le fait pas nativement.

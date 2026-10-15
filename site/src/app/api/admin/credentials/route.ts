@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, execSql } from "@/lib/db";
 import { ADMIN_COOKIE, ADMIN_SESSION_TTL_MS, createAdminSession, hashPassword, passwordProblem, verifyPassword } from "@/lib/adminAuth";
 import { adminForAction } from "@/lib/adminServers";
+import { pendingAdminForAction, setPendingCookie } from "@/lib/adminTwoFactor";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Changement du nom d'utilisateur et du mot de passe (première connexion obligatoire,
@@ -14,8 +15,20 @@ export async function POST(request: Request) {
   // allowMustChangeCredentials : un compte en première connexion (mustChangeCredentials=true)
   // doit encore pouvoir appeler CETTE route pour en sortir. requireAdminRole: false — changer
   // SES PROPRES identifiants n'est pas réservé aux admins (modérateurs inclus, comme avant).
-  const admin = await adminForAction(request, { allowMustChangeCredentials: true, requireAdminRole: false });
-  if (admin instanceof NextResponse) return admin;
+  const full = await adminForAction(request, { allowMustChangeCredentials: true, requireAdminRole: false });
+  let admin: { id: string; role: "admin" | "moderator" };
+  // Premiere connexion d'un compte qui n'a pas encore de 2FA : il change ses identifiants avec
+  // sa session "pending" (mot de passe seul), PUIS configure la 2FA. Seulement dans ce cas : un
+  // compte qui a deja la 2FA doit donner son code avant de toucher a ses identifiants.
+  let firstLoginWithout2fa = false;
+  if (full instanceof NextResponse) {
+    const pending = await pendingAdminForAction(request);
+    if (pending instanceof NextResponse || !pending.mustChangeCredentials || pending.totpEnabled) return full;
+    admin = pending;
+    firstLoginWithout2fa = true;
+  } else {
+    admin = full;
+  }
 
   const body = await request.json().catch(() => null);
   const currentPassword = String(body?.currentPassword ?? "");
@@ -51,6 +64,14 @@ export async function POST(request: Request) {
   // Revoque toute AUTRE session (voir adminSession.ts) — mais la session courante doit survivre
   // au changement qu'elle vient elle-meme de declencher, sinon l'admin se deconnecte lui-meme :
   // reemission immediate d'un cookie frais (iat >= passwordChangedAt).
+  if (firstLoginWithout2fa) {
+    // Nouveau jeton "pending" (le changement de mot de passe vient de revoquer l'ancien), la
+    // suite est la configuration de la 2FA.
+    const response = NextResponse.json({ ok: true, next: "2fa" });
+    setPendingCookie(response, admin.id, admin.role);
+    return response;
+  }
+
   const response = NextResponse.json({ ok: true });
   const token = createAdminSession(admin.id, admin.role);
   if (token) {
