@@ -1,6 +1,7 @@
 import { AdminChrome } from "@/components/admin/AdminChrome";
 import { AdminCredentialsForm } from "@/components/admin/AdminCredentialsForm";
 import { AdminSourceToggles } from "@/components/admin/AdminSourceToggles";
+import { AdminRecoveryCodesCard } from "@/components/admin/AdminTwoFactor";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { allSourceStates } from "@/lib/platformSettings";
 
@@ -33,6 +34,11 @@ export default async function AdminSettings() {
       <section style={{ ...cardStyle, marginBottom: 20 }}>
         <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 500 }}>Identifiants du compte</h2>
         <AdminCredentialsForm firstLogin={false} currentUsername={admin.username} />
+      </section>
+
+      <section style={{ ...cardStyle, marginBottom: 20 }}>
+        <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 500 }}>Double authentification</h2>
+        <AdminRecoveryCodesCard />
       </section>
 
       <section style={cardStyle}>

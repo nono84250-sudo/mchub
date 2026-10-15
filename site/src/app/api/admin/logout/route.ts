@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { ADMIN_COOKIE } from "@/lib/adminAuth";
+import { clearAdminCookies } from "@/lib/adminTwoFactor";
 
 export async function POST() {
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(ADMIN_COOKIE, "", { httpOnly: true, secure: true, sameSite: "strict", path: "/", maxAge: 0 });
+  clearAdminCookies(response);
   return response;
 }
