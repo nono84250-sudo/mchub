@@ -1,6 +1,8 @@
+> **Obsolète depuis le 14/10/2026.** Ce brouillon parle encore de droit français, de CNIL, de SIRET et d'un abonnement payant. Les textes réellement publiés, à envoyer à l'avocat, sont dans `TEXTES_PUBLIES_A_RELIRE.md` (même dossier). Ce fichier est gardé seulement pour ses idées de mentions légales.
+
 # DOCUMENTS LÉGAUX — OMNISCIENT
 
-**Brouillon à relire — version 0.1 — rédigé le 26 septembre 2026**
+**Brouillon à relire — version 0.2 — rédigé le 26 septembre 2026, mis à jour le 14 octobre 2026 (politique de confidentialité, mentions légales art. 3, CGU art. 14 : faits corrigés d'après le code ; les choix juridiques restent marqués [À DÉCIDER])**
 Rien de ce fichier n'est publié : il n'a pas été ajouté au site.
 
 ---
@@ -47,7 +49,7 @@ Tout ce qui est écrit **[À COMPLÉTER : …]** est une information que je ne p
   - L'absence de ces mentions est punie jusqu'à 1 an de prison et 75 000 € d'amende (même source).
   - Je n'ai pas pu confirmer si le nouvel article 1-1 exige encore le téléphone **de l'hébergeur** (Service-Public le liste toujours). Par prudence, je l'ai mis.
 - **Hébergeur du site : Vercel Inc.** — adresse confirmée par Vercel lui-même ([politique de confidentialité Vercel](https://vercel.com/legal/privacy-notice)) : 440 N Barranca Avenue #4133, Covina, CA 91723, États-Unis. Le **numéro de téléphone** (+1 559 288 7060) vient de plusieurs mentions légales françaises qui citent Vercel, pas d'une page de Vercel : **à confirmer** avant publication. Vercel est certifié « EU-U.S. Data Privacy Framework » (mécanisme légal pour les transferts vers les États-Unis).
-- **Base de données : Prisma Data, Inc.** (service Prisma Postgres) — contact DPO `dpo@prisma.io`, certifiée Data Privacy Framework ([politique Prisma](https://www.prisma.io/privacy)). **Tes trois bases sont à Paris** (région « Europe (Paris) », vérifié dans ton compte Prisma), y compris la base de production. Je n'ai pas trouvé l'adresse postale de Prisma : **à confirmer** si tu veux la faire figurer.
+- **Base de données, images et tâches planifiées : Cloudflare, Inc.** (D1, R2, Workers), *mis à jour le 14/10/2026* : Prisma Postgres et Vercel Blob ne sont plus utilisés. Adresse du siège (101 Townsend Street, San Francisco) **à confirmer** avant publication, comme la région des données, la certification Data Privacy Framework et le contrat de sous-traitance (DPA).
 - **Résiliation en ligne obligatoire** (bouton « résilier votre contrat », accessible directement, avec accusé de réception et date de fin par écrit) : [article L215-1-1 du Code de la consommation](https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000046190107).
 - **Renonciation au droit de rétractation** : [article L221-28](https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044563170) (accord préalable exprès + reconnaissance de la perte du droit).
 - **La plateforme européenne de règlement des litiges (ODR) est fermée depuis le 20 juillet 2025** : ne plus la citer dans les CGV. Je ne l'ai donc pas citée.
@@ -60,7 +62,7 @@ Tout ce qui est écrit **[À COMPLÉTER : …]** est une information que je ne p
 4. **Durées de conservation** : ce sont **mes propositions** (comptes inactifs 3 ans, signalements 12 mois, etc.). Elles doivent être respectées techniquement (voir section F).
 5. **Sanctions** : échelle avertissement → retrait → gel temporaire → clôture, avec notification motivée et droit de recours.
 6. **Langue** : uniquement le français (il fait foi). Ton site est bilingue : une version anglaise est à prévoir si tu vises un public international.
-7. **Pas de bandeau de cookies** : le site n'utilise que des cookies strictement nécessaires (connexion, langue) et aucun outil de mesure d'audience ni de publicité, donc le consentement n'est pas requis. Si tu ajoutes un jour un outil d'analyse ou de la publicité, il faudra un bandeau.
+7. **Pas de bandeau de cookies** : le site n'utilise que des cookies strictement nécessaires (connexion, langue) et aucun outil de mesure d'audience fourni par un tiers ni de publicité. *Mise à jour 14/10/2026 :* le site compte lui-même, sans cookie ni identifiant, les vues des fiches et les lancements depuis le launcher (voir politique 3.2). [À DÉCIDER avec l'avocat : ce comptage interne peut-il se passer de consentement ?] Si tu ajoutes un jour un outil d'analyse tiers ou de la publicité, il faudra un bandeau.
 
 ## E. Points de vigilance juridiques (à lire vraiment)
 
@@ -78,12 +80,12 @@ Tu m'as demandé de ne pas toucher au site : rien n'est modifié. Voici ce qui m
 
 1. **Liens dans le pied de page** : le pied de page actuel ne contient **aucun lien légal** (seulement « Serveurs », le thème et la langue). À ajouter avec les pages et la page Contact (avec formulaire).
 2. **Abonnements** (quand ils seront construits) : bouton « Commander avec obligation de paiement », case de renonciation, e-mail de confirmation, bouton « **Résilier votre contrat** » accessible directement, e-mail de rappel avant reconduction annuelle.
-3. **Suppression de compte en libre-service** : n'existe pas. Aujourd'hui elle serait faite à la main sur demande (c'est ce que dit la politique). Utile à construire.
+3. **Suppression de compte en libre-service** : *fait* (page Compte du site). Restent hors de la suppression : les signalements que la personne a déposés sur les fiches des autres et le suivi d'instance (`instanceWatch`), liés à son UUID et non à son compte.
 4. **Purges automatiques** des durées annoncées (comptes inactifs, signalements, notifications) : **rien n'est automatisé aujourd'hui**. Soit tu les construis, soit tu allonges les durées dans la politique.
 5. **Sécurité de l'API du launcher — point à corriger.** Les routes du launcher (notifications, signalements…) sont protégées par **un secret unique partagé**, embarqué dans chaque copie de l'application, donc extractible. Ensuite, c'est le launcher qui **déclare** quel joueur il est (`minecraftUuid`) sans le prouver. Quelqu'un qui extrait le secret pourrait lire les notifications de n'importe quel joueur dont il connaît l'UUID, ou envoyer des signalements au nom d'autrui. Correctif recommandé : le launcher envoie son jeton Minecraft et le site le vérifie. La politique reste honnête (elle promet des mesures « raisonnables », pas une sécurité absolue), mais c'est le point à traiter avant d'ouvrir largement.
 6. **Région des fonctions Vercel** : il n'y a pas de `vercel.json`, donc les fonctions tournent probablement dans la région par défaut (Washington D.C., **à confirmer** dans le tableau de bord). Les données passent alors par les États-Unis avant d'être écrites à Paris. La politique le dit et invoque le Data Privacy Framework. Recommandation : fixer la région à Paris (`cdg1`) pour garder le traitement en Europe.
 7. **Colonnes héritées** : `email`, `passwordHash`, `emailVerified` et la table `AuthToken` datent de l'ancienne connexion par e-mail. La connexion se fait maintenant **uniquement avec Microsoft** et le site ne demande pas ton e-mail. Par minimisation, il faut les supprimer. **Vérifié le 26/09/2026 : elles ne sont pas vides** (production : 3 comptes de test avec e-mail et mot de passe haché ; dev : 5). Tant que ces données existent, les phrases « aucun mot de passe stocké » et « nous ne recevons pas votre e-mail » de la politique de confidentialité sont fausses. **Fait le 26/09/2026 : supprimées en dev et en production**, la politique est redevenue exacte sur ce point.
-8. **Stockage des images** (Vercel Blob) : région à vérifier.
+8. **Stockage des images** : Cloudflare R2 (Vercel Blob n'est plus utilisé). Région du bucket à vérifier.
 9. **L'API publique expose l'UUID Minecraft du propriétaire** de chaque serveur (champ `ownerMinecraftUuid`). Comme l'UUID permet de retrouver le pseudo, c'est en pratique une donnée personnelle publique. Je l'ai écrit tel quel dans la politique (section 3.2) pour qu'elle reste vraie. Si le launcher n'en a pas besoin, le retirer de l'API publique serait plus respectueux de la vie privée et te permettrait de supprimer cette phrase.
 
 ## G. Pas fait
@@ -119,16 +121,17 @@ Le directeur de la publication est **[À COMPLÉTER : Nom Prénom]**, en sa qual
 
 ## Article 3 — Hébergement
 
-**Hébergeur du Site, de l'interface de programmation et du stockage des images :**
+**Hébergeur du Site et de l'interface de programmation :**
 Vercel Inc.
 440 N Barranca Avenue #4133, Covina, CA 91723, États-Unis
 Téléphone : +1 559 288 7060
 Site : https://vercel.com
 
-**Hébergeur de la base de données :**
-Prisma Data, Inc. (service Prisma Postgres)
-Les données sont stockées en France (région Europe — Paris).
-Contact : dpo@prisma.io
+**Hébergeur de la base de données (Cloudflare D1), du stockage des images (Cloudflare R2) et des tâches planifiées (Cloudflare Workers) :**
+Cloudflare, Inc.
+101 Townsend Street, San Francisco, CA 94107, États-Unis
+Site : https://www.cloudflare.com
+[À VÉRIFIER : adresse, téléphone et région de stockage de la base et des images]
 
 ## Article 4 — Objet du Site
 
@@ -521,7 +524,7 @@ Le traitement de vos données est décrit dans la **Politique de confidentialit�
 
 ## Article 14 — Suppression du Compte
 
-Vous pouvez demander la suppression de votre Compte à tout moment en écrivant à **[À COMPLÉTER : e-mail]**. Vos fiches de serveurs sont alors supprimées, sous réserve des obligations légales de conservation.
+Vous pouvez supprimer votre Compte à tout moment depuis la page « Compte » du Site, ou en écrivant à **[À COMPLÉTER : e-mail]**. Vos fiches de serveurs sont alors supprimées, sous réserve des obligations légales de conservation.
 
 ## Article 15 — Modification des CGU
 
@@ -582,7 +585,8 @@ Cette politique couvre le **Site**, le **Launcher** et l'**API** d'Omniscient.
 ## 2. Ce qu'il faut savoir en bref
 
 - Vous vous connectez **uniquement avec Microsoft**. Nous ne recevons **ni votre e-mail, ni votre mot de passe, ni votre profil Microsoft**. Nous récupérons votre **pseudo et votre identifiant Minecraft (UUID)**.
-- Nous n'utilisons **aucun outil de mesure d'audience, aucune publicité, aucun traceur**.
+- Nous n'utilisons **aucun outil de mesure d'audience fourni par un tiers, aucune publicité, aucun traceur**. Nous comptons nous-mêmes, **sans cookie et sans savoir qui vous êtes**, les vues des fiches et les lancements de serveurs (voir 3.2).
+- Quand vous êtes connecté au **Launcher**, il signale votre présence à Omniscient pour afficher « en ligne » à **vos amis acceptés** (voir 3.5).
 - Nous ne vendons jamais vos données.
 - Si vous **publiez un serveur**, votre identifiant Minecraft (UUID) est public (voir 3.2).
 
@@ -592,48 +596,65 @@ Cette politique couvre le **Site**, le **Launcher** et l'**API** d'Omniscient.
 
 | Données | Finalité | Base légale | Conservation |
 |---|---|---|---|
-| Pseudo Minecraft, identifiant Minecraft (UUID), identifiant interne du compte, date de création | Créer et faire fonctionner votre compte | Exécution du contrat (CGU) | Durée du compte ; suppression sur demande ; suppression après **3 ans sans connexion** |
-| Jeton de session (cookie) | Vous maintenir connecté | Exécution du contrat | Durée de la session |
+| Pseudo Minecraft, identifiant Minecraft (UUID), identifiant interne du compte, date de création | Créer et faire fonctionner votre compte | Exécution du contrat (CGU) | Durée du compte ; vous pouvez le supprimer vous-même à tout moment depuis la page « Compte » du Site. [À DÉCIDER : durée maximale sans connexion ; aucune suppression automatique n'est en place aujourd'hui] |
+| Jeton de session (cookie) | Vous maintenir connecté | Exécution du contrat | Jusqu'à **30 jours** |
 
-Le pseudo est mis à jour à chaque connexion pour suivre vos changements de pseudo.
+Le pseudo est mis à jour à chaque connexion pour suivre vos changements de pseudo. Votre compte est créé à votre première connexion sur le Site, ou à votre première utilisation du Launcher avec un compte Microsoft (voir 3.5).
 
 ### 3.2 Fiches de serveurs (Propriétaires)
 
 | Données | Finalité | Base légale | Conservation |
 |---|---|---|---|
-| Contenu de la fiche : nom, description, adresse du serveur, version, modpack, liens (Discord, site), images | Publier la fiche dans l'annuaire | Exécution du contrat | Jusqu'à suppression de la fiche ou du compte |
-| Statistiques agrégées (nombre de vues et de lancements, date) | Vous les montrer (page « Activité ») | Exécution du contrat | Durée de la fiche |
+| Contenu de la fiche : nom, description, adresse du serveur, version, modpack, liens (Discord, site), images (envoyées depuis le formulaire de la fiche et stockées chez Cloudflare) | Publier la fiche dans l'annuaire | Exécution du contrat | Jusqu'à suppression de la fiche ou du compte |
+| Statistiques : pour chaque ouverture de la fiche sur le Site et chaque lancement du serveur depuis le Launcher, le serveur concerné, le type d'événement (vue ou lancement), la date et l'heure ; plus le total des vues et des lancements | Vous les montrer (page « Activité ») | Exécution du contrat [À DÉCIDER avec l'avocat] | Durée de la fiche (supprimées avec elle). [À DÉCIDER : durée maximale ; le graphique ne remonte pas au-delà d'un an] |
 | Nombre de joueurs en ligne (interrogation du serveur par le Site) | Afficher l'état du serveur | Intérêt légitime | Dernière mesure seulement |
 
-Les compteurs de vues et de lancements sont **anonymes** : ils n'enregistrent ni l'identité du visiteur ni son adresse IP. Les fiches publiques sont visibles de tous. **L'identifiant Minecraft (UUID) du Propriétaire fait partie des données publiques de la fiche** (il est fourni par l'API publique d'Omniscient). Comme l'UUID permet de retrouver le pseudo via les services de Mojang, **si vous publiez un serveur, considérez que votre identité de joueur est publique**. Le pseudo n'est pas affiché sur la fiche elle-même.
+Les compteurs de vues et de lancements sont **anonymes** : ils n'enregistrent ni l'identité du visiteur, ni son adresse IP, ni aucun cookie. L'adresse IP sert seulement, en mémoire et pendant quelques minutes, à limiter les envois abusifs. Les fiches publiques sont visibles de tous. **L'identifiant Minecraft (UUID) du Propriétaire fait partie des données publiques de la fiche** (il est fourni par l'API publique d'Omniscient). Comme l'UUID permet de retrouver le pseudo via les services de Mojang, **si vous publiez un serveur, considérez que votre identité de joueur est publique**. Le pseudo n'est pas affiché sur la fiche elle-même.
 
 ### 3.3 Signalements et notifications
 
 | Données | Finalité | Base légale | Conservation |
 |---|---|---|---|
-| Pseudo et UUID de la personne qui signale, catégorie, message libre, versions du jeu et du Launcher | Transmettre le signalement au Propriétaire, assurer le suivi et la qualité de l'annuaire | Intérêt légitime (qualité et sécurité de l'annuaire) et exécution de votre demande | **12 mois** après clôture du signalement |
+| Pseudo et UUID de la personne qui signale, catégorie, message libre, lien de preuve éventuel, versions du jeu et du Launcher | Transmettre le signalement au Propriétaire ou à l'équipe de modération, assurer le suivi et la qualité de l'annuaire | Intérêt légitime (qualité et sécurité de l'annuaire) et exécution de votre demande | Jusqu'à la suppression de la fiche concernée. [À DÉCIDER : 12 mois après clôture ; aucune suppression automatique n'est en place aujourd'hui] |
 | Réponse du Propriétaire | Suivi du signalement | Idem | Idem |
-| Notifications personnelles (UUID destinataire, nom du serveur, type, message) | Vous prévenir de la réponse ou de la résolution (cloche du Launcher) | Exécution du service demandé | Jusqu'à leur suppression par vous ; suppression automatique **90 jours** après lecture |
+| Notifications personnelles (UUID destinataire, nom du serveur, type, message) | Vous prévenir de la réponse ou de la résolution (cloche du Launcher) | Exécution du service demandé | Jusqu'à leur suppression par vous ou celle de votre compte. [À DÉCIDER : 90 jours après lecture ; aucune suppression automatique n'est en place aujourd'hui] |
 
-**Le Propriétaire du serveur concerné voit votre pseudo, votre message et les versions indiquées.** Il n'est autorisé à les utiliser que pour traiter le signalement.
+**Pour un problème technique, le Propriétaire du serveur concerné voit votre pseudo, votre message et les versions indiquées.** Il n'est autorisé à les utiliser que pour traiter le signalement. **Un signalement de comportement ou de contenu n'est jamais transmis au Propriétaire** : seule l'équipe de modération d'Omniscient le voit.
 
 ### 3.4 Launcher (sur votre ordinateur)
 
 - **Connexion Microsoft / Xbox / Minecraft** : elle se fait directement entre votre ordinateur et les services de Microsoft, Xbox Live et Minecraft. Nous ne recevons pas votre mot de passe. Si vous choisissez « se souvenir de moi », un **jeton de reconnexion** est conservé **sur votre ordinateur, chiffré** par le coffre de sécurité de Windows.
-- **Données locales** (paramètres, favoris, dernier serveur joué, journaux du Launcher) : elles **restent sur votre ordinateur**, nous n'y avons pas accès et elles ne nous sont pas transmises.
-- **Discord** : si Discord est ouvert, le Launcher peut y afficher « Joue à Omniscient Launcher » via votre application Discord locale. Rien n'est transmis à Omniscient.
+- **Vérification de votre identité** : pour prouver que c'est bien vous, le Launcher transmet votre **jeton d'accès Minecraft** à nos serveurs. Nous le présentons aux services de Mojang, puis le gardons **en mémoire au plus 5 minutes**, sans l'enregistrer.
+- **Données locales** (paramètres, favoris, dernier serveur joué, journaux du Launcher) : elles **restent sur votre ordinateur**, nous n'y avons pas accès et elles ne nous sont pas transmises. Les journaux (un fichier par jour) y restent jusqu'à ce que vous les effaciez.
+- **Discord** : si Discord est ouvert sur votre ordinateur, le Launcher y affiche « Joue à Omniscient Launcher », avec en dessous « Parcourt les serveurs » ou **le nom du serveur que vous avez rejoint** (et son modpack). Cette information passe par votre application Discord locale et devient **visible sur votre profil Discord**, selon vos réglages Discord (« Partager mon activité »). Rien n'est transmis à Omniscient. [À DÉCIDER : réglage dans le Launcher pour désactiver cet affichage]
 - **Téléchargements** : pour lancer le jeu, le Launcher se connecte directement à des services tiers (serveurs de Mojang, dépôts des chargeurs de mods, CurseForge ou Modrinth pour les modpacks, Eclipse Adoptium pour Java). **Ces services voient votre adresse IP**.
+- **Autres services contactés par le Launcher** : **GitHub** (Microsoft), à chaque démarrage, pour vérifier s'il existe une mise à jour ; Microsoft/Xbox, Mojang, Modrinth et CurseForge quand vous ouvrez le panneau d'état des services ; **Cloudflare** si vous lancez le test de débit. Ces services voient votre adresse IP.
 - **Serveur de jeu** : en rejoignant un serveur, vous vous connectez directement à lui ; il voit votre pseudo et votre adresse IP.
 
-### 3.5 Données techniques d'hébergement
+### 3.5 Présence en ligne et amis (Launcher)
 
-Comme tout site, le Site et l'API sont hébergés chez **Vercel**, qui enregistre automatiquement des données techniques (dont votre **adresse IP** et des informations sur votre navigateur ou votre système) pour assurer le fonctionnement et la sécurité. **Base légale :** intérêt légitime (sécurité, fonctionnement) et obligation légale des hébergeurs. **Durée :** définie par l'hébergeur ([À COMPLÉTER : vérifier la durée dans la documentation Vercel]). L'Éditeur n'utilise pas ces adresses IP à d'autres fins.
+| Données | Finalité | Base légale | Conservation |
+|---|---|---|---|
+| Signal de présence : identifiant et pseudo Minecraft, envoyés par le Launcher **toutes les 60 secondes** tant que vous y êtes connecté avec un compte Microsoft ; nous gardons seulement la date et l'heure du dernier signal | Afficher « en ligne » ou « hors ligne » à vos amis | [À DÉCIDER avec l'avocat] | Remplacé à chaque signal ; supprimé avec votre compte |
+| Liste d'amis et demandes d'ami (qui a demandé, si la demande est acceptée) | Faire fonctionner la liste d'amis | Exécution du service demandé | Jusqu'au retrait de l'ami, au refus ou à l'annulation de la demande, ou à la suppression du compte |
 
-### 3.6 Nous contacter
+Une demande d'ami se fait par pseudo et **doit être acceptée** par l'autre joueur. **Seuls vos amis acceptés** voient votre statut en ligne et votre identifiant Minecraft ; une personne dont la demande est en attente ne voit que votre pseudo. Si vous n'aviez pas encore de compte Omniscient, ce signal en crée un. [À DÉCIDER : option pour ne pas envoyer ce signal ou apparaître « invisible »]
 
-Le message que vous nous envoyez et votre e-mail sont utilisés pour vous répondre. **Base légale :** intérêt légitime / mesures précontractuelles. **Conservation :** **12 mois** après le traitement de la demande, **3 ans** en cas de litige.
+### 3.6 Modération
 
-### 3.7 Abonnements et paiements *(applicable dès l'ouverture des offres payantes)*
+| Données | Finalité | Base légale | Conservation |
+|---|---|---|---|
+| Avertissements reçus, blocage éventuel du compte (date, motif, auteur), historique des recours sur une fiche, notes internes de l'équipe de modération (jamais montrées au joueur) | Appliquer le Règlement, traiter les recours | [À DÉCIDER avec l'avocat] | Supprimés avec le compte (ou la fiche, pour les recours). [À DÉCIDER : durée maximale] |
+
+### 3.7 Données techniques d'hébergement
+
+Comme tout site, le Site et l'API sont hébergés chez **Vercel** (la base de données et les images, chez **Cloudflare**), qui enregistre automatiquement des données techniques (dont votre **adresse IP** et des informations sur votre navigateur ou votre système) pour assurer le fonctionnement et la sécurité. **Base légale :** intérêt légitime (sécurité, fonctionnement) et obligation légale des hébergeurs. **Durée :** définie par l'hébergeur ([À COMPLÉTER : vérifier la durée dans la documentation Vercel]). L'Éditeur n'utilise pas ces adresses IP à d'autres fins.
+
+### 3.8 Nous contacter
+
+Votre nom, votre e-mail, le sujet choisi et votre message sont utilisés pour vous répondre. Votre adresse IP sert seulement, en mémoire, à limiter l'envoi à 5 messages par heure. **Base légale :** intérêt légitime / mesures précontractuelles. **Conservation :** jusqu'à leur suppression par l'équipe. [À DÉCIDER : 12 mois après le traitement de la demande, 3 ans en cas de litige ; aucune suppression automatique n'est en place aujourd'hui]
+
+### 3.9 Abonnements et paiements *(applicable dès l'ouverture des offres payantes)*
 
 | Données | Finalité | Base légale | Conservation |
 |---|---|---|---|
@@ -643,7 +664,7 @@ Le message que vous nous envoyez et votre e-mail sont utilisés pour vous répon
 
 **Vos numéros de carte ne sont jamais reçus ni conservés par l'Éditeur** : ils sont traités par **[À COMPLÉTER : prestataire de paiement]**, qui les conserve selon sa propre politique.
 
-### 3.8 Identification des auteurs de contenus
+### 3.10 Identification des auteurs de contenus
 
 En tant qu'hébergeur de contenus, l'Éditeur doit conserver **pendant un an** les données permettant d'identifier l'auteur d'un contenu (à compter de la suppression du contenu ou de la clôture du compte), et les communiquer à l'autorité judiciaire sur réquisition (loi LCEN).
 
@@ -651,18 +672,21 @@ En tant qu'hébergeur de contenus, l'Éditeur doit conserver **pendant un an** l
 
 | Destinataire | Rôle | Pays / garantie |
 |---|---|---|
-| **Vercel Inc.** | Hébergeur du Site, de l'API et du stockage d'images ; journaux techniques | États-Unis — Data Privacy Framework et clauses contractuelles types |
-| **Prisma Data, Inc.** (Prisma Postgres) | Hébergeur de la base de données | Base stockée à **Paris (France)** ; société américaine — Data Privacy Framework |
+| **Vercel Inc.** | Hébergeur du Site et de l'API ; journaux techniques | États-Unis — Data Privacy Framework et clauses contractuelles types |
+| **Cloudflare, Inc.** | Base de données (D1), stockage des images (R2), tâches planifiées (Workers) | États-Unis — [À VÉRIFIER : région des données, Data Privacy Framework, contrat de sous-traitance] |
 | **Microsoft** (Xbox Live, Minecraft) | Authentification ; **responsable de traitement distinct** pour votre compte Microsoft | Selon sa politique |
 | **[À COMPLÉTER : prestataire de paiement]** | Paiement des offres payantes | [À COMPLÉTER : pays et garanties] |
-| **Propriétaires de serveurs** | Reçoivent les signalements qui les concernent | — |
+| **Propriétaires de serveurs** | Reçoivent les signalements techniques qui les concernent | — |
+| **Équipe de modération d'Omniscient** | Traite les signalements de comportement ou de contenu, les avertissements et les recours | — |
+| **Vos amis acceptés** | Voient votre statut en ligne, votre pseudo et votre identifiant Minecraft | — |
+| **Discord** (sur votre ordinateur) | Affiche votre activité sur votre profil Discord, si Discord est ouvert (voir 3.4) | Selon sa politique |
 | **Autorités** | Sur demande légale | — |
 
 Nous ne vendons et ne louons vos données à personne.
 
 ## 5. Transferts hors de l'Union européenne
 
-Les données de la base sont stockées à **Paris**, et les fonctions du Site s'exécutent elles aussi à **Paris** (région `cdg1`, fixée le 26/09/2026). Cependant, l'hébergeur du Site (Vercel) et le fournisseur de la base (Prisma) sont des sociétés américaines, et l'accès à distance de leurs équipes ou l'acheminement du trafic peut impliquer les États-Unis. Ces transferts sont encadrés par le **Data Privacy Framework** UE–États-Unis, auquel Vercel et Prisma sont certifiés, et par des **clauses contractuelles types**. [À COMPLÉTER : région du stockage d'images (Vercel Blob), à vérifier.]
+Les fonctions du Site s'exécutent à **Paris** (région `cdg1`, fixée le 26/09/2026). La base de données et les images sont hébergées chez **Cloudflare** [À VÉRIFIER : région de stockage]. L'hébergeur du Site (Vercel) et celui de la base et des images (Cloudflare) sont des sociétés américaines, et l'accès à distance de leurs équipes ou l'acheminement du trafic peut impliquer les États-Unis. Ces transferts sont encadrés par le **Data Privacy Framework** UE–États-Unis et par des **clauses contractuelles types**. [À VÉRIFIER : certification de Cloudflare au Data Privacy Framework et contrat de sous-traitance signé]
 
 ## 6. Vos droits
 
@@ -687,7 +711,7 @@ Le Service est ouvert aux personnes de **13 ans et plus** ; **avant 15 ans**, l'
 
 ## 8. Sécurité
 
-Nous mettons en œuvre des mesures techniques et organisationnelles raisonnables : connexion **chiffrée (HTTPS)** ; **aucun mot de passe** stocké pour la connexion (Microsoft) ; **jetons du Launcher chiffrés** sur votre ordinateur ; accès aux données limité ; les signalements ne sont accessibles qu'au Propriétaire concerné. **Aucun système n'est infaillible** : en cas de violation de données susceptible de vous exposer à un risque, nous préviendrons la CNIL dans les 72 heures et, si nécessaire, vous-même.
+Nous mettons en œuvre des mesures techniques et organisationnelles raisonnables : connexion **chiffrée (HTTPS)** ; **aucun mot de passe** stocké pour la connexion (Microsoft) ; **jetons du Launcher chiffrés** sur votre ordinateur ; accès aux données limité ; les signalements ne sont accessibles qu'au Propriétaire concerné (signalements techniques) et à l'équipe de modération. **Aucun système n'est infaillible** : en cas de violation de données susceptible de vous exposer à un risque, nous préviendrons la CNIL dans les 72 heures et, si nécessaire, vous-même.
 
 ## 9. Décisions automatisées
 
@@ -699,12 +723,12 @@ Le Site n'utilise que des éléments **strictement nécessaires** ou demandés p
 
 | Nom | Finalité | Durée |
 |---|---|---|
-| Cookie de session (Auth.js) | Vous maintenir connecté | Durée de la session |
+| Cookie de session (Auth.js) | Vous maintenir connecté | Jusqu'à 30 jours |
 | Cookies techniques de connexion (jeton anti-falsification, adresse de retour, vérification de la connexion Microsoft) | Sécuriser la connexion | Quelques minutes / la session |
 | `NEXT_LOCALE` | Mémoriser votre langue | 1 an |
 | `theme` (stockage local du navigateur) | Mémoriser votre thème clair/sombre | Jusqu'à effacement par vous |
 
-Le Site **n'utilise ni cookie publicitaire, ni mesure d'audience, ni traceur de tiers.** Si cela devait changer, nous vous demanderions votre consentement.
+Le Site **n'utilise ni cookie publicitaire, ni outil de mesure d'audience fourni par un tiers, ni traceur de tiers.** Le comptage des vues des fiches (voir 3.2) n'utilise aucun cookie ni aucun stockage sur votre appareil. Si cela devait changer, nous vous demanderions votre consentement.
 
 ## 11. Modifications de cette politique
 

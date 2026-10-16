@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Layout, ChartBar, Flag, Gear } from "@phosphor-icons/react";
+import { Layout, ChartBar, Flag, Gear, PaintBrush } from "@phosphor-icons/react";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -22,6 +22,7 @@ export function ManageSidebar({
     { href: `/manage/${serverId}`, label: t("manage.navOverview"), icon: Layout },
     { href: `/manage/${serverId}/activity`, label: t("manage.navActivity"), icon: ChartBar },
     { href: `/manage/${serverId}/reports`, label: t("manage.navReports"), icon: Flag, badge: openReportsCount },
+    { href: `/manage/${serverId}/public-page`, label: t("manage.navPublicPage"), icon: PaintBrush },
     { href: `/manage/${serverId}/settings`, label: t("manage.navSettings"), icon: Gear },
   ];
 

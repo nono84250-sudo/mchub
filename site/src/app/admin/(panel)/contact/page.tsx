@@ -1,12 +1,13 @@
 import { AdminChrome } from "@/components/admin/AdminChrome";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { listContactMessages } from "@/lib/contactMessages";
+import { ConfirmSubmitButton } from "@/components/admin/ConfirmSubmitButton";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Contact — Omniscient" };
 
 // 2026-10-14 : page hors maquette d'origine (comme /admin/parametres) — mêmes raisons, même
-// méthode : AdminChrome plutôt que DesignScreen, car "Marquer comme lu" est une vraie action,
+// méthode : AdminChrome plutôt que DesignScreen, car "Marquer comme lu" et "Supprimer" sont de vraies actions,
 // pas juste du HTML statique. Même esprit que /admin/reports (liste, plus récent en premier,
 // détail inline), mais formulaire public plutôt que signalement lié à un serveur.
 export default async function AdminContact() {
@@ -19,6 +20,16 @@ export default async function AdminContact() {
     borderRadius: "var(--radius-lg)",
     padding: 22,
   };
+
+  const actionStyle = (color: string): React.CSSProperties => ({
+    border: `1px solid ${color}`,
+    color,
+    background: "transparent",
+    padding: "8px 16px",
+    borderRadius: "var(--radius-md)",
+    font: "500 13.5px var(--font-heading)",
+    cursor: "pointer",
+  });
 
   return (
     <AdminChrome active="contact">
@@ -34,7 +45,7 @@ export default async function AdminContact() {
             <section key={m.id} style={cardStyle}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 500 }}>
+                  <p style={{ margin: 0, fontWeight: 500, overflowWrap: "anywhere" }}>
                     {m.name} <span style={{ color: "var(--muted)", fontWeight: 400 }}>· {m.email}</span>
                   </p>
                   <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--muted)" }}>
@@ -67,25 +78,21 @@ export default async function AdminContact() {
                   {m.status === "new" ? "Nouveau" : "Lu"}
                 </span>
               </div>
-              <p style={{ margin: "12px 0 0", fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{m.message}</p>
-              {m.status === "new" ? (
-                <form method="post" action={`/api/admin/contact/${m.id}/read`} style={{ marginTop: 12 }}>
-                  <button
-                    type="submit"
-                    style={{
-                      border: "1px solid var(--color-accent)",
-                      color: "var(--color-accent)",
-                      background: "transparent",
-                      padding: "8px 16px",
-                      borderRadius: "var(--radius-md)",
-                      font: "500 13.5px var(--font-heading)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Marquer comme lu
-                  </button>
+              <p style={{ margin: "12px 0 0", fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.message}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+                {m.status === "new" ? (
+                  <form method="post" action={`/api/admin/contact/${m.id}/read`}>
+                    <button type="submit" style={actionStyle("var(--color-accent)")}>
+                      Marquer comme lu
+                    </button>
+                  </form>
+                ) : null}
+                <form method="post" action={`/api/admin/contact/${m.id}/delete`}>
+                  <ConfirmSubmitButton confirmText="Supprimer définitivement ce message ?" style={actionStyle("var(--danger)")}>
+                    Supprimer
+                  </ConfirmSubmitButton>
                 </form>
-              ) : null}
+              </div>
             </section>
           ))}
         </div>

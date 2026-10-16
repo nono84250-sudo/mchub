@@ -1,4 +1,5 @@
 import { db, execSql } from "@/lib/db";
+import { normalizeMinecraftUuid } from "@/lib/launcherSession";
 
 // Signalements envoyes par les joueurs depuis le launcher (voir "03b Report a server" dans
 // Design/Omniscient Launcher UI Mockups.dc.html) — deux categories distinctes : "Probleme
@@ -50,7 +51,12 @@ export async function createReport(input: {
   clientVersion: string | null;
   launcherVersion: string | null;
 }) {
-  return db.orm.public.Report.create({ ...input, status: "new", category: "technical" });
+  return db.orm.public.Report.create({
+    ...input,
+    reporterMinecraftUuid: normalizeMinecraftUuid(input.reporterMinecraftUuid),
+    status: "new",
+    category: "technical",
+  });
 }
 
 // --- Comportement / contenu (moderation Omniscient) ---
@@ -118,7 +124,7 @@ export async function createBehaviorReport(input: {
 }) {
   return db.orm.public.Report.create({
     serverId: input.serverId,
-    reporterMinecraftUuid: input.reporterMinecraftUuid,
+    reporterMinecraftUuid: normalizeMinecraftUuid(input.reporterMinecraftUuid),
     reporterMinecraftUsername: input.reporterMinecraftUsername,
     issue: "other",
     behaviorIssue: input.behaviorIssue,

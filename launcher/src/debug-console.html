@@ -2,7 +2,8 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
-<!-- CSP posee dynamiquement par main.js (voir index.html et setContentSecurityPolicy). -->
+<!-- CSP en balise : voir le commentaire de index.html (audit 14/10, L1). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'" />
 <title>Debug console — Omniscient Launcher</title>
 <style>
   /* Jetons/reset repris de index.html (voir son commentaire) — dupliques ici

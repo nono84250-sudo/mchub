@@ -2,20 +2,29 @@
 
 import { useState } from "react";
 import { Trash } from "@phosphor-icons/react";
-import { deleteAccount } from "@/lib/actions/account";
+import { deleteAccount, type DeleteAccountError } from "@/lib/actions/account";
+import { useI18n } from "@/i18n/I18nProvider";
+
+const ERROR_KEYS: Record<DeleteAccountError, string> = {
+  confirm: "account.deleteErrorConfirm",
+  session: "account.deleteErrorSession",
+  notFound: "account.deleteErrorNotFound",
+};
 
 // Zone de danger de la page Compte — confirmation renforcee (retaper "supprimer") plutot
 // qu'un simple window.confirm comme pour un serveur (voir ManageActions) : une suppression de
-// COMPTE entier (tous ses serveurs, modpacks, abonnement le jour ou il existera) merite un
+// COMPTE entier (tous ses serveurs, modpacks, amis, serveurs suivis) merite un
 // geste plus deliberé qu'un clic. Voir lib/actions/account.ts pour ce qui est reellement
-// efface.
+// efface. Textes FR/EN via le dictionnaire (account.delete*), tutoiement comme le reste du site.
 export function DeleteAccountSection() {
+  const { t } = useI18n();
+  const confirmWord = t("account.deleteConfirmWord");
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canConfirm = confirmText.trim().toLowerCase() === "supprimer";
+  const canConfirm = confirmText.trim().toLowerCase() === confirmWord;
 
   async function handleConfirm() {
     setPending(true);
@@ -23,7 +32,7 @@ export function DeleteAccountSection() {
     try {
       const result = await deleteAccount(confirmText);
       if (result && "error" in result && result.error) {
-        setError(result.error);
+        setError(t(ERROR_KEYS[result.error]));
         setPending(false);
         return;
       }
@@ -33,22 +42,22 @@ export function DeleteAccountSection() {
       if (err && typeof err === "object" && "digest" in err && typeof err.digest === "string" && err.digest.startsWith("NEXT_REDIRECT")) {
         throw err;
       }
-      setError("Une erreur est survenue — réessaie dans un instant.");
+      setError(t("account.deleteErrorGeneric"));
       setPending(false);
     }
   }
 
   return (
     <div className="mt-8 rounded-lg p-4" style={{ border: "1px solid color-mix(in srgb, var(--danger) 35%, transparent)" }}>
-      <p className="text-sm font-medium text-foreground">Supprimer mon compte</p>
-      <p className="mt-1 text-xs text-muted">Définitif — ton compte et tout son contenu seront effacés.</p>
+      <p className="text-sm font-medium text-foreground">{t("account.deleteTitle")}</p>
+      <p className="mt-1 text-xs text-muted">{t("account.deleteHint")}</p>
       <button
         type="button"
         onClick={() => setOpen(true)}
         className="btn-secondary btn-secondary-danger mt-3 text-sm"
       >
         <Trash className="h-4 w-4" />
-        Supprimer mon compte
+        {t("account.deleteTitle")}
       </button>
 
       {open ? (
@@ -56,18 +65,16 @@ export function DeleteAccountSection() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
           role="dialog"
           aria-modal="true"
-          aria-label="Supprimer définitivement le compte"
+          aria-label={t("account.deleteDialogLabel")}
         >
           <div className="w-full max-w-sm rounded-lg bg-surface p-5" style={{ border: "1px solid var(--border)" }}>
             <p className="text-sm font-semibold" style={{ color: "var(--danger)" }}>
-              Attention : action irréversible
+              {t("account.deleteWarning")}
             </p>
-            <p className="mt-2 text-sm text-foreground">
-              Si vous supprimez votre compte, cela supprimera définitivement tout son contenu : vos serveurs, leurs
-              modpacks, votre abonnement éventuel, etc. Impossible à annuler.
-            </p>
+            <p className="mt-2 text-sm text-foreground">{t("account.deleteBody")}</p>
             <label className="mt-4 block text-xs text-muted">
-              Écrivez <span className="font-semibold text-foreground">supprimer</span> pour valider
+              {t("account.deleteConfirmBefore")} <span className="font-semibold text-foreground">{confirmWord}</span>{" "}
+              {t("account.deleteConfirmAfter")}
             </label>
             <input
               type="text"
@@ -89,7 +96,7 @@ export function DeleteAccountSection() {
                 disabled={pending}
                 className="btn-secondary text-sm"
               >
-                Annuler
+                {t("account.deleteCancel")}
               </button>
               <button
                 type="button"
@@ -97,7 +104,7 @@ export function DeleteAccountSection() {
                 disabled={!canConfirm || pending}
                 className="btn-secondary btn-secondary-danger text-sm"
               >
-                {pending ? "Suppression..." : "Supprimer définitivement"}
+                {pending ? t("account.deletePending") : t("account.deleteConfirm")}
               </button>
             </div>
           </div>

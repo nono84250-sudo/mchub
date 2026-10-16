@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
+import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherProfile } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
 import { recordPresenceHeartbeat } from "@/lib/presence";
+import { listPublicServers } from "@/lib/public-servers";
 
 // Heartbeat de présence (système d'amis, 2026-10-14) : greffé sur le vrai cycle de 60s du
 // launcher (REFRESH_INTERVAL_MS/scheduleRefresh dans renderer.js — vérifié dans le vrai code
@@ -22,15 +23,25 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const minecraftUuid = typeof body.minecraftUuid === "string" ? body.minecraftUuid : null;
-  const minecraftUsername = typeof body.minecraftUsername === "string" ? body.minecraftUsername : null;
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
   }
-  const identity = await verifyLauncherIdentity(request, minecraftUuid);
+  // Pseudo pris dans le profil verifie, jamais dans le corps (body.minecraftUsername ignore).
+  const { check: identity, name } = await verifyLauncherProfile(request, minecraftUuid);
   if (identity !== "verified") return identityErrorResponse(identity);
 
-  const user = await findOrCreateUserByMinecraft(minecraftUuid, minecraftUsername);
-  await recordPresenceHeartbeat(user.id);
+  // Appel automatique : cree le compte d'un nouveau joueur (premiere connexion au launcher sans
+  // passer par le site), mais ne recree pas un compte que le joueur a supprime (user === null).
+  // Dans ce cas le launcher (>= 14/10) deconnecte le joueur : il devra se reconnecter avec
+  // Microsoft, ce qui recree le compte (route session, freshLogin).
+  const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: false });
+  if (!user) return NextResponse.json({ ok: true, accountDeleted: true });
+  // Serveur en cours (filtre « Un ami y joue ») : garde seulement si c'est un serveur public de
+  // l'annuaire. La liste vient du cache deja charge (aucun appel base en plus) ; un serveur
+  // prive ou inconnu n'est jamais enregistre, donc jamais montre aux amis.
+  const requestedSlug = typeof body.playingSlug === "string" ? body.playingSlug.trim().slice(0, 80) : "";
+  const playingSlug = requestedSlug && (await listPublicServers()).some((s) => s.slug === requestedSlug) ? requestedSlug : null;
+  await recordPresenceHeartbeat(user.id, playingSlug);
 
   return NextResponse.json({ ok: true });
 }

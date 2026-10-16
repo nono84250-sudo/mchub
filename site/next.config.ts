@@ -18,6 +18,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
+  // L'ancienne page /account a rejoint le tableau de bord le 13/10 : les anciens liens (e-mails,
+  // favoris, liens du launcher) ne doivent pas tomber sur une 404 (audit 14/10, F1).
+  async redirects() {
+    return [{ source: "/account", destination: "/dashboard/parametres", permanent: true }];
+  },
 };
 
 export default nextConfig;

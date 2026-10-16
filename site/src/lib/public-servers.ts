@@ -5,6 +5,19 @@ import { db, execBatch } from "@/lib/db";
 import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
 import { LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, sessionIdentity, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { isValidLink, parsePageConfig, type PageLanguage, type PageTag, type ServerPageConfig } from "@/lib/serverPage";
+import {
+  DEFAULT_FILTERS,
+  blockingFilter,
+  computeFacets,
+  filterServers,
+  isNewServer,
+  sortServers,
+  trendScore,
+  type FilterKey,
+  type ServerFacets,
+  type ServerListFilters,
+} from "@/lib/serverFilters";
 
 // Etiquette du cache des donnees publiques des serveurs : les actions du site
 // (creer, modifier, publier, mettre en pause, supprimer) l'invalident avec
@@ -23,7 +36,7 @@ export const SERVERS_PAGE_SIZE = 24;
 // retournés ici : c'est la seule garantie qu'elle ne peut pas fuiter par
 // erreur vers une page ou une réponse API publique.
 
-export type PublicServerSummary = {
+export type PublicServerBase = {
   slug: string;
   name: string;
   description: string;
@@ -44,14 +57,23 @@ export type PublicServerSummary = {
   ownerMinecraftUuid: string | null;
 };
 
-export type ServerListSort = "recent" | "popular" | "az";
-
-export type ListPublicServersOptions = {
-  q?: string;
-  sort?: ServerListSort;
+export type PublicServerSummary = PublicServerBase & {
+  // Filtres de l'annuaire (2026-10-16) : champs AJOUTES seulement, un ancien launcher les ignore.
+  minecraftVersion: string;
+  modpackName: string | null;
+  recommendedRamGB: number | null;
+  tags: PageTag[];
+  languages: PageLanguage[];
+  launchCount: number;
+  selfTestPassedAt: string | null;
+  isNew: boolean;
+  // Score « Tendance » deja calcule (meme formule pour le site et le launcher, voir serverFilters.ts).
+  trendScore: number;
 };
 
-export type PublicServerDetail = PublicServerSummary & {
+export type ListPublicServersOptions = Partial<ServerListFilters>;
+
+export type PublicServerDetail = PublicServerBase & {
   minecraftVersion: string;
   curseforgeModpackId: string | null;
   curseforgeModpackName: string | null;
@@ -62,6 +84,12 @@ export type PublicServerDetail = PublicServerSummary & {
   // reussi depuis le launcher, jamais null->"jamais teste" pour une fiche deja approuvee avant
   // l'existence de ce controle (voir le commentaire sur selfTestPassedAt dans schema.sql).
   selfTestPassedAt: string | null;
+  // Meme usage que LauncherServerDetail.isPrivate (presence Discord du launcher).
+  isPrivate: boolean;
+  // Fiche personnalisable (voir lib/serverPage.ts) : deja nettoyee, prete a afficher.
+  page: ServerPageConfig;
+  discordUrl: string | null;
+  websiteUrl: string | null;
 };
 
 // Filtre et tri faits en JS plutot que dans la requete : a l'echelle d'un
@@ -75,9 +103,13 @@ export type PublicServerDetail = PublicServerSummary & {
 // uniquement : jamais renvoyes par les fonctions publiques ci-dessous. Limite : le
 // cache de donnees de Vercel accepte 2 Mo par entree, soit environ 3 000 serveurs ;
 // au-dela il faudra paginer dans la requete SQL.
+// Filtres (2026-10-16) : minecraftVersion, modpack, RAM, lancements, auto-test et pageConfig
+// sont lus dans la MEME requete (aucun appel en plus). pageConfig est reduit ici a ses
+// etiquettes et langues AVANT la mise en cache, pour ne pas stocker les textes et liens de
+// chaque fiche dans l'entree de 2 Mo.
 const loadPublishedServers = unstable_cache(
-  async () =>
-    db.orm.public.Server.select(
+  async () => {
+    const rows = await db.orm.public.Server.select(
       "id",
       "slug",
       "name",
@@ -91,31 +123,59 @@ const loadPublishedServers = unstable_cache(
       "lastPingedAt",
       "createdAt",
       "viewCount",
+      "minecraftVersion",
+      "curseforgeModpackName",
+      "recommendedRamGB",
+      "launchCount",
+      "selfTestPassedAt",
+      "pageConfig",
     )
       .include("owner", (o) => o.select("minecraftUuid"))
       .where({ published: true, isPrivate: false, verificationStatus: "approved" })
       .orderBy((s) => s.createdAt.desc())
-      .all(),
-  ["published-servers"],
+      .all();
+    return rows.map(({ pageConfig, ...row }) => {
+      const page = parsePageConfig(pageConfig);
+      // Principales d'abord, puis les supplementaires (config.extraTags, fil « Fiche serveur ») :
+      // le filtre et la recherche voient les deux, la carte montre les premieres.
+      const extra = (page as { extraTags?: PageTag[] }).extraTags ?? [];
+      return { ...row, tags: [...new Set([...page.tags, ...extra])], languages: page.languages };
+    });
+  },
+  ["published-servers-v2"],
   { revalidate: SERVERS_CACHE_SECONDS, tags: [SERVERS_CACHE_TAG] },
 );
 
 type PublishedServerRow = Awaited<ReturnType<typeof loadPublishedServers>>[number];
 
-function filterAndSort(rows: PublishedServerRow[], { q, sort = "recent" }: ListPublicServersOptions): PublishedServerRow[] {
-  const needle = q?.trim().toLowerCase();
-  const filtered = needle
-    ? rows.filter((row) => row.name.toLowerCase().includes(needle) || row.description.toLowerCase().includes(needle))
-    : rows;
-
-  return [...filtered].sort((a, b) => {
-    if (sort === "popular") return b.viewCount - a.viewCount;
-    if (sort === "az") return a.name.localeCompare(b.name);
-    return b.createdAt.localeCompare(a.createdAt);
-  });
+// Forme attendue par les filtres (serverFilters.ts), sans rien recalculer a chaque appel.
+function asFilterable(row: PublishedServerRow) {
+  return {
+    row,
+    name: row.name,
+    description: row.description,
+    type: row.type,
+    minecraftVersion: row.minecraftVersion ?? "",
+    modpackName: row.type === "modded" ? row.curseforgeModpackName ?? null : null,
+    tags: row.tags,
+    languages: row.languages,
+    playerCount: row.playerCount,
+    playerCapacity: row.playerCapacity,
+    pinged: row.lastPingedAt != null,
+    createdAt: row.createdAt,
+    launchCount: row.launchCount ?? 0,
+    selfTestPassedAt: row.selfTestPassedAt ?? null,
+  };
 }
 
-function toSummary(row: PublishedServerRow): PublicServerSummary {
+function filterAndSort(rows: PublishedServerRow[], options: ListPublicServersOptions) {
+  const filters: ServerListFilters = { ...DEFAULT_FILTERS, ...options };
+  const all = rows.map(asFilterable);
+  return { all, filters, sorted: sortServers(filterServers(all, filters), filters.sort) };
+}
+
+function toSummary(item: ReturnType<typeof asFilterable>, now = Date.now()): PublicServerSummary {
+  const row = item.row;
   return {
     slug: row.slug,
     name: row.name,
@@ -129,38 +189,63 @@ function toSummary(row: PublishedServerRow): PublicServerSummary {
     createdAt: row.createdAt,
     viewCount: row.viewCount,
     ownerMinecraftUuid: row.owner?.minecraftUuid ?? null,
+    minecraftVersion: item.minecraftVersion,
+    modpackName: item.modpackName,
+    recommendedRamGB: row.recommendedRamGB ?? null,
+    tags: item.tags,
+    languages: item.languages,
+    launchCount: item.launchCount,
+    selfTestPassedAt: item.selfTestPassedAt,
+    isNew: isNewServer(row.createdAt, now),
+    trendScore: Math.round(trendScore(item, now) * 1000) / 1000,
   };
 }
 
-// Liste complete (API publique consommee par le launcher).
+// Liste complete (API publique consommee par le launcher, qui filtre de son cote).
 export async function listPublicServers(options: ListPublicServersOptions = {}): Promise<PublicServerSummary[]> {
-  const sorted = filterAndSort(await loadPublishedServers(), options);
+  const { sorted } = filterAndSort(await loadPublishedServers(), options);
 
   // L'affichage montre le dernier chiffre enregistré ; les statuts périmés sont
   // re-mesurés après l'envoi de la page (voir server-status.ts).
-  scheduleStatusRefresh(sorted);
-  return sorted.map(toSummary);
+  scheduleStatusRefresh(sorted.map((s) => s.row));
+  const now = Date.now();
+  return sorted.map((s) => toSummary(s, now));
 }
 
 export type PublicServersPage = {
   servers: PublicServerSummary[];
   total: number;
+  // Taille de l'annuaire sans filtre (etat vide : « annuaire vide » ou « aucun resultat »).
+  directoryTotal: number;
   page: number;
   pageCount: number;
+  filters: ServerListFilters;
+  facets: ServerFacets;
+  blocking: { key: FilterKey; gain: number } | null;
 };
 
 // Une page de l'annuaire (SERVERS_PAGE_SIZE serveurs) : evite d'envoyer et de
 // construire des centaines de cartes a chaque visite. `page` est ramenee dans
 // les bornes (une page trop grande donne la derniere).
 export async function listPublicServersPage(options: ListPublicServersOptions & { page?: number }): Promise<PublicServersPage> {
-  const sorted = filterAndSort(await loadPublishedServers(), options);
+  const { all, filters, sorted } = filterAndSort(await loadPublishedServers(), options);
   const pageCount = Math.max(1, Math.ceil(sorted.length / SERVERS_PAGE_SIZE));
   const page = Math.min(Math.max(1, Math.floor(options.page ?? 1) || 1), pageCount);
   const slice = sorted.slice((page - 1) * SERVERS_PAGE_SIZE, page * SERVERS_PAGE_SIZE);
 
   // Seuls les serveurs affiches sont re-mesures en priorite.
-  scheduleStatusRefresh(slice);
-  return { servers: slice.map(toSummary), total: sorted.length, page, pageCount };
+  scheduleStatusRefresh(slice.map((s) => s.row));
+  const now = Date.now();
+  return {
+    servers: slice.map((s) => toSummary(s, now)),
+    total: sorted.length,
+    directoryTotal: all.length,
+    page,
+    pageCount,
+    filters,
+    facets: computeFacets(all, filters),
+    blocking: sorted.length === 0 ? blockingFilter(all, filters) : null,
+  };
 }
 
 export type LauncherServerDetail = {
@@ -171,6 +256,9 @@ export type LauncherServerDetail = {
   curseforgeModpackId: string | null;
   recommendedRamGB: number | null;
   autoConnect: boolean;
+  // Serveur sur invitation : le launcher affiche alors « Joue sur un serveur prive » sur Discord,
+  // sans le nom ni le modpack (voir launcher/src/discordPresence.js).
+  isPrivate: boolean;
 };
 
 // Preuve qu'un visiteur a le droit de voir un serveur prive. Sans preuve, un
@@ -309,6 +397,7 @@ export async function getServerWithIpBySlug(slug: string, proof: PrivateServerPr
     curseforgeModpackId: row.curseforgeModpackId,
     recommendedRamGB: row.recommendedRamGB,
     autoConnect: row.autoConnect,
+    isPrivate: row.isPrivate,
   };
 }
 
@@ -363,6 +452,9 @@ const loadPublishedServerBySlug = unstable_cache(
     "isPrivate",
     "inviteCode",
     "selfTestPassedAt",
+    "pageConfig",
+    "discordUrl",
+    "websiteUrl",
   )
     .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug, published: true, verificationStatus: "approved" })
@@ -402,6 +494,11 @@ export async function getPublicServerBySlug(slug: string, proof: PrivateServerPr
     createdAt: row.createdAt,
     viewCount: row.viewCount,
     selfTestPassedAt: row.selfTestPassedAt,
+    isPrivate: row.isPrivate,
+    page: parsePageConfig(row.pageConfig),
+    // Revérifiés a l'affichage : ces colonnes existaient avant l'editeur, sans controle.
+    discordUrl: row.discordUrl && isValidLink("discord", row.discordUrl) ? row.discordUrl : null,
+    websiteUrl: row.websiteUrl && isValidLink("website", row.websiteUrl) ? row.websiteUrl : null,
   };
 }
 
@@ -435,7 +532,7 @@ export type OwnedServerSummary = {
 // Inclut `ip` : le proprietaire connait deja sa propre adresse de connexion
 // (meme raisonnement que getServerWithIpBySlug).
 async function loadOwnedServersByMinecraftUuid(minecraftUuid: string): Promise<OwnedServerSummary[]> {
-  const owner = await db.orm.public.User.select("id").where({ minecraftUuid }).first();
+  const owner = await db.orm.public.User.select("id").where({ minecraftUuid: normalizeMinecraftUuid(minecraftUuid) }).first();
   if (!owner) return [];
 
   const rows = await db.orm.public.Server.select(

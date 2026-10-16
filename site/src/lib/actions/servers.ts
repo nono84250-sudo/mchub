@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
@@ -11,8 +12,13 @@ import { generateUniqueInviteCode } from "@/lib/inviteCode";
 import { DEFAULT_MODPACK_CHANNEL, type ModpackChannel, type ModpackSource } from "@/lib/modpack-types";
 import { runAndStoreChecks } from "@/lib/verification";
 import { requestServerAppeal } from "@/lib/appeals";
+import { addressUsedByFrozenServer } from "@/lib/frozenAddress";
+import { isOwnImageUrl } from "@/lib/ownImageUrl";
 
 export type ServerActionState = { error: string } | undefined;
+
+// Second audit du 14/10 (I2) : adresse deja utilisee par un serveur gele (voir lib/frozenAddress.ts).
+const FROZEN_ADDRESS_ERROR = "Cette adresse est celle d'un serveur gelé par l'équipe : elle ne peut pas être utilisée pour une autre fiche.";
 
 type ServerFormValues = {
   name: string;
@@ -33,23 +39,17 @@ type ServerFormValues = {
   autoConnect: boolean;
 };
 
-// Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher :
-// seule une adresse http(s) absolue, sans guillemets, chevrons, espaces ni
-// backticks, est acceptee. http est permis uniquement pour que /api/upload (voir
-// route.ts, qui renvoie l'origine de la requete) fonctionne en dev local ; couvre
-// aussi les valeurs legacy pointant vers des CDN https (R2, ex-Vercel Blob).
-function isSafeImageUrl(url: string | null): boolean {
-  if (url === null) return true;
-  if (!/^https?:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
-  try {
-    const protocol = new URL(url).protocol;
-    return protocol === "https:" || protocol === "http:";
-  } catch {
-    return false;
-  }
+async function requestHost(): Promise<string | null> {
+  return (await headers()).get("host");
 }
 
-function readForm(formData: FormData): ServerFormValues | { error: string } {
+type PreviousImages = { bannerUrl: string | null; iconUrl: string | null; backgroundUrl: string | null };
+
+function readForm(
+  formData: FormData,
+  host: string | null,
+  previous?: PreviousImages,
+): ServerFormValues | { error: string } {
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const bannerUrl = String(formData.get("bannerUrl") ?? "").trim() || null;
@@ -74,8 +74,12 @@ function readForm(formData: FormData): ServerFormValues | { error: string } {
   if (!name || !description || !minecraftVersion || !ip) {
     return { error: "Nom, description, version et IP sont obligatoires." };
   }
-  if (!isSafeImageUrl(bannerUrl) || !isSafeImageUrl(iconUrl) || !isSafeImageUrl(backgroundUrl)) {
-    return { error: "Les images (bannière, icône, fond) doivent être des adresses https valides." };
+  if (
+    !isOwnImageUrl(bannerUrl, host, previous?.bannerUrl) ||
+    !isOwnImageUrl(iconUrl, host, previous?.iconUrl) ||
+    !isOwnImageUrl(backgroundUrl, host, previous?.backgroundUrl)
+  ) {
+    return { error: "Les images (bannière, icône, fond) doivent être envoyées depuis ce formulaire." };
   }
   if (type === "modded" && !curseforgeModpackId) {
     return { error: "Un serveur moddé doit indiquer son modpack (CurseForge ou Modrinth)." };
@@ -133,8 +137,9 @@ export async function createServer(_prevState: ServerActionState, formData: Form
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const parsed = readForm(formData);
+  const parsed = readForm(formData, await requestHost());
   if ("error" in parsed) return parsed;
+  if (await addressUsedByFrozenServer(parsed.ip)) return { error: FROZEN_ADDRESS_ERROR };
 
   const slug = await uniqueSlugFor(parsed.name);
   // Toute nouvelle fiche est privee, quoi qu'en dise le formulaire (visibilite retiree de
@@ -175,8 +180,9 @@ export async function updateServer(
   const owned = await getOwnedServer(serverId, session.user.id);
   if (!owned) return { error: "Ce serveur n'existe pas ou ne t'appartient pas." };
 
-  const parsed = readForm(formData);
+  const parsed = readForm(formData, await requestHost(), owned);
   if ("error" in parsed) return parsed;
+  if (parsed.ip !== owned.ip && (await addressUsedByFrozenServer(parsed.ip, serverId))) return { error: FROZEN_ADDRESS_ERROR };
 
   // Un changement d'IP, de version declaree ou de modpack rend l'auto-test precedent caduc —
   // meme esprit que runAndStoreChecks ci-dessous pour le controle automatique du site : une
@@ -298,12 +304,16 @@ export async function toggleServerPublished(serverId: string): Promise<ServerAct
 
 // Cree une copie de la fiche (nouveau slug, meme configuration sauf le nom)
 // — pratique pour publier plusieurs serveurs similaires sans tout ressaisir.
-export async function duplicateServer(serverId: string) {
+export async function duplicateServer(serverId: string): Promise<ServerActionState> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
   const source = await getOwnedServer(serverId, session.user.id);
   if (!source) redirect("/dashboard");
+  // Audit 14/10 (S1) : la copie d'un serveur gele n'etait pas gelee. Le proprietaire pouvait
+  // la passer en prive, partager le code d'invitation et revenir en ligne sans controle.
+  if (source.frozenAt) return { error: "Ce serveur est gelé par l'équipe : il ne peut pas être dupliqué." };
+  if (await addressUsedByFrozenServer(source.ip, source.id)) return { error: FROZEN_ADDRESS_ERROR };
 
   const name = `${source.name} (copie)`;
   const slug = await uniqueSlugFor(name);

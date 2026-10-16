@@ -2,6 +2,8 @@ import NextAuth from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { db } from "@/lib/db";
 import { getMinecraftProfileFromMicrosoftToken, PendingApprovalError } from "@/lib/xboxAuth";
+import { clearAccountDeletion } from "@/lib/users";
+import { normalizeMinecraftUuid } from "@/lib/launcherSession";
 
 // "Se connecter avec Microsoft" est desormais l'unique moyen de se
 // connecter au site (plus d'email/mot de passe) : le meme identifiant
@@ -51,9 +53,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // assigne a un agent — corrige ici le soir meme, en relisant le reste du dossier.
         if (token.id) {
           const current = await db.orm.public.User.select("lockedAt").where({ id: token.id }).first();
-          if (current?.lockedAt) {
+          // Second audit du 14/10 (I4) : un compte supprime (plus de ligne "user") gardait son
+          // jeton web jusqu'a 30 jours sur ses autres appareils. On le coupe comme un verrou.
+          if (!current || current.lockedAt) {
             token.id = undefined;
-            token.error = "account_locked";
+            if (current?.lockedAt) token.error = "account_locked";
           }
         }
         return token;
@@ -61,9 +65,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       try {
         const mcProfile = await getMinecraftProfileFromMicrosoftToken(account.access_token);
+        // Meme forme d'UUID partout (minuscules, sans tirets) : sinon un meme joueur pouvait avoir
+        // deux comptes (second audit du 14/10, I3).
+        mcProfile.uuid = normalizeMinecraftUuid(mcProfile.uuid);
         let user = await db.orm.public.User.where({ minecraftUuid: mcProfile.uuid }).first();
 
         if (!user) {
+          // Connexion volontaire sur le site : si ce joueur avait supprime son compte, il revient
+          // de lui-meme, l'empreinte de suppression est retiree (voir lib/users.ts).
+          await clearAccountDeletion(mcProfile.uuid);
           user = await db.orm.public.User.create({
             name: mcProfile.name,
             minecraftUuid: mcProfile.uuid,

@@ -23,6 +23,26 @@ const RECONNECT_DELAY_MS = 20_000;
 let client = null;
 let ready = false;
 let reconnectTimer = null;
+let appClientId = null;
+// Parametres > Divers > Discord. Coupe : aucune connexion a Discord, donc rien n'est envoye.
+let enabled = true;
+let locale = "fr";
+// Derniere activite demandee par main.js, gardee sous forme brute (pas encore traduite) pour
+// pouvoir la renvoyer quand le joueur rallume l'interrupteur ou change de langue.
+let lastRequest = null;
+// Journal de la console de debug (fourni par main.js) : permet de verifier que l'identifiant
+// Discord est bien lu et que la connexion se fait (Ctrl+Maj+D). Un seul message par etat.
+let log = () => {};
+let loggedFailure = false;
+
+// Texte envoye a Discord, dans la langue du launcher (ce que les amis du joueur lisent).
+const TEXTS = {
+  fr: { browsing: "Parcourt les serveurs", inLauncher: "Dans le launcher", privateServer: "Joue sur un serveur privé", modpack: "Modpack : {name}" },
+  en: { browsing: "Browsing servers", inLauncher: "In the launcher", privateServer: "Playing on a private server", modpack: "Modpack: {name}" },
+};
+function text(key) {
+  return (TEXTS[locale] || TEXTS.fr)[key];
+}
 // Derniere activite demandee avant que la connexion Discord ne soit prete —
 // rejouee des que possible (evite de perdre l'etat "en train de jouer" si
 // Discord se connecte juste apres le lancement du jeu, par exemple).
@@ -34,6 +54,7 @@ function scheduleReconnect(clientId) {
 }
 
 function connect(clientId) {
+  if (!enabled) return;
   const previousClient = client;
   const thisClient = new Client({ clientId });
   client = thisClient;
@@ -56,6 +77,8 @@ function connect(clientId) {
   thisClient.on("ready", () => {
     if (client !== thisClient) return;
     ready = true;
+    loggedFailure = false;
+    log("debug", "Discord connecté : l'activité s'affiche sur le profil du joueur.");
     if (pendingActivity) {
       thisClient.user?.setActivity(pendingActivity).catch(() => {});
     }
@@ -72,13 +95,87 @@ function connect(clientId) {
   thisClient.login().catch(() => {
     if (client !== thisClient) return;
     ready = false;
+    if (!loggedFailure) {
+      loggedFailure = true;
+      log("warn", "Discord non joignable (application Discord fermée ?) : nouvel essai toutes les 20 s.");
+    }
     scheduleReconnect(clientId);
   });
 }
 
-function init(clientId) {
-  if (!clientId) return; // Rich Presence desactivee, voir commentaire en tete de fichier.
-  connect(clientId);
+function init(clientId, options = {}) {
+  appClientId = clientId || null;
+  enabled = options.enabled !== false;
+  locale = options.locale === "en" ? "en" : "fr";
+  if (typeof options.log === "function") log = options.log;
+  if (!appClientId) {
+    log("warn", "Discord désactivé : DISCORD_CLIENT_ID absent du .env du launcher.");
+    return;
+  }
+  if (!enabled) {
+    log("info", "Discord désactivé par le joueur (Paramètres, Divers).");
+    return;
+  }
+  connect(appClientId);
+}
+
+// Ferme la connexion a Discord (interrupteur coupe) : efface d'abord l'activite affichee, puis
+// detruit le client. Les callbacks de l'ancien client ne font plus rien (client !== thisClient).
+function disconnect() {
+  clearTimeout(reconnectTimer);
+  const previousClient = client;
+  const wasReady = ready;
+  client = null;
+  ready = false;
+  pendingActivity = null;
+  if (!previousClient) return;
+  previousClient.removeAllListeners?.();
+  const cleared = wasReady && previousClient.user ? previousClient.user.clearActivity().catch(() => {}) : Promise.resolve();
+  cleared.finally(() => previousClient.destroy?.().catch(() => {}));
+}
+
+function setEnabled(value) {
+  const next = value !== false;
+  if (next === enabled) return;
+  enabled = next;
+  if (!enabled) {
+    disconnect();
+    return;
+  }
+  if (appClientId && !client) connect(appClientId);
+  refresh();
+}
+
+function setLocale(value) {
+  locale = value === "en" ? "en" : "fr";
+  refresh();
+}
+
+function buildActivity(request) {
+  const activity = {
+    largeImageKey: LARGE_IMAGE_KEY,
+    largeImageText: LARGE_IMAGE_TEXT,
+    startTimestamp: request.startTimestamp,
+    instance: false,
+  };
+  if (request.kind === "browsing") {
+    activity.details = text("browsing");
+    activity.state = text("inLauncher");
+  } else if (request.isPrivate) {
+    // Serveur sur invitation : ni son nom ni son modpack (le joueur n'a pas choisi de le rendre public).
+    activity.details = text("privateServer");
+  } else {
+    activity.details = request.serverName;
+    if (request.modpackName && request.modpackName !== request.serverName) {
+      activity.state = text("modpack").replace("{name}", request.modpackName);
+    }
+  }
+  return activity;
+}
+
+function refresh() {
+  if (!enabled || !lastRequest) return;
+  setActivity(buildActivity(lastRequest));
 }
 
 function setActivity(activity) {
@@ -88,23 +185,16 @@ function setActivity(activity) {
 }
 
 function setBrowsingActivity() {
-  setActivity({
-    details: "Parcourt les serveurs",
-    largeImageKey: LARGE_IMAGE_KEY,
-    largeImageText: LARGE_IMAGE_TEXT,
-    startTimestamp: Date.now(),
-    instance: false,
-  });
+  lastRequest = { kind: "browsing", startTimestamp: Date.now() };
+  refresh();
 }
 
-function setPlayingActivity(serverName) {
-  setActivity({
-    details: `Joue sur ${serverName}`,
-    largeImageKey: LARGE_IMAGE_KEY,
-    largeImageText: LARGE_IMAGE_TEXT,
-    startTimestamp: Date.now(),
-    instance: false,
-  });
+// Affichage voulu : le titre en gras « Joue à Omniscient Launcher » vient du NOM de l'application
+// Discord (rien à écrire ici), puis `details` = le serveur rejoint, `state` = le modpack s'il y en a un.
+// Serveur prive : seulement « Joue sur un serveur privé ».
+function setPlayingActivity(serverName, modpackName, { isPrivate = false } = {}) {
+  lastRequest = { kind: "playing", serverName, modpackName, isPrivate: isPrivate === true, startTimestamp: Date.now() };
+  refresh();
 }
 
 function shutdown() {
@@ -113,4 +203,4 @@ function shutdown() {
   client?.destroy().catch(() => {});
 }
 
-module.exports = { init, setBrowsingActivity, setPlayingActivity, shutdown };
+module.exports = { init, setEnabled, setLocale, setBrowsingActivity, setPlayingActivity, shutdown };

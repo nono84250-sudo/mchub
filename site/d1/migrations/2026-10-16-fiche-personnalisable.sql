@@ -1,0 +1,12 @@
+-- Migration 2026-10-16 : fiche publique personnalisable (voir lib/serverPage.ts et la colonne
+-- "pageConfig" de la table "server" dans ../schema.sql). Une seule colonne JSON : couleur,
+-- fond pleine page, etiquettes, ordre et visibilite des sections, presentation, galerie, video,
+-- regles, liens YouTube/TikTok. Les liens Discord et site web utilisent les colonnes existantes
+-- discordUrl/websiteUrl, le fond d'ecran la colonne existante backgroundUrl.
+--
+-- A lancer une seule fois (SQLite n'a pas de ADD COLUMN IF NOT EXISTS : une deuxieme execution
+-- echoue avec "duplicate column name", sans rien casser). Une base creee depuis schema.sql a
+-- jour n'en a pas besoin.
+--
+-- NE PAS lancer sur la base de production sans l'accord explicite de l'utilisateur.
+ALTER TABLE "server" ADD COLUMN "pageConfig" TEXT;

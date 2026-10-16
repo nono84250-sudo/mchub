@@ -111,7 +111,10 @@ CREATE TABLE "server" (
   -- 'beta' (accepte aussi les versions beta du modpack, en plus des releases). Choisi dans
   -- ModpackPicker.tsx (creation/edition) ou depuis le launcher (voir
   -- /api/launcher/servers/[slug]/channel) — les deux ecrivent la meme colonne.
-  "modpackChannel"           TEXT NOT NULL DEFAULT 'release'
+  "modpackChannel"           TEXT NOT NULL DEFAULT 'release',
+  -- Fiche publique personnalisable (voir lib/serverPage.ts, migration 2026-10-16) : JSON en
+  -- choix fermes, jamais de HTML/CSS libre. NULL = fiche par defaut. Ajoutee par ALTER TABLE.
+  "pageConfig"               TEXT
 );
 CREATE INDEX "server_ownerId_idx" ON "server"("ownerId");
 
@@ -247,18 +250,22 @@ CREATE TABLE "adminNote" (
 );
 CREATE INDEX "adminNote_userId_createdAt_idx" ON "adminNote"("userId", "createdAt");
 
--- Amities (systeme d'amis phase 1, 2026-10-14, voir lib/friends.ts) : ajout direct et
--- reciproque, PAS de demande a accepter/refuser (confirme par l'utilisateur) -- une ligne par
--- paire, jamais deux (A-B et B-A). Deduplication par l'application : lib/friends.ts range
--- toujours les deux id dans le meme ordre (le plus petit en userId1) avant d'ecrire, donc
--- l'index unique ci-dessous suffit a empecher un doublon quel que soit l'ordre d'ajout.
--- Suppression par l'un OU l'autre = une seule ligne a retirer, l'amitie disparait des deux
--- cotes (pas de "pending", pas de statut).
+-- Amities (systeme d'amis, 2026-10-14, voir lib/friends.ts) : une ligne par paire, jamais deux
+-- (A-B et B-A). Deduplication par l'application : lib/friends.ts range toujours les deux id dans
+-- le meme ordre (le plus petit en userId1) avant d'ecrire, donc l'index unique ci-dessous suffit
+-- a empecher un doublon quel que soit l'ordre d'ajout. Demande puis accord (corrige le
+-- 2026-10-14, avant : ajout direct sans accord) : "pending" = demande envoyee par requesterId,
+-- en attente de l'autre joueur ; "accepted" = amitie confirmee des deux cotes. Refuser, annuler
+-- ou retirer = supprimer la ligne. Pas de CHECK sur "status" (valeurs applicatives), meme
+-- raisonnement que verificationStatus. Migration d'une base existante :
+-- d1/migrations/2026-10-14-demandes-amis.sql.
 CREATE TABLE "friendship" (
-  "id"        TEXT PRIMARY KEY,
-  "userId1"   TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
-  "userId2"   TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "id"          TEXT PRIMARY KEY,
+  "userId1"     TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "userId2"     TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "createdAt"   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "status"      TEXT NOT NULL DEFAULT 'pending',
+  "requesterId" TEXT REFERENCES "user"("id") ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX "friendship_pair_idx" ON "friendship"("userId1", "userId2");
 -- Recherche "de qui suis-je l'ami" dans l'autre sens (userId2) : userId1 est deja couvert par
@@ -274,8 +281,19 @@ CREATE INDEX "friendship_userId2_idx" ON "friendship"("userId2");
 CREATE TABLE "userPresence" (
   "userId"     TEXT PRIMARY KEY REFERENCES "user"("id") ON DELETE CASCADE,
   "lastSeenAt" TEXT NOT NULL,
+  -- Serveur public en cours de partie (filtre « Un ami y joue », migration 2026-10-16) : NULL
+  -- hors partie ou sur un serveur prive. Montre uniquement aux amis acceptes.
+  "playingSlug" TEXT,
   "createdAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Comptes supprimes par leur proprietaire (2026-10-14, voir lib/users.ts) : empreinte SHA-256
+-- de l'UUID Minecraft seulement (pas de pseudo, pas d'id), pour que le signal de presence du
+-- launcher ne recree pas le compte tout seul. Retiree quand le joueur revient de lui-meme.
+CREATE TABLE "deletedAccount" (
+  "minecraftUuidHash" TEXT PRIMARY KEY,
+  "deletedAt"         TEXT NOT NULL
 );
 
 -- Articles d'actualite (panel admin /admin/news), affiches sur la page "Actualites" du

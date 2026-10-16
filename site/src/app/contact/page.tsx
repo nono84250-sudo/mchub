@@ -43,7 +43,6 @@ export default async function ContactPage() {
             <ul className="mt-3 space-y-2.5 text-sm text-muted list-disc pl-5">
               <li>{c.topicHelp}</li>
               <li>{c.topicServer}</li>
-              <li>{c.topicBilling}</li>
             </ul>
           </div>
 

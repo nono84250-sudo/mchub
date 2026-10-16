@@ -42,11 +42,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html lang={locale} className="h-full antialiased" suppressHydrationWarning>
       <head>
         {/* Systeme de design "Nocturne" : une seule famille (Inter) pour les titres et le
-           corps de texte — chargee ici en <link> plutot que next/font/google (bug de
-           resolution Turbopack sur ce poste, voir --font-inter dans globals.css). */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+           corps de texte — hebergee sur le site (public/fonts/inter), plus aucune requete
+           vers Google Fonts : l'IP des visiteurs ne part plus chez Google. En <link> plutot
+           que next/font (bug de resolution Turbopack sur ce poste, voir globals.css). */}
+        {/* eslint-disable-next-line @next/next/no-css-tags -- feuille statique de public/, chargee une fois dans le layout racine */}
+        <link rel="stylesheet" href="/fonts/inter/inter.css" />
         {/* Bloquant, avant tout paint : evite le flash sombre->clair au
            chargement pour un visiteur ayant choisi "Clair" (voir
            ThemeSwitcher.tsx, meme logique que theme.js cote launcher). Ne

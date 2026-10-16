@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { createLauncherSession, getAccountLock, identityErrorResponse, isAuthorizedLauncherRequest, normalizeMinecraftUuid, verifyMinecraftIdentity } from "@/lib/launcherAuth";
+import { createLauncherSession, identityErrorResponse, isAuthorizedLauncherRequest, normalizeMinecraftUuid, verifyMinecraftProfile } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { findOrCreateUserByMinecraft } from "@/lib/users";
 
 // Echange le jeton Mojang du joueur (X-Minecraft-Token, verifie aupres de Mojang)
 // contre un jeton de session signe de 15 min (X-Launcher-Session sur les autres
@@ -17,22 +18,33 @@ export async function POST(request: Request) {
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
   }
-  const identity = await verifyMinecraftIdentity(request.headers.get("x-minecraft-token"), minecraftUuid);
+  const { check: identity, name, lock } = await verifyMinecraftProfile(request.headers.get("x-minecraft-token"), minecraftUuid);
   if (identity !== "verified") {
-    // Mojang a bien confirme le jeton, mais le compte est verrouille (fiche joueur, panel
-    // admin) : verifyMinecraftIdentity renvoie "refused" dans ce cas aussi (meme traitement
-    // que les autres routes launcher), donc on rejoue le controle ici pour donner un motif
-    // clair au joueur plutot que le "Identite non verifiee" generique.
-    if (identity === "refused") {
-      const lock = await getAccountLock(normalizeMinecraftUuid(minecraftUuid));
-      if (lock) {
-        return NextResponse.json({ error: `Compte verrouillé${lock.lockedReason ? " : " + lock.lockedReason : "."}` }, { status: 403 });
-      }
+    // Compte verrouille (fiche joueur, panel admin) : motif clair plutot que le "Identite non
+    // verifiee" generique, mais SEULEMENT si Mojang a confirme que le jeton appartient a cet
+    // UUID (lock n'est rempli que dans ce cas). Avant le 14/10, le verrou etait relu sur l'UUID
+    // declare : n'importe qui pouvait lire le motif de n'importe quel joueur (audit, S2).
+    if (lock) {
+      return NextResponse.json({ error: `Compte verrouillé${lock.lockedReason ? " : " + lock.lockedReason : "."}` }, { status: 403 });
     }
     return identityErrorResponse(identity);
   }
 
-  const session = createLauncherSession(normalizeMinecraftUuid(minecraftUuid));
+  // Vraie connexion Microsoft dans le launcher (bouton « Se connecter », pas une reprise de
+  // session ni un renouvellement) : le joueur revient de lui-meme, donc on cree son compte
+  // meme s'il l'avait supprime (l'empreinte est effacee). Les autres appels ne recreent
+  // jamais un compte supprime (voir findOrCreateUserByMinecraft et la route presence). Un
+  // echec ici ne doit pas empecher la session : la presence prendra le relais.
+  if (body?.freshLogin === true) {
+    try {
+      await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: true });
+    } catch (error) {
+      console.error("[launcher/session] creation du compte a la connexion impossible", error);
+    }
+  }
+
+  // Le pseudo signe dans le jeton est celui que Mojang vient de confirmer (jamais celui du corps).
+  const session = createLauncherSession(normalizeMinecraftUuid(minecraftUuid), name);
   if (!session) {
     return NextResponse.json({ error: "Sessions launcher non configurées sur le serveur" }, { status: 503 });
   }

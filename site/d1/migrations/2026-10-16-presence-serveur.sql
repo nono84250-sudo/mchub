@@ -1,0 +1,11 @@
+-- Migration 2026-10-16 : filtre « Un ami y joue » du launcher (voir lib/presence.ts). Le
+-- heartbeat de presence (deja envoye toutes les 60 s) porte aussi le serveur public sur lequel
+-- le joueur est en partie. Aucun appel en plus, une colonne en plus.
+--
+-- A lancer une seule fois (une deuxieme execution echoue avec "duplicate column name", sans
+-- rien casser). Une base creee depuis schema.sql a jour n'en a pas besoin.
+--
+-- NE PAS lancer sur la base de production sans l'accord explicite de l'utilisateur. Tant que
+-- la production n'a pas cette colonne, le site avec ce code ne doit PAS y etre deploye : le
+-- heartbeat echouerait (colonne inconnue).
+ALTER TABLE "userPresence" ADD COLUMN "playingSlug" TEXT;

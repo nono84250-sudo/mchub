@@ -1,6 +1,7 @@
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { db, or } from "@/lib/db";
 import { r2, IMAGES_BUCKET } from "@/lib/r2";
+import { parsePageConfig } from "@/lib/serverPage";
 
 // Supprime une image deposee sur R2 (/api/upload) quand elle est remplacee ou retiree —
 // sans ca, l'ancien objet reste sur R2 indefiniment (voir /api/images/[key]/route.ts pour
@@ -28,13 +29,15 @@ export async function deleteR2ImageIfOwned(url: string | null, excludeServerId: 
   }
 }
 
-// Les trois champs image d'une fiche, pour les appelants qui doivent toutes les nettoyer
-// (suppression complete d'une fiche).
+// Les trois champs image d'une fiche, plus les captures de sa galerie (pageConfig, voir
+// lib/serverPage.ts) quand l'appelant les a lues, pour les appelants qui doivent toutes les
+// nettoyer (suppression complete d'une fiche).
 export async function deleteAllR2Images(
-  server: { bannerUrl: string | null; iconUrl: string | null; backgroundUrl: string | null },
+  server: { bannerUrl: string | null; iconUrl: string | null; backgroundUrl: string | null; pageConfig?: string | null },
   excludeServerId: string,
 ): Promise<void> {
   await deleteR2ImageIfOwned(server.bannerUrl, excludeServerId);
   await deleteR2ImageIfOwned(server.iconUrl, excludeServerId);
   await deleteR2ImageIfOwned(server.backgroundUrl, excludeServerId);
+  for (const item of parsePageConfig(server.pageConfig).gallery) await deleteR2ImageIfOwned(item.url, excludeServerId);
 }

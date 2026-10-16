@@ -39,6 +39,9 @@ const DEFAULTS = {
   // plus ancien (page "Recents" de la barre laterale) — deja limite en
   // taille par renderer.js avant d'etre enregistre.
   recentlyPlayed: [],
+  // Date (ms) de la derniere partie de chaque serveur de recentlyPlayed (14/10, page Recents
+  // avec la date, retrait apres 7 jours) — local seulement, jamais envoye au site.
+  recentPlayedAt: {},
   // Langue de l'UI (voir i18n.js) — seuls "fr"/"en" ont une vraie traduction
   // pour l'instant. Theme/accent (voir globals du launcher) : "system" suit
   // prefers-color-scheme, sinon "dark"/"light" force l'un ou l'autre.
@@ -59,6 +62,18 @@ const DEFAULTS = {
   // Applique au prochain demarrage : checkForUpdates() lit ce reglage a chaque
   // verification du bootstrap.
   betaChannel: false,
+  // Vrai des que le joueur a coche OU decoche lui-meme la case "Canal beta" (voir
+  // saveSettings). Tant que c'est faux, une version beta installee reste sur le canal
+  // beta (testeur qui a installe la beta directement, ou reglages reinitialises) ; une
+  // fois vrai, decocher la case ramene a la derniere version stable (main.js,
+  // checkForUpdates).
+  betaChannelChosen: false,
+  // Parametres > Divers > Discord : coupe = le launcher ne se connecte meme pas a Discord
+  // (voir discordPresence.js, setEnabled).
+  discordPresence: true,
+  // Parametres > Divers > Videos (16/10) : les videos des fiches serveur ne demarrent qu'au
+  // clic, meme si le proprietaire a choisi le lancement automatique (voir setupPageVideo).
+  blockVideoAutoplay: false,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -147,7 +162,13 @@ function saveSettings(partial) {
   if (filtered.logLevel !== undefined) next.logLevel = ["error", "warn", "info", "debug"].includes(filtered.logLevel) ? filtered.logLevel : current.logLevel;
   if (filtered.openConsoleOnLaunch !== undefined) next.openConsoleOnLaunch = !!filtered.openConsoleOnLaunch;
   if (filtered.keepLauncherOpenWhilePlaying !== undefined) next.keepLauncherOpenWhilePlaying = !!filtered.keepLauncherOpenWhilePlaying;
-  if (filtered.betaChannel !== undefined) next.betaChannel = !!filtered.betaChannel;
+  if (filtered.betaChannel !== undefined) {
+    next.betaChannel = !!filtered.betaChannel;
+    next.betaChannelChosen = true;
+  }
+  if (filtered.betaChannelChosen !== undefined) next.betaChannelChosen = !!filtered.betaChannelChosen;
+  if (filtered.discordPresence !== undefined) next.discordPresence = !!filtered.discordPresence;
+  if (filtered.blockVideoAutoplay !== undefined) next.blockVideoAutoplay = !!filtered.blockVideoAutoplay;
 
   writeSettingsFile(next);
   return next;
