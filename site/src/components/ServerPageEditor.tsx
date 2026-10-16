@@ -453,30 +453,29 @@ export function ServerPageEditor({
             }}
           >
             <div className="flex flex-col gap-4 p-4">
-              {/* Meme construction que la fiche reelle (ServerDetailView) : l'icone est positionnee
-                  DANS le bloc de la banniere, apres elle, donc toujours dessinee par-dessus. */}
+              {/* Meme construction que la fiche reelle (ServerDetailView) : icone a cote du nom. */}
               <div>
-                <div className="relative mb-7 h-32 w-full">
-                  <div className="banner-placeholder absolute inset-0 overflow-hidden rounded-xl">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {server.bannerUrl ? <img src={server.bannerUrl} alt="" className="h-full w-full object-cover" /> : null}
-                  </div>
-                  <span className="server-icon absolute -bottom-5 left-4 h-14 w-14 overflow-hidden border-4 border-background text-xl">
+                <div className="banner-placeholder mb-3 h-32 w-full overflow-hidden rounded-xl">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {server.bannerUrl ? <img src={server.bannerUrl} alt="" className="h-full w-full object-cover" /> : null}
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="server-icon h-12 w-12 shrink-0 overflow-hidden text-xl">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     {server.iconUrl ? <img src={server.iconUrl} alt="" className="h-full w-full object-cover" /> : server.name.trim().charAt(0).toUpperCase() || "?"}
                   </span>
-                </div>
-                <div className="min-w-0 pl-[76px] -mt-5">
-                  <div className="truncate text-xl font-bold text-foreground">{server.name}</div>
-                  {config.tags.length ? (
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {config.tags.map((tag) => (
-                        <span key={tag} className="tag-chip tag-chip-accent">
-                          {t(`serverPage.tags.${tag}`)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
+                  <div className="min-w-0">
+                    <div className="truncate text-xl font-bold text-foreground">{server.name}</div>
+                    {config.tags.length ? (
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {config.tags.map((tag) => (
+                          <span key={tag} className="tag-chip tag-chip-accent">
+                            {t(`serverPage.tags.${tag}`)}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 

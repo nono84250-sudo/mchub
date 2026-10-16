@@ -71,14 +71,16 @@ export async function ServerDetailView({ slug, server, inviteCode }: { slug: str
       <div className="relative mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <AutoRefresh intervalMs={30_000} />
         <ViewTracker slug={slug} />
-        <div className="relative mb-9 h-48 w-full sm:h-56">
-          <div className="banner-placeholder absolute inset-0 overflow-hidden rounded-xl">
-            {server.bannerUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={server.bannerUrl} alt="" className="h-full w-full object-cover" />
-            ) : null}
-          </div>
-          <span className="server-icon absolute -bottom-6 left-5 h-16 w-16 overflow-hidden border-4 border-background text-2xl">
+        <div className="banner-placeholder relative mb-5 h-48 w-full overflow-hidden rounded-xl sm:h-56">
+          {server.bannerUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={server.bannerUrl} alt="" className="h-full w-full object-cover" />
+          ) : null}
+        </div>
+
+        {/* Icone a cote du nom (16/10, demande de Rushi), plus en surimpression sur la banniere. */}
+        <div className="flex items-start gap-4">
+          <span className="server-icon h-16 w-16 shrink-0 overflow-hidden text-2xl">
             {server.iconUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={server.iconUrl} alt="" className="h-full w-full object-cover" />
@@ -86,20 +88,19 @@ export async function ServerDetailView({ slug, server, inviteCode }: { slug: str
               server.name.trim().charAt(0).toUpperCase() || "?"
             )}
           </span>
-        </div>
-
-        <div className="min-h-[34px] pl-[84px]">
-          <h1 className="font-heading text-3xl font-bold tracking-tight text-foreground [text-wrap:balance]">{server.name}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <ServerStatus playerCount={server.playerCount} playerCapacity={server.playerCapacity} />
-            <span className="tag-chip" style={freshnessChipStyle(freshness.level)}>
-              {t(dict, `freshness.${freshness.level}`, { days: freshness.days })}
-            </span>
-            {page.tags.map((tag) => (
-              <span key={tag} className="tag-chip tag-chip-accent">
-                {dict.serverPage.tags[tag]}
+          <div className="min-w-0">
+            <h1 className="font-heading text-3xl font-bold tracking-tight text-foreground [text-wrap:balance]">{server.name}</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <ServerStatus playerCount={server.playerCount} playerCapacity={server.playerCapacity} />
+              <span className="tag-chip" style={freshnessChipStyle(freshness.level)}>
+                {t(dict, `freshness.${freshness.level}`, { days: freshness.days })}
               </span>
-            ))}
+              {page.tags.map((tag) => (
+                <span key={tag} className="tag-chip tag-chip-accent">
+                  {dict.serverPage.tags[tag]}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
 
