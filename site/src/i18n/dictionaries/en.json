@@ -126,7 +126,10 @@
     "type": "Type",
     "recommendedRam": "Recommended RAM",
     "ramUnit": "GB",
-    "joinNote": "To join this server, open it from the Omniscient launcher — the connection address isn't shown here."
+    "joinNote": "To join this server, open it from the Omniscient launcher — the connection address isn't shown here.",
+    "openInLauncher": "Open in the launcher",
+    "noLauncher": "Don't have the launcher yet?",
+    "downloadLauncher": "Download it"
   },
   "freshness": {
     "fresh": "Recently verified",

@@ -126,7 +126,10 @@
     "type": "Type",
     "recommendedRam": "RAM recommandée",
     "ramUnit": "Go",
-    "joinNote": "Pour rejoindre ce serveur, ouvre-le depuis le launcher Omniscient — l'adresse de connexion n'est pas affichée ici."
+    "joinNote": "Pour rejoindre ce serveur, ouvre-le depuis le launcher Omniscient — l'adresse de connexion n'est pas affichée ici.",
+    "openInLauncher": "Ouvrir dans le launcher",
+    "noLauncher": "Pas encore le launcher ?",
+    "downloadLauncher": "Le télécharger"
   },
   "freshness": {
     "fresh": "Vérifié récemment",

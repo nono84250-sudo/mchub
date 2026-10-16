@@ -1,4 +1,6 @@
 import type { CSSProperties } from "react";
+import Link from "next/link";
+import { ArrowSquareOut } from "@phosphor-icons/react/ssr";
 import { ServerStatus } from "@/components/ServerStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { ViewTracker } from "@/components/ViewTracker";
@@ -41,7 +43,7 @@ export function wallpaperStyle(url: string): CSSProperties {
 // canSeeServer dans public-servers.ts). Disposition « deux colonnes » (decision du 16/10) :
 // a gauche les sections choisies par le proprietaire (voir lib/serverPage.ts), a droite une
 // colonne qui reste visible avec la facon de rejoindre et les infos de base.
-export async function ServerDetailView({ slug, server }: { slug: string; server: PublicServerDetail }) {
+export async function ServerDetailView({ slug, server, inviteCode }: { slug: string; server: PublicServerDetail; inviteCode?: string }) {
   const { dict } = await getT();
   // Badge de fraicheur (voir lib/freshness.ts) : niveau et wording partages avec
   // manage/[id]/page.tsx (console de gestion du proprietaire), calcules une seule fois.
@@ -49,6 +51,12 @@ export async function ServerDetailView({ slug, server }: { slug: string; server:
   const page = server.page;
   const fullWallpaper = !!server.backgroundUrl && page.wallpaper;
   const hasSections = visibleSections(page, server).length > 0;
+  // « Ouvrir dans le launcher » (16/10) : lien omniscient:// que le launcher installe reconnait
+  // (voir parseServerLink dans launcher/src/main.js). Serveur prive : le code d'invitation de la
+  // page /join/[code], pour que le launcher puisse le rejoindre puis ouvrir sa fiche.
+  const launcherHref = inviteCode
+    ? `omniscient://join/${encodeURIComponent(inviteCode.toUpperCase())}`
+    : `omniscient://server/${encodeURIComponent(slug)}`;
 
   return (
     <div className="relative" style={{ ...accentStyle(page), ...(fullWallpaper ? wallpaperStyle(server.backgroundUrl!) : {}) }}>
@@ -109,7 +117,18 @@ export async function ServerDetailView({ slug, server }: { slug: string; server:
           </div>
 
           <aside className="order-first flex min-w-0 flex-col gap-4 lg:sticky lg:top-6 lg:order-none">
-            <div className="panel p-4 text-sm text-muted">{dict.serverDetail.joinNote}</div>
+            <div className="panel flex flex-col gap-2.5 p-4">
+              <a href={launcherHref} className="btn-primary w-full !bg-accent py-2.5 font-semibold !text-accent-foreground hover:opacity-90">
+                <ArrowSquareOut className="h-4 w-4" weight="bold" />
+                {dict.serverDetail.openInLauncher}
+              </a>
+              <p className="text-center text-xs text-muted">
+                {dict.serverDetail.noLauncher}{" "}
+                <Link href="/download" className="text-accent hover:underline">
+                  {dict.serverDetail.downloadLauncher}
+                </Link>
+              </p>
+            </div>
             <section className="panel p-4">
               <h2 className="mb-3 text-xs font-bold uppercase tracking-[0.07em] text-accent">{dict.serverPage.infos}</h2>
               <div className="grid grid-cols-2 gap-2.5">
