@@ -5,7 +5,7 @@ import { X, SpinnerGap } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 
-export type ImageField = "banner" | "icon" | "background";
+export type ImageField = "banner" | "icon" | "background" | "gallery";
 
 // Contraintes par champ (dimensions/formats/poids), affichees sous chaque
 // zone de depot comme dans la maquette (voir "02 Onboarding" dans
@@ -18,6 +18,7 @@ const FIELD_SPECS: Record<ImageField, { accept: string; maxSizeMB: number }> = {
   banner: { accept: "image/jpeg,image/png,image/webp", maxSizeMB: 5 },
   icon: { accept: "image/png,image/webp", maxSizeMB: 1 },
   background: { accept: "image/jpeg,image/webp", maxSizeMB: 8 },
+  gallery: { accept: "image/jpeg,image/png,image/webp", maxSizeMB: 5 },
 };
 
 type ImageDropzoneProps = {
@@ -28,6 +29,8 @@ type ImageDropzoneProps = {
   hint?: string;
   placeholder: string;
   icon: Icon;
+  // Editeur de fiche publique (ServerPageEditor) : suit l'image en direct pour l'apercu.
+  onChange?: (url: string) => void;
 };
 
 // Remplace les anciens champs "URL de l'image" (coller un lien externe) par
@@ -35,7 +38,7 @@ type ImageDropzoneProps = {
 // / "drop background" dans Design/Omniscient UI Mockups.dc.html). Le fichier
 // transite par /api/upload, qui le range dans R2 et renvoie son URL — evite
 // la limite de taille des server actions Next.js pour des images de quelques Mo.
-export function ImageDropzone({ name, field, defaultValue, label, hint, placeholder, icon: PlaceholderIcon }: ImageDropzoneProps) {
+export function ImageDropzone({ name, field, defaultValue, label, hint, placeholder, icon: PlaceholderIcon, onChange }: ImageDropzoneProps) {
   const { t } = useI18n();
   const [url, setUrl] = useState(defaultValue ?? "");
   const [status, setStatus] = useState<"idle" | "uploading" | "error">("idle");
@@ -57,6 +60,7 @@ export function ImageDropzone({ name, field, defaultValue, label, hint, placehol
       if (!res.ok) throw new Error("upload");
       const { url } = (await res.json()) as { url: string };
       setUrl(url);
+      onChange?.(url);
       setStatus("idle");
     } catch {
       setStatus("error");
@@ -120,6 +124,7 @@ export function ImageDropzone({ name, field, defaultValue, label, hint, placehol
               onClick={(event) => {
                 event.stopPropagation();
                 setUrl("");
+                onChange?.("");
                 setStatus("idle");
               }}
               className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"

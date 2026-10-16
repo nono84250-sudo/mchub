@@ -5,6 +5,7 @@ import { db, execBatch } from "@/lib/db";
 import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
 import { LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, sessionIdentity, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { isValidLink, parsePageConfig, type ServerPageConfig } from "@/lib/serverPage";
 
 // Etiquette du cache des donnees publiques des serveurs : les actions du site
 // (creer, modifier, publier, mettre en pause, supprimer) l'invalident avec
@@ -64,6 +65,10 @@ export type PublicServerDetail = PublicServerSummary & {
   selfTestPassedAt: string | null;
   // Meme usage que LauncherServerDetail.isPrivate (presence Discord du launcher).
   isPrivate: boolean;
+  // Fiche personnalisable (voir lib/serverPage.ts) : deja nettoyee, prete a afficher.
+  page: ServerPageConfig;
+  discordUrl: string | null;
+  websiteUrl: string | null;
 };
 
 // Filtre et tri faits en JS plutot que dans la requete : a l'echelle d'un
@@ -369,6 +374,9 @@ const loadPublishedServerBySlug = unstable_cache(
     "isPrivate",
     "inviteCode",
     "selfTestPassedAt",
+    "pageConfig",
+    "discordUrl",
+    "websiteUrl",
   )
     .include("owner", (o) => o.select("minecraftUuid"))
     .where({ slug, published: true, verificationStatus: "approved" })
@@ -409,6 +417,10 @@ export async function getPublicServerBySlug(slug: string, proof: PrivateServerPr
     viewCount: row.viewCount,
     selfTestPassedAt: row.selfTestPassedAt,
     isPrivate: row.isPrivate,
+    page: parsePageConfig(row.pageConfig),
+    // Revérifiés a l'affichage : ces colonnes existaient avant l'editeur, sans controle.
+    discordUrl: row.discordUrl && isValidLink("discord", row.discordUrl) ? row.discordUrl : null,
+    websiteUrl: row.websiteUrl && isValidLink("website", row.websiteUrl) ? row.websiteUrl : null,
   };
 }
 

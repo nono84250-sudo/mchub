@@ -111,7 +111,10 @@ CREATE TABLE "server" (
   -- 'beta' (accepte aussi les versions beta du modpack, en plus des releases). Choisi dans
   -- ModpackPicker.tsx (creation/edition) ou depuis le launcher (voir
   -- /api/launcher/servers/[slug]/channel) — les deux ecrivent la meme colonne.
-  "modpackChannel"           TEXT NOT NULL DEFAULT 'release'
+  "modpackChannel"           TEXT NOT NULL DEFAULT 'release',
+  -- Fiche publique personnalisable (voir lib/serverPage.ts, migration 2026-10-16) : JSON en
+  -- choix fermes, jamais de HTML/CSS libre. NULL = fiche par defaut. Ajoutee par ALTER TABLE.
+  "pageConfig"               TEXT
 );
 CREATE INDEX "server_ownerId_idx" ON "server"("ownerId");
 
