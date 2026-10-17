@@ -32,20 +32,6 @@ export type FriendsOverview = {
   outgoing: FriendRequest[];
 };
 
-// Pas de champ "online" ni d'UUID ici, volontairement : tant que la demande n'est pas acceptee,
-// l'autre joueur n'est connu que par son pseudo.
-export type FriendRequest = {
-  friendshipId: string;
-  userId: string;
-  minecraftUsername: string | null;
-};
-
-export type FriendsOverview = {
-  friends: FriendSummary[];
-  incoming: FriendRequest[];
-  outgoing: FriendRequest[];
-};
-
 // userId1/userId2 rangés dans un ordre stable (le plus petit id en premier) avant toute
 // lecture/ecriture : sans ça, A ajoute B (userId1=A, userId2=B) puis B ajoute A créerait une
 // seconde ligne (userId1=B, userId2=A) au lieu d'être bloqué par l'index unique
