@@ -38,6 +38,26 @@ function mojangJvmArgs(vanilla) {
 // instances/<slug> (voir modpack.js) ; seul Quilt n'est pas encore gere.
 const GAME_ROOT = path.join(app.getPath("userData"), "minecraft");
 
+// Partie en cours (16/10, bouton « Arrêter le jeu ») : le processus Java et le serveur
+// (slug) qu'il joue. Un seul Minecraft a la fois (voir gameLaunchInProgress dans main.js).
+let runningGame = null;
+
+function getRunningGame() {
+  return runningGame ? { slug: runningGame.slug, gameDirectory: runningGame.gameDirectory } : null;
+}
+
+// Ferme le jeu de force (le joueur a confirme). L'evenement "close" de MCLC fait le reste
+// (onGameState(false), presence Discord), comme une fermeture normale.
+function stopGame() {
+  if (!runningGame?.proc) return false;
+  try {
+    runningGame.proc.kill();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // minecraft-launcher-core spawn Java lui-meme sans jamais ecouter l'evenement
 // "error" du processus — si "java" est introuvable (ENOENT), Node le relance
 // comme exception non interceptee et plante tout le processus principal.
@@ -74,6 +94,7 @@ async function launchMinecraft({
   customVersion,
   customJvmArgs,
   onGameState,
+  slug = null,
 }) {
   await ensureJavaAvailable(javaPath);
 
@@ -123,7 +144,9 @@ async function launchMinecraft({
     memory: memory || { max: "4G", min: "1G" },
   };
   if (javaPath) opts.javaPath = javaPath;
-  if (gameDirectory) opts.overrides = { gameDirectory };
+  // cwd = dossier de l'instance (16/10) : certains mods (FancyMenu...) ecrivent leurs fichiers en
+  // chemin relatif ; lances depuis le dossier de jeu partage, ils plantaient au chargement.
+  if (gameDirectory) opts.overrides = { gameDirectory, cwd: gameDirectory };
   if (jvmArgs.length) opts.customArgs = jvmArgs;
 
   if (serverIp) {
@@ -157,6 +180,7 @@ async function launchMinecraft({
       // "started" distingue une vraie fin de partie (retour a "parcourt les
       // serveurs" cote Discord) d'un lancement qui n'a jamais reellement
       // demarre — jamais eu de presence "en jeu" a annuler dans ce cas.
+      if (started) runningGame = null;
       if (started) discordPresence.setBrowsingActivity();
       if (started) onGameState?.(false);
       if (!started) reject(new Error(`Le jeu s'est fermé avant de démarrer (code ${code}).`));
@@ -176,6 +200,7 @@ async function launchMinecraft({
           return;
         }
         started = true;
+        runningGame = { proc, slug, gameDirectory: gameDirectory || GAME_ROOT };
         logStore.pushLog({ source: "game", message: `Jeu démarré (PID ${proc.pid}).` });
         onGameState?.(true);
         resolve(proc);
@@ -187,4 +212,4 @@ async function launchMinecraft({
   });
 }
 
-module.exports = { launchMinecraft, GAME_ROOT };
+module.exports = { launchMinecraft, GAME_ROOT, getRunningGame, stopGame };

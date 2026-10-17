@@ -10,8 +10,7 @@ const listTitleEl = document.getElementById("list-title");
 const guestBannerEl = document.getElementById("guest-banner");
 const listToolbarEl = document.getElementById("list-toolbar");
 const listSearchInputEl = document.getElementById("list-search-input");
-const sortRecentBtn = document.getElementById("sort-recent");
-const sortPlayersBtn = document.getElementById("sort-players");
+const listSortSelectEl = document.getElementById("list-sort");
 const detailEl = document.getElementById("detail");
 const msAccountEl = document.getElementById("ms-account");
 const settingsPanelEl = document.getElementById("settings-panel");
@@ -159,6 +158,22 @@ function isOwnServer(server) {
 function serverRowHtml(server, isFav, playedAt = null) {
   const ownerTag = isOwnServer(server) ? `<span class="owner-tag">${t("serverCard.owner")}</span>` : "";
   const played = playedAt ? playedLabel(playedAt, Date.now()) : null;
+  // 16/10 (option C) : badge « Nouveau », 2 styles (+N), langues, ligne modpack · version · RAM,
+  // et les amis qui y jouent. Tout est facultatif (site plus ancien : rien ne s'affiche).
+  const newBadge = server.isNew ? `<span class="badge badge-new">${t("serverList.newBadge")}</span>` : "";
+  const tags = serverTagsOf(server);
+  const tagsHtml = tags
+    .slice(0, 2)
+    .map((tag) => `<span class="row-tag">${escapeHtml(t(`serverPage.tags.${tag}`))}</span>`)
+    .join("") + (tags.length > 2 ? `<span class="row-tag">+${tags.length - 2}</span>` : "");
+  const langsHtml = serverLangsOf(server).map((lang) => `<span class="row-lang">${lang.toUpperCase()}</span>`).join("");
+  const meta = [server.modpackName, server.minecraftVersion, server.recommendedRamGB ? t("serverList.ramAdvised", { count: server.recommendedRamGB }) : null].filter(Boolean);
+  const friendNames = friendsBySlug().get(server.slug) || [];
+  // Amis sur la meme ligne que modpack/version, et ligne toujours presente (vide au besoin) :
+  // toutes les lignes ont la meme hauteur (16/10, Rushi : tailles imposees).
+  const friendsHtml = friendNames.length
+    ? `<span class="row-friends">${escapeHtml(t("serverList.friendsPlaying", { count: friendNames.length, names: friendNames.slice(0, 3).join(", ") + (friendNames.length > 3 ? "…" : "") }))}</span>`
+    : "";
   return `
     <div class="row" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0">
       <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverIconInner(server)}</span>
@@ -166,11 +181,14 @@ function serverRowHtml(server, isFav, playedAt = null) {
         <div class="row-title-line">
           <h3>${escapeHtml(server.name)}</h3>
           ${typeBadge(server.type)}
+          ${newBadge}
           ${ownerTag}
+          ${tagsHtml}${langsHtml}
         </div>
-        <p>${escapeHtml(server.description || "")}</p>
+        <p>${played ? `<span class="row-played-inline">${escapeHtml(played.line)}${server.description ? " · " : ""}</span>` : ""}${escapeHtml(server.description || "")}</p>
+        <p class="row-meta">${escapeHtml(meta.join(" · "))}${meta.length && friendsHtml ? " · " : ""}${friendsHtml}${meta.length || friendsHtml ? "" : "&nbsp;"}</p>
       </div>
-      ${played ? `<div class="row-played">${escapeHtml(played.day)}<small>${escapeHtml(played.time)}</small></div>` : ""}
+      ${played ? `<div class="row-played">${escapeHtml(played.line)}</div>` : ""}
       <div class="players">${playersLabel(server)}</div>
       ${favoriteBtnHtml(server.slug, isFav)}
     </div>`;
@@ -238,24 +256,254 @@ function playedLabel(playedAt, now) {
   const days = Math.max(0, Math.round((startOfDay(now) - startOfDay(playedAt)) / 86_400_000));
   const day = days === 0 ? t("recent.today") : days === 1 ? t("recent.yesterday") : t("recent.daysAgo", { count: days });
   const time = new Date(playedAt).toLocaleTimeString(window.i18n.getLocale() === "en" ? "en-US" : "fr-FR", { hour: "2-digit", minute: "2-digit" });
-  return { day, time: t("recent.at", { time }) };
+  // Une seule ligne (16/10, preview validee) : « Il y a 2 jours · 22:44 ».
+  return { day, time, line: t("recent.oneLine", { day, time }) };
 }
 
-// Liste principale "Serveurs" uniquement : recherche + tri cote client sur
-// la liste deja recuperee (pas de nouvel appel reseau par frappe/clic). Les
-// vues "Favoris"/"Recents" continuent d'appeler renderRowsInto() directement
-// sans passer par cet etat de filtre.
+// --- Filtres de la liste (16/10, option C validee, preview https://claude.ai/artifact/DGSAjFDstaKgMRLwudGMYd)
+// Memes regles que le site (site/src/lib/serverFilters.ts) : garder les deux alignees. Tout se
+// calcule sur la liste deja recuperee, aucun appel reseau par frappe ou par clic. Les champs du
+// 16/10 (tags, languages, minecraftVersion, launchCount, trendScore, isNew) peuvent manquer face a
+// un site plus ancien : chaque lecture a sa valeur par defaut, et le tri « Plus recents » garde
+// simplement l'ordre recu du site.
 let allServers = [];
-let listSearchQuery = "";
-let listSortMode = "recent";
+// Etiquettes filtrables = celles de la fiche (PAGE_TAGS, plus bas ; french/english sont devenues
+// des langues). Fonction : PAGE_TAGS est declaree apres cette section.
+const filterTags = () => PAGE_TAGS.filter((tag) => tag !== "french" && tag !== "english");
+const FILTER_LANGS = ["fr", "en"];
+const LIST_SORTS = ["recent", "trend", "players", "played", "az"];
+function defaultListFilters() {
+  return { q: "", type: "all", online: false, lang: "all", tags: [], version: "all", friend: false, sort: "recent" };
+}
+let listFilters = defaultListFilters();
+let listFiltersPanelOpen = false;
 
-function applySearchAndSort(servers) {
-  const query = listSearchQuery.trim().toLowerCase();
-  const filtered = query ? servers.filter((s) => s.name.toLowerCase().includes(query)) : servers.slice();
-  if (listSortMode === "players") {
-    filtered.sort((a, b) => (b.playerCount ?? -1) - (a.playerCount ?? -1));
+function serverTagsOf(server) {
+  return Array.isArray(server.tags) ? server.tags.filter((tag) => filterTags().includes(tag)) : [];
+}
+function serverLangsOf(server) {
+  return Array.isArray(server.languages) ? server.languages.filter((lang) => FILTER_LANGS.includes(lang)) : [];
+}
+// Branche d'une version : "1.20.1" -> "1.20". Snapshots, -pre, texte libre -> "other".
+function versionBranch(version) {
+  const m = /^1\.(\d{1,2})(?:\.\d{1,2})?$/.exec(String(version || "").trim());
+  return m ? `1.${m[1]}` : "other";
+}
+function isServerOnline(server) {
+  return !!server.pinged && server.playerCount !== null && server.playerCount !== undefined;
+}
+
+// « Un ami y joue » : slug -> pseudos des amis en ligne sur ce serveur. Vient de la liste d'amis
+// (friendsList, deja gardee une minute par main.js) : un appel au site au plus par minute, et
+// seulement quand une liste de serveurs est ouverte par un joueur connecte.
+function friendsBySlug() {
+  const map = new Map();
+  for (const friend of friendsList) {
+    if (!friend.online || !friend.playingSlug) continue;
+    if (!map.has(friend.playingSlug)) map.set(friend.playingSlug, []);
+    map.get(friend.playingSlug).push(friend.minecraftUsername || "?");
   }
-  return filtered;
+  return map;
+}
+let friendsForListsAt = 0;
+function refreshFriendsForLists(onChange) {
+  if (!signedIn || Date.now() - friendsForListsAt < 60_000) return;
+  friendsForListsAt = Date.now();
+  const before = JSON.stringify([...friendsBySlug()]);
+  refreshFriends().then(() => {
+    if (JSON.stringify([...friendsBySlug()]) !== before) onChange();
+  });
+}
+
+function serverMatches(server, f, skip, friends) {
+  const needle = (f.q || "").trim().toLowerCase();
+  if (needle && ![server.name, server.description, server.modpackName].some((v) => String(v || "").toLowerCase().includes(needle))) return false;
+  if (skip !== "type" && f.type && f.type !== "all" && server.type !== f.type) return false;
+  if (skip !== "online" && f.online && !isServerOnline(server)) return false;
+  if (skip !== "lang" && f.lang && f.lang !== "all" && !serverLangsOf(server).includes(f.lang)) return false;
+  // Plusieurs styles coches : au moins un (3 etiquettes max par serveur).
+  if (skip !== "tags" && f.tags?.length && !serverTagsOf(server).some((tag) => f.tags.includes(tag))) return false;
+  if (skip !== "version" && f.version && f.version !== "all" && versionBranch(server.minecraftVersion) !== f.version) return false;
+  if (skip !== "friend" && f.friend && !friends.has(server.slug)) return false;
+  return true;
+}
+
+// Tri stable : a egalite, l'ordre recu (deja du plus recent au plus ancien).
+function sortServerRows(servers, sort) {
+  const indexed = servers.map((server, index) => ({ server, index }));
+  const players = (s) => (isServerOnline(s) ? s.playerCount : -1);
+  const cmp = {
+    trend: (a, b) => (b.trendScore ?? 0) - (a.trendScore ?? 0),
+    players: (a, b) => players(b) - players(a),
+    played: (a, b) => (b.launchCount ?? 0) - (a.launchCount ?? 0),
+    az: (a, b) => String(a.name).localeCompare(String(b.name)),
+    online: (a, b) => Number(isServerOnline(b)) - Number(isServerOnline(a)) || players(b) - players(a),
+  }[sort];
+  if (cmp) indexed.sort((a, b) => cmp(a.server, b.server) || a.index - b.index);
+  return indexed.map((entry) => entry.server);
+}
+
+function activeFilterKeys(f) {
+  const keys = [];
+  if (f.type !== "all") keys.push("type");
+  if (f.online) keys.push("online");
+  if (f.lang !== "all") keys.push("lang");
+  for (const tag of f.tags) keys.push(`tag:${tag}`);
+  if (f.version !== "all") keys.push("version");
+  if (f.friend) keys.push("friend");
+  return keys;
+}
+function withoutFilter(f, key) {
+  if (key === "type") return { ...f, type: "all" };
+  if (key === "online") return { ...f, online: false };
+  if (key === "lang") return { ...f, lang: "all" };
+  if (key === "version") return { ...f, version: "all" };
+  if (key === "friend") return { ...f, friend: false };
+  return { ...f, tags: f.tags.filter((tag) => `tag:${tag}` !== key) };
+}
+function filterKeyLabel(key, f) {
+  if (key === "type") return t(`serverCard.${f.type}`);
+  if (key === "online") return t("serverList.filterOnline");
+  if (key === "lang") return t(`serverList.lang.${f.lang}`);
+  if (key === "version") return f.version === "other" ? t("serverList.versionOther") : f.version;
+  if (key === "friend") return t("serverList.filterFriend");
+  return t(`serverPage.tags.${key.slice(4)}`);
+}
+
+// Le filtre dont le retrait rendrait le plus de serveurs (etat vide : « le filtre qui bloque »).
+function blockingFilter(servers, f, friends) {
+  let best = null;
+  for (const key of activeFilterKeys(f)) {
+    const next = withoutFilter(f, key);
+    const gain = servers.filter((s) => serverMatches(s, next, null, friends)).length;
+    if (!best || gain > best.gain) best = { key, gain };
+  }
+  return best && best.gain > 0 ? best : null;
+}
+
+function filteredServerList() {
+  const friends = friendsBySlug();
+  const rows = allServers.filter((s) => serverMatches(s, listFilters, null, friends));
+  return sortServerRows(rows, listFilters.sort);
+}
+
+function chipHtml(key, label, active, count = null, extra = "") {
+  const countHtml = count === null ? "" : `<span class="count">${count}</span>`;
+  return `<button type="button" class="sort-chip${active ? " active" : ""}" data-fkey="${escapeHtml(key)}" aria-pressed="${active}" ${extra}>${escapeHtml(label)}${countHtml}</button>`;
+}
+
+// Barre de filtres de la page Serveurs : ambiances, type, en ligne, langue, ami, panneau
+// « Filtres (n) » (styles + versions), filtres actifs et nombre de resultats. Re-dessinee a
+// chaque changement (les compteurs bougent) ; le focus clavier est remis sur le meme bouton.
+function renderListFilters(shownCount) {
+  const el = document.getElementById("list-filters");
+  const focusedKey = el.contains(document.activeElement) ? document.activeElement.dataset.fkey : null;
+  const f = listFilters;
+  const friends = friendsBySlug();
+  const pool = (skip) => allServers.filter((s) => serverMatches(s, f, skip, friends));
+  const byType = pool("type");
+  const byLang = pool("lang");
+  const byTags = pool("tags");
+  const byVersion = pool("version");
+  const versionCounts = new Map();
+  for (const s of byVersion) {
+    const branch = versionBranch(s.minecraftVersion);
+    versionCounts.set(branch, (versionCounts.get(branch) || 0) + 1);
+  }
+  if (f.version !== "all" && !versionCounts.has(f.version)) versionCounts.set(f.version, 0);
+  const rank = (b) => (b === "other" ? -1 : Number(b.slice(2)));
+  const versions = [...versionCounts.entries()].sort((a, b) => rank(b[0]) - rank(a[0]));
+  const panelCount = f.tags.length + (f.version !== "all" ? 1 : 0);
+  // Sans tags ni versions (site plus ancien), le panneau n'aurait rien a proposer.
+  const hasPanel = allServers.some((s) => serverTagsOf(s).length || s.minecraftVersion);
+  const hasLangs = allServers.some((s) => serverLangsOf(s).length);
+  const showFriend = signedIn && (f.friend || friends.size > 0);
+
+  const typeSeg = ["all", "vanilla", "modded"]
+    .map((type) => chipHtml(`type:${type}`, type === "all" ? t("serverList.filterAll") : t(`serverCard.${type}`), f.type === type, byType.filter((s) => type === "all" || s.type === type).length))
+    .join("");
+  const langSeg = ["all", ...FILTER_LANGS]
+    .map((lang) => chipHtml(`lang:${lang}`, t(`serverList.lang.${lang}`), f.lang === lang, lang === "all" ? null : byLang.filter((s) => serverLangsOf(s).includes(lang)).length))
+    .join("");
+  const panel = listFiltersPanelOpen
+    ? `<div class="list-filters-panel" role="dialog" aria-label="${escapeHtml(t("serverList.filters"))}">
+        <div class="list-filters-panel-title">${t("serverList.style")} <span class="muted">${t("serverList.styleHelp")}</span></div>
+        <div class="list-filters-wrap">${filterTags().filter((tag) => f.tags.includes(tag) || byTags.some((s) => serverTagsOf(s).includes(tag))).map((tag) => chipHtml(`tag:${tag}`, t(`serverPage.tags.${tag}`), f.tags.includes(tag), byTags.filter((s) => serverTagsOf(s).includes(tag)).length)).join("")}</div>
+        <div class="list-filters-panel-title">${t("serverList.version")}</div>
+        <div class="list-filters-wrap">${chipHtml("version:all", t("serverList.versionAll"), f.version === "all")}${versions
+          .map(([value, count]) => chipHtml(`version:${value}`, value === "other" ? t("serverList.versionOther") : value, f.version === value, count))
+          .join("")}</div>
+      </div>`
+    : "";
+  const active = activeFilterKeys(f);
+  const activeChips = active.length
+    ? `<div class="list-filters-active">${active
+        .map((key) => `<button type="button" class="active-chip" data-fkey="remove:${escapeHtml(key)}" aria-label="${escapeHtml(t("serverList.removeFilter", { filter: filterKeyLabel(key, f) }))}">${escapeHtml(filterKeyLabel(key, f))} <span aria-hidden="true">✕</span></button>`)
+        .join("")}<button type="button" class="link-btn" data-fkey="clear">${t("serverList.clearAll")}</button></div>`
+    : "";
+
+  el.innerHTML = `
+    <div class="list-filters-row">
+      <div class="instances-filters" title="${escapeHtml(t("serverList.typeHelp"))}">${typeSeg}</div>
+      ${chipHtml("online", t("serverList.filterOnline"), f.online, pool("online").filter(isServerOnline).length)}
+      ${hasLangs ? `<div class="instances-filters">${langSeg}</div>` : ""}
+      ${showFriend ? chipHtml("friend", t("serverList.filterFriend"), f.friend, pool("friend").filter((s) => friends.has(s.slug)).length) : ""}
+      ${hasPanel ? `<div class="list-filters-anchor">${chipHtml("panel", panelCount ? `${t("serverList.filters")} (${panelCount})` : t("serverList.filters"), listFiltersPanelOpen || panelCount > 0, null, `aria-expanded="${listFiltersPanelOpen}"`)}${panel}</div>` : ""}
+      <span class="list-filters-count" aria-live="polite">${t("serverList.resultCount", { count: shownCount })}</span>
+    </div>
+    ${listFilters.sort === "trend" ? `<p class="list-filters-note">${t("serverList.trendNote")}</p>` : ""}
+    ${activeChips}`;
+
+  el.querySelectorAll("[data-fkey]").forEach((btn) => btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    applyFilterKey(btn.dataset.fkey);
+  }));
+  if (focusedKey) el.querySelector(`[data-fkey="${CSS.escape(focusedKey)}"]`)?.focus();
+}
+
+function applyFilterKey(key) {
+  const f = listFilters;
+  const [kind, value] = key.split(/:(.*)/s);
+  if (kind === "type") listFilters = { ...f, type: value };
+  else if (kind === "lang") listFilters = { ...f, lang: value };
+  else if (kind === "online") listFilters = { ...f, online: !f.online };
+  else if (kind === "friend") listFilters = { ...f, friend: !f.friend };
+  else if (kind === "tag") listFilters = { ...f, tags: f.tags.includes(value) ? f.tags.filter((tag) => tag !== value) : [...f.tags, value] };
+  else if (kind === "version") listFilters = { ...f, version: value };
+  else if (kind === "remove") listFilters = withoutFilter(f, value);
+  else if (kind === "clear") listFilters = { ...defaultListFilters(), q: f.q, sort: f.sort };
+  else if (kind === "panel") listFiltersPanelOpen = !listFiltersPanelOpen;
+  serverListPage = 1;
+  renderFilteredList();
+}
+
+// Le panneau « Filtres » se ferme avec Echap ou un clic en dehors.
+document.addEventListener("click", (event) => {
+  if (!listFiltersPanelOpen || event.target.closest?.(".list-filters-anchor")) return;
+  listFiltersPanelOpen = false;
+  renderFilteredList();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !listFiltersPanelOpen) return;
+  listFiltersPanelOpen = false;
+  renderFilteredList();
+  document.querySelector('#list-filters [data-fkey="panel"]')?.focus();
+});
+
+// Etat vide quand des filtres ne laissent rien : on nomme le filtre qui bloque.
+function filtersEmptyHtml() {
+  const friends = friendsBySlug();
+  const block = blockingFilter(allServers, listFilters, friends);
+  const remove = block
+    ? `<button type="button" class="btn-secondary" data-empty="remove:${escapeHtml(block.key)}">${escapeHtml(t("serverList.noneRemove", { filter: filterKeyLabel(block.key, listFilters) }))} (+${block.gain})</button>`
+    : "";
+  const clear = activeFilterKeys(listFilters).length ? `<button type="button" class="btn-secondary" data-empty="clear">${t("serverList.clearAll")}</button>` : "";
+  return `
+    <div class="filters-empty">
+      <h3>${t(activeFilterKeys(listFilters).length ? "serverList.noneTitle" : "serverList.noResults")}</h3>
+      ${block ? `<p>${escapeHtml(t("serverList.noneHint", { filter: filterKeyLabel(block.key, listFilters) }))}</p>` : ""}
+      <div class="filters-empty-actions">${remove}${clear}</div>
+    </div>`;
 }
 
 // Squelettes de chargement (meme principe que "Mes instances", voir
@@ -324,16 +572,15 @@ let serverListPage = 1;
 const SERVER_LIST_PAGE_SIZE = 10;
 
 async function renderFilteredList() {
-  const filtered = applySearchAndSort(allServers);
-  if (filtered.length === 0 && listSearchQuery.trim()) {
-    listEl.innerHTML = "";
+  const filtered = filteredServerList();
+  renderListFilters(filtered.length);
+  statusEl.hidden = true;
+  if (filtered.length === 0) {
+    listEl.innerHTML = filtersEmptyHtml();
     document.getElementById("server-list-pager-slot").innerHTML = "";
-    statusEl.hidden = false;
-    statusEl.classList.remove("error");
-    statusEl.textContent = t("serverList.noResults");
+    listEl.querySelectorAll("[data-empty]").forEach((btn) => btn.addEventListener("click", () => applyFilterKey(btn.dataset.empty)));
     return;
   }
-  statusEl.hidden = true;
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / SERVER_LIST_PAGE_SIZE));
   serverListPage = Math.min(Math.max(1, serverListPage), pageCount);
@@ -368,10 +615,14 @@ async function renderList(servers) {
 
   statusEl.hidden = true;
   renderFilteredList();
+  refreshFriendsForLists(() => {
+    if (!listEl.hidden) renderFilteredList();
+  });
 }
 
+// Recherche en direct (nom, description, modpack), sans appel reseau : la liste est deja la.
 listSearchInputEl.addEventListener("input", () => {
-  listSearchQuery = listSearchInputEl.value;
+  listFilters = { ...listFilters, q: listSearchInputEl.value };
   serverListPage = 1;
   renderFilteredList();
 });
@@ -404,14 +655,10 @@ listRefreshBtn.addEventListener("click", async () => {
   loadServers();
 });
 
-[sortRecentBtn, sortPlayersBtn].forEach((btn) => {
-  btn.addEventListener("click", () => {
-    listSortMode = btn.dataset.sort;
-    sortRecentBtn.classList.toggle("active", listSortMode === "recent");
-    sortPlayersBtn.classList.toggle("active", listSortMode === "players");
-    serverListPage = 1;
-    renderFilteredList();
-  });
+listSortSelectEl.addEventListener("change", () => {
+  listFilters = { ...listFilters, sort: LIST_SORTS.includes(listSortSelectEl.value) ? listSortSelectEl.value : "recent" };
+  serverListPage = 1;
+  renderFilteredList();
 });
 
 // Serveur gelé par l'équipe : même fiche, avec « Serveur gelé » à la place de « Rejoindre ».
@@ -433,16 +680,295 @@ function renderFrozenDetail(slug) {
   });
 }
 
+// Fiche personnalisable (16/10, disposition « deux colonnes » validee par Rushi) : le site envoie
+// server.page (voir site/src/lib/serverPage.ts), server.discordUrl et server.websiteUrl. Tout le
+// texte du proprietaire passe par escapeHtml ; seuls **gras**, *italique*, « ## titre » et
+// « - liste » sont mis en forme, apres echappement. Les liens ne sont jamais des <a> (la fenetre
+// ne navigue pas) : un clic demande a main.js de les re-verifier puis d'ouvrir le navigateur.
+const PAGE_SECTIONS = ["about", "gallery", "video", "rules", "social"];
+const DOWNLOAD_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+const PAGE_ACCENTS = { blue: "#2f78ad", green: "#2f9e6e", violet: "#7a5bd0", orange: "#d0742f", red: "#c0453f", gold: "#b08a1a" };
+// Liste fermee de 30 etiquettes (16/10), meme ordre que site/src/lib/serverPage.ts.
+const PAGE_TAGS = [
+  "survival", "creative", "pvp", "pve", "coop", "roleplay", "minigames", "tech", "magic", "adventure",
+  "economy", "hardcore", "skyblock", "factions", "bedwars", "prison", "towny", "smp", "anarchy", "events",
+  "quests", "dungeons", "building", "redstone", "farming", "exploration", "competitive", "chill", "whitelist", "bedrock",
+];
+const PAGE_LANGUAGES = ["fr", "en"];
+// Couleur libre : un #rrggbb seulement. Trop claire ou trop sombre, elle est ajustee selon le
+// theme pour rester lisible (memes seuils que le site : ACCENT_PALE / ACCENT_DEEP).
+const ACCENT_PALE = 0.35;
+const ACCENT_DEEP = 0.08;
+function accentLuminance(hex) {
+  const lin = (i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(1) + 0.7152 * lin(3) + 0.0722 * lin(5);
+}
+const SOCIAL_ICONS = {
+  discord:
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.3 5.3A17 17 0 0 0 15 4l-.5 1a15.6 15.6 0 0 0-5 0L9 4a17 17 0 0 0-4.3 1.3C2 9.4 1.3 13.4 1.6 17.3A17.2 17.2 0 0 0 6.9 20l1.1-1.8a11 11 0 0 1-1.7-.8l.4-.3a12.3 12.3 0 0 0 10.6 0l.4.3a11 11 0 0 1-1.7.8l1.1 1.8a17.1 17.1 0 0 0 5.3-2.7c.4-4.5-.7-8.5-3.1-12ZM8.5 14.9c-1 0-1.9-1-1.9-2.1s.8-2.1 1.9-2.1 1.9 1 1.9 2.1-.8 2.1-1.9 2.1Zm7 0c-1 0-1.9-1-1.9-2.1s.8-2.1 1.9-2.1 1.9 1 1.9 2.1-.8 2.1-1.9 2.1Z"/></svg>',
+  website:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg>',
+  youtube:
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 7.2a2.6 2.6 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4a2.6 2.6 0 0 0-1.8 1.8A27 27 0 0 0 2 12a27 27 0 0 0 .4 4.8 2.6 2.6 0 0 0 1.8 1.8c1.6.4 7.8.4 7.8.4s6.2 0 7.8-.4a2.6 2.6 0 0 0 1.8-1.8A27 27 0 0 0 22 12a27 27 0 0 0-.4-4.8ZM10 15V9l5.2 3L10 15Z"/></svg>',
+  tiktok:
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6 3h-3.2v12.2a2.8 2.8 0 1 1-2-2.7V9.2a6 6 0 1 0 5.2 6V9a7.6 7.6 0 0 0 4.4 1.4V7.2a4.4 4.4 0 0 1-4.4-4.2Z"/></svg>',
+};
+
+// La fiche telle qu'envoyee par le site, relue prudemment : un site plus ancien (sans « page »)
+// ou une valeur inattendue donnent simplement une fiche sans sections, comme avant.
+function readServerPage(server) {
+  const raw = server && typeof server.page === "object" && server.page ? server.page : {};
+  const str = (v) => (typeof v === "string" ? v : "");
+  const order = Array.isArray(raw.order) ? raw.order.filter((s) => PAGE_SECTIONS.includes(s)) : [];
+  for (const s of PAGE_SECTIONS) if (!order.includes(s)) order.push(s);
+  return {
+    accent:
+      typeof raw.accent === "string" && (Object.hasOwn(PAGE_ACCENTS, raw.accent) || /^#[0-9a-f]{6}$/.test(raw.accent)) ? raw.accent : null,
+    wallpaper: raw.wallpaper === true,
+    tags: Array.isArray(raw.tags) ? raw.tags.filter((tag) => PAGE_TAGS.includes(tag)).slice(0, 3) : [],
+    extraTags: Array.isArray(raw.extraTags)
+      ? raw.extraTags.filter((tag) => PAGE_TAGS.includes(tag) && !(Array.isArray(raw.tags) && raw.tags.includes(tag))).slice(0, 8)
+      : [],
+    languages: Array.isArray(raw.languages) ? [...new Set(raw.languages.filter((l) => PAGE_LANGUAGES.includes(l)))] : [],
+    order,
+    hidden: Array.isArray(raw.hidden) ? raw.hidden.filter((s) => PAGE_SECTIONS.includes(s)) : [],
+    about: str(raw.about).slice(0, 2000),
+    gallery: Array.isArray(raw.gallery)
+      ? raw.gallery
+          .filter((g) => g && safeHttpsUrl(g.url))
+          .slice(0, 3)
+          .map((g) => ({ url: safeHttpsUrl(g.url), caption: str(g.caption).slice(0, 40) }))
+      : [],
+    videoId: typeof raw.videoId === "string" && /^[\w-]{11}$/.test(raw.videoId) ? raw.videoId : null,
+    videoAutoplay: raw.videoAutoplay === true,
+    rules: Array.isArray(raw.rules) ? raw.rules.filter((r) => typeof r === "string" && r.trim()).slice(0, 8).map((r) => r.slice(0, 120)) : [],
+    youtubeUrl: str(raw.youtubeUrl) || null,
+    tiktokUrl: str(raw.tiktokUrl) || null,
+  };
+}
+
+// Adresse d'image ou de lien : https seulement, normalisee par URL (guillemets et espaces
+// encodes), donc sure dans un attribut ou dans url("...").
+function safeHttpsUrl(value) {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function pageVisibleSections(page, server) {
+  const hasContent = {
+    about: !!page.about.trim(),
+    gallery: page.gallery.length > 0,
+    video: !!page.videoId,
+    rules: page.rules.length > 0,
+    social: !!(server.discordUrl || server.websiteUrl || page.youtubeUrl || page.tiktokUrl),
+  };
+  return page.order.filter((s) => !page.hidden.includes(s) && hasContent[s]);
+}
+
+function richInlineHtml(text) {
+  return escapeHtml(text).replace(/\*\*(.+?)\*\*|\*(.+?)\*/g, (_m, bold, italic) =>
+    bold !== undefined ? `<strong>${bold}</strong>` : `<em>${italic}</em>`,
+  );
+}
+
+// Meme mise en forme que site/src/components/RichText.tsx.
+function richTextHtml(source) {
+  const blocks = [];
+  let para = [];
+  let list = [];
+  const flushPara = () => {
+    if (para.length) blocks.push(`<p>${para.map(richInlineHtml).join("<br />")}</p>`);
+    para = [];
+  };
+  const flushList = () => {
+    if (list.length) blocks.push(`<ul>${list.map((item) => `<li>${richInlineHtml(item)}</li>`).join("")}</ul>`);
+    list = [];
+  };
+  for (const line of source.split("\n")) {
+    if (/^##\s+/.test(line)) {
+      flushPara();
+      flushList();
+      blocks.push(`<h4>${richInlineHtml(line.replace(/^##\s+/, ""))}</h4>`);
+    } else if (/^-\s+/.test(line)) {
+      flushPara();
+      list.push(line.replace(/^-\s+/, ""));
+    } else if (!line.trim()) {
+      flushPara();
+      flushList();
+    } else {
+      flushList();
+      para.push(line);
+    }
+  }
+  flushPara();
+  flushList();
+  return `<div class="page-rich">${blocks.join("")}</div>`;
+}
+
+function pageSectionBodyHtml(section, page, server) {
+  switch (section) {
+    case "about":
+      return richTextHtml(page.about);
+    case "gallery":
+      return `<div class="page-gallery count-${page.gallery.length}">${page.gallery
+        .map(
+          (item, i) => `
+          <button type="button" class="page-gallery-item" data-gallery-index="${i}" aria-label="${escapeHtml(item.caption || t("serverPage.image", { n: i + 1 }))}">
+            <img src="${escapeHtml(item.url)}" alt="" />
+            ${item.caption ? `<span>${escapeHtml(item.caption)}</span>` : ""}
+          </button>`,
+        )
+        .join("")}</div>`;
+    case "video":
+      // Repli du 16/10 (VIDEO_EMBED_ENABLED coupe : YouTube demandait de se connecter) : la
+      // vignette ouvre la video sur YouTube, dans le navigateur.
+      if (!VIDEO_EMBED_ENABLED) {
+        return `
+        <button type="button" class="page-video" data-link-kind="video" data-link-value="${escapeHtml(page.videoId)}" aria-label="${escapeHtml(t("serverPage.videoCaption"))}">
+          <span class="page-video-play"></span>
+        </button>
+        <p class="page-video-note">${t("serverPage.videoCaption")}</p>`;
+      }
+      // Vignette sans requete vers YouTube, lecteur youtube-nocookie au clic (ou tout seul et
+      // sans le son si le proprietaire a coche « Lancer automatiquement », voir setupPageVideo).
+      return `
+        <div class="page-video-box" data-video-id="${escapeHtml(page.videoId)}" data-video-autoplay="${page.videoAutoplay ? "1" : ""}">
+          <button type="button" class="page-video" aria-label="${escapeHtml(t("serverPage.videoPlay"))}">
+            <span class="page-video-play"></span>
+          </button>
+        </div>
+        <p class="page-video-note">${t("serverPage.videoCookies")}
+          <button type="button" class="page-video-open" data-link-kind="video" data-link-value="${escapeHtml(page.videoId)}">${t("serverPage.videoOpen")}</button>
+        </p>
+        <p class="page-video-autonote">${t("serverPage.videoAutoplayNote")}</p>`;
+    case "rules":
+      return `<ol class="page-rules">${page.rules.map((rule) => `<li>${escapeHtml(rule)}</li>`).join("")}</ol>`;
+    case "social": {
+      const links = [
+        ["discord", server.discordUrl],
+        ["website", server.websiteUrl],
+        ["youtube", page.youtubeUrl],
+        ["tiktok", page.tiktokUrl],
+      ].filter(([, href]) => !!href);
+      return `<div class="page-social">${links
+        .map(
+          ([kind, href]) => `
+          <button type="button" class="page-social-btn" data-link-kind="${kind}" data-link-value="${escapeHtml(href)}" title="${escapeHtml(href)}">
+            ${SOCIAL_ICONS[kind]}${t(`serverPage.social.${kind}`)}
+          </button>`,
+        )
+        .join("")}</div>`;
+    }
+    default:
+      return "";
+  }
+}
+
+// Agrandit une image de la galerie ; Echap ou un clic la referme.
+function openGalleryLightbox(item, index) {
+  const overlay = document.createElement("div");
+  overlay.className = "page-lightbox";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", item.caption || t("serverPage.image", { n: index + 1 }));
+  overlay.innerHTML = `<img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.caption)}" />`;
+  const close = () => {
+    overlay.remove();
+    window.removeEventListener("keydown", onKey);
+  };
+  const onKey = (event) => {
+    if (event.key === "Escape") close();
+  };
+  overlay.addEventListener("click", close);
+  window.addEventListener("keydown", onKey);
+  document.body.appendChild(overlay);
+}
+
+// Lecteur integre, lancement automatique, reglage « Bloquer » et petite phrase : coupes le 16/10
+// (YouTube demandait de se connecter, « pas un robot »). Le code reste ; true pour les reactiver.
+const VIDEO_EMBED_ENABLED = false;
+
+// Video de la fiche (16/10) : le lecteur YouTube (domaine youtube-nocookie) ne se charge qu'au
+// clic, ou des que la video est visible a 90 % si le proprietaire a coche « Lancer
+// automatiquement » (alors sans le son). L'identifiant est deja verifie par readServerPage.
+// Le joueur peut l'interdire dans Parametres > Divers (blockVideoAutoplay) : clic seulement.
+function setupPageVideo(box, blockAutoplay) {
+  const id = box.dataset.videoId;
+  if (!/^[\w-]{11}$/.test(id || "")) return;
+  let observer = null;
+  const play = (muted) => {
+    if (observer) observer.disconnect();
+    if (box.querySelector("iframe")) return;
+    const frame = document.createElement("iframe");
+    frame.src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&playsinline=1${muted ? "&mute=1" : ""}`;
+    frame.title = t("serverPage.videoPlay");
+    frame.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+    frame.allowFullscreen = true;
+    frame.referrerPolicy = "strict-origin-when-cross-origin";
+    box.replaceChildren(frame);
+  };
+  box.querySelector(".page-video")?.addEventListener("click", () => play(false));
+  if (box.dataset.videoAutoplay === "1" && !blockAutoplay) {
+    observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) play(true);
+    }, { threshold: 0.9 });
+    observer.observe(box);
+  }
+}
+
+// Couleur choisie par le proprietaire : remplace l'accent sur la fiche seulement. Les teintes
+// derivees (--accent-hover, --accent-fill...) sont calculees sur :root, donc redeclarees ici.
+function applyPageTheme(page, server) {
+  let accent = page.accent ? PAGE_ACCENTS[page.accent] || page.accent : null;
+  let onAccent = "#ffffff";
+  if (accent) {
+    const lum = accentLuminance(accent);
+    const light = document.documentElement.dataset.theme === "light";
+    if (lum > ACCENT_PALE) {
+      if (light) accent = `color-mix(in srgb, ${accent} 55%, black)`;
+      else onAccent = "#15161d";
+    } else if (lum < ACCENT_DEEP && !light) {
+      accent = `color-mix(in srgb, ${accent} 55%, white)`;
+      onAccent = "#15161d";
+    }
+  }
+  detailEl.style.cssText = accent
+    ? `--accent: ${accent}; --accent-hover: color-mix(in srgb, ${accent} 70%, white); --accent-2: color-mix(in srgb, ${accent} 85%, white); --accent-fill: color-mix(in srgb, ${accent} 45%, black); --accent-on: ${onAccent};`
+    : "";
+  // Fond d'ecran pleine page : pose sur <main> (le conteneur qui defile), visible seulement
+  // tant que cette fiche est affichee (voir main:has(> #detail.has-wallpaper) dans index.html).
+  const wallpaper = page.wallpaper ? safeHttpsUrl(server.backgroundUrl) : null;
+  detailEl.classList.toggle("has-wallpaper", !!wallpaper);
+  const mainEl = detailEl.parentElement;
+  if (wallpaper) mainEl.style.setProperty("--detail-wallpaper", `url("${wallpaper}")`);
+  else mainEl.style.removeProperty("--detail-wallpaper");
+}
+
+function clearPageTheme() {
+  detailEl.style.cssText = "";
+  detailEl.classList.remove("has-wallpaper");
+}
+
 async function renderDetail(server) {
   listEl.hidden = true;
   statusEl.hidden = true;
   detailEl.hidden = false;
 
+  const page = readServerPage(server);
+  const sections = pageVisibleSections(page, server);
+
   const tags = [`<span class="tag-chip">${server.type === "modded" ? t("serverCard.modded") : t("serverCard.vanilla")}</span>`];
-  if (server.type === "modded" && server.curseforgeModpackName) {
-    const version = server.curseforgeModpackVersion ? ` — ${escapeHtml(server.curseforgeModpackVersion)}` : "";
-    tags.push(`<span class="tag-chip">${escapeHtml(server.curseforgeModpackName)}${version}</span>`);
-  }
+  for (const tag of page.tags) tags.push(`<span class="tag-chip tag-chip-accent">${t(`serverPage.tags.${tag}`)}</span>`);
+  for (const lang of page.languages) tags.push(`<span class="tag-chip tag-chip-outline">${t(`serverPage.languages.${lang}`)}</span>`);
 
   // Toujours actif, meme sans connexion (2026-10-11, audit onboarding) :
   // launchServer() demande la connexion lui-meme au clic si besoin — plus de
@@ -459,15 +985,16 @@ async function renderDetail(server) {
   // bouton — jamais une disparition globale, juste pour ce serveur (voir
   // servers:installStatus cote main.js, qui gere les deux cas).
   const showInstallBtn = !(await window.mchub.getServerInstallStatus(server.slug)).installed;
-  const joinSection = `
-    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-      <button class="join-btn" id="join-btn">${t("serverDetail.joinBtn")}</button>
-      ${showInstallBtn ? `<button class="btn-secondary" id="install-btn" type="button">${t("serverDetail.installBtn")}</button>` : ""}
-    </div>
-  `;
-
   const isFav = (await getFavoriteSlugs()).includes(server.slug);
 
+  const modpack =
+    server.type === "modded" && server.curseforgeModpackName
+      ? `${escapeHtml(server.curseforgeModpackName)}${server.curseforgeModpackVersion ? ` — ${escapeHtml(server.curseforgeModpackVersion)}` : ""}`
+      : "";
+  // Presentation vide ou masquee : la description courte reste visible, comme avant.
+  const showDescription = !page.about.trim() || page.hidden.includes("about");
+
+  applyPageTheme(page, server);
   detailEl.innerHTML = `
     <button class="back">${t("serverDetail.back")}</button>
     <div class="detail-hero">
@@ -479,36 +1006,79 @@ async function renderDetail(server) {
       <div style="display: flex; align-items: center; gap: 12px;">
         <div class="detail-icon detail-icon-inline">${serverIconInner(server)}</div>
         <h2 style="margin: 0;">${escapeHtml(server.name)}</h2>
-        ${favoriteBtnHtml(server.slug, isFav, "detail-favorite-btn")}
-        ${
-          signedIn
-            ? `<button class="favorite-btn" id="report-open-btn" type="button" title="${t("serverDetail.report")}" style="margin-left: auto;">${FLAG_SVG}</button>`
-            : ""
-        }
       </div>
       ${server.playerCount == null && server.pinged ? `<p class="meta">${playersLabel(server)}</p>` : ""}
     </div>
-    <div class="stat-row">
-      <div class="stat-tile">
-        <div class="stat-label">${t("serverDetail.version")}</div>
-        <div class="stat-value">${escapeHtml(server.minecraftVersion)}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-label">${t("serverDetail.players")}</div>
-        <div class="stat-value">${escapeHtml(playersText(server))}</div>
-      </div>
-      ${
-        server.recommendedRamGB
-          ? `<div class="stat-tile">
-              <div class="stat-label">${t("serverDetail.recommendedRam")}</div>
-              <div class="stat-value">${escapeHtml(String(server.recommendedRamGB))} ${t("serverDetail.ramUnit")}</div>
-            </div>`
-          : ""
-      }
-    </div>
     <div class="tag-row">${tags.join("")}</div>
-    <p class="desc">${escapeHtml(server.description)}</p>
-    ${joinSection}
+    <div class="detail-columns">
+      <div class="detail-main">
+        ${showDescription ? `<section class="detail-card"><p class="desc">${escapeHtml(server.description)}</p></section>` : ""}
+        ${sections
+          .map(
+            (section) => `
+          <section class="detail-card">
+            <h3 class="detail-card-title">${t(`serverPage.sections.${section}`)}</h3>
+            ${pageSectionBodyHtml(section, page, server)}
+          </section>`,
+          )
+          .join("")}
+      </div>
+      <aside class="detail-side">
+        <div class="detail-card detail-actions">
+          <button class="join-btn join-btn-wide" id="join-btn">${t("serverDetail.joinBtn")}</button>
+          <div class="detail-actions-row">
+            ${showInstallBtn ? `<button class="btn-secondary" id="install-btn" type="button">${DOWNLOAD_SVG}${t("serverDetail.installBtn")}</button>` : ""}
+            <button class="btn-secondary detail-fav-btn${isFav ? " active" : ""}" type="button" aria-pressed="${isFav}">${STAR_SVG}${isFav ? t("serverPage.favOn") : t("serverPage.fav")}</button>
+            ${
+              signedIn
+                ? `<button class="btn-secondary detail-report-btn" id="report-open-btn" type="button">${FLAG_SVG}${t("serverDetail.report")}</button>`
+                : ""
+            }
+          </div>
+        </div>
+        <section class="detail-card">
+          <h3 class="detail-card-title">${t("serverPage.infos")}</h3>
+          <div class="detail-info-grid">
+            <div class="stat-tile">
+              <div class="stat-label">${t("serverDetail.version")}</div>
+              <div class="stat-value">${escapeHtml(server.minecraftVersion)}</div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-label">${t("serverDetail.players")}</div>
+              <div class="stat-value">${escapeHtml(playersText(server))}</div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-label">${t("serverPage.type")}</div>
+              <div class="stat-value">${server.type === "modded" ? t("serverCard.modded") : t("serverCard.vanilla")}</div>
+            </div>
+            ${
+              server.recommendedRamGB
+                ? `<div class="stat-tile">
+                    <div class="stat-label">${t("serverDetail.recommendedRam")}</div>
+                    <div class="stat-value">${escapeHtml(String(server.recommendedRamGB))} ${t("serverDetail.ramUnit")}</div>
+                  </div>`
+                : ""
+            }
+            ${
+              modpack
+                ? `<div class="stat-tile detail-info-wide">
+                    <div class="stat-label">${t("serverPage.modpack")}</div>
+                    <div class="stat-value">${modpack}</div>
+                  </div>`
+                : ""
+            }
+          </div>
+          ${
+            page.extraTags.length
+              ? `<div class="detail-more-tags">
+                  <div class="stat-label">${t("serverPage.moreTags")}</div>
+                  <div class="tag-row">${page.extraTags.map((tag) => `<span class="tag-chip">${t(`serverPage.tags.${tag}`)}</span>`).join("")}</div>
+                </div>`
+              : ""
+          }
+        </section>
+      </aside>
+    </div>
   `;
 
   detailEl.querySelector(".back").addEventListener("click", () => {
@@ -528,7 +1098,7 @@ async function renderDetail(server) {
     installBtn.addEventListener("click", () => installServerStandalone(server, installBtn));
   }
 
-  const favBtn = detailEl.querySelector(".detail-favorite-btn");
+  const favBtn = detailEl.querySelector(".detail-fav-btn");
   favBtn.addEventListener("click", async () => {
     await toggleFavorite(server.slug);
     await refreshPlaybarFavorites();
@@ -537,6 +1107,64 @@ async function renderDetail(server) {
 
   const reportBtn = document.getElementById("report-open-btn");
   if (reportBtn) reportBtn.addEventListener("click", () => openReportDialog(server));
+
+  detailEl.querySelectorAll("[data-link-kind]").forEach((btn) => {
+    btn.addEventListener("click", () => window.mchub.openServerPageLink(btn.dataset.linkKind, btn.dataset.linkValue));
+  });
+  detailEl.querySelectorAll("[data-gallery-index]").forEach((btn) => {
+    const index = Number(btn.dataset.galleryIndex);
+    btn.addEventListener("click", () => openGalleryLightbox(page.gallery[index], index));
+  });
+  const blockVideoAutoplay = (await window.mchub.settings.get()).blockVideoAutoplay === true;
+  detailEl.querySelectorAll(".page-video-box").forEach((box) => setupPageVideo(box, blockVideoAutoplay));
+}
+
+// Bouton « Ouvrir dans le launcher » du site (lien omniscient://, voir parseServerLink cote
+// main.js) : ouvre la fiche du serveur, comme un clic dans l'annuaire. Un lien avec un code
+// d'invitation rejoint d'abord le serveur prive (meme chemin que « Rejoindre avec un code »).
+async function openServerFromLink(link) {
+  if (!link || (link.kind !== "server" && link.kind !== "join")) return;
+  settingsPanelEl.hidden = true;
+  accountPanelEl.hidden = true;
+  myInstancesPanelEl.hidden = true;
+  [navHomeBtn, navSettingsBtn, navFavoritesBtn, navRecentBtn, navMyInstancesBtn, navFriendsBtn].forEach((btn) => btn.classList.remove("active"));
+  navServersBtn.classList.add("active");
+  detailOrigin = "servers";
+  let slug = link.value;
+  if (link.kind === "join") {
+    const result = await window.mchub.joinServerByCode(link.value);
+    if (!result.ok || !result.server?.slug) {
+      openDetailError(t("serverPage.linkJoinFailed", { error: result.error || "?" }));
+      return;
+    }
+    slug = result.server.slug;
+  }
+  openDetail(slug);
+}
+
+function openDetailError(message) {
+  homePanelEl.hidden = true;
+  favoritesPanelEl.hidden = true;
+  recentPanelEl.hidden = true;
+  friendsPanelEl.hidden = true;
+  listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
+  listEl.hidden = true;
+  detailEl.hidden = true;
+  statusEl.hidden = false;
+  statusEl.classList.add("error");
+  statusEl.textContent = message;
+}
+
+// Appele une fois l'appli affichee (fin de boot()) : prend le lien recu au demarrage, puis
+// ecoute les suivants (launcher deja ouvert quand le joueur clique sur le site).
+let serverLinksStarted = false;
+async function startServerLinks() {
+  if (serverLinksStarted) return;
+  serverLinksStarted = true;
+  window.mchub.onServerLink((link) => openServerFromLink(link));
+  const pending = await window.mchub.takeServerLink();
+  if (pending) openServerFromLink(pending);
 }
 
 const REPORT_ISSUES = {
@@ -785,6 +1413,13 @@ function syncPlaybarWithGame() {
   const playBtn = document.getElementById("playbar-play");
   const running = gamePlaying || launchStarting;
   playBtn.classList.toggle("playing", running);
+  // Carre rouge « Arrêter le jeu » (16/10) : seulement pendant une vraie partie.
+  const stopBtn = document.getElementById("playbar-stop");
+  if (stopBtn) {
+    stopBtn.hidden = !gamePlaying;
+    stopBtn.title = t("instanceTools.stop");
+    stopBtn.setAttribute("aria-label", t("instanceTools.stop"));
+  }
   if (gamePlaying) {
     playBtn.textContent = t("playbar.minecraftRunning");
     playBtn.disabled = true;
@@ -893,7 +1528,7 @@ async function launchServer(server) {
       label.textContent = t("manualMods.playbar", { count: result.manualMods.length });
       playBtn.disabled = !selectedFavoriteSlug;
       setPlaybarBusy(false);
-      const choice = await showManualModsModal(result.manualMods);
+      const choice = await showManualModsModal(result.manualMods, result.fromModrinth);
       return choice === "retry" ? launchServer(server) : result;
     }
     if (result.frozen) {
@@ -950,7 +1585,7 @@ async function installServerStandalone(server, btn) {
       return;
     }
     if (result?.code === "manual_mods" && Array.isArray(result.manualMods)) {
-      retry = (await showManualModsModal(result.manualMods)) === "retry";
+      retry = (await showManualModsModal(result.manualMods, result.fromModrinth)) === "retry";
     } else if (result?.frozen) {
       await showModal({
         title: t("modal.frozenTitle"),
@@ -980,8 +1615,13 @@ function boldLabelIn(el, text, label) {
   el.append(text.slice(0, at), strong, text.slice(at + label.length));
 }
 
-function showManualModsModal(manualMods) {
+// `fromModrinth` : mods bloques deja recuperes sur Modrinth (meme fichier, voir findOnModrinth dans
+// modpack.js) — la liste ne montre que ceux qui restent, le bandeau dit combien ont ete pris.
+function showManualModsModal(manualMods, fromModrinth = 0) {
   return new Promise((resolve) => {
+    const modrinthEl = document.getElementById("manual-mods-modrinth");
+    modrinthEl.hidden = !(fromModrinth > 0);
+    modrinthEl.textContent = fromModrinth > 0 ? t("manualMods.modrinthBanner", { count: fromModrinth }) : "";
     const overlay = document.getElementById("manual-mods-overlay");
     const stepsEl = document.getElementById("manual-mods-steps");
     const listEl2 = document.getElementById("manual-mods-list");
@@ -1082,6 +1722,7 @@ async function openDetail(slug) {
   statusEl.hidden = true;
   listEl.hidden = true;
   detailEl.hidden = false;
+  clearPageTheme();
   detailEl.innerHTML = skeletonDetailHtml();
 
   const result = await window.mchub.getServer(slug);
@@ -1522,7 +2163,9 @@ function renderMcStatus(data) {
 }
 
 // `force` : "Actualiser" — repasse outre le cache de 30 s du processus principal.
-const CONNECTION_TEST_ENABLED = false;
+// Test de connexion reactive (15/10) : main.js ne le refait qu'une fois par jour,
+// "Actualiser" le relance a la demande.
+const CONNECTION_TEST_ENABLED = true;
 
 async function loadMcStatus(force = false) {
   if (mcStatusLoading) return;
@@ -1531,8 +2174,8 @@ async function loadMcStatus(force = false) {
   else mcStatusList.innerHTML = `<div class="mc-status-row" style="padding: 14px;">${t("common.checking")}</div>`;
   try {
     renderMcStatus(await window.mchub.getServicesStatus(force));
-    // Test de connexion (ping + envoi/téléchargement de fichiers vers le site) : désactivé pour le moment,
-    // il charge le site et ralentit tout le reste. Remettre à true pour le réactiver.
+    // Test de connexion (ping + envoi/téléchargement) : une seule mesure par jour (voir main.js
+    // status:getConnection), sinon le dernier résultat du jour est réaffiché tout de suite.
     if (CONNECTION_TEST_ENABLED) {
       mcConnection = { state: "running", phase: "ping", percent: 0, result: null };
       renderMcStatus(mcStatusData);
@@ -2227,12 +2870,16 @@ function homeContinueCardHtml(server) {
     <div class="home-continue-card" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0">
       <div class="home-continue-banner">
         ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
-        <span class="home-continue-icon">${serverIconInner(server)}</span>
       </div>
       <div class="home-continue-body">
-        <span class="home-continue-eyebrow">${t("home.continuePlaying")}</span>
-        <h2>${escapeHtml(server.name)}</h2>
-        <p>${playersLabel(server)}</p>
+        <div class="home-continue-who">
+          <span class="home-continue-icon">${serverIconInner(server)}</span>
+          <div class="home-continue-txt">
+            <span class="home-continue-eyebrow">${t("home.continuePlaying")}</span>
+            <h2>${escapeHtml(server.name)}</h2>
+            <p>${playersLabel(server)}</p>
+          </div>
+        </div>
         <button type="button" class="join-btn home-continue-play" data-slug="${escapeHtml(server.slug)}">${t("serverDetail.joinBtn")}</button>
       </div>
     </div>`;
@@ -2547,6 +3194,73 @@ function renderPageEmpty(panelEl, kind, titleKey) {
   panelEl.querySelector(".page-empty-browse").addEventListener("click", showServersView);
 }
 
+// Favoris et Recents (16/10, option C) : recherche, « En ligne », « Un ami y joue » et un tri
+// propre a chaque page, sur la liste deja chargee (aucun appel en plus par clic). La barre est
+// dessinee une fois par ouverture ; seules les lignes sont re-dessinees quand on tape.
+const PAGE_SORTS = { favorites: ["online", "az", "players"], recent: ["last", "players", "az"] };
+const pageFilters = {
+  favorites: { q: "", online: false, friend: false, sort: "online" },
+  recent: { q: "", online: false, friend: false, sort: "last" },
+};
+
+function pageToolbarHtml(kind) {
+  const f = pageFilters[kind];
+  const sortLabel = (sort) => t({ online: "serverList.sortOnlineFirst", last: "serverList.sortLastPlayed", az: "serverList.sortAz", players: "serverList.sortPlayers" }[sort]);
+  return `
+    <div class="list-toolbar page-toolbar">
+      <div class="list-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+        <input type="search" class="page-search" value="${escapeHtml(f.q)}" placeholder="${escapeHtml(t("serverList.searchPlaceholder"))}" aria-label="${escapeHtml(t("serverList.searchPlaceholder"))}" />
+      </div>
+      ${chipHtml("online", t("serverList.filterOnline"), f.online)}
+      <span class="page-friend-slot"></span>
+      <label class="list-sort-label">${t("serverList.sortLabel")}
+        <select class="list-sort page-sort">${PAGE_SORTS[kind].map((sort) => `<option value="${sort}"${f.sort === sort ? " selected" : ""}>${escapeHtml(sortLabel(sort))}</option>`).join("")}</select>
+      </label>
+    </div>`;
+}
+
+// Branche la barre d'une page sur ses lignes. `servers` : liste resolue ; `render` : dessine
+// les lignes filtrees dans le conteneur ; `rerender` : rouvre la page (favori retire...).
+function wirePageToolbar(panelEl, kind, servers, render) {
+  const f = pageFilters[kind];
+  const update = () => {
+    const friends = friendsBySlug();
+    // Le bouton ami n'apparait que si au moins un ami joue sur un de ces serveurs.
+    const slot = panelEl.querySelector(".page-friend-slot");
+    const showFriend = signedIn && (f.friend || servers.some((s) => friends.has(s.slug)));
+    slot.innerHTML = showFriend ? chipHtml("friend", t("serverList.filterFriend"), f.friend) : "";
+    slot.querySelector("[data-fkey]")?.addEventListener("click", () => {
+      f.friend = !f.friend;
+      update();
+    });
+    panelEl.querySelector('.page-toolbar [data-fkey="online"]').classList.toggle("active", f.online);
+    panelEl.querySelector('.page-toolbar [data-fkey="online"]').setAttribute("aria-pressed", String(f.online));
+    const rows = servers.filter((s) => serverMatches(s, { q: f.q, online: f.online, friend: f.friend }, null, friends));
+    render(f.sort === "last" ? rows : sortServerRows(rows, f.sort));
+  };
+  panelEl.querySelector(".page-search").addEventListener("input", (event) => {
+    f.q = event.target.value;
+    update();
+  });
+  panelEl.querySelector('.page-toolbar [data-fkey="online"]').addEventListener("click", () => {
+    f.online = !f.online;
+    update();
+  });
+  panelEl.querySelector(".page-sort").addEventListener("change", (event) => {
+    f.sort = PAGE_SORTS[kind].includes(event.target.value) ? event.target.value : PAGE_SORTS[kind][0];
+    update();
+  });
+  update();
+  refreshFriendsForLists(() => {
+    if (!panelEl.hidden) update();
+  });
+}
+
+function pageNoMatchHtml() {
+  return `<div class="filters-empty"><h3>${t("serverList.noneTitle")}</h3></div>`;
+}
+
 async function renderFavoritesList() {
   const favorites = await getFavoriteSlugs();
 
@@ -2565,8 +3279,13 @@ async function renderFavoritesList() {
   favoritesPanelEl.innerHTML = `
     <h2>${t("nav.favorites")}</h2>
     <p class="join-note">${t("favorites.header")}</p>
+    ${pageToolbarHtml("favorites")}
     <div class="list-rows server-list"></div>`;
-  await renderRowsInto(favoritesPanelEl.querySelector(".list-rows"), favoriteServers, "favorites", renderFavoritesList);
+  const rowsEl = favoritesPanelEl.querySelector(".list-rows");
+  wirePageToolbar(favoritesPanelEl, "favorites", favoriteServers, (rows) => {
+    if (rows.length === 0) rowsEl.innerHTML = pageNoMatchHtml();
+    else renderRowsInto(rowsEl, rows, "favorites", renderFavoritesList);
+  });
 }
 
 async function showRecentView() {
@@ -2615,8 +3334,14 @@ async function renderRecentList() {
   recentPanelEl.innerHTML = `
     <h2>${t("nav.recent")}</h2>
     <p class="join-note">${t("recent.header")}</p>
+    ${pageToolbarHtml("recent")}
     <div class="list-rows server-list"></div>`;
-  await renderRowsInto(recentPanelEl.querySelector(".list-rows"), recentServers, "recent", renderRecentList, playedAtBySlug);
+  const rowsEl = recentPanelEl.querySelector(".list-rows");
+  // « Derniere partie » : l'ordre de resolveServersBySlug, deja du plus recent au plus ancien.
+  wirePageToolbar(recentPanelEl, "recent", recentServers, (rows) => {
+    if (rows.length === 0) rowsEl.innerHTML = pageNoMatchHtml();
+    else renderRowsInto(rowsEl, rows, "recent", renderRecentList, playedAtBySlug);
+  });
 }
 
 // "Mes instances" : tous les serveurs du proprietaire connecte (publies OU
@@ -2714,12 +3439,13 @@ const INSTANCE_ICONS = {
   external: '<svg viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>',
   leave: '<svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></svg>',
   key: '<svg viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 9.3-9.3" /><path d="m16 7 3 3" /><path d="m14 9 2 2" /></svg>',
+  stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>',
 };
 
 // `label` : texte affiche a cote de l'icone (seulement quand l'icone seule ne suffit pas).
-function instanceActionHtml({ cls, icon, tip, label = "", data, extra = "" }) {
+function instanceActionHtml({ cls, icon, tip, label = "", data, extra = "", disabled = false, attrsExtra = "" }) {
   const attrs = Object.entries(data).map(([k, v]) => ` data-${k}="${escapeHtml(v)}"`).join("");
-  return `<button type="button" class="instance-action ${extra} ${cls}"${attrs} data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${INSTANCE_ICONS[icon]}${label ? `<span>${label}</span>` : ""}</button>`;
+  return `<button type="button" class="instance-action ${extra} ${cls}"${attrs}${disabled ? " disabled" : ""}${attrsExtra} data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${INSTANCE_ICONS[icon]}${label ? `<span>${label}</span>` : ""}</button>`;
 }
 
 function instanceCardHtml(server) {
@@ -2741,9 +3467,9 @@ function instanceCardHtml(server) {
       </div>
       <div class="instance-card-actions">
         ${canSelfTest(server) ? instanceActionHtml({ cls: "my-instance-selftest", icon: "flask", tip: t("myInstances.selfTestButton"), label: t("myInstances.selfTestShort"), data: { slug: server.slug } }) : ""}
-        ${status !== "paused" ? instanceActionHtml({ cls: "my-instance-play", icon: "play", extra: "is-play", tip: t("myInstances.joinShort"), data: { slug: server.slug } }) : ""}
-        ${instanceActionHtml({ cls: "my-instance-channel", icon: "gear", tip: t("myInstances.channelButton"), data: { slug: server.slug } })}
+        ${status !== "paused" ? instancePlayOrStopHtml(server.slug) : ""}
         ${instanceActionHtml({ cls: "my-instance-manage", icon: "external", tip: t("myInstances.manageTip"), data: { id: server.id } })}
+        ${instanceActionHtml({ cls: "my-instance-channel", icon: "gear", tip: t("myInstances.channelButton"), data: { slug: server.slug } })}
       </div>
     </div>`;
 }
@@ -2767,9 +3493,9 @@ function joinedCardHtml(server) {
         <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)}</p>
       </div>
       <div class="instance-card-actions">
-        ${instanceActionHtml({ cls: "my-instance-play", icon: "play", extra: "is-play", tip: t("myInstances.joinShort"), data: { slug: server.slug } })}
+        ${instancePlayOrStopHtml(server.slug)}
+        ${instanceActionHtml({ cls: "my-instance-leave", icon: "leave", tip: t("myInstances.leave"), data: { slug: server.slug }, disabled: runningGameSlug === server.slug })}
         ${instanceActionHtml({ cls: "my-instance-channel", icon: "gear", tip: t("myInstances.channelButton"), data: { slug: server.slug } })}
-        ${instanceActionHtml({ cls: "my-instance-leave", icon: "leave", tip: t("myInstances.leave"), data: { slug: server.slug } })}
       </div>
     </div>`;
 }
@@ -3052,8 +3778,9 @@ async function showInstanceSettingsModal(server, { owned = true } = {}) {
   fieldsContainer.id = "instance-settings-fields";
   fieldsContainer.className = "settings-fade-in";
   document.getElementById("instance-settings-fields")?.remove();
-  fieldsContainer.innerHTML = fields.map((field) => field.renderHtml(currentValues[field.id])).join("");
+  fieldsContainer.innerHTML = fields.map((field) => field.renderHtml(currentValues[field.id])).join("") + instanceFilesSectionHtml(server);
   stateEl.after(fieldsContainer);
+  wireInstanceFilesSection(fieldsContainer, server);
 
   cancelBtn.textContent = t("common.cancel");
   confirmBtn.hidden = false;
@@ -3205,6 +3932,13 @@ function renderMyInstancesGrid() {
       } finally {
         btn.disabled = false;
       }
+    });
+  });
+
+  myInstancesPanelEl.querySelectorAll(".my-instance-stop").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      confirmStopGame();
     });
   });
 
@@ -3533,8 +4267,9 @@ function wireSettingsNav() {
 async function renderSettingsTab(tab) {
   const contentEl = document.getElementById("settings-content");
   const settings = await window.mchub.settings.get();
-  // Seul le Debogage s'etale en grille sur la largeur ; les autres onglets gardent leur colonne etroite.
-  contentEl.classList.toggle("settings-content-wide", tab === "debug");
+  // Debogage (grille) et Divers (colonnes facon journal) s'etalent sur la largeur ; les autres
+  // onglets gardent leur colonne etroite.
+  contentEl.classList.toggle("settings-content-wide", tab === "debug" || tab === "misc");
   if (tab === "language") return renderLanguageTab(contentEl, settings);
   if (tab === "memory") return renderMemoryTab(contentEl, settings);
   if (tab === "misc") return renderMiscTab(contentEl, settings);
@@ -3923,7 +4658,10 @@ function flashSavedButton(btn) {
 }
 
 function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
+  // Colonnes facon journal (preview validee le 16/10) : 1, 2 ou 3 selon la largeur, chaque carte
+  // sous la precedente, sans le trou d'une grille quand la carte Java est plus haute.
   contentEl.innerHTML = `
+    <div class="settings-masonry">
     <section class="settings-section">
       <div>
         <div class="settings-row-label">${t("settings.javaLabel")}</div>
@@ -3971,6 +4709,17 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
         <input type="checkbox" id="settings-discord-presence" ${settings.discordPresence !== false ? "checked" : ""} />
       </div>
     </section>
+    ${VIDEO_EMBED_ENABLED ? `
+    <section class="settings-section">
+      <h3 class="settings-section-title">${t("settings.videoSection")}</h3>
+      <div class="settings-row">
+        <span>
+          <label class="settings-row-label" for="settings-block-video-autoplay">${t("settings.blockVideoAutoplay")}</label>
+          <p class="settings-row-desc">${t("settings.blockVideoAutoplayDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-block-video-autoplay" ${settings.blockVideoAutoplay ? "checked" : ""} />
+      </div>
+    </section>` : ""}
     <section class="settings-section">
       <h3 class="settings-section-title">${t("settings.aboutSection")}</h3>
       <button type="button" class="settings-link-row" data-legal-page="terms">
@@ -3984,6 +4733,7 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
       </button>
       <p class="join-note">${t("settings.aboutNote")}</p>
     </section>
+    </div>
   `;
 
   document.getElementById("settings-open-folder").addEventListener("click", () => {
@@ -3998,6 +4748,10 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
   document.getElementById("settings-discord-presence").addEventListener("change", async (event) => {
     settings.discordPresence = event.target.checked;
     await window.mchub.settings.set({ discordPresence: event.target.checked });
+  });
+  document.getElementById("settings-block-video-autoplay")?.addEventListener("change", async (event) => {
+    settings.blockVideoAutoplay = event.target.checked;
+    await window.mchub.settings.set({ blockVideoAutoplay: event.target.checked });
   });
   contentEl.querySelectorAll("[data-legal-page]").forEach((button) => {
     button.addEventListener("click", () => window.mchub.openLegalPage(button.dataset.legalPage));
@@ -4974,6 +5728,7 @@ async function boot() {
   const restored = await window.mchub.tryRestoreSession();
   if (restored.ok) {
     enterApp(restored.profile);
+    startServerLinks();
     return;
   }
 
@@ -4983,6 +5738,7 @@ async function boot() {
   // L'annuaire plutot que l'accueil : l'accueil (carte "Continuer", favoris)
   // n'a rien a montrer a un visiteur sans historique de connexion.
   showServersView();
+  startServerLinks();
 }
 
 boot();
@@ -5034,3 +5790,332 @@ scheduleRefresh(checkMaintenanceLoop, 120_000);
 // ligne", pas le laisser passer "hors ligne" apres 2 min (ONLINE_WINDOW_MS cote site) faute de
 // heartbeat. setInterval direct, jamais ralenti, jamais arrete.
 setInterval(sendPresenceHeartbeat, REFRESH_INTERVAL_MS);
+
+// --- Fichiers de l'instance + « Arrêter le jeu » (16/10, option B validee par Rushi) ----------
+// Les actions sur les fichiers vivent dans la fenetre Reglages (engrenage, tout a droite de la
+// carte) : Dossier, Logs, Copier les logs, Reparer, Supprimer. Pendant une partie, « Rejoindre » devient « Arrêter le
+// jeu » (rouge, avec confirmation), Reparer et Supprimer sont grises. Supprimer ≠ Quitter : le
+// serveur reste dans la liste. Tout passe par main.js (game:stop, instances:*).
+// `var` (pas `let`) : lu par les cartes (instancePlayOrStopHtml), qui peuvent etre rendues avant
+// que cette ligne ne s'execute — undefined au lieu d'une erreur « before initialization ».
+var runningGameSlug = null;
+
+function instancePlayOrStopHtml(slug) {
+  if (runningGameSlug && runningGameSlug === slug) {
+    return instanceActionHtml({ cls: "my-instance-stop", icon: "stop", extra: "is-stop", tip: t("instanceTools.stop"), label: t("instanceTools.stop"), data: { slug } });
+  }
+  const otherRunning = !!runningGameSlug;
+  return instanceActionHtml({
+    cls: "my-instance-play",
+    icon: "play",
+    extra: "is-play",
+    tip: otherRunning ? t("instanceTools.otherRunning") : t("myInstances.joinShort"),
+    data: { slug },
+    disabled: otherRunning,
+  });
+}
+
+function formatSize(bytes) {
+  const en = window.i18n.getLocale() === "en";
+  const units = en ? ["B", "KB", "MB", "GB"] : ["o", "ko", "Mo", "Go"];
+  let value = Math.max(0, bytes || 0);
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const digits = unit >= 2 && value < 10 ? 1 : 0;
+  return `${value.toLocaleString(en ? "en-US" : "fr-FR", { maximumFractionDigits: digits })} ${units[unit]}`;
+}
+
+let toolsToastTimer = null;
+function toolsToast(message) {
+  clearTimeout(toolsToastTimer);
+  document.querySelector(".tools-toast")?.remove();
+  const el = document.createElement("div");
+  el.className = "tools-toast";
+  el.setAttribute("role", "status");
+  el.textContent = message;
+  document.body.appendChild(el);
+  toolsToastTimer = setTimeout(() => el.remove(), 3200);
+}
+
+// Petite fenetre a part (#instance-tools-overlay) : showModal() n'affiche que du texte, ici il
+// faut une zone de logs, une case a cocher qui met a jour la taille, une barre d'attente.
+let currentToolsModal = null;
+function openToolsModal({ title, bodyHtml, actions, wide = false, tone = "" }) {
+  currentToolsModal?.close("cancel");
+  const overlay = document.getElementById("instance-tools-overlay");
+  const box = overlay.querySelector(".modal-box");
+  const bodyEl = document.getElementById("instance-tools-body");
+  const actionsEl = document.getElementById("instance-tools-actions");
+  document.getElementById("instance-tools-title").textContent = title;
+  bodyEl.innerHTML = bodyHtml;
+  box.classList.toggle("wide", wide);
+  box.classList.toggle("danger", tone === "danger");
+
+  let closed = false;
+  let resolveDone;
+  const done = new Promise((resolve) => (resolveDone = resolve));
+  const onKey = (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      close("cancel");
+    }
+  };
+  function close(value) {
+    if (closed) return;
+    closed = true;
+    overlay.hidden = true;
+    document.body.classList.remove("modal-blocking");
+    document.removeEventListener("keydown", onKey, true);
+    if (currentToolsModal === controller) currentToolsModal = null;
+    resolveDone(value);
+  }
+  function setActions(list) {
+    actionsEl.innerHTML = "";
+    for (const action of list) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = action.cls || "btn-secondary";
+      btn.textContent = action.label;
+      btn.addEventListener("click", () => (action.onClick ? action.onClick(btn) : close(action.value)));
+      actionsEl.appendChild(btn);
+    }
+  }
+  setActions(actions);
+  overlay.onclick = (event) => {
+    if (event.target === overlay) close("cancel");
+  };
+  document.addEventListener("keydown", onKey, true);
+  box.classList.remove("pop-in");
+  void box.offsetWidth;
+  box.classList.add("pop-in");
+  overlay.hidden = false;
+  document.body.classList.add("modal-blocking");
+  actionsEl.querySelector("button")?.focus();
+
+  const controller = { done, bodyEl, setActions, close, isOpen: () => !closed };
+  currentToolsModal = controller;
+  return controller;
+}
+
+async function confirmStopGame() {
+  const modal = openToolsModal({
+    title: t("instanceTools.stopTitle"),
+    bodyHtml: `<p>${escapeHtml(t("instanceTools.stopBody"))}</p>`,
+    tone: "danger",
+    actions: [
+      { label: t("instanceTools.cancel"), value: "cancel" },
+      { label: t("instanceTools.stop"), cls: "btn-danger", value: "stop" },
+    ],
+  });
+  if ((await modal.done) !== "stop") return;
+  const result = await window.mchub.stopGame();
+  toolsToast(result?.ok ? t("instanceTools.stopped") : t("instanceTools.stopFailed"));
+}
+
+// --- Section « Fichiers de l'instance » de la fenetre Reglages ------------------------------
+const TOOLS_ICONS = {
+  folder: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>',
+  logs: '<svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></svg>',
+  copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h8" /></svg>',
+  repair: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" /></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>',
+};
+
+function instanceFilesSectionHtml(server) {
+  const locked = !!runningGameSlug;
+  const modded = server.type === "modded";
+  const btn = (act, icon, label, { danger = false, disabled = false } = {}) =>
+    `<button type="button" class="${danger ? "btn-danger" : "btn-secondary"}" data-tool="${act}"${disabled ? " disabled" : ""}>${TOOLS_ICONS[icon]}<span>${escapeHtml(label)}</span></button>`;
+  const hint = locked ? t("instanceTools.lockedHint") : !modded ? t("instanceTools.vanillaHint") : "";
+  return `
+    <div class="instance-files">
+      <h4>${escapeHtml(t("instanceTools.filesTitle"))}</h4>
+      <div class="instance-files-grid">
+        ${btn("folder", "folder", t("instanceTools.openFolder"))}
+        ${btn("logs", "logs", t("instanceTools.viewLogs"))}
+        ${btn("copylogs", "copy", t("instanceTools.copyLogs"))}
+        ${btn("repair", "repair", t("instanceTools.repair"), { disabled: locked })}
+        ${modded ? btn("delete", "trash", t("instanceTools.deleteFiles"), { danger: true, disabled: locked }) : ""}
+      </div>
+      ${hint ? `<p class="instance-files-hint">${escapeHtml(hint)}</p>` : ""}
+    </div>`;
+}
+
+function wireInstanceFilesSection(container, server) {
+  container.querySelectorAll("[data-tool]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (btn.disabled) return;
+      runInstanceTool(btn.dataset.tool, server);
+    });
+  });
+}
+
+function runInstanceTool(action, server) {
+  if (action === "folder") return openInstanceFolder(server);
+  if (action === "logs") return openInstanceLogs(server);
+  if (action === "copylogs") return copyInstanceLogs(server);
+  if (action === "repair") return repairInstance(server);
+  if (action === "delete") return deleteInstanceFiles(server);
+  return null;
+}
+
+async function openInstanceFolder(server) {
+  const result = await window.mchub.instances.openFolder(server.slug);
+  if (!result?.ok) toolsToast(t("instanceTools.folderError"));
+}
+
+function colorizeLog(text) {
+  return text
+    .split("\n")
+    .map((line) => {
+      const safe = escapeHtml(line);
+      if (/\/(ERROR|FATAL)\]|\[(ERROR|FATAL)\]/.test(line)) return `<span class="e">${safe}</span>`;
+      if (/\/WARN\]|\[WARN\]/.test(line)) return `<span class="w">${safe}</span>`;
+      return safe;
+    })
+    .join("\n");
+}
+
+async function copyInstanceLogs(server) {
+  const result = await window.mchub.instances.readLog(server.slug);
+  const text = result?.ok ? result.fullText ?? result.text : "";
+  if (!text) {
+    toolsToast(t(result?.ok ? "instanceTools.copyEmpty" : "instanceTools.copyFailed"));
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toolsToast(t("instanceTools.copied"));
+  } catch {
+    toolsToast(t("instanceTools.copyFailed"));
+  }
+}
+
+async function openInstanceLogs(server) {
+  const result = await window.mchub.instances.readLog(server.slug);
+  const hasText = result?.ok && result.text;
+  const content = hasText
+    ? `<div class="tools-log-box" id="tools-log-box">${colorizeLog(result.text)}</div>${result.truncated ? `<p class="tools-note">${escapeHtml(t("instanceTools.logsTruncated"))}</p>` : ""}`
+    : `<p class="tools-note">${escapeHtml(result?.ok ? t("instanceTools.logsEmpty") : result?.error || t("instanceTools.copyFailed"))}</p>`;
+  const modal = openToolsModal({
+    title: t("instanceTools.logsTitle", { name: server.name }),
+    bodyHtml: `<p>${escapeHtml(t("instanceTools.logsBody"))}</p>${content}`,
+    wide: true,
+    actions: [
+      { label: t("instanceTools.logsOpenFolder"), onClick: () => window.mchub.instances.openLogsFolder(server.slug) },
+      ...(hasText ? [{ label: t("instanceTools.copyLogs"), onClick: () => copyInstanceLogs(server) }] : []),
+      { label: t("instanceTools.close"), value: "close" },
+    ],
+  });
+  const logBox = modal.bodyEl.querySelector("#tools-log-box");
+  if (logBox) logBox.scrollTop = logBox.scrollHeight;
+}
+
+// « Réparer » : la meme verification que « Installer » / « Rejoindre » (server:install, voir
+// main.js) — chaque fichier du modpack est compare a son empreinte SHA-1 et retelecharge s'il
+// est abime ou manquant. Suivi aussi dans le panneau des telechargements.
+async function repairInstance(server) {
+  if (runningGameSlug) {
+    toolsToast(t("instanceTools.lockedHint"));
+    return;
+  }
+  const modal = openToolsModal({
+    title: t("instanceTools.repairTitle", { name: server.name }),
+    bodyHtml: `<p id="tools-repair-text">${escapeHtml(t("instanceTools.repairChecking"))}</p><div class="tools-progress" id="tools-repair-progress"><div class="conn-indeterminate"></div></div>`,
+    actions: [{ label: t("instanceTools.close"), value: "close" }],
+  });
+  const result = await window.mchub.installServer(server.slug, server.name);
+  const message = result?.ok ? t("instanceTools.repairDone") : t("instanceTools.repairError", { error: result?.error || "?" });
+  if (modal.isOpen()) {
+    modal.bodyEl.querySelector("#tools-repair-text").textContent = message;
+    modal.bodyEl.querySelector("#tools-repair-progress").classList.add(result?.ok ? "done" : "failed");
+  } else {
+    toolsToast(result?.ok ? t("instanceTools.repairDoneToast", { name: server.name }) : message);
+  }
+}
+
+async function deleteInstanceFiles(server) {
+  if (runningGameSlug) {
+    toolsToast(t("instanceTools.delRefusedRunning"));
+    return;
+  }
+  const info = await window.mchub.instances.filesInfo(server.slug);
+  if (!info?.ok) {
+    toolsToast(t("instanceTools.delError", { error: info?.error || "?" }));
+    return;
+  }
+  if (!info.modded) {
+    toolsToast(t("instanceTools.vanillaHint"));
+    return;
+  }
+  if (!info.bytesAll) {
+    toolsToast(t("instanceTools.delNothing"));
+    return;
+  }
+
+  let keepPersonal = true;
+  const modal = openToolsModal({
+    title: t("instanceTools.delTitle", { name: server.name }),
+    tone: "danger",
+    bodyHtml: `
+      <p>${escapeHtml(t("instanceTools.delBody"))}</p>
+      <div class="tools-size-row"><span>${escapeHtml(t("instanceTools.delSize"))}</span><strong id="tools-del-size">${escapeHtml(formatSize(info.bytesKeep))}</strong></div>
+      <label class="tools-check"><input type="checkbox" id="tools-del-keep" checked /><span>${escapeHtml(t("instanceTools.delKeep"))}</span></label>
+      <p class="tools-note">${escapeHtml(t("instanceTools.delKeepWorlds"))}</p>`,
+    actions: [
+      { label: t("instanceTools.cancel"), value: "cancel" },
+      { label: t("instanceTools.delConfirm"), cls: "btn-danger", value: "delete" },
+    ],
+  });
+  modal.bodyEl.querySelector("#tools-del-keep").addEventListener("change", (event) => {
+    keepPersonal = event.target.checked;
+    modal.bodyEl.querySelector("#tools-del-size").textContent = formatSize(keepPersonal ? info.bytesKeep : info.bytesAll);
+  });
+  if ((await modal.done) !== "delete") return;
+
+  const result = await window.mchub.instances.deleteFiles(server.slug, { keepPersonal });
+  if (result?.ok) {
+    toolsToast(t("instanceTools.deleted", { name: server.name, size: formatSize(result.freedBytes) }));
+  } else if (result?.code === "running") {
+    toolsToast(t("instanceTools.delRefusedRunning"));
+  } else if (result?.code === "installing" || result?.code === "launching") {
+    toolsToast(t("instanceTools.delRefusedInstalling"));
+  } else if (result?.code === "vanilla") {
+    toolsToast(t("instanceTools.vanillaHint"));
+  } else {
+    toolsToast(t("instanceTools.delError", { error: result?.error || "?" }));
+  }
+}
+
+// Partie demarree / fermee : on retient quel serveur tourne, et les cartes se redessinent
+// (Rejoindre ↔ Arrêter le jeu). Seulement la grille en ligne : la vue hors ligne a ses propres
+// cartes (renderOfflineInstancesGrid) et ne doit pas etre remplacee.
+async function refreshRunningGame(running) {
+  let slug = null;
+  if (running) {
+    try {
+      slug = (await window.mchub.getGameStatus())?.slug || "unknown";
+    } catch {
+      slug = "unknown";
+    }
+  }
+  runningGameSlug = slug;
+  if (!myInstancesPanelEl.hidden && myInstancesPanelEl.querySelector(".instances-filters")) renderMyInstancesGrid();
+}
+
+window.mchub.onGameState((running) => refreshRunningGame(running));
+document.getElementById("playbar-stop")?.addEventListener("click", confirmStopGame);
+// Fenetre rechargee pendant une partie : on reprend l'etat reel du jeu.
+window.mchub
+  .getGameStatus()
+  .then((status) => {
+    if (!status?.running) return;
+    gamePlaying = true;
+    syncPlaybarWithGame();
+    return refreshRunningGame(true);
+  })
+  .catch(() => {});

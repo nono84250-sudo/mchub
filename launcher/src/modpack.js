@@ -324,6 +324,8 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
     const found = await findManualFiles(blocked, { instanceDir, searchDirs: manualSearchDirs });
     if (found > 0) onProgress({ text: `${found} mod(s) ajouté(s) à la main retrouvé(s) et déplacé(s) dans le jeu.` });
   }
+  const fromModrinth = await findOnModrinth(blocked.filter((item) => !item.ready));
+  if (fromModrinth > 0) onProgress({ text: `${fromModrinth} mod(s) récupéré(s) sur Modrinth.` });
   for (const { info, entry, ready } of blocked) {
     if (ready) entries.push(entry);
     else {
@@ -343,10 +345,55 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
       `${manualMods.length} mod(s) du modpack ne peuvent pas être installés automatiquement : ${manualMods
         .map((m) => m.modName || m.fileName || `fichier ${m.fileId}`)
         .join(", ")}.`,
-      { code: "manual_mods", manualMods },
+      { code: "manual_mods", manualMods, fromModrinth },
     );
   }
   return entries;
+}
+
+// Mods bloques sur CurseForge que leur auteur publie aussi sur Modrinth (16/10, demande de Rushi) :
+// on cherche sur Modrinth le fichier qui a EXACTEMENT la meme empreinte SHA-1 et la meme taille
+// que celui du modpack. C'est donc le meme fichier, octet pour octet, pris sur un site ou il est
+// distribue avec l'accord de son auteur : on ne contourne pas le choix fait sur CurseForge, et une
+// autre version (ou une copie modifiee par un tiers) n'est jamais prise a la place. Le
+// telechargement reverifie taille et SHA-1 (downloadFile). Modrinth injoignable = on retombe
+// simplement sur la fenetre des mods a ajouter a la main.
+// Marque `ready` sur chaque mod trouve (avec son lien Modrinth) et renvoie leur nombre.
+const MODRINTH_API = "https://api.modrinth.com/v2";
+const MODRINTH_USER_AGENT = "Omniscient-Launcher (app.omniscient.launcher)";
+
+async function findOnModrinth(items) {
+  const wanted = items.filter((item) => /^[0-9a-f]{40}$/i.test(item.entry.sha1 || "") && item.entry.size);
+  if (!wanted.length) return 0;
+  let versions;
+  try {
+    const res = await fetch(`${MODRINTH_API}/version_files`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": MODRINTH_USER_AGENT },
+      body: JSON.stringify({ hashes: wanted.map((item) => item.entry.sha1.toLowerCase()), algorithm: "sha1" }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return 0;
+    versions = await res.json();
+  } catch {
+    return 0;
+  }
+  let found = 0;
+  for (const item of wanted) {
+    const sha1 = item.entry.sha1.toLowerCase();
+    const file = versions?.[sha1]?.files?.find((f) => f?.hashes?.sha1?.toLowerCase() === sha1 && f.size === item.entry.size);
+    let url;
+    try {
+      url = new URL(file?.url);
+    } catch {
+      continue;
+    }
+    if (url.protocol !== "https:" || url.hostname !== "cdn.modrinth.com") continue;
+    item.entry.url = url.href;
+    item.ready = true;
+    found++;
+  }
+  return found;
 }
 
 // Seules les pages du site de CurseForge sont ouvertes depuis la liste des mods bloques.
@@ -452,7 +499,10 @@ async function extractOverrides(zip, dirName, instanceDir, previousHashes, nextH
   const kept = [];
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory || !entry.entryName.startsWith(prefix)) continue;
-    const relative = entry.entryName.slice(prefix.length);
+    // Zip fabrique sous Windows avec des "\\" dans les noms : Windows les lit comme
+    // des separateurs, Linux en ferait un nom de fichier. On aligne Linux sur Windows.
+    const rawRelative = entry.entryName.slice(prefix.length);
+    const relative = process.platform === "win32" ? rawRelative : rawRelative.replace(/\\/g, "/");
     if (!relative) continue;
     const target = safeJoin(instanceDir, relative);
     const isJar = /^mods\/.+\.jar$/i.test(relative);
@@ -997,6 +1047,7 @@ module.exports = {
   ensureVanillaVersion,
   hasVanillaFilesInstalled,
   ruleAllows,
+  findOnModrinth,
   isInstalled,
   readInstalledState,
   listInstalledInstances,

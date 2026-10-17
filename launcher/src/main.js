@@ -12,9 +12,23 @@ const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session, scr
 //  - Chaque appel IPC doit venir d'une page locale (file://) : une page distante qui
 //    reussirait malgre tout a se charger ne peut rien demander au processus principal.
 app.on("web-contents-created", (_event, contents) => {
-  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  contents.setWindowOpenHandler(({ url }) => {
+    // Lien « Regarder sur YouTube » du lecteur integre a la fiche : ouvert dans le navigateur,
+    // jamais dans une fenetre du launcher.
+    if (isYoutubeWatchUrl(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
   contents.on("will-attach-webview", (event) => event.preventDefault());
 });
+
+function isYoutubeWatchUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && ["www.youtube.com", "youtube.com", "youtu.be"].includes(u.hostname);
+  } catch {
+    return false;
+  }
+}
 
 function lockAppNavigation(contents) {
   contents.on("will-navigate", (event) => event.preventDefault());
@@ -49,12 +63,22 @@ if (!gotSingleInstanceLock) {
 // Un second lancement a quand meme tente de demarrer (et echoue sur le verrou ci-dessus) :
 // on ramene la fenetre existante au premier plan plutot que de laisser l'utilisateur croire
 // que rien ne s'est passe.
-app.on("second-instance", () => {
+// Un lien omniscient:// clique pendant que le launcher tourne arrive aussi par ici (Windows/Linux :
+// le lien est dans la ligne de commande du second lancement), voir deliverServerLink plus bas.
+app.on("second-instance", (_event, argv) => {
   const win = BrowserWindow.getAllWindows()[0];
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  if (!win.isVisible()) win.show();
-  win.focus();
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    if (!win.isVisible()) win.show();
+    win.focus();
+  }
+  const link = Array.isArray(argv) ? argv.find((arg) => typeof arg === "string" && arg.startsWith(`${SERVER_LINK_SCHEME}://`)) : null;
+  if (link) deliverServerLink(link);
+});
+// macOS : le lien arrive par cet evenement, au demarrage comme pendant que l'appli tourne.
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  deliverServerLink(url);
 });
 
 const path = require("node:path");
@@ -63,6 +87,54 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const crypto = require("node:crypto");
 const logStore = require("./logStore");
+
+// Liens « Ouvrir dans le launcher » de la fiche serveur du site (16/10) :
+//   omniscient://server/<slug>  ouvre la fiche de ce serveur ;
+//   omniscient://join/<CODE>    rejoint un serveur prive par son code d'invitation, puis l'ouvre.
+// Rien d'autre n'est accepte : le lien vient d'une page web, donc seul un slug ou un code au
+// format attendu passe, et il ne fait qu'ouvrir une fiche (jamais lancer le jeu tout seul).
+// Le renderer recupere le lien en attente quand il est pret (app:takeServerLink) ; ensuite les
+// liens suivants lui sont envoyes directement (app:serverLink).
+const SERVER_LINK_SCHEME = "omniscient";
+let pendingServerLink = null;
+let serverLinkRendererReady = false;
+
+function parseServerLink(raw) {
+  if (typeof raw !== "string" || raw.length > 200) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== `${SERVER_LINK_SCHEME}:`) return null;
+  const value = url.pathname.replace(/^\/+|\/+$/g, "");
+  if (url.hostname === "server" && /^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/.test(value)) return { kind: "server", value };
+  if (url.hostname === "join" && /^[A-Za-z0-9]{4,16}$/.test(value)) return { kind: "join", value: value.toUpperCase() };
+  return null;
+}
+
+function deliverServerLink(raw) {
+  const link = parseServerLink(raw);
+  if (!link) return;
+  logStore.pushLog({ level: "info", source: "launcher", message: `Lien du site : ${link.kind === "server" ? `fiche ${link.value}` : "code d'invitation"}` });
+  const win = BrowserWindow.getAllWindows()[0];
+  if (serverLinkRendererReady && win && !win.isDestroyed()) win.webContents.send("app:serverLink", link);
+  else pendingServerLink = link;
+}
+
+// Associe omniscient:// a ce launcher. En developpement (electron .), Windows doit aussi
+// recevoir le dossier de l'appli, sinon il lancerait Electron seul. Un lien present des le
+// premier lancement (launcher ferme au moment du clic) est dans process.argv.
+if (process.defaultApp && process.argv.length >= 2) {
+  app.setAsDefaultProtocolClient(SERVER_LINK_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
+} else {
+  app.setAsDefaultProtocolClient(SERVER_LINK_SCHEME);
+}
+{
+  const startupLink = process.argv.find((arg) => typeof arg === "string" && arg.startsWith(`${SERVER_LINK_SCHEME}://`));
+  if (startupLink) deliverServerLink(startupLink);
+}
 
 // Dossier de donnees renomme en ".omniscient-launcher" (convention "dotfile") plutot que
 // "Omniscient Launcher" (le defaut d'Electron, derive de productName) — doit etre fixe ICI,
@@ -92,7 +164,7 @@ if (!isDev && !fs.existsSync(dottedUserDataPath) && fs.existsSync(defaultUserDat
 app.setPath("userData", dottedUserDataPath);
 
 const msAuth = require("./msAuth");
-const { launchMinecraft, GAME_ROOT } = require("./mcLaunch");
+const { launchMinecraft, GAME_ROOT, getRunningGame, stopGame } = require("./mcLaunch");
 const {
   installModpack,
   ensureVanillaVersion,
@@ -160,10 +232,29 @@ function setContentSecurityPolicy() {
   const siteOrigin = new URL(SITE_URL).origin;
   const isLocalHttp = siteOrigin.startsWith("http://localhost:") || siteOrigin.startsWith("http://127.0.0.1:");
   const imgSrc = isLocalHttp ? `'self' https: data: ${siteOrigin}` : "'self' https: data:";
-  const csp = `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src ${imgSrc};`;
+  // frame-src : le lecteur video des fiches (youtube-nocookie, voir setupPageVideo). Cette
+  // politique s'ajoute a celle de index.html : sans cette ligne, elle bloquait le lecteur.
+  const csp = `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src ${imgSrc}; frame-src https://www.youtube-nocookie.com;`;
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // Le lecteur video de la fiche (youtube-nocookie, voir setupPageVideo dans renderer.js)
+    // garde sa propre politique : la notre bloquerait ses scripts.
+    if (isYoutubeEmbedUrl(details.url)) return callback({});
     callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [csp] } });
   });
+  // Une page chargee en file:// n'envoie pas d'en-tete Referer, et YouTube refuse alors de lire
+  // la video integree (erreur 153) : on presente l'adresse du site Omniscient, seulement pour
+  // le lecteur youtube-nocookie.
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ["https://www.youtube-nocookie.com/*"] }, (details, callback) => {
+    callback({ requestHeaders: { ...details.requestHeaders, Referer: "https://omniscientlauncher.com/" } });
+  });
+}
+
+function isYoutubeEmbedUrl(url) {
+  try {
+    return new URL(url).hostname === "www.youtube-nocookie.com";
+  } catch {
+    return false;
+  }
 }
 
 // Secret partage avec la route /api/launcher/servers/[slug] du site : c'est
@@ -652,7 +743,9 @@ function isNewerVersion(candidate, current) {
 
 function checkForUpdates() {
   return new Promise((resolve) => {
-    if (!app.isPackaged) {
+    // Version Linux : build de test personnel, jamais publie (pas de latest-linux.yml
+    // dans les releases) — pas de verification de mise a jour.
+    if (!app.isPackaged || process.platform === "linux") {
       resolve();
       return;
     }
@@ -929,6 +1022,51 @@ ipcMain.handle("app:openLegal", (_event, page) => {
   if (url) shell.openExternal(url);
 });
 
+ipcMain.handle("app:takeServerLink", () => {
+  serverLinkRendererReady = true;
+  const link = pendingServerLink;
+  pendingServerLink = null;
+  return link;
+});
+
+// Liens de la fiche personnalisable (reseaux, video) : saisis par le proprietaire, donc
+// re-verifies ici avec les memes regles que le site (site/src/lib/serverPage.ts, isValidLink)
+// avant d'ouvrir le navigateur. La video arrive comme simple identifiant YouTube.
+function isValidPageLink(kind, input) {
+  const s = typeof input === "string" ? input.trim() : "";
+  if (!s || s.length > 200 || /[\s<>"'`\\]/.test(s)) return false;
+  let url;
+  try {
+    url = new URL(s);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.port) return false;
+  const host = url.hostname.toLowerCase();
+  const p = url.pathname;
+  switch (kind) {
+    case "discord":
+      return (host === "discord.gg" && /^\/[A-Za-z0-9-]{2,32}\/?$/.test(p)) ||
+        ((host === "discord.com" || host === "www.discord.com") && /^\/invite\/[A-Za-z0-9-]{2,32}\/?$/.test(p));
+    case "youtube":
+      return (host === "youtube.com" || host === "www.youtube.com") && /^\/(@[\w.-]{3,30}|channel\/[\w-]{10,40})\/?$/.test(p);
+    case "tiktok":
+      return (host === "tiktok.com" || host === "www.tiktok.com") && /^\/@[\w.]{2,24}\/?$/.test(p);
+    case "website":
+      return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) && host !== "localhost";
+    default:
+      return false;
+  }
+}
+
+ipcMain.handle("servers:openPageLink", (_event, kind, value) => {
+  if (kind === "video") {
+    if (typeof value === "string" && /^[\w-]{11}$/.test(value)) shell.openExternal(`https://www.youtube.com/watch?v=${value}`);
+    return;
+  }
+  if (isValidPageLink(kind, value)) shell.openExternal(new URL(value.trim()).href);
+});
+
 // Mods qu'un modpack CurseForge interdit de telecharger par les autres launchers (14/10) : le
 // joueur les telecharge lui-meme et les laisse dans son dossier Telechargements, ou
 // installModpack les retrouve (taille + empreinte SHA-1, voir modpack.js/findManualFiles).
@@ -953,6 +1091,8 @@ function modpackErrorFields(error) {
       pageUrl: mod.pageUrl || null,
       reason: mod.reason === "removed" ? "removed" : "blocked",
     })),
+    // Mods bloques deja pris sur Modrinth (bandeau de la fenetre, repere B de la preview du 16/10).
+    fromModrinth: Number.isInteger(error.fromModrinth) && error.fromModrinth > 0 ? error.fromModrinth : 0,
   };
 }
 
@@ -1131,7 +1271,9 @@ ipcMain.handle("presence:heartbeat", async () => {
     const result = await fetchJson(`${SITE_URL}/api/launcher/presence`, {
       method: "POST",
       headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name }),
+      // playingSlug (16/10, « Un ami y joue ») : le serveur du jeu lancé, dans le même appel que
+      // d'habitude. Le site ne le garde que s'il est dans l'annuaire public (jamais un privé).
+      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, playingSlug: getRunningGame()?.slug ?? null }),
     });
     // Compte Omniscient supprime par le joueur (sur le site) alors que le launcher etait encore
     // connecte : le site ne le recree pas tout seul. On deconnecte et on oublie ce compte, pour
@@ -1268,6 +1410,139 @@ ipcMain.handle("servers:leaveJoined", (_event, slug) => {
   removeJoinedServer(slug);
   clearServerCaches();
   return { ok: true };
+});
+
+// --- Menu « ⋯ » des cartes d'instance + « Arrêter le jeu » (16/10, choix A de Rushi) ---------
+// Serveur moddé : son dossier instances/<slug>. Vanilla : les fichiers du jeu sont partagés
+// (GAME_ROOT), instances/<slug> ne contient qu'un marqueur — rien de propre à supprimer.
+const INSTANCE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,80}$/i;
+// Toujours gardés (mondes solo) ; « captures et réglages » gardés si la case est cochée.
+const INSTANCE_ALWAYS_KEEP = ["saves"];
+const INSTANCE_PERSONAL_KEEP = ["screenshots", "options.txt", "optionsof.txt", "optionsshaders.txt"];
+
+async function instanceDirs(slug) {
+  if (typeof slug !== "string" || !INSTANCE_SLUG_RE.test(slug)) throw new Error("Serveur invalide.");
+  const instanceDir = path.join(GAME_ROOT, "instances", slug);
+  const modded = !!(await readInstalledState(instanceDir));
+  return { instanceDir, modded, gameDir: modded ? instanceDir : GAME_ROOT };
+}
+
+async function pathSize(target) {
+  let stat;
+  try {
+    stat = await fsp.lstat(target);
+  } catch {
+    return 0;
+  }
+  if (!stat.isDirectory()) return stat.size;
+  let total = 0;
+  for (const name of await fsp.readdir(target).catch(() => [])) total += await pathSize(path.join(target, name));
+  return total;
+}
+
+// Entrées du dossier d'instance qui partiraient avec « Supprimer », et leur poids.
+async function removableEntries(instanceDir, keepPersonal) {
+  const keep = new Set([...INSTANCE_ALWAYS_KEEP, ...(keepPersonal ? INSTANCE_PERSONAL_KEEP : [])]);
+  const names = await fsp.readdir(instanceDir).catch(() => []);
+  const entries = [];
+  for (const name of names) {
+    if (keep.has(name.toLowerCase())) continue;
+    entries.push({ name, bytes: await pathSize(path.join(instanceDir, name)) });
+  }
+  return entries;
+}
+
+function instanceBusy(slug) {
+  if (getRunningGame()) return "running";
+  if (gameLaunchInProgress) return "launching";
+  if ([...installTasks.values()].some((t) => t.slug === slug && (t.status === "active" || t.status === "paused"))) return "installing";
+  return null;
+}
+
+ipcMain.handle("game:status", () => {
+  const game = getRunningGame();
+  return { running: !!game, slug: game?.slug ?? null };
+});
+
+ipcMain.handle("game:stop", () => {
+  const stopped = stopGame();
+  if (stopped) logStore.pushLog({ source: "launcher", message: "Minecraft arrêté par le joueur." });
+  return { ok: stopped };
+});
+
+ipcMain.handle("instances:openFolder", async (_event, slug) => {
+  try {
+    const { gameDir } = await instanceDirs(slug);
+    await fsp.mkdir(gameDir, { recursive: true });
+    const error = await shell.openPath(gameDir);
+    return { ok: !error, error: error || undefined };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+ipcMain.handle("instances:readLog", async (_event, slug) => {
+  try {
+    const { gameDir } = await instanceDirs(slug);
+    const text = await fsp.readFile(path.join(gameDir, "logs", "latest.log"), "utf8");
+    // La fin seulement : un latest.log moddé peut faire plusieurs Mo.
+    const lines = text.split(/\r?\n/);
+    return { ok: true, text: lines.slice(-600).join("\n"), truncated: lines.length > 600, fullText: text.length <= 2_000_000 ? text : null };
+  } catch (error) {
+    if (error?.code === "ENOENT") return { ok: true, text: "", missing: true };
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+ipcMain.handle("instances:openLogsFolder", async (_event, slug) => {
+  try {
+    const { gameDir } = await instanceDirs(slug);
+    const logsDir = path.join(gameDir, "logs");
+    const exists = await fsp.access(logsDir).then(() => true, () => false);
+    const error = await shell.openPath(exists ? logsDir : gameDir);
+    return { ok: !error };
+  } catch {
+    return { ok: false };
+  }
+});
+
+ipcMain.handle("instances:filesInfo", async (_event, slug) => {
+  try {
+    const { instanceDir, modded } = await instanceDirs(slug);
+    const sum = (entries) => entries.reduce((total, entry) => total + entry.bytes, 0);
+    return {
+      ok: true,
+      modded,
+      bytesKeep: sum(await removableEntries(instanceDir, true)),
+      bytesAll: sum(await removableEntries(instanceDir, false)),
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// « Supprimer les fichiers » : retire mods/config/ressources de l'instance, le serveur reste dans
+// la liste (tout revient au prochain « Rejoindre »). Refusé tant que le jeu tourne ou qu'une
+// installation de ce serveur est en cours (fichiers verrouillés / à moitié écrits).
+ipcMain.handle("instances:deleteFiles", async (_event, slug, { keepPersonal = true } = {}) => {
+  try {
+    const busy = instanceBusy(slug);
+    if (busy) return { ok: false, code: busy };
+    const { instanceDir, modded } = await instanceDirs(slug);
+    if (!modded) return { ok: false, code: "vanilla" };
+    const entries = await removableEntries(instanceDir, keepPersonal);
+    let freedBytes = 0;
+    for (const entry of entries) {
+      await fsp.rm(path.join(instanceDir, entry.name), { recursive: true, force: true });
+      freedBytes += entry.bytes;
+    }
+    clearServerCaches();
+    logStore.pushLog({ source: "launcher", message: `Fichiers de "${slug}" supprimés (${Math.round(freedBytes / 1024 / 1024)} Mo libérés).` });
+    return { ok: true, freedBytes };
+  } catch (error) {
+    logStore.pushLog({ level: "error", source: "launcher", message: `Suppression des fichiers de "${slug}" échouée : ${error instanceof Error ? error.message : error}` });
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 });
 
 // Fiches des serveurs rejoints, triees du plus recemment rejoint au plus
@@ -1740,14 +2015,45 @@ ipcMain.handle("status:getServicesStatus", async (_event, force) => {
   return statusCache;
 });
 
-// Test de debit : une seule mesure a la fois, gardee 5 min. La progression est
-// envoyee a la fenetre qui l'a demandee (barre dans le panneau).
-const CONNECTION_CACHE_MS = 5 * 60_000;
-let connectionCache = null;
+// Test de debit : une seule mesure a la fois, et une seule par jour (demande de
+// Rushi, 15/10 : le test lourd a chaque ouverture faisait ramer le launcher).
+// Le dernier resultat est garde sur disque : au lancement ou a l'ouverture du
+// panneau, on le reaffiche s'il date d'aujourd'hui (jour local), sinon on refait
+// la mesure. Seul "Actualiser" (`force`) la relance le meme jour. La progression
+// est envoyee a la fenetre qui l'a demandee (barre dans le panneau).
 let connectionRun = null;
 
+function connectionTestFile() {
+  return path.join(app.getPath("userData"), "connection-test.json");
+}
+
+function sameLocalDay(a, b) {
+  const da = new Date(a);
+  const db = new Date(b);
+  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
+}
+
+function loadConnectionCache() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(connectionTestFile(), "utf8"));
+    return saved && typeof saved.fetchedAt === "number" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveConnectionCache(result) {
+  try {
+    fs.writeFileSync(connectionTestFile(), JSON.stringify(result));
+  } catch {
+    // Pas grave : le test sera simplement refait au prochain lancement.
+  }
+}
+
+let connectionCache = loadConnectionCache();
+
 ipcMain.handle("status:getConnection", (event, force) => {
-  if (!force && connectionCache && Date.now() - connectionCache.fetchedAt < CONNECTION_CACHE_MS) {
+  if (!force && connectionCache && sameLocalDay(connectionCache.fetchedAt, Date.now())) {
     return connectionCache;
   }
   if (connectionRun) return connectionRun;
@@ -1761,8 +2067,9 @@ ipcMain.handle("status:getConnection", (event, force) => {
         source: "launcher",
         message: `Test de connexion : ping ${result.pingMs ?? "—"} ms · téléchargement ${result.downloadMbps ?? "—"} Mb/s (${down ? (down.bytes / 1e6).toFixed(1) : "—"} Mo en ${down?.seconds ?? "—"} s) · envoi ${result.uploadMbps ?? "—"} Mb/s (${up ? (up.bytes / 1e6).toFixed(1) : "—"} Mo en ${up?.seconds ?? "—"} s)${errorText}`,
       });
-      connectionCache = result;
-      return result;
+      connectionCache = { ...result, fetchedAt: result.fetchedAt ?? Date.now() };
+      saveConnectionCache(connectionCache);
+      return connectionCache;
     })
     .catch((error) => ({ error: error.message }))
     .finally(() => {
@@ -2095,6 +2402,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       gameDirectory: modded?.instanceDir,
       customVersion: modded?.customVersion,
       customJvmArgs: modded?.jvmArgs,
+      slug,
     });
 
     discordPresence.setPlayingActivity(server.name, modded?.modpackName, { isPrivate: isPrivateServer(server, slug) });
@@ -2255,6 +2563,7 @@ ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
       gameDirectory: moddedState ? instanceDir : undefined,
       customVersion,
       customJvmArgs: jvmArgs,
+      slug,
     });
 
     logStore.pushLog({ source: "launcher", message: `Jeu lancé hors ligne pour "${slug}" (profil local "${offlineName}").` });

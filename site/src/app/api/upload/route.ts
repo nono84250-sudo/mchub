@@ -12,6 +12,8 @@ const FIELD_CONSTRAINTS: Record<string, { allowedContentTypes: string[]; maximum
   banner: { allowedContentTypes: ["image/jpeg", "image/png", "image/webp"], maximumSizeInBytes: 5 * 1024 * 1024 },
   icon: { allowedContentTypes: ["image/png", "image/webp"], maximumSizeInBytes: 1 * 1024 * 1024 },
   background: { allowedContentTypes: ["image/jpeg", "image/webp"], maximumSizeInBytes: 8 * 1024 * 1024 },
+  // Captures de la galerie d'une fiche publique (voir lib/serverPage.ts).
+  gallery: { allowedContentTypes: ["image/jpeg", "image/png", "image/webp"], maximumSizeInBytes: 5 * 1024 * 1024 },
 };
 
 const EXTENSION: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };

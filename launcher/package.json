@@ -1,14 +1,16 @@
 {
   "name": "launcher",
   "productName": "Omniscient Launcher",
-  "version": "0.4.0-beta.3",
+  "version": "0.4.0-beta.4",
   "private": true,
   "description": "Launcher Minecraft Omniscient — lit les serveurs publiés sur le site Omniscient et lance le jeu.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "predist": "node scripts/generate-env.js",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "predist:linux": "node scripts/generate-env.js",
+    "dist:linux": "electron-builder --linux AppImage --publish never"
   },
   "devDependencies": {
     "electron": "^44.3.0",
@@ -32,6 +34,12 @@
       "build/icon.png",
       "package.json"
     ],
+    "protocols": [
+      {
+        "name": "Omniscient Launcher",
+        "schemes": ["omniscient"]
+      }
+    ],
     "publish": {
       "provider": "github",
       "owner": "nono84250-sudo",
@@ -40,6 +48,12 @@
     "win": {
       "target": "nsis-web",
       "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icon.png",
+      "category": "Game",
+      "artifactName": "OmniscientLauncher-${version}.${ext}"
     },
     "nsisWeb": {
       "oneClick": false,

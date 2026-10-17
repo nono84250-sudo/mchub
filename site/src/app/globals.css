@@ -384,3 +384,27 @@ body {
     animation: float-block 6s ease-in-out infinite;
   }
 }
+
+/* Couleur choisie sur une fiche serveur (voir pageAccent dans lib/serverPage.ts) : --accent-raw
+   est pose par la fiche, et toute la rampe d'accent est recalculee ici pour cette fiche. Une
+   couleur tres claire est assombrie en theme clair, une tres sombre eclaircie en theme sombre,
+   pour que les titres et les etiquettes restent lisibles. */
+.page-accent {
+  --accent: var(--accent-raw);
+  --accent-hover: color-mix(in srgb, var(--accent) 70%, white);
+  --accent-2: color-mix(in srgb, var(--accent) 85%, white);
+  --accent-fill: color-mix(in srgb, var(--accent) 45%, black);
+  --accent-foreground: #f5f4ff;
+  /* Texte pose directement sur un aplat de l'accent (bouton « Ouvrir dans le launcher »). */
+  --accent-on: #f5f4ff;
+  --glow-accent: 0 0 0 1px var(--accent), 0 10px 24px -10px rgba(0, 0, 0, 0.6);
+}
+.page-accent-pale { --accent-on: #15161d; }
+:root[data-theme="light"] .page-accent-pale {
+  --accent: color-mix(in srgb, var(--accent-raw) 55%, black);
+  --accent-on: #f5f4ff;
+}
+:root:not([data-theme="light"]) .page-accent-deep {
+  --accent: color-mix(in srgb, var(--accent-raw) 55%, white);
+  --accent-on: #15161d;
+}

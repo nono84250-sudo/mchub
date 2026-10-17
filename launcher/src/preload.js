@@ -10,6 +10,12 @@ contextBridge.exposeInMainWorld("mchub", {
   listServers: () => ipcRenderer.invoke("servers:list"),
   clearServerCache: () => ipcRenderer.invoke("servers:clearCache"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
+  // Fiche personnalisable (16/10) : reseaux et video, re-verifies cote main.js avant ouverture.
+  openServerPageLink: (kind, value) => ipcRenderer.invoke("servers:openPageLink", kind, value),
+  // Liens omniscient:// du site (bouton « Ouvrir dans le launcher ») : celui recu avant que la
+  // page soit prete, puis les suivants au fil de l'eau. Voir parseServerLink cote main.js.
+  takeServerLink: () => ipcRenderer.invoke("app:takeServerLink"),
+  onServerLink: (callback) => ipcRenderer.on("app:serverLink", (_event, link) => callback(link)),
   // Bouton "Installer" d'une fiche (2026-10-11) : pour savoir s'il faut encore
   // l'afficher pour CE serveur precis — voir servers:installStatus.
   getServerInstallStatus: (slug) => ipcRenderer.invoke("servers:installStatus", slug),
@@ -114,6 +120,16 @@ contextBridge.exposeInMainWorld("mchub", {
   getConnection: (force) => ipcRenderer.invoke("status:getConnection", !!force),
   onConnectionProgress: (callback) => ipcRenderer.on("status:connectionProgress", (_event, progress) => callback(progress)),
   onGameState: (callback) => ipcRenderer.on("game:state", (_event, running) => callback(running)),
+  // Menu « ⋯ » des cartes d'instance + « Arrêter le jeu » (16/10) — voir main.js.
+  getGameStatus: () => ipcRenderer.invoke("game:status"),
+  stopGame: () => ipcRenderer.invoke("game:stop"),
+  instances: {
+    openFolder: (slug) => ipcRenderer.invoke("instances:openFolder", slug),
+    readLog: (slug) => ipcRenderer.invoke("instances:readLog", slug),
+    openLogsFolder: (slug) => ipcRenderer.invoke("instances:openLogsFolder", slug),
+    filesInfo: (slug) => ipcRenderer.invoke("instances:filesInfo", slug),
+    deleteFiles: (slug, options) => ipcRenderer.invoke("instances:deleteFiles", slug, options),
+  },
   updates: {
     check: () => ipcRenderer.invoke("update:check"),
     onStatus: (callback) => {

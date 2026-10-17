@@ -3,6 +3,7 @@ import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherProfi
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
 import { recordPresenceHeartbeat } from "@/lib/presence";
+import { listPublicServers } from "@/lib/public-servers";
 
 // Heartbeat de présence (système d'amis, 2026-10-14) : greffé sur le vrai cycle de 60s du
 // launcher (REFRESH_INTERVAL_MS/scheduleRefresh dans renderer.js — vérifié dans le vrai code
@@ -35,7 +36,12 @@ export async function POST(request: Request) {
   // Microsoft, ce qui recree le compte (route session, freshLogin).
   const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: false });
   if (!user) return NextResponse.json({ ok: true, accountDeleted: true });
-  await recordPresenceHeartbeat(user.id);
+  // Serveur en cours (filtre « Un ami y joue ») : garde seulement si c'est un serveur public de
+  // l'annuaire. La liste vient du cache deja charge (aucun appel base en plus) ; un serveur
+  // prive ou inconnu n'est jamais enregistre, donc jamais montre aux amis.
+  const requestedSlug = typeof body.playingSlug === "string" ? body.playingSlug.trim().slice(0, 80) : "";
+  const playingSlug = requestedSlug && (await listPublicServers()).some((s) => s.slug === requestedSlug) ? requestedSlug : null;
+  await recordPresenceHeartbeat(user.id, playingSlug);
 
   return NextResponse.json({ ok: true });
 }
