@@ -10,7 +10,8 @@ const { app } = require("electron");
 // parametres. On propose Eclipse Temurin (projet Eclipse Foundation,
 // build officiel d'OpenJDK, utilise par d'autres launchers du genre comme
 // Prism Launcher) plutot que de demander une installation manuelle.
-const RUNTIME_BASE = path.join(app.getPath("userData"), "runtime");
+// Java telecharge suit le dossier des jeux (serie 2, idee 9, gamesLocation.js).
+const RUNTIME_BASE = path.join(require("./gamesLocation").GAMES_BASE, "runtime");
 const RUNTIME_DIR = path.join(RUNTIME_BASE, "java");
 // Windows (historique) ou Linux (version de test personnelle de Rushi, 14/10) :
 // Adoptium sert un .zip pour Windows et un .tar.gz pour Linux, et l'executable

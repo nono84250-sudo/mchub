@@ -1,0 +1,235 @@
+import Link from "next/link";
+import { getT } from "@/i18n/getDictionary";
+import { t } from "@/i18n/t";
+import type { PageLanguage, PageTag } from "@/lib/serverPage";
+import { getTagCatalog } from "@/lib/tagRequests";
+import { tagName } from "@/lib/tagCatalog";
+import { fallbackBanner } from "@/lib/fallbackBanner";
+import { STATE_COLOR, bandColor, gaugePercent, serverState } from "@/lib/playerGauge";
+import { ManualModsBadge } from "@/components/ManualModsBadge";
+import { TeamAvatar } from "@/components/TeamAvatar";
+import type { TeamBadge } from "@/lib/teamRules";
+
+type ServerCardProps = {
+  slug: string;
+  name: string;
+  description: string;
+  bannerUrl: string | null;
+  iconUrl: string | null;
+  type: "vanilla" | "modded";
+  playerCount: number | null;
+  playerCapacity: number | null;
+  // Filtres de l'annuaire (2026-10-16) : affiches sur la carte pour qu'un filtre se comprenne.
+  tags?: PageTag[];
+  // 19/10 : les 3 principales (ligne 2) ; les autres de `tags` vont en ligne 3.
+  mainTags?: PageTag[];
+  languages?: PageLanguage[];
+  minecraftVersion?: string;
+  modpackName?: string | null;
+  recommendedRamGB?: number | null;
+  isNew?: boolean;
+  // Contacte au moins une fois : sans reponse, le serveur est « ferme » (sinon « inconnu »).
+  pinged?: boolean;
+  // Lot 5 (18/10) : mods a ajouter a la main (badge bleu).
+  manualModsCount?: number;
+  // Teams (19/10) : « par [icone] X » / « proposé par Omniscient » a cote du nom. Pas de lien :
+  // toute la carte en est deja un (la page de team est sur la fiche).
+  team?: TeamBadge | null;
+};
+
+function initials(name: string): string {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "?"
+  );
+}
+
+// Carte horizontale (image a gauche, contenu a droite) — plus lisible en
+// liste qu'une grille de cartes verticales.
+// Taille imposee (16/10, demande de Rushi) : toutes les cartes font 144 px de haut des 640 px
+// (bannière 192 x 144), recadree en object-cover quelle que soit sa taille.
+// Design 2026-10-17, point 4 : les joueurs en ligne passent dans une colonne a
+// droite, en gros, avec une jauge comparee a la capacite DU serveur (5 sur 20
+// = un quart : un petit serveur ne parait pas vide). Statut inconnu : un tiret
+// et un mot, jamais juste une couleur. Version, Moddé, modpack et memoire en
+// pastilles. Sur telephone, les joueurs passent sur une ligne sous la description.
+export async function ServerCard({
+  slug,
+  name,
+  bannerUrl,
+  iconUrl,
+  type,
+  playerCount,
+  playerCapacity,
+  tags: rawTags = [],
+  mainTags: rawMain,
+  languages = [],
+  minecraftVersion,
+  modpackName,
+  recommendedRamGB,
+  isNew = false,
+  pinged = true,
+  manualModsCount = 0,
+  team = null,
+}: ServerCardProps) {
+  const [{ dict, locale }, { custom }] = await Promise.all([getT(), getTagCatalog()]);
+  // Etiquettes ajoutees par l'equipe comprises (liste en cache) ; une etiquette inconnue n'est pas montree.
+  const tags = rawTags.map((tag) => ({ tag, name: tagName(tag, locale, custom) })).filter((x) => x.name);
+  const mainSet = new Set(rawMain ?? rawTags.slice(0, 3));
+  const mainTags = tags.filter((x) => mainSet.has(x.tag));
+  const extraTags = tags.filter((x) => !mainSet.has(x.tag));
+  const modded = type === "modded";
+  const online = playerCount !== null;
+  // Etat (variante C, 17/10) : bande de couleur en haut, pastille pres du nom, jauge.
+  const state = serverState(playerCount, playerCapacity, pinged);
+  const color = STATE_COLOR[state];
+  const pct = gaugePercent(playerCount, playerCapacity);
+  const stateWord = state === "warn" || state === "full" ? dict.servers.state[state] : null;
+
+  const langChips = languages.length ? (
+    languages.map((lang) => (
+      <span key={lang} className="tag-chip tag-chip-outline shrink-0 px-1.5 py-0 font-mono text-[11px] font-semibold uppercase leading-[18px]">
+        {lang}
+      </span>
+    ))
+  ) : (
+    <span className="tag-chip shrink-0 border-dashed bg-transparent px-1.5 py-0 text-[11px] leading-[18px] text-muted">{dict.servers.noLanguage}</span>
+  );
+
+  const players = (compact: boolean) =>
+    online ? (
+      <>
+        <b className={`font-bold leading-none tracking-tight tabular-nums text-foreground ${compact ? "text-xl" : "text-[30px] min-[1500px]:text-2xl"}`}>{playerCount}</b>
+        <small className="whitespace-nowrap text-xs text-muted tabular-nums">
+          {playerCapacity ? t(dict, "servers.ofCapacity", { count: playerCapacity }) : dict.servers.playersOnlineShort}
+        </small>
+        {pct !== null ? (
+          <span aria-hidden="true" className={`block h-[5px] overflow-hidden rounded-full bg-foreground/10 ${compact ? "w-[60px] self-center" : "mt-[3px] w-[78px] max-w-full min-[1500px]:w-[72px]"}`}>
+            <span className="block h-full max-w-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+          </span>
+        ) : null}
+        {stateWord ? (
+          <small className="whitespace-nowrap text-[11px] font-semibold" style={{ color }}>
+            {stateWord}
+          </small>
+        ) : null}
+      </>
+    ) : (
+      <>
+        <b className={`font-bold leading-none text-muted ${compact ? "text-xl" : "text-[30px]"}`}>—</b>
+        <small className="whitespace-nowrap text-xs font-semibold" style={{ color }}>
+          {state === "off" ? dict.servers.state.off : dict.servers.unknownStatus}
+        </small>
+      </>
+    );
+
+  return (
+    <Link
+      href={`/servers/${slug}`}
+      className="panel card-calm group relative flex min-h-32 sm:h-36 min-[1500px]:h-[124px]"
+    >
+      {bandColor(state) ? (
+        <span aria-hidden="true" className="absolute inset-x-0 top-0 z-[2] h-1 rounded-t-[0.875rem]" style={{ background: bandColor(state)! }} />
+      ) : null}
+      <div
+        className="relative w-[104px] flex-shrink-0 overflow-hidden rounded-l-[0.875rem] sm:w-48 min-[1500px]:w-[130px]"
+        style={bannerUrl ? undefined : { background: fallbackBanner(name) }}
+      >
+        {/* Variante A (19/10) : « Nouveau » en coin de la banniere, plus sur la ligne du nom. */}
+        {isNew ? (
+          <span className="absolute left-2 top-2 z-[1] rounded-md px-2 py-0.5 text-[11px] font-bold text-white" style={{ background: "color-mix(in srgb, var(--accent) 78%, black)" }}>
+            {dict.servers.newBadge}
+          </span>
+        ) : null}
+        {bannerUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={bannerUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        ) : (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 grid place-items-center px-3 text-center text-[22px] font-extrabold leading-tight tracking-wide text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.35)]"
+          >
+            <span className="sm:hidden">{initials(name)}</span>
+            <span className="hidden line-clamp-2 break-words sm:[display:-webkit-box]">{name.toUpperCase()}</span>
+          </span>
+        )}
+      </div>
+
+      {/* Variante A (19/10, choix de Rushi) : une ligne, une info. 1) nom + team (la team se
+          raccourcit en premier), 2) 3 etiquettes principales, 3) etiquettes supplementaires,
+          4) version et type en petit. Une ligne d'etiquettes ne montre que celles qui tiennent
+          entieres (les autres passent sur une 2e ligne cachee) : jamais de « +2 ». Plus de
+          description sur la carte du site (elle est sur la fiche ; le launcher garde la sienne). */}
+      <div className="flex flex-1 min-w-0 flex-col justify-center gap-1.5 px-3 py-2.5 sm:px-4 sm:py-3 min-[1500px]:py-2">
+        <div className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+          <span className="server-icon h-6 w-6 flex-shrink-0 overflow-hidden text-xs">
+            {iconUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={iconUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              name.trim().charAt(0).toUpperCase() || "?"
+            )}
+          </span>
+          <h3 className="min-w-[4em] shrink truncate font-heading font-semibold text-foreground group-hover:text-accent transition-colors">
+            {name}
+          </h3>
+          {team ? (
+            <span className="inline-flex min-w-0 shrink-[6] items-center gap-1 overflow-hidden text-xs text-muted">
+              <span aria-hidden="true" className="shrink-0">·</span>
+              <span className="truncate">{team.official ? dict.team.proposedBy.toLowerCase() : dict.servers.byTeam}</span>
+              <TeamAvatar team={team} size={14} />
+              <span className="truncate font-medium text-foreground">{team.name}</span>
+            </span>
+          ) : null}
+          <ManualModsBadge count={manualModsCount} />
+        </div>
+
+        {mainTags.length ? (
+          <div className="flex h-[21px] min-w-0 flex-wrap gap-1.5 overflow-hidden">
+            {mainTags.map(({ tag, name }) => (
+              <span key={tag} className="tag-chip shrink-0 py-0 text-[11px] leading-[19px]">
+                {name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {extraTags.length ? (
+          <div className="flex h-[21px] min-w-0 flex-wrap gap-1.5 overflow-hidden">
+            {extraTags.map(({ tag, name }) => (
+              <span key={tag} className="tag-chip shrink-0 bg-transparent py-0 text-[11px] leading-[19px] text-muted">
+                {name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <p className="truncate font-mono text-[11.5px] text-muted">
+          {[
+            minecraftVersion,
+            modded ? modpackName || dict.servers.modded : dict.servers.vanilla,
+            modded && recommendedRamGB ? t(dict, "servers.ramShort", { count: recommendedRamGB }) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+
+        <div className="flex flex-wrap items-baseline gap-1.5 sm:hidden">
+          {players(true)}
+          {langChips}
+        </div>
+      </div>
+
+      <div className="hidden w-[124px] flex-shrink-0 flex-col items-end justify-center gap-[3px] overflow-hidden border-l border-border px-3 sm:flex min-[1500px]:w-[106px] min-[1500px]:px-2.5">
+        {players(false)}
+        {/* La langue n'est jamais cachee (19/10) : sous les joueurs, sur 2 lignes s'il le faut. */}
+        <span className="mt-1.5 flex flex-wrap justify-end gap-1">{langChips}</span>
+      </div>
+    </Link>
+  );
+}

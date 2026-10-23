@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, UserPlus, X } from "@phosphor-icons/react";
 import { acceptFriendAction, addFriendAction, removeFriendAction, type AddFriendState } from "@/lib/actions/friends";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 export type FriendRow = {
   userId: string;
@@ -26,15 +27,41 @@ export function FriendsPanel({
   friends,
   incoming,
   outgoing,
+  myCode = null,
 }: {
   friends: FriendRow[];
   incoming: FriendRequestRow[];
   outgoing: FriendRequestRow[];
+  // Code d'ami a donner (seulement en « Seulement avec mon code »), une ligne sous le champ.
+  myCode?: string | null;
 }) {
   const { t } = useI18n();
   const router = useRouter();
   const [state, formAction, pending] = useActionState<AddFriendState, FormData>(addFriendAction, undefined);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
+  const [codeCopied, setCodeCopied] = useState(false);
+  const shownCode = myCode ? `${myCode.slice(0, 3)}-${myCode.slice(3)}` : "";
+  const codeLine = myCode ? (
+    <p className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
+      {t("friends.yourCodeLine")} <code className="font-mono text-[13px] font-semibold tracking-[0.1em] text-foreground">{shownCode}</code>
+      <button
+        type="button"
+        className="font-semibold text-accent"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(shownCode);
+          } catch {
+            // le code reste visible
+          }
+          setCodeCopied(true);
+          setTimeout(() => setCodeCopied(false), 1800);
+        }}
+      >
+        {codeCopied ? t("friends.copied") : t("friends.copy")}
+      </button>
+    </p>
+  ) : null;
 
   useEffect(() => {
     if (state?.done) router.refresh();
@@ -53,8 +80,38 @@ export function FriendsPanel({
   const iconButton = "flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface-raised";
   const nothing = friends.length === 0 && incoming.length === 0 && outgoing.length === 0;
 
+  // Design 2026-10-17, point 7 : sans ami ni demande, le champ pseudo est directement
+  // dans l'ecran vide (une phrase et un bouton).
+  if (nothing) {
+    return (
+      <div className="panel flex min-h-40 flex-col items-center justify-center gap-2 p-6 text-center text-[13.5px] text-muted">
+        <span className="server-icon h-10 w-10 rounded-[10px]">
+          <UserPlus className="h-5 w-5" />
+        </span>
+        <b className="text-[15px] font-semibold text-foreground">{t("friends.emptyTitle")}</b>
+        <form action={formAction} className="flex w-full max-w-sm gap-1.5">
+          <input
+            type="text"
+            name="username"
+            placeholder={t("friends.addPlaceholder")}
+            autoComplete="off"
+            className="min-w-0 flex-1 rounded-md border px-2.5 py-1.5 text-[13px]"
+            style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--foreground)" }}
+          />
+          <button type="submit" disabled={pending} className="btn-fill px-3 py-1.5 text-[13px]">
+            {pending ? t("friends.adding") : t("friends.sendRequest")}
+          </button>
+        </form>
+        {state?.error ? <p className="text-sm text-danger">{state.error}</p> : null}
+        {state?.done ? <p className="text-sm text-muted">{t("friends.addFeedback")}</p> : null}
+        {codeLine}
+      </div>
+    );
+  }
+
   return (
     <div>
+      {dialog}
       <form action={formAction} className="flex flex-wrap items-center gap-2">
         <input
           type="text"
@@ -74,6 +131,7 @@ export function FriendsPanel({
       {/* Message generique, jamais "demande envoyée" / "pseudo introuvable" : voir le
           commentaire au-dessus de ce composant. */}
       {state?.done ? <p className="mt-2 text-sm text-muted">{t("friends.addFeedback")}</p> : null}
+      {codeLine}
 
       {nothing ? <p className="mt-5 text-sm text-muted">{t("friends.empty")}</p> : null}
 
@@ -145,7 +203,16 @@ export function FriendsPanel({
               </span>
               <button
                 type="button"
-                onClick={() => run(friend.userId, removeFriendAction)}
+                onClick={async () => {
+                  const who = friend.minecraftUsername ?? "?";
+                  const ok = await confirm({
+                    tone: "danger",
+                    title: t("friends.removeTitle", { name: who }),
+                    body: t("friends.removeBody"),
+                    confirmLabel: t("friends.removeBtn"),
+                  });
+                  if (ok) run(friend.userId, removeFriendAction);
+                }}
                 disabled={busyId === friend.userId}
                 aria-label={t("friends.remove")}
                 title={t("friends.remove")}

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { SERVERS_CACHE_TAG, isProvenOwner, proofFromRequest } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { runAndStoreChecks } from "@/lib/verification";
+import { MANUAL_MODS_READY, parseManualMods } from "@/lib/manualMods";
 
 // Recoit le resultat de l'auto-test de publication lance depuis le launcher (voir
 // "Tester pour publication" dans Mes instances, renderer.js/runSelfTest) — 3 controles :
@@ -52,8 +53,13 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
     gameStarted: body.checks?.gameStarted === true,
   };
   const detectedVersion = typeof body.detectedVersion === "string" ? body.detectedVersion.trim().slice(0, 100) || null : null;
+  // Lot 5 (18/10) : mods a ajouter a la main (bloques par CurseForge, absents de Modrinth). Le
+  // launcher met modpackInstalled a true quand seuls ce genre de mods manquent : le test passe.
+  const manualMods = parseManualMods(body.manualMods);
 
-  const allPassed = checks.reachable && checks.modpackInstalled && checks.gameStarted;
+  // Lot 5 : avec des mods a ajouter a la main, le jeu peut ne pas avoir ete demarre pendant le
+  // test (le proprietaire n'a pas ajoute les mods) : la publication reste possible.
+  const allPassed = checks.reachable && checks.modpackInstalled && (checks.gameStarted || manualMods.length > 0);
   // Un echec partiel n'ecrit RIEN : jamais de debloquage silencieux de la publication sur un
   // test incomplet (voir le controle "Publier" masque sur ServerForm.tsx tant que
   // selfTestPassedAt est vide).
@@ -65,6 +71,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
   await db.orm.public.Server.where({ id: server.id }).update({
     selfTestPassedAt: new Date().toISOString(),
     selfTestDetectedVersion: detectedVersion,
+    ...(MANUAL_MODS_READY ? { manualModsCount: manualMods.length, manualModsJson: manualMods.length ? JSON.stringify(manualMods) : null } : {}),
     isPrivate: false,
     verificationReason: null,
   });

@@ -1,5 +1,6 @@
 import { db, execSql } from "@/lib/db";
 import { getOnlineStatuses } from "@/lib/presence";
+import { FRIEND_PRIVACY_READY, resolveFriendTarget } from "@/lib/friendPrivacy";
 
 // Systeme d'amis. Phase 1 (2026-10-14) : ajout direct et reciproque, sans accord de l'autre
 // joueur — n'importe qui pouvait donc s'ajouter en ami d'un joueur et voir s'il etait en ligne.
@@ -107,10 +108,14 @@ export async function sendFriendRequest(userId: string, targetMinecraftUsername:
   // Pseudos Minecraft insensibles a la casse (« notch » = « Notch »). Deux lignes peuvent porter
   // le meme pseudo (changement de pseudo pas encore resynchronise chez l'ancien proprietaire) :
   // la plus recemment mise a jour l'emporte, plutot qu'une ligne au hasard (audit 14/10).
-  const [target] = (await execSql(
-    'SELECT "id" FROM "user" WHERE lower("minecraftUsername") = lower(?) ORDER BY "updatedAt" DESC LIMIT 1',
-    [trimmed],
-  )) as { id: string }[];
+  // « Qui peut m'ajouter en ami » (18/10) : par code si la cible est en « tout le monde » ou
+  // « avec mon code », par pseudo seulement en « tout le monde », jamais en « personne ».
+  const [target] = FRIEND_PRIVACY_READY
+    ? await resolveFriendTarget(trimmed).then((id) => (id ? [{ id }] : []))
+    : ((await execSql(
+        'SELECT "id" FROM "user" WHERE lower("minecraftUsername") = lower(?) ORDER BY "updatedAt" DESC LIMIT 1',
+        [trimmed],
+      )) as { id: string }[]);
   if (!target || target.id === userId) return;
 
   const [userId1, userId2] = orderedPair(userId, target.id);

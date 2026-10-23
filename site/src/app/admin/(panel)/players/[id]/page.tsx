@@ -3,6 +3,9 @@ import { db, execSql } from "@/lib/db";
 import { DesignScreen } from "@/components/admin/DesignScreen";
 import { SlotPortal } from "@/components/admin/SlotPortal";
 import { PlayerExportButton } from "@/components/admin/PlayerExportButton";
+import { AdminTeamButton } from "@/components/admin/AdminTeamButton";
+import { listMyTeams } from "@/lib/teams";
+import { TEAMS_READY } from "@/lib/teamRules";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { playerDetailHtml, type PlayerServerRow } from "@/app/admin/design/bind";
 import { countPlayerData, EXPORT_UNCHECKED_BY_DEFAULT, type ExportCategory } from "@/lib/playerExport";
@@ -43,7 +46,7 @@ export default async function PlayerDetail({
   const [servers, warnings, notes] = await Promise.all([
     db.orm.public.Server.select("id", "name", "slug", "ip", "published", "isPrivate", "frozenAt").where({ ownerId: id }).orderBy((s) => s.createdAt.desc()).all(),
     db.orm.public.PlayerWarning.select("id", "reason", "createdBy", "createdAt").where({ userId: id }).orderBy((w) => w.createdAt.desc()).all(),
-    db.orm.public.AdminNote.select("id", "text", "createdBy", "createdAt").where({ userId: id }).orderBy((n) => n.createdAt.desc()).all(),
+    db.orm.public.AdminNote.select("id", "text", "createdBy", "createdAt", "kind").where({ userId: id }).orderBy((n) => n.createdAt.desc()).all(),
   ]);
   const serverIds = servers.map((s) => s.id);
   // Signalements techniques scopes aux serveurs de ce joueur (WHERE serverId IN (...)) — avant,
@@ -95,12 +98,25 @@ export default async function PlayerDetail({
     lockedAt: player.lockedAt,
     warnings,
     notes,
+    // Suppression des notes : proprietaire du site seulement (la route le verifie aussi).
+    canDeleteNotes: admin.isOwner,
+    noteDeleted: query.noteDeleted === "1",
   });
   // Export reserve au role admin (la route le verifie aussi) : un moderateur ne voit pas le bouton.
   const exportCounts = admin.role === "admin" ? await countPlayerData(player.id) : null;
+  // Teams (19/10) : bouton « Teams » reserve au role admin, comme l'export (la route le verifie aussi).
+  const teams = admin.role === "admin" && TEAMS_READY ? await listMyTeams(player.id) : [];
   return (
     <>
       <DesignScreen name="player-detail" html={html} />
+      {admin.role === "admin" && TEAMS_READY ? (
+        <SlotPortal slotId="player-export-slot">
+          <AdminTeamButton
+            userId={player.id}
+            teams={teams.map((t) => ({ id: t.id, name: t.name, description: t.description, iconUrl: t.iconUrl, slug: t.slug }))}
+          />
+        </SlotPortal>
+      ) : null}
       {exportCounts ? (
         <SlotPortal slotId="player-export-slot">
           <PlayerExportButton

@@ -1,0 +1,394 @@
+{
+ "date": "2026-10-20T23:49:09.646Z",
+ "total": {
+  "total": 5725,
+  "curseforge": 5513,
+  "modrinth": 172,
+  "main": 40
+ },
+ "packs": [
+  {
+   "name": "All the Mods 10 - ATM10",
+   "groupe": "Très connu",
+   "downloads": 22493528,
+   "total": 499,
+   "curseforge": 493,
+   "modrinth": 6,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "1.21.1",
+   "loader": "neoforge"
+  },
+  {
+   "name": "Prominence™ II: Hasturian Era",
+   "groupe": "Très connu",
+   "downloads": 13132124,
+   "total": 662,
+   "curseforge": 637,
+   "modrinth": 25,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "1.20.1",
+   "loader": "fabric"
+  },
+  {
+   "name": "DeceasedCraft - Urban Zombie Apocalypse",
+   "groupe": "Très connu",
+   "downloads": 9791923,
+   "total": 318,
+   "curseforge": 307,
+   "modrinth": 9,
+   "main": 2,
+   "aLaMain": [
+    "DeceasedCraft Screen Tweak",
+    "No Potion Particles"
+   ],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "Better MC [FORGE] BMC4",
+   "groupe": "Très connu",
+   "downloads": 18752332,
+   "total": 425,
+   "curseforge": 396,
+   "modrinth": 24,
+   "main": 5,
+   "aLaMain": [
+    "Fixed Diagonal Walls",
+    "Climate Rivers language Fix",
+    "BMC \"Datafixer\"",
+    "Stay Clear",
+    "(Unofficial) Mandala's GUI - Dark Mode Mod Compatibility"
+   ],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "COBBLEVERSE - Pokemon Adventure [Cobblemon]",
+   "groupe": "Très connu",
+   "downloads": 5312760,
+   "mc": "",
+   "erreur": "le pack lui-meme ne se telecharge pas par l'API"
+  },
+  {
+   "name": "RLCraft",
+   "groupe": "Très connu",
+   "downloads": 30406461,
+   "total": 187,
+   "curseforge": 185,
+   "modrinth": 1,
+   "main": 1,
+   "aLaMain": [
+    "Realistic Terrain Generation"
+   ],
+   "mc": "1.12.2",
+   "loader": "forge"
+  },
+  {
+   "name": "VerityCraft - A Realistic Horror Experience with Verity",
+   "groupe": "Très connu",
+   "downloads": 1130336,
+   "total": 374,
+   "curseforge": 361,
+   "modrinth": 10,
+   "main": 3,
+   "aLaMain": [
+    "Spooky Paintings",
+    "The Orcs!",
+    "Custom Nether Portals [Any Shape Nether Portals]"
+   ],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "All the Mods 10: To the Sky   ATM10SKY",
+   "groupe": "Très connu",
+   "downloads": 3616575,
+   "total": 332,
+   "curseforge": 329,
+   "modrinth": 3,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "1.21.1",
+   "loader": "neoforge"
+  },
+  {
+   "name": "SkyFactory 4",
+   "groupe": "Très connu",
+   "downloads": 14167287,
+   "total": 202,
+   "curseforge": 202,
+   "modrinth": 0,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "1.12.2",
+   "loader": "forge"
+  },
+  {
+   "name": "Homestead - A Cozy Survival Experience",
+   "groupe": "Très connu",
+   "downloads": 2774274,
+   "total": 346,
+   "curseforge": 328,
+   "modrinth": 18,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "1.20.1",
+   "loader": "fabric"
+  },
+  {
+   "name": "Fabulously Optimized",
+   "groupe": "Très connu",
+   "downloads": 8059808,
+   "total": 48,
+   "curseforge": 47,
+   "modrinth": 1,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "26.3",
+   "loader": "fabric"
+  },
+  {
+   "name": "All the Mods 11 - ATM11",
+   "groupe": "Très connu",
+   "downloads": 1136994,
+   "total": 293,
+   "curseforge": 291,
+   "modrinth": 1,
+   "main": 1,
+   "aLaMain": [
+    "More Overlays Updated"
+   ],
+   "mc": "26.1.2",
+   "loader": "neoforge"
+  },
+  {
+   "name": "Cursed Walking - A Modern Zombie Apocalypse",
+   "groupe": "Très connu",
+   "downloads": 8714474,
+   "total": 245,
+   "curseforge": 226,
+   "modrinth": 11,
+   "main": 8,
+   "aLaMain": [
+    "Harder Rotten Flesh to Leather ",
+    "Zombie Infection Vaccine",
+    "Immersive Weathering Panda's Compat",
+    "[JCWS] Jeff's Cursed Walking Structures",
+    "CW Additions",
+    "[CWD] CW - Depths",
+    "Better Zombie Horse",
+    "Money (lopro9879)"
+   ],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "Tensura Neo Otherworld",
+   "groupe": "Très connu",
+   "downloads": 335190,
+   "total": 257,
+   "curseforge": 239,
+   "modrinth": 10,
+   "main": 8,
+   "aLaMain": [
+    "Tensura: Mortal Cultivation",
+    "Lootr Liaison",
+    "PlayerNBT Quests(FTB Quests)",
+    "Eldergrove",
+    "Neo Otherworld Compatibility Fix",
+    "Tensura: Enigmatic",
+    "Toms Storage Star Optimized",
+    "Tensura: skill disabled"
+   ],
+   "mc": "1.21.1",
+   "loader": "neoforge"
+  },
+  {
+   "name": "NightfallCraft - The Casket of Reveries",
+   "groupe": "Très connu",
+   "downloads": 2258747,
+   "mc": "",
+   "erreur": "le pack lui-meme ne se telecharge pas par l'API"
+  },
+  {
+   "name": "Jujutsu Kaisen (Sorcery Fight)",
+   "groupe": "Moins connu",
+   "downloads": 60313,
+   "total": 66,
+   "curseforge": 62,
+   "modrinth": 4,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "After The Silence - Ghostlyy",
+   "groupe": "Moins connu",
+   "downloads": 65752,
+   "mc": "",
+   "erreur": "le pack lui-meme ne se telecharge pas par l'API"
+  },
+  {
+   "name": "Isla Nublar: Dinosaurs! by Forge Labs",
+   "groupe": "Moins connu",
+   "downloads": 255053,
+   "total": 25,
+   "curseforge": 24,
+   "modrinth": 1,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "1.12.2",
+   "loader": "forge"
+  },
+  {
+   "name": "Echoes of Nostalgia - Expert",
+   "groupe": "Moins connu",
+   "downloads": 29889,
+   "total": 243,
+   "curseforge": 237,
+   "modrinth": 6,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "Legendary Edition",
+   "groupe": "Moins connu",
+   "downloads": 1153868,
+   "mc": "",
+   "erreur": "pack trop lourd pour le test"
+  },
+  {
+   "name": "SkyBlock Enhanced",
+   "groupe": "Moins connu",
+   "downloads": 59651,
+   "total": 51,
+   "curseforge": 49,
+   "modrinth": 2,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "26.2",
+   "loader": "fabric"
+  },
+  {
+   "name": "Cave horror optimized (cave horror project 1)",
+   "groupe": "Moins connu",
+   "downloads": 31177,
+   "total": 187,
+   "curseforge": 177,
+   "modrinth": 6,
+   "main": 4,
+   "aLaMain": [
+    "Spooky Paintings",
+    "The Mangled Knocker",
+    "Restore Hardcore World",
+    "Cave Horror Sounds [1 MİLLİON]"
+   ],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "Better MC [FABRIC] BMC1",
+   "groupe": "Moins connu",
+   "downloads": 7873051,
+   "total": 297,
+   "curseforge": 287,
+   "modrinth": 8,
+   "main": 2,
+   "aLaMain": [
+    "Wolf Armor Compat (Fabric)",
+    "It Takes a Pillage (Fabric)"
+   ],
+   "mc": "1.19.2",
+   "loader": "fabric"
+  },
+  {
+   "name": "Walking Craft",
+   "groupe": "Moins connu",
+   "downloads": 13116,
+   "total": 156,
+   "curseforge": 151,
+   "modrinth": 4,
+   "main": 1,
+   "aLaMain": [
+    "K-Turrets"
+   ],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "Crazy Craft Recrafted",
+   "groupe": "Moins connu",
+   "downloads": 6215,
+   "mc": "",
+   "erreur": "le pack lui-meme ne se telecharge pas par l'API"
+  },
+  {
+   "name": "All in one: Create",
+   "groupe": "Moins connu",
+   "downloads": 433856,
+   "total": 106,
+   "curseforge": 99,
+   "modrinth": 6,
+   "main": 1,
+   "aLaMain": [
+    "APTweaks: Mods  (11.x Classic)"
+   ],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "Luvstar's Fairy Cottagecore",
+   "groupe": "Moins connu",
+   "downloads": 18768,
+   "mc": "",
+   "erreur": "le pack lui-meme ne se telecharge pas par l'API"
+  },
+  {
+   "name": "DEMISE.ZIP",
+   "groupe": "Moins connu",
+   "downloads": 12570,
+   "total": 44,
+   "curseforge": 38,
+   "modrinth": 5,
+   "main": 1,
+   "aLaMain": [
+    "The Watching Shade"
+   ],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "MagicCraft 2: Choose your magic path",
+   "groupe": "Moins connu",
+   "downloads": 8948,
+   "total": 250,
+   "curseforge": 241,
+   "modrinth": 6,
+   "main": 3,
+   "aLaMain": [
+    "Realm RPG: Dragon Wyrms",
+    "Mahou Tsukai Combat",
+    "Realm RPG: Imps & Demons"
+   ],
+   "mc": "1.20.1",
+   "loader": "forge"
+  },
+  {
+   "name": "MIKEL's Controllable",
+   "groupe": "Moins connu",
+   "downloads": 16091,
+   "total": 112,
+   "curseforge": 107,
+   "modrinth": 5,
+   "main": 0,
+   "aLaMain": [],
+   "mc": "1.21",
+   "loader": "neoforge"
+  }
+ ]
+}

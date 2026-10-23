@@ -142,13 +142,13 @@ function statusChips(s: { published: boolean; isPrivate: boolean; frozen: boolea
   // propriétaire a laissé son interrupteur "published" sur oui — l'admin doit le voir ici,
   // pas croire que le serveur est déjà en ligne.
   const listed = s.frozen
-    ? `<span style="${CHIP}background:color-mix(in srgb, #8ac3e0 16%, transparent);color:#8ac3e0;">Gelé</span>`
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--frozen) 16%, transparent);color:var(--frozen);">Gelé</span>`
     : s.verificationStatus === "pending"
-    ? `<span style="${CHIP}background:color-mix(in srgb, #e0c28a 16%, transparent);color:#e0c28a;">En attente de validation</span>`
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--warn) 16%, transparent);color:var(--warn);">En attente de validation</span>`
     : s.verificationStatus === "rejected"
     ? `<span style="${CHIP}background:color-mix(in srgb, var(--danger) 16%, transparent);color:var(--danger);">Refusé</span>`
     : s.published
-    ? `<span style="${CHIP}background:color-mix(in srgb, #5fd3a0 16%, transparent);color:#5fd3a0;">Publié</span>`
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--success) 16%, transparent);color:var(--success);">Publié</span>`
     : `<span style="${CHIP}background:color-mix(in srgb, var(--color-text) 10%, transparent);color:var(--muted);">Masqué</span>`;
   const priv = s.isPrivate ? `<span style="${CHIP}background:color-mix(in srgb, var(--color-accent) 18%, transparent);color:var(--color-accent-100);">Privé</span>` : "";
   return listed + priv;
@@ -333,7 +333,9 @@ function pagerHtml2(action: string, f: PlayerFilters, from: number, to: number, 
 // 2FA) sont retires, pas marques (2026-10-14 : rien de factice en production).
 export type PlayerServerRow = { name: string; slug: string; address: string; published: boolean; isPrivate: boolean; frozen: boolean; openReports: number };
 export type PlayerWarningRow = { id: string; reason: string; createdBy: string; createdAt: string };
-export type AdminNoteRow = { id: string; text: string; createdBy: string; createdAt: string };
+// kind : "note" (ecrite par le staff) ou "export" (trace automatique d'un export des donnees,
+// verrouillee : personne ne peut la supprimer, voir api/admin/note-delete).
+export type AdminNoteRow = { id: string; text: string; createdBy: string; createdAt: string; kind: string };
 
 // Abonnements : pas encore construits (tout est gratuit). La carte "Subscription" de la fiche
 // joueur reste dans la maquette mais n'est affichee qu'une fois ce drapeau active.
@@ -359,6 +361,8 @@ export function playerDetailHtml(data: {
   lockedAt: string | null;
   warnings: PlayerWarningRow[];
   notes: AdminNoteRow[];
+  canDeleteNotes: boolean;
+  noteDeleted: boolean;
 }): string {
   let html = SCREENS["player-detail"];
 
@@ -483,7 +487,7 @@ function playerServersSectionHtml(data: {
 }): string {
   const row = (s: PlayerServerRow) => {
     const status = s.frozen
-      ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, #8ac3e0 16%, transparent);color:#8ac3e0;">Gelé</span>`
+      ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--frozen) 16%, transparent);color:var(--frozen);">Gelé</span>`
       : s.published
         ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Publié</span>`
         : `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:var(--raised);color:var(--muted);border:1px solid var(--color-divider);">Masqué</span>`;
@@ -519,13 +523,13 @@ function playerServersSectionHtml(data: {
 // Pop-up « Message » depuis la fiche joueur : pas de type "Gel" ici (rien ne gele un compte
 // joueur aujourd'hui), contrairement au message depuis une fiche serveur.
 function playerMessageHtml(data: { id: string; name: string }): string {
-  const COLORS = `{info:'#9184d9',warning:'#e8c547',error:'#e5484d'}`;
+  const COLORS = `{info:'var(--accent)',warning:'var(--warn)',error:'var(--danger)'}`;
   const field = "display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);";
   const locked = "display:flex;align-items:center;height:36px;padding:0 10px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:var(--radius-md);font-size:13.5px;color:var(--color-text);";
   return (
     `<button type="button" popovertarget="player-message-${escapeHtml(data.id)}" style="${TOP_BUTTON}"><i class="ph ph-chat-circle" style="font-size:14.5px;"></i>Message</button>` +
     `<div id="player-message-${escapeHtml(data.id)}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:460px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
-    `<div data-stripe style="height:4px;background:#9184d9;"></div>` +
+    `<div data-stripe style="height:4px;background:var(--accent);"></div>` +
     `<form method="post" action="/api/admin/players/${escapeHtml(data.id)}/message" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
     `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Message à ${escapeHtml(data.name)}</h2>` +
     `<label style="${field}">Type de message<select name="kind" class="input" style="height:36px;" onchange="this.form.querySelector('[data-stripe]').style.background=${COLORS}[this.value]"><option value="info">Information</option><option value="warning">Avertissement</option><option value="error">Erreur</option></select></label>` +
@@ -583,7 +587,7 @@ function lockAccountPopoverHtml(data: { id: string; name: string }, kind: "freez
   const anchor = `${kind}-account-${id}`;
   const label = isLock ? "Verrouiller le compte" : "Geler le compte";
   const icon = isLock ? "ph-lock-simple" : "ph-snowflake";
-  const color = isLock ? "var(--danger)" : "#8ac3e0";
+  const color = isLock ? "var(--danger)" : "var(--frozen)";
   const buttonStyle = isLock
     ? `border:1px solid color-mix(in srgb, var(--danger) 55%, transparent);color:var(--danger);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;`
     : `${TOP_BUTTON}color:${color};border-color:${color};`;
@@ -609,15 +613,15 @@ function freezeOrLockAccountHtml(data: { id: string; name: string }): string {
 function unlockAccountHtml(data: { id: string; name: string }): string {
   const id = escapeHtml(data.id);
   return (
-    `<button type="button" popovertarget="unlock-account-${id}" style="${TOP_BUTTON}color:#8ac3e0;border-color:#8ac3e0;"><i class="ph ph-lock-simple-open" style="font-size:14.5px;"></i>Déverrouiller le compte</button>` +
+    `<button type="button" popovertarget="unlock-account-${id}" style="${TOP_BUTTON}color:var(--frozen);border-color:var(--frozen);"><i class="ph ph-lock-simple-open" style="font-size:14.5px;"></i>Déverrouiller le compte</button>` +
     `<div id="unlock-account-${id}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:440px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
-    `<div style="height:4px;background:#8ac3e0;"></div>` +
+    `<div style="height:4px;background:var(--frozen);"></div>` +
     `<form method="post" action="/api/admin/players/${id}/unlock" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
     `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Déverrouiller ${escapeHtml(data.name)} ?</h2>` +
     `<p style="margin:0;font-size:13px;color:var(--muted);line-height:1.55;">Le compte pourra de nouveau se connecter au launcher.</p>` +
     `<div style="display:flex;gap:10px;justify-content:flex-end;">` +
     `<button type="button" popovertarget="unlock-account-${id}" popovertargetaction="hide" style="${CANCEL}">Annuler</button>` +
-    `<button type="submit" style="${CONFIRM}color:#8ac3e0;border-color:#8ac3e0;">Déverrouiller</button></div>` +
+    `<button type="submit" style="${CONFIRM}color:var(--frozen);border-color:var(--frozen);">Déverrouiller</button></div>` +
     `</form></div>`
   );
 }
@@ -629,7 +633,7 @@ function addNoteHtml(data: { id: string; name: string }): string {
   return (
     `<button type="button" popovertarget="add-note-${id}" style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:6px 12px;border-radius:var(--radius-md);font:500 12.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;"><i class="ph ph-plus" style="font-size:13.5px;"></i>Add note</button>` +
     `<div id="add-note-${id}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:440px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
-    `<div style="height:4px;background:#9184d9;"></div>` +
+    `<div style="height:4px;background:var(--accent);"></div>` +
     `<form method="post" action="/api/admin/players/${id}/notes" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
     `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Note sur ${escapeHtml(data.name)}</h2>` +
     `<label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);">Note interne (pas affichée au joueur ; peut lui être communiquée s'il demande ses données)<textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:90px;font-size:13.5px;"></textarea></label>` +
@@ -640,16 +644,47 @@ function addNoteHtml(data: { id: string; name: string }): string {
   );
 }
 
-function noteRowHtml(note: AdminNoteRow): string {
+// Note du staff. Trace d'export : cadenas, jamais de bouton. Autres notes : bouton « Supprimer »
+// avec confirmation, seulement pour le proprietaire du site (demande de Rushi, 23/10).
+function noteRowHtml(note: AdminNoteRow, canDelete: boolean): string {
   const date = new Date(note.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
-  return `<div style="min-height:70px;padding:10px 12px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:var(--radius-md);font-size:13.5px;line-height:1.6;text-wrap:pretty;">${escapeHtml(note.text)} — ${escapeHtml(note.createdBy)}, ${date}</div>`;
+  const trace = note.kind === "export";
+  const id = escapeHtml(note.id);
+  const lockIcon = `<i class="ph ph-lock-simple" style="font-size:13px;"></i>`;
+  const side = trace
+    ? `<span title="Note créée automatiquement lors d'un export des données. Personne ne peut la supprimer, même le propriétaire." style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;font-size:11.5px;font-weight:500;color:#e8c547;white-space:nowrap;padding:3px 8px;border-radius:999px;border:1px solid color-mix(in srgb, #e8c547 40%, transparent);">${lockIcon}Trace verrouillée</span>`
+    : canDelete
+      ? `<button type="button" popovertarget="delete-note-${id}" style="border:1px solid transparent;color:var(--muted);background:transparent;padding:4px 10px;border-radius:var(--radius-md);font:500 12.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0;"><i class="ph ph-trash" style="font-size:13.5px;"></i>Supprimer</button>` +
+        `<div id="delete-note-${id}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:440px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
+        `<div style="height:4px;background:var(--danger);"></div>` +
+        `<form method="post" action="/api/admin/note-delete" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
+        `<input type="hidden" name="id" value="${id}">` +
+        `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Supprimer cette note ?</h2>` +
+        `<p style="margin:0;font-size:13px;color:var(--muted);line-height:1.55;">Elle sera supprimée pour de bon, personne ne pourra la récupérer.</p>` +
+        `<div style="display:flex;gap:10px;justify-content:flex-end;">` +
+        `<button type="button" popovertarget="delete-note-${id}" popovertargetaction="hide" style="${CANCEL}">Annuler</button>` +
+        `<button type="submit" style="${CONFIRM}color:var(--danger);border-color:var(--danger);">Oui, supprimer</button></div>` +
+        `</form></div>`
+      : "";
+  const box = trace
+    ? "border:1px solid color-mix(in srgb, #e8c547 45%, transparent);background:color-mix(in srgb, #e8c547 8%, var(--color-bg));"
+    : "border:1px solid var(--color-divider);background:var(--color-bg);";
+  return (
+    `<div style="min-height:70px;padding:10px 12px;${box}border-radius:var(--radius-md);font-size:13.5px;line-height:1.6;display:flex;gap:12px;align-items:flex-start;">` +
+    `<div style="flex:1;min-width:0;text-wrap:pretty;overflow-wrap:anywhere;">${escapeHtml(note.text)} — ${escapeHtml(note.createdBy)}, ${date}</div>` +
+    side +
+    `</div>`
+  );
 }
 
-function playerNotesSectionHtml(data: { id: string; name: string; notes: AdminNoteRow[] }): string {
+function playerNotesSectionHtml(data: { id: string; name: string; notes: AdminNoteRow[]; canDeleteNotes: boolean; noteDeleted: boolean }): string {
+  const done = data.noteDeleted
+    ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Note supprimée.</div>`
+    : "";
   const body = data.notes.length
-    ? `<div style="display:flex;flex-direction:column;gap:10px;">${data.notes.map(noteRowHtml).join("")}</div>`
+    ? `<div style="display:flex;flex-direction:column;gap:10px;">${data.notes.map((n) => noteRowHtml(n, data.canDeleteNotes)).join("")}</div>`
     : `<p style="margin:0;font-size:13px;color:var(--muted);">Aucune note.</p>`;
-  return body + addNoteHtml(data);
+  return done + body + addNoteHtml(data);
 }
 
 // Composer de message diffuse — portee reduite par rapport a la maquette (voir la route
@@ -680,8 +715,8 @@ export function notificationsHtml(data: {
 
   // Mode maintenance du launcher : bloque l'ecran d'accueil pour tout le monde, sauf code.
   const maintenanceBox = data.maintenance?.active
-    ? `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid #e8c547;background:color-mix(in srgb, #e8c547 8%, transparent);font-size:13px;">` +
-      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:#e8c547"></i><strong>Maintenance du launcher active</strong></div>` +
+    ? `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--warn);background:color-mix(in srgb, var(--warn) 8%, transparent);font-size:13px;">` +
+      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:var(--warn)"></i><strong>Maintenance du launcher active</strong></div>` +
       `<span style="color:var(--muted);">${escapeHtml(data.maintenance.message)}</span>` +
       `<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--muted);">Code d'accès :</span><code style="font:600 16px ui-monospace,Menlo,monospace;letter-spacing:.08em;padding:4px 10px;border-radius:var(--radius-md);background:var(--color-bg);border:1px solid var(--color-divider);">${escapeHtml(data.maintenance.code)}</code></div>` +
       `<form method="post" action="/api/admin/notifications/maintenance/clear"><button type="submit" style="${BUTTON}">Désactiver la maintenance</button></form>` +
@@ -705,7 +740,7 @@ export function notificationsHtml(data: {
     `<label style="${field}"><span style="${label}">Audience</span><select name="audience" class="input" style="height:36px;" required>` +
     `<option value="everyone">Tout le monde</option><option value="owners">Propriétaires de serveur</option></select></label>` +
     `<label style="${field}"><span style="${label}">Système concerné (si Maintenance)</span><select name="system" class="input" style="height:36px;">` +
-    `<option value="">—</option><option value="Site">Site</option><option value="Launcher">Launcher</option><option value="CurseForge">CurseForge</option><option value="Modrinth">Modrinth</option><option value="Tout">Tout</option></select></label>` +
+    `<option value="">—</option><option value="Site">Site</option><option value="Launcher">Launcher</option><option value="CurseForge">CurseForge</option><option value="Modrinth">Modrinth</option><option value="FTB">FTB</option><option value="Tout">Tout</option></select></label>` +
     `<label style="${field}"><span style="${label}">Message</span><textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:110px;font-size:13.5px;"></textarea></label>` +
     `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;"><input type="checkbox" name="banner" style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Aussi afficher en bannière sur le site (remplace la bannière active)</label>` +
     `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;"><input type="checkbox" name="blockLauncher" style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Activer le mode maintenance du launcher à cette heure (si Type = Maintenance)</label>` +
@@ -752,13 +787,13 @@ const TOP_BUTTON =
 // Pop-up « Message au propriétaire » (native, sans script : popover). Depuis la fiche, le serveur
 // est fixe ; si le serveur est gelé, le type est fixe aussi (Gel). Sinon le type se choisit.
 function ownerMessageHtml(data: { id: string; slug: string; name: string; frozen: boolean }): string {
-  const COLORS = `{info:'#9184d9',warning:'#e8c547',error:'#e5484d'}`;
+  const COLORS = `{info:'var(--accent)',warning:'var(--warn)',error:'var(--danger)'}`;
   const field = "display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);";
   const locked = "display:flex;align-items:center;height:36px;padding:0 10px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:var(--radius-md);font-size:13.5px;color:var(--color-text);";
   const typeField = data.frozen
     ? `<input type="hidden" name="kind" value="gel"><div style="${field}">Type de message<span style="${locked}">Gel</span></div>`
     : `<label style="${field}">Type de message<select name="kind" class="input" style="height:36px;" onchange="this.form.querySelector('[data-stripe]').style.background=${COLORS}[this.value]"><option value="info">Information</option><option value="warning">Avertissement</option><option value="error">Erreur</option></select></label>`;
-  const stripe = data.frozen ? "#8ac3e0" : "#9184d9";
+  const stripe = data.frozen ? "var(--frozen)" : "var(--accent)";
   return (
     `<button type="button" popovertarget="owner-message-${escapeHtml(data.id)}" style="${TOP_BUTTON}">Message au propriétaire</button>` +
     `<div id="owner-message-${escapeHtml(data.id)}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:460px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
@@ -837,8 +872,8 @@ export function serverDetailHtml(data: {
     const when = data.frozenAt ? escapeHtml(new Date(data.frozenAt).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })) : "";
     const title = blindAppealReview ? `Gelé le ${when}` : `Gelé par ${escapeHtml(data.frozenBy ?? "—")} · ${when}`;
     const banner =
-      `<div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb, #8ac3e0 35%, transparent);background:color-mix(in srgb, #8ac3e0 7%, transparent);">` +
-      `<i class="ph ph-snowflake" style="font-size:18px;color:#8ac3e0;margin-top:1px"></i>` +
+      `<div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb, var(--frozen) 35%, transparent);background:color-mix(in srgb, var(--frozen) 7%, transparent);">` +
+      `<i class="ph ph-snowflake" style="font-size:18px;color:var(--frozen);margin-top:1px"></i>` +
       `<div style="display:flex;flex-direction:column;gap:3px;font-size:13px;"><span style="font-weight:500;">${title}</span>` +
       `<span style="color:var(--muted);line-height:1.5;">Masqué de l'annuaire et de la recherche. Les connexions sont bloquées dans le launcher, y compris depuis les favoris et raccourcis. Motif : ${escapeHtml(data.frozenReason ?? "")}</span></div></div>` +
       (appealPending ? appealReviewHtml({ id: data.id, blindReview: blindAppealReview, hasAssignedAdmin: data.appealAssignedAdminId !== null, history: data.appealHistory }) : "");
@@ -851,7 +886,7 @@ export function serverDetailHtml(data: {
     const barEnd = balancedEnd(html, barStart, "div");
     const freeze = frozen
       ? unfreezeHtml({ id: data.id, name: data.name })
-      : `<a href="/admin/servers/${escapeHtml(data.slug)}/geler" style="${TOP_BUTTON}color:#8ac3e0;border-color:#8ac3e0;">Geler le serveur</a>`;
+      : `<a href="/admin/servers/${escapeHtml(data.slug)}/geler" style="${TOP_BUTTON}color:var(--frozen);border-color:var(--frozen);">Geler le serveur</a>`;
     const newBar =
       `<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">` +
       `<a href="/servers/${escapeHtml(data.slug)}" style="${TOP_BUTTON}">Voir la fiche publique</a>` +
@@ -1268,7 +1303,7 @@ function appealReviewHtml(data: { id: string; blindReview: boolean; hasAssignedA
     `<div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--muted);">${historyRows}</div>` +
     `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
     `<form method="post" action="/api/admin/servers/${id}/appeal-confirm"><button type="submit" style="border:1px solid transparent;color:var(--danger);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;">Confirmer le gel</button></form>` +
-    `<form method="post" action="/api/admin/servers/${id}/unfreeze"><input type="hidden" name="notify" value="on" /><button type="submit" style="${CONFIRM}color:#8ac3e0;border-color:#8ac3e0;">Annuler le gel</button></form>` +
+    `<form method="post" action="/api/admin/servers/${id}/unfreeze"><input type="hidden" name="notify" value="on" /><button type="submit" style="${CONFIRM}color:var(--frozen);border-color:var(--frozen);">Annuler le gel</button></form>` +
     `</div></div>`
   );
 }
@@ -1278,16 +1313,16 @@ function appealReviewHtml(data: { id: string; blindReview: boolean; hasAssignedA
 function unfreezeHtml(data: { id: string; name: string }): string {
   const id = escapeHtml(data.id);
   return (
-    `<button type="button" popovertarget="unfreeze-${id}" style="${TOP_BUTTON}color:#8ac3e0;border-color:#8ac3e0;">Dégeler le serveur</button>` +
+    `<button type="button" popovertarget="unfreeze-${id}" style="${TOP_BUTTON}color:var(--frozen);border-color:var(--frozen);">Dégeler le serveur</button>` +
     `<div id="unfreeze-${id}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:440px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
-    `<div style="height:4px;background:#8ac3e0;"></div>` +
+    `<div style="height:4px;background:var(--frozen);"></div>` +
     `<form method="post" action="/api/admin/servers/${id}/unfreeze" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
     `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Dégeler ${escapeHtml(data.name)} ?</h2>` +
     `<p style="margin:0;font-size:13px;color:var(--muted);line-height:1.55;">Le serveur revient dans l'annuaire et les joueurs peuvent à nouveau le rejoindre.</p>` +
     `<label style="display:flex;align-items:center;gap:10px;font-size:13.5px;"><input type="checkbox" name="notify" value="on" checked />Envoyer un message au propriétaire</label>` +
     `<div style="display:flex;gap:10px;justify-content:flex-end;">` +
     `<button type="button" popovertarget="unfreeze-${id}" popovertargetaction="hide" style="${CANCEL}">Annuler</button>` +
-    `<button type="submit" style="${CONFIRM}color:#8ac3e0;border-color:#8ac3e0;">Dégeler le serveur</button></div>` +
+    `<button type="submit" style="${CONFIRM}color:var(--frozen);border-color:var(--frozen);">Dégeler le serveur</button></div>` +
     `</form></div>`
   );
 }
@@ -1368,7 +1403,7 @@ function newsRowHtml(n: NewsRow): string {
     `<div style="min-width:0;display:flex;gap:10px;align-items:center;">` +
     `<a href="/admin/news/${escapeHtml(n.id)}" style="color:var(--color-accent);text-decoration:none;font-size:12.5px;">Modifier</a>` +
     `<form method="post" action="/api/admin/news/${escapeHtml(n.id)}/${n.published ? "unpublish" : "publish"}"><button type="submit" style="border:none;background:transparent;color:var(--muted);font-size:12.5px;cursor:pointer;padding:0;">${n.published ? "Dépublier" : "Publier"}</button></form>` +
-    `<form method="post" action="/api/admin/news/${escapeHtml(n.id)}/delete" onsubmit="return confirm('Supprimer cet article ?')"><button type="submit" style="border:none;background:transparent;color:var(--danger);font-size:12.5px;cursor:pointer;padding:0;">Supprimer</button></form>` +
+    `<form method="post" action="/api/admin/news/${escapeHtml(n.id)}/delete" data-confirm-title="Supprimer cet article ?" data-confirm-body="L'article disparaîtra du site et du launcher. On ne pourra pas revenir en arrière." data-confirm-btn="Supprimer l'article" data-confirm-tone="danger"><button type="submit" style="border:none;background:transparent;color:var(--danger);font-size:12.5px;cursor:pointer;padding:0;">Supprimer</button></form>` +
     `</div></div>`
   );
 }
@@ -1404,7 +1439,7 @@ export function newsEditorHtml(data: { id: string | null; title: string; body: s
   const field = "display:flex;flex-direction:column;gap:6px;min-width:0;";
   const label = "font-size:12px;color:var(--muted)";
   const deleteForm = data.id
-    ? `<form method="post" action="/api/admin/news/${escapeHtml(data.id)}/delete" onsubmit="return confirm('Supprimer cet article ?')" style="margin-top:4px;"><button type="submit" style="border:1px solid var(--danger);color:var(--danger);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;">Supprimer</button></form>`
+    ? `<form method="post" action="/api/admin/news/${escapeHtml(data.id)}/delete" data-confirm-title="Supprimer cet article ?" data-confirm-body="L'article disparaîtra du site et du launcher. On ne pourra pas revenir en arrière." data-confirm-btn="Supprimer l'article" data-confirm-tone="danger" style="margin-top:4px;"><button type="submit" style="border:1px solid var(--danger);color:var(--danger);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;">Supprimer</button></form>`
     : "";
   const form =
     `<form method="post" action="${action}" style="display:flex;flex-direction:column;gap:16px;max-width:720px;">` +
@@ -1495,12 +1530,19 @@ export function markAllSections(html: string, kind: "nb" | "pr" = "nb"): string 
 // Page Administration : gestion des comptes staff (admin/moderateur). La maquette propose une
 // matrice de permissions fine (Owner/Admin/Moderator/Editor/Support) qui n'a pas d'equivalent
 // ici (seulement deux roles, voir adminAuth.ts) : cette section reste donc "non branchee".
-export type StaffAccountRow = { id: string; username: string; role: "admin" | "moderator"; createdAt: string; mustChangeCredentials: boolean };
+export type StaffAccountRow = { id: string; username: string; role: "admin" | "moderator"; createdAt: string; mustChangeCredentials: boolean; totpEnabled: boolean };
 export type StaffRoleLabels = { admin: string; moderator: string };
+
+// Double authentification (obligatoire pour le staff, configuree a la premiere connexion).
+function staffTotpChip(totpEnabled: boolean): string {
+  return totpEnabled
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Activée</span>`
+    : `<span style="${CHIP}background:color-mix(in srgb, #e0c28a 16%, transparent);color:#e0c28a;">À configurer</span>`;
+}
 
 function staffStatusChip(mustChangeCredentials: boolean): string {
   return mustChangeCredentials
-    ? `<span style="${CHIP}background:color-mix(in srgb, #e0c28a 16%, transparent);color:#e0c28a;">En attente</span>`
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--warn) 16%, transparent);color:var(--warn);">En attente</span>`
     : `<span style="${CHIP}background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Actif</span>`;
 }
 
@@ -1524,9 +1566,15 @@ function manageStaffHtml(row: StaffAccountRow, isSelf: boolean, lastAdmin: boole
   const resetCredentials =
     `<form method="post" action="/api/admin/staff/${id}"><input type="hidden" name="role" value="${escapeHtml(row.role)}"><input type="hidden" name="resetCredentials" value="on">` +
     `<button type="submit" style="${item}">Forcer le changement des identifiants</button></form>`;
+  // Remise a zero de la 2FA (telephone ET codes de secours perdus) : le membre la reconfigure a
+  // sa prochaine connexion. Pas sur son propre compte (voir api/admin/staff/[id]/2fa-reset).
+  const reset2fa =
+    !isSelf && row.totpEnabled
+      ? `<form method="post" action="/api/admin/staff/${id}/2fa-reset" onsubmit="return confirm('${escapeHtml(row.username)} devra refaire la configuration (QR code) à sa prochaine connexion. Ses anciens codes ne marcheront plus. Continuer ?')"><button type="submit" style="${item}">Réinitialiser la double authentification</button></form>`
+      : "";
   const deleteItem =
     !isSelf && !lastAdmin
-      ? `<form method="post" action="/api/admin/staff/${id}/delete" onsubmit="return confirm('Supprimer le compte ${escapeHtml(row.username)} ?')"><button type="submit" style="${item}color:var(--danger);">Supprimer le compte</button></form>`
+      ? `<form method="post" action="/api/admin/staff/${id}/delete" data-confirm-title="Supprimer le compte ${escapeHtml(row.username)} ?" data-confirm-body="Cette personne n'aura plus accès au panel. On ne pourra pas revenir en arrière." data-confirm-btn="Supprimer le compte" data-confirm-tone="danger"><button type="submit" style="${item}color:var(--danger);">Supprimer le compte</button></form>`
       : isSelf
         ? `<p style="margin:0;padding:9px 14px;font-size:12px;color:var(--muted);">Tu ne peux pas supprimer ton propre compte.</p>`
         : `<p style="margin:0;padding:9px 14px;font-size:12px;color:var(--muted);">Dernier administrateur : suppression impossible.</p>`;
@@ -1537,6 +1585,7 @@ function manageStaffHtml(row: StaffAccountRow, isSelf: boolean, lastAdmin: boole
     `<div style="position:absolute;right:0;top:100%;margin-top:4px;z-index:20;min-width:260px;padding:6px 0;border-radius:var(--radius-md);background:var(--color-surface);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);">` +
     changeRole +
     resetCredentials +
+    reset2fa +
     divider +
     deleteItem +
     `</div></details>`
@@ -1569,13 +1618,14 @@ function staffRowHtml(row: StaffAccountRow, isSelf: boolean, lastAdmin: boolean,
   const initial = escapeHtml(row.username.charAt(0).toUpperCase());
   const created = new Date(row.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
   return (
-    `<div style="display:grid;min-width:640px;grid-template-columns:minmax(0,1.8fr) 150px 140px 110px 40px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;">` +
+    `<div style="display:grid;min-width:760px;grid-template-columns:minmax(0,1.8fr) 150px 140px 120px 110px 40px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;">` +
     `<div style="min-width:0;"><div style="display:flex;align-items:center;gap:12px;min-width:0;">` +
     `<span style="width:32px;height:32px;flex-shrink:0;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;">${initial}</span>` +
     `<span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(row.username)}${isSelf ? ` <span style="color:var(--muted);font-weight:400;">(toi)</span>` : ""}</span>` +
     `</div></div>` +
     `<div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">${escapeHtml(roleLabels[row.role])}</span></div>` +
     `<div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">${created}</span></div>` +
+    `<div style="min-width:0;">${staffTotpChip(row.totpEnabled)}</div>` +
     `<div style="min-width:0;">${staffStatusChip(row.mustChangeCredentials)}</div>` +
     `<div style="min-width:0;display:flex;justify-content:flex-end;">${manageStaffHtml(row, isSelf, lastAdmin, roleLabels)}</div>` +
     `</div>`
@@ -1637,7 +1687,7 @@ function roleRowHtml(role: "admin" | "moderator", accountCount: number, roleLabe
   );
 }
 
-export function administrationHtml(data: { selfId: string; accounts: StaffAccountRow[]; adminCount: number; created: string | null; roleLabels: StaffRoleLabels }): string {
+export function administrationHtml(data: { selfId: string; accounts: StaffAccountRow[]; adminCount: number; created: string | null; reset2fa?: boolean; roleLabels: StaffRoleLabels }): string {
   let html = SCREENS.administration;
 
   html = replaceOnce(
@@ -1650,13 +1700,15 @@ export function administrationHtml(data: { selfId: string; accounts: StaffAccoun
 
   const createdNotice = data.created
     ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Compte « ${escapeHtml(data.created)} » créé.</div>`
-    : "";
+    : data.reset2fa
+      ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Double authentification réinitialisée : le membre la reconfigurera à sa prochaine connexion.</div>`
+      : "";
 
   const rows = data.accounts.map((a) => staffRowHtml(a, a.id === data.selfId, a.role === "admin" && data.adminCount <= 1, data.roleLabels));
   const table =
     `<div class="srv-table">` +
     createdNotice +
-    `<div style="display:grid;min-width:640px;grid-template-columns:minmax(0,1.8fr) 150px 140px 110px 40px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Member</span><span>Role</span><span>Created</span><span>Status</span><span></span></div>` +
+    `<div style="display:grid;min-width:760px;grid-template-columns:minmax(0,1.8fr) 150px 140px 120px 110px 40px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Member</span><span>Role</span><span>Created</span><span>Double auth.</span><span>Status</span><span></span></div>` +
     (rows.length ? rows.join("") : `<p style="margin:0;padding:14px;font-size:13px;color:var(--muted);">Aucun compte staff.</p>`) +
     `</div>` +
     // Ferme le menu "..." au clic exterieur — <details> seul ne le fait pas nativement.

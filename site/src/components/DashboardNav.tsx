@@ -2,18 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SquaresFour, Bell, Newspaper, Gear, Users } from "@phosphor-icons/react";
+import { SquaresFour, Bell, Newspaper, Gear, Users, UsersThree } from "@phosphor-icons/react";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
+import { UnreadBadge } from "@/components/UnreadBadge";
+import { TEAMS_READY } from "@/lib/teamRules";
 
-export function DashboardNav() {
+export function DashboardNav({ unread = 0 }: { unread?: number }) {
   const pathname = usePathname();
   const { t } = useI18n();
 
   const NAV_ITEMS: { href: string; label: string; icon: PhosphorIcon }[] = [
-    { href: "/dashboard", label: t("dashboard.navServers"), icon: SquaresFour },
+    { href: "/dashboard", label: t("dashboard.navHome"), icon: SquaresFour },
     { href: "/dashboard/notifications", label: t("dashboard.navNotifications"), icon: Bell },
     { href: "/dashboard/amis", label: t("dashboard.navFriends"), icon: Users },
+    // Teams (19/10) : entre Amis et Actualites (choix de Rushi).
+    ...(TEAMS_READY ? [{ href: "/dashboard/team", label: t("dashboard.navTeam"), icon: UsersThree }] : []),
     { href: "/dashboard/news", label: t("dashboard.navNews"), icon: Newspaper },
     { href: "/dashboard/parametres", label: t("dashboard.navSettings"), icon: Gear },
   ];
@@ -32,7 +36,8 @@ export function DashboardNav() {
             }`}
           >
             <Icon className="h-4 w-4 flex-shrink-0" />
-            <span className="hidden sm:inline">{label}</span>
+            <span className="hidden flex-1 sm:inline">{label}</span>
+            {href === "/dashboard/notifications" ? <UnreadBadge count={unread} className="hidden sm:inline-grid" /> : null}
           </Link>
         );
       })}

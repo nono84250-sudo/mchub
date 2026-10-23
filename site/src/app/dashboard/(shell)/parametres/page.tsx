@@ -5,6 +5,9 @@ import { logout } from "@/lib/actions/auth";
 import { SignOut } from "@phosphor-icons/react/ssr";
 import { getT } from "@/i18n/getDictionary";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
+import { ExportDataSection } from "@/components/ExportDataSection";
+import { FriendPrivacyCard } from "@/components/FriendPrivacyCard";
+import { FRIEND_PRIVACY_READY, getFriendSettings } from "@/lib/friendPrivacy";
 
 export const metadata = { title: "Paramètres — Omniscient" };
 
@@ -20,6 +23,7 @@ export default async function ParametresPage() {
   const user = await db.orm.public.User.select("id", "name", "minecraftUsername").where({ id: session.user.id }).first();
   if (!user) redirect("/login");
   const { dict } = await getT();
+  const friendSettings = FRIEND_PRIVACY_READY ? await getFriendSettings(user.id) : null;
 
   const initial = user.name.trim().charAt(0).toUpperCase() || "?";
 
@@ -43,6 +47,15 @@ export default async function ParametresPage() {
           </button>
         </form>
 
+        {/* Confidentialite (variante C, 18/10) : meme reglage que la page Amis. */}
+        {friendSettings ? (
+          <section className="mt-8 border-t border-border pt-6">
+            <h2 className="mb-3 text-xs font-bold uppercase tracking-[0.07em] text-accent">{dict.friends.privacySection}</h2>
+            <FriendPrivacyCard initialPolicy={friendSettings.friendPolicy} initialCode={friendSettings.friendCode} alsoOnFriends />
+          </section>
+        ) : null}
+        {/* « Recuperer mes donnees » (23/10) : juste avant la suppression du compte. */}
+        <ExportDataSection />
         <DeleteAccountSection />
       </div>
     </div>

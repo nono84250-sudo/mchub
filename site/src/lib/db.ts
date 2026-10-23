@@ -34,12 +34,13 @@ const TABLES: Record<string, string> = {
   Friendship: "friendship",
   UserPresence: "userPresence",
   ContactMessage: "contactMessage",
+  Team: "team",
 };
 // Colonnes booleennes : stockees en 0/1 dans D1, rendues en true/false.
 const BOOLEAN_COLUMNS: Record<string, string[]> = {
-  server: ["published", "isPrivate", "autoConnect"],
+  server: ["published", "isPrivate", "autoConnect", "addToServerList"],
   notification: ["read"],
-  adminAccount: ["mustChangeCredentials"],
+  adminAccount: ["mustChangeCredentials", "isOwner"],
   scheduledBroadcast: ["banner", "blockLauncher"],
   news: ["published"],
   instanceWatch: ["notifyOnStatusChange", "lastKnownOnline"],
@@ -48,7 +49,7 @@ const BOOLEAN_COLUMNS: Record<string, string[]> = {
 const HAS_UPDATED_AT = new Set(["user", "server", "report", "platformSetting", "userPresence"]);
 // Relations belongsTo utilisees par include().
 const RELATIONS: Record<string, Record<string, { model: string; fk: string }>> = {
-  Server: { owner: { model: "User", fk: "ownerId" } },
+  Server: { owner: { model: "User", fk: "ownerId" }, team: { model: "Team", fk: "teamId" } },
   Report: { server: { model: "Server", fk: "serverId" } },
 };
 
@@ -58,7 +59,53 @@ const RELATIONS: Record<string, Record<string, { model: string; fk: string }>> =
 const CF_ENDPOINT = () =>
   `https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/d1/database/${process.env.CF_D1_DATABASE_ID}/query`;
 
+// Audit de charge du 19/10 (B5) : quand Cloudflare limite le debit (HTTP 429, ~1 200 appels par
+// 5 min), TOUS les appels echouent pendant un moment. Avant : une erreur 500 obscure (« Réponse
+// 500 du site Omniscient » dans le launcher), et chaque nouvelle requete reessayait aussitot,
+// ce qui prolongeait le blocage. Maintenant : D1BusyError, transformee en 503 avec un message
+// clair par withD1Busy() ci-dessous, et cette instance n'appelle plus Cloudflare pendant 60 s.
+export const D1_BUSY_MESSAGE = "Le site Omniscient est très demandé : réessaie dans une minute.";
+export class D1BusyError extends Error {
+  constructor() {
+    super(D1_BUSY_MESSAGE);
+    this.name = "D1BusyError";
+  }
+}
+const BUSY_PAUSE_MS = 60_000;
+let busyUntil = 0;
+
+export function isD1Busy(error: unknown): boolean {
+  return error instanceof D1BusyError || (error instanceof Error && error.name === "D1BusyError");
+}
+
+// 503 + message clair (et code "busy" pour le launcher) si l'erreur vient de la limite de debit
+// de Cloudflare, sinon null.
+export function d1BusyResponse(error: unknown): Response | null {
+  if (!isD1Busy(error)) return null;
+  return Response.json({ error: D1_BUSY_MESSAGE, code: "busy" }, { status: 503, headers: { "Retry-After": "60" } });
+}
+
+// Enveloppe une route /api : une limite de debit Cloudflare devient un 503 lisible au lieu d'un 500.
+export function withD1Busy<A extends unknown[]>(handler: (...args: A) => Promise<Response>): (...args: A) => Promise<Response> {
+  return async (...args: A) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      const busy = d1BusyResponse(error);
+      if (busy) return busy;
+      throw error;
+    }
+  };
+}
+
+// Mesure (21/10, chantier cache des fiches) : avec D1_LOG=1 dans l'environnement (jamais en
+// production), chaque appel a Cloudflare est ecrit dans la console du site avec son numero et le
+// debut de la requete. Sert a compter les appels par page avant/apres un changement.
+let d1CallCount = 0;
+
 async function d1Rest(sql: string, params: unknown[]): Promise<Row[]> {
+  if (Date.now() < busyUntil) throw new D1BusyError();
+  if (process.env.D1_LOG === "1") console.log(`[D1 #${++d1CallCount}] ${sql.replace(/\s+/g, " ").slice(0, 60)}`);
   const res = await fetch(CF_ENDPOINT(), {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.CF_D1_API_TOKEN}`, "Content-Type": "application/json" },
@@ -67,6 +114,10 @@ async function d1Rest(sql: string, params: unknown[]): Promise<Row[]> {
   // Reponse pas forcement JSON en cas de panne/blocage cote Cloudflare (page d'erreur, WAF,
   // limite de debit) : on le dit clairement plutot que de laisser .json() lever une SyntaxError opaque.
   const text = await res.text();
+  if (res.status === 429) {
+    busyUntil = Date.now() + BUSY_PAUSE_MS;
+    throw new D1BusyError();
+  }
   let json: { success: boolean; errors?: { message: string }[]; result?: { results: Row[] }[] };
   try {
     json = JSON.parse(text);

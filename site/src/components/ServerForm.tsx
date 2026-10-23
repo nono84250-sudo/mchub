@@ -1,6 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { SavedToast } from "@/components/SavedToast";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { GlobeHemisphereWest, LockSimple, Copy, ArrowsClockwise, Image, Cube, ImageSquare, Info } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
@@ -9,7 +12,7 @@ import { ImageDropzone } from "@/components/ImageDropzone";
 import { ModpackPicker, type ModpackValue } from "@/components/ModpackPicker";
 import { MinecraftVersionField } from "@/components/MinecraftVersionField";
 import { DEFAULT_MODPACK_CHANNEL, DEFAULT_MODPACK_SOURCE, type ModpackChannel, type ModpackSource } from "@/lib/modpack-types";
-import { supportsAutoConnect } from "@/lib/minecraft-version-constants";
+import { ServerListOptions } from "@/components/ServerListOptions";
 import { useI18n } from "@/i18n/I18nProvider";
 
 type ServerFormValues = {
@@ -29,6 +32,7 @@ type ServerFormValues = {
   curseforgeModpackVersion: string;
   recommendedRamGB: string;
   autoConnect: boolean;
+  addToServerList: boolean;
 };
 
 const EMPTY_VALUES: ServerFormValues = {
@@ -48,6 +52,7 @@ const EMPTY_VALUES: ServerFormValues = {
   curseforgeModpackVersion: "",
   recommendedRamGB: "",
   autoConnect: true,
+  addToServerList: true,
 };
 
 type ServerFormProps = {
@@ -77,6 +82,19 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
   const router = useRouter();
   const values = { ...EMPTY_VALUES, ...defaultValues };
   const [state, formAction, pending] = useActionState(action, undefined);
+  // Design 2026-10-17, point 7 : etat d'enregistrement visible. Une action reussie renvoie
+  // undefined (pas d'erreur) : la fin d'un envoi sans erreur = enregistre.
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const [dirty, setDirty] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !pending && !state?.error) {
+      setDirty(false);
+      setSavedAt(Date.now());
+    }
+    wasPending.current = pending;
+  }, [pending, state]);
   const [type, setType] = useState<"vanilla" | "modded">(values.type);
   const [visibility, setVisibility] = useState<"public" | "private">(values.isPrivate ? "private" : "public");
   // Le serveur est deja public (cas cree avant cette fonctionnalite, ou deja valide) : on ne
@@ -103,6 +121,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
   const [manualVersion, setManualVersion] = useState(values.minecraftVersion);
   const effectiveMcVersion = modpack.minecraftVersion || manualVersion;
   const [autoConnect, setAutoConnect] = useState(values.autoConnect);
+  const [addToServerList, setAddToServerList] = useState(values.addToServerList);
   const modpackDetails =
     type === "modded"
       ? [effectiveMcVersion ? `Minecraft ${effectiveMcVersion}` : null, modpack.loader].filter(Boolean).join(" · ")
@@ -117,66 +136,21 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
   const inviteLink = inviteCode ? `${origin}/join/${inviteCode}` : "";
 
   return (
-    <form action={formAction} className="flex flex-col gap-5">
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="name" className="field-label">
-          {t("serverForm.name")}
-        </label>
-        <input
-          id="name"
-          name="name"
-          type="text"
-          required
-          defaultValue={values.name}
-          placeholder={t("serverForm.namePlaceholder")}
-          className="field-input"
-        />
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="description" className="field-label">
-          {t("serverForm.description")}
-        </label>
-        <textarea
-          id="description"
-          name="description"
-          required
-          rows={4}
-          defaultValue={values.description}
-          placeholder={t("serverForm.descriptionPlaceholder")}
-          className="field-input"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)]">
-        <ImageDropzone
-          name="bannerUrl"
-          field="banner"
-          defaultValue={values.bannerUrl}
-          label={t("serverForm.bannerUrl")}
-          hint={t("serverForm.bannerHint")}
-          placeholder={t("serverForm.dropBanner")}
-          icon={Image}
-        />
-        <ImageDropzone
-          name="iconUrl"
-          field="icon"
-          defaultValue={values.iconUrl}
-          label={t("serverForm.iconUrl")}
-          hint={t("serverForm.iconHint")}
-          placeholder=""
-          icon={Cube}
-        />
-        <ImageDropzone
-          name="backgroundUrl"
-          field="background"
-          defaultValue={values.backgroundUrl}
-          label={t("serverForm.backgroundUrl")}
-          hint={t("serverForm.backgroundHint")}
-          placeholder={t("serverForm.dropBackground")}
-          icon={ImageSquare}
-        />
-      </div>
+    <form action={formAction} onChange={() => setDirty(true)} className="flex flex-col gap-5">
+      {serverId ? <SavedToast savedAt={savedAt} /> : null}
+      {confirmDialog}
+      {/* 19/10 : nom, description et images se modifient dans Ma fiche (carte Identite). Ils
+          partent quand meme tels quels avec ce formulaire : updateServer les exige. */}
+      <input type="hidden" name="name" value={values.name} />
+      <input type="hidden" name="description" value={values.description} />
+      <input type="hidden" name="bannerUrl" value={values.bannerUrl ?? ""} />
+      <input type="hidden" name="iconUrl" value={values.iconUrl ?? ""} />
+      <input type="hidden" name="backgroundUrl" value={values.backgroundUrl ?? ""} />
+      {serverId ? (
+        <Link href={`/manage/${serverId}/public-page`} className="self-start rounded-lg border border-border px-3 py-2 text-sm text-accent hover:border-accent">
+          {t("serverForm.identityMoved")}
+        </Link>
+      ) : null}
 
       <div className="flex flex-col gap-2">
         <span className="field-label">{t("serverForm.visibility")}</span>
@@ -253,7 +227,16 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
                     disabled={resettingCode}
                     className="btn-secondary text-xs"
                     onClick={async () => {
-                      if (!serverId || !window.confirm(t("serverForm.inviteLinkResetConfirm"))) return;
+                      if (
+                        !serverId ||
+                        !(await confirm({
+                          tone: "warn",
+                          title: t("serverForm.inviteResetTitle"),
+                          body: t("serverForm.inviteLinkResetConfirm"),
+                          confirmLabel: t("serverForm.inviteResetBtn"),
+                        }))
+                      )
+                        return;
                       setResettingCode(true);
                       try {
                         await resetInviteCode(serverId);
@@ -335,26 +318,13 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
         <p className="text-xs text-muted">{t("serverForm.ipHelp")}</p>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        {/* FormData.get() renvoie la PREMIERE entree du meme nom en ordre DOM : la case doit
-            venir avant le hidden de repli, sinon la valeur soumise est toujours "false" meme
-            cochee (bug trouve par l'audit du 2026-10-10 — l'ordre etait inverse). */}
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input
-            type="checkbox"
-            name="autoConnect"
-            value="true"
-            checked={autoConnect}
-            onChange={(event) => setAutoConnect(event.target.checked)}
-          />
-          {t("serverForm.autoConnect")}
-        </label>
-        <input type="hidden" name="autoConnect" value="false" />
-        <p className="text-xs text-muted">{t("serverForm.autoConnectHelp")}</p>
-        {autoConnect && effectiveMcVersion && !supportsAutoConnect(effectiveMcVersion) ? (
-          <p className="text-xs text-warn">{t("serverForm.autoConnectVersionWarning")}</p>
-        ) : null}
-      </div>
+      <ServerListOptions
+        addToServerList={addToServerList}
+        onAddToServerListChange={setAddToServerList}
+        autoConnect={autoConnect}
+        onAutoConnectChange={setAutoConnect}
+        minecraftVersion={effectiveMcVersion}
+      />
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="recommendedRamGB" className="field-label">
@@ -395,9 +365,17 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
 
       {state?.error ? <p className="text-sm text-danger">{state.error}</p> : null}
 
-      <button type="submit" disabled={pending} className="btn-primary self-start">
-        {pending ? t("manage.saving") : submitLabel}
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="submit" disabled={pending} className="btn-primary">
+          {pending ? t("manage.saving") : submitLabel}
+        </button>
+        {serverId && dirty && !pending ? (
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] text-warn">
+            <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-current" />
+            {t("manage.unsaved")}
+          </span>
+        ) : null}
+      </div>
     </form>
   );
 }

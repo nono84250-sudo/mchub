@@ -52,6 +52,17 @@ const DEFAULTS = {
   // valeur en position 0).
   accentColor: "#2792dd",
   compactServerList: false,
+  // Parametres > Apparence > Reduire les animations (design 17/10, point 5) : "auto" suit
+  // Windows, "on" coupe clignotements/reflets/zooms, "off" les garde toujours.
+  reduceMotion: "auto",
+  // Mode discret (design 17/10, point 6) : cache adresses, codes d'invitation, pseudos des amis et
+  // notifications (pratique en live). Assistant du premier lancement : montre une seule fois.
+  discreetMode: false,
+  // Barre laterale depliee avec les noms (serie 2, idee 1) : repliee par defaut pour les habitues.
+  sidebarExpanded: false,
+  // Dernier onglet de Ma bibliotheque (audit 17/10, lot 3) : Installes par defaut.
+  libraryTab: "installed",
+  firstRunWizardDone: false,
   // Parametres > Debogage (voir logStore.js/renderer.js) — logLevel ne
   // filtre que ce qui est ecrit dans le fichier de log, jamais la console
   // de debug en direct.
@@ -74,6 +85,9 @@ const DEFAULTS = {
   // Parametres > Divers > Videos (16/10) : les videos des fiches serveur ne demarrent qu'au
   // clic, meme si le proprietaire a choisi le lancement automatique (voir setupPageVideo).
   blockVideoAutoplay: false,
+  // Serveurs retirés du site (20/10) : slug -> date (ms) du dernier 404, pour ne pas redemander leur
+  // fiche à chaque ouverture (voir servers:get dans main.js). Local seulement.
+  removedServers: {},
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le

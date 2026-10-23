@@ -1,5 +1,15 @@
 const t = window.i18n.t;
 
+// Idee 3 du lancement (19/10) : une erreur non prevue de l'interface part dans le rapport
+// d'erreurs (Sentry, seulement s'il est configure ; voir errorReports.js cote main.js).
+window.addEventListener("error", (event) => {
+  window.mchub.reportError({ message: event.message, stack: event.error?.stack });
+});
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  window.mchub.reportError({ message: reason?.message ?? String(reason), stack: reason?.stack });
+});
+
 const gateEl = document.getElementById("gate");
 const gateMessageEl = document.getElementById("gate-message");
 const gateLoginBtn = document.getElementById("gate-login");
@@ -44,9 +54,6 @@ let signedIn = false;
 // pour que la page "Gérer le compte" puisse afficher le skin sans un
 // nouvel aller-retour IPC.
 let currentProfile = null;
-// Favori actuellement selectionne dans la barre de lancement rapide (voir
-// refreshPlaybarFavorites/launchServer).
-let selectedFavoriteSlug = null;
 
 // Désactive/réactive le bouton de connexion — utilisé pendant une connexion
 // en cours ET quand on revient au portail après une déconnexion (sinon il
@@ -65,20 +72,36 @@ function playersText(server) {
   if (server.playerCount === null || server.playerCount === undefined) {
     return t("serverCard.statusUnknown");
   }
-  const capacity = server.playerCapacity !== null && server.playerCapacity !== undefined
-    ? ` / ${server.playerCapacity}`
-    : "";
+  // Version A (19/10, validee par Rushi) : un maximum de 0 veut dire « pas de maximum annonce »
+  // (beaucoup de grands serveurs cachent leur limite), jamais « 3570 / 0 ».
+  const capacity = server.playerCapacity > 0 ? ` / ${server.playerCapacity}` : "";
   // Juste le nombre : « 16170 / 200000 » (le libellé est donné par le titre de la case).
   return `${server.playerCount}${capacity}`;
 }
 
+// Remplissage du serveur (17/10, meme logique que la jauge du site) : orange a partir de 80 % des
+// places, rouge a 100 % avec le mot « Complet » en plus de la couleur. null sans capacite connue.
+function fillLevel(server) {
+  const count = server.playerCount;
+  const capacity = server.playerCapacity;
+  if (count == null || !capacity || capacity <= 0) return null;
+  const ratio = count / capacity;
+  return ratio >= 1 ? "full" : ratio >= 0.8 ? "busy" : "ok";
+}
+
 function playersLabel(server) {
   const online = server.playerCount !== null && server.playerCount !== undefined;
-  // Contacté mais sans réponse : serveur fermé, en rouge (et non « statut inconnu »).
+  // Table des etats (audit 17/10, lot 2) : hors ligne en gris (le rouge est pour « Complet »),
+  // presque plein en orange avec son mot, inconnu en rond pointille.
   if (!online && server.pinged) {
-    return `<span class="status-dot" style="background:var(--danger)"></span><span style="color:var(--danger)">${t("serverCard.offline")}</span>`;
+    return `<span class="status-dot" style="background:var(--state-off)"></span><span style="color:var(--state-off)">${t("serverCard.offline")}</span>`;
   }
-  return `<span class="status-dot${online ? " online" : ""}"></span>${playersText(server)}`;
+  if (!online) return `<span class="status-dot unknown"></span><span class="muted">${escapeHtml(t("serverCard.unknown"))}</span>`;
+  const level = fillLevel(server);
+  if (level === "full" || level === "busy") {
+    return `<span class="players-fill ${level}"><span class="status-dot"></span>${playersText(server)} · ${escapeHtml(t(level === "full" ? "serverCard.full" : "serverCard.busy"))}</span>`;
+  }
+  return `<span class="status-dot online"></span>${playersText(server)}`;
 }
 
 // Echappe aussi les guillemets : utilisee dans des attributs ("...") comme dans
@@ -118,6 +141,67 @@ function serverIconInner(server) {
   return server.iconUrl ? `<img src="${escapeHtml(server.iconUrl)}" alt="" />` : serverInitial(server.name);
 }
 
+// Teams (19/10, meme logique que le site : site/src/components/TeamByline.tsx). server.team :
+// { name, slug, iconUrl, description, official } ou null (site plus ancien : absent, rien ne
+// s'affiche). Team Omniscient : « Proposé par Omniscient · C'est ton serveur ? », qui deplie la
+// description et « Nous contacter » (page Contact du site, sujet « C'est mon serveur »).
+const TEAM_SLUG_RE = /^[a-z0-9-]{1,80}$/;
+function teamOf(server) {
+  const team = server && server.team;
+  return team && typeof team.name === "string" && TEAM_SLUG_RE.test(team.slug || "") ? team : null;
+}
+function teamHue(name) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
+}
+function teamAvatarHtml(team, size = 16) {
+  const words = team.name.split(/\s+/).filter(Boolean);
+  const initials = (words.length > 1 ? words[0][0] + words[1][0] : team.name.slice(0, 2)).toUpperCase();
+  const h = teamHue(team.name);
+  const style = `width:${size}px;height:${size}px;font-size:${Math.max(8, Math.round(size * 0.42))}px;${team.iconUrl ? "" : `background:linear-gradient(135deg, hsl(${h} 55% 42%), hsl(${(h + 40) % 360} 60% 18%));`}`;
+  return `<span class="team-avatar" aria-hidden="true" style="${style}">${team.iconUrl ? `<img src="${escapeHtml(team.iconUrl)}" alt="" />` : escapeHtml(initials)}</span>`;
+}
+// Ligne des listes (Serveurs, Ma bibliothèque) : « par [icone] Nom », sans lien (la ligne en est un).
+function teamRowHtml(server) {
+  const team = teamOf(server);
+  if (!team) return "";
+  // La liste est deja filtree sur cette team (bandeau au-dessus) : inutile de la repeter sur chaque ligne.
+  if (listFilters.team === team.slug && !listEl.hidden) return "";
+  const word = team.official ? t("team.proposedBy").toLowerCase() : t("team.byShort");
+  return `<span class="row-team">${escapeHtml(word)} ${teamAvatarHtml(team, 14)}<button type="button" class="row-team-btn" data-team-filter="${escapeHtml(team.slug)}" title="${escapeHtml(t("serverList.teamSeeServers", { name: team.name }))}">${escapeHtml(team.name)}</button></span>`;
+}
+// Ligne sous le nom sur la fiche.
+function teamBylineHtml(server) {
+  const team = teamOf(server);
+  if (!team) return "";
+  const name = `<button type="button" class="team-name-btn" data-team-open="${escapeHtml(team.slug)}">${teamAvatarHtml(team, 18)}${escapeHtml(team.name)}</button>`;
+  if (!team.official) return `<p class="team-byline">${escapeHtml(t("team.by"))} ${name}</p>`;
+  return `
+    <div class="team-byline-wrap">
+      <p class="team-byline">${escapeHtml(t("team.proposedBy"))} ${name}<span aria-hidden="true">·</span><button type="button" class="team-claim-toggle" aria-expanded="false">${escapeHtml(t("team.isItYours"))}</button></p>
+      <div class="team-claim" hidden>
+        <span>${escapeHtml(team.description || t("team.officialFallback"))}</span>
+        <button type="button" class="join-btn team-claim-btn" data-team-claim="${escapeHtml(server.slug)}">${escapeHtml(t("team.contactUs"))}</button>
+      </div>
+    </div>`;
+}
+function wireTeamByline(container) {
+  container.querySelectorAll("[data-team-open]").forEach((btn) => {
+    btn.addEventListener("click", () => showTeamInServers(btn.dataset.teamOpen));
+  });
+  container.querySelectorAll(".team-claim-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const box = btn.closest(".team-byline-wrap").querySelector(".team-claim");
+      box.hidden = !box.hidden;
+      btn.setAttribute("aria-expanded", String(!box.hidden));
+    });
+  });
+  container.querySelectorAll("[data-team-claim]").forEach((btn) => {
+    btn.addEventListener("click", () => window.mchub.openTeamLink("claim", btn.dataset.teamClaim));
+  });
+}
+
 // Favoris (barre de lancement rapide en bas de l'appli) : une simple liste de
 // slugs dans les paramètres — pas de nouvel IPC dédié, on réutilise
 // settings.get/set comme pour tout le reste des préférences locales.
@@ -155,41 +239,112 @@ function isOwnServer(server) {
 // Ligne serveur partagee entre la liste principale, "Favoris" et "Recents" —
 // meme rendu partout, seule la source de la liste de serveurs change.
 // `playedAt` (page Recents seulement) : date de la derniere partie, affichee avant les joueurs.
-function serverRowHtml(server, isFav, playedAt = null) {
+// Bandeau aux couleurs du serveur (point 5) : sa banniere etiree sur 5 px, sinon un degrade
+// tire de son nom (toujours le meme pour un serveur donne).
+// Bande en haut des cartes (17/10, variante A choisie par Rushi) : elle montre l'etat du serveur,
+// avec les memes seuils que la jauge de joueurs. Avant, c'etait la banniere ou une couleur tiree
+// du nom : un serveur ferme pouvait sortir orange, ce qui ne voulait rien dire.
+function serverBandState(server) {
+  const online = server.playerCount !== null && server.playerCount !== undefined;
+  if (!online) return server.pinged ? "off" : "unknown";
+  return fillLevel(server) || "ok";
+}
+
+// Lot 2 (audit 17/10) : memes couleurs que la table des etats du site ; inconnu en rayures grises.
+const BAND_COLORS = {
+  ok: "var(--success)",
+  busy: "var(--state-busy)",
+  full: "var(--danger)",
+  off: "var(--state-off)",
+  unknown: "repeating-linear-gradient(90deg, var(--state-off) 0 6px, transparent 6px 12px)",
+};
+// Reglage en attente de Rushi : true = bande seulement quand l'etat n'est PAS « En ligne »
+// (avis de 9 testeurs sur 10), false = bande sur toutes les cartes (variante A du 17/10).
+const BAND_ONLY_WHEN_PROBLEM = true;
+
+function serverBandCss(server) {
+  const state = serverBandState(server);
+  if (BAND_ONLY_WHEN_PROBLEM && state === "ok") return "transparent";
+  return BAND_COLORS[state];
+}
+
+function serverBandTitle(server) {
+  return t(`band.tip_${serverBandState(server)}`);
+}
+
+// « ? » a cote des filtres (liste Serveurs, Ma bibliotheque) : la legende des couleurs.
+var bandLegendOpen = false;
+function bandLegendHtml() {
+  const rows = ["ok", "busy", "full", "off", "unknown"]
+    .map((key) => `<span><i style="background:${BAND_COLORS[key]}"></i>${escapeHtml(t(`band.legend_${key}`))}</span>`)
+    .join("");
+  return `<span class="band-legend-anchor">
+      <button type="button" class="band-help" data-band-legend aria-expanded="${bandLegendOpen}" title="${escapeHtml(t("band.legendTitle"))}" aria-label="${escapeHtml(t("band.legendTitle"))}">?</button>
+      ${bandLegendOpen ? `<span class="band-legend-pop" role="dialog" aria-label="${escapeHtml(t("band.legendTitle"))}"><b>${escapeHtml(t("band.legendTitle"))}</b><span class="muted">${escapeHtml(t("band.legendText"))}</span><span class="band-legend-rows">${rows}</span></span>` : ""}
+    </span>`;
+}
+
+document.addEventListener("click", (event) => {
+  const btn = event.target.closest?.("[data-band-legend]");
+  if (!btn && !bandLegendOpen) return;
+  if (!btn && event.target.closest?.(".band-legend-pop")) return;
+  bandLegendOpen = btn ? !bandLegendOpen : false;
+  document.querySelectorAll(".band-legend-anchor").forEach((anchor) => (anchor.outerHTML = bandLegendHtml()));
+});
+
+function serverRowHtml(server, isFav, playedAt = null, withPlay = false) {
   const ownerTag = isOwnServer(server) ? `<span class="owner-tag">${t("serverCard.owner")}</span>` : "";
   const played = playedAt ? playedLabel(playedAt, Date.now()) : null;
-  // 16/10 (option C) : badge « Nouveau », 2 styles (+N), langues, ligne modpack · version · RAM,
-  // et les amis qui y jouent. Tout est facultatif (site plus ancien : rien ne s'affiche).
-  const newBadge = server.isNew ? `<span class="badge badge-new">${t("serverList.newBadge")}</span>` : "";
+  // Disposition A du site (19/10, choisie par Rushi) : ligne 1 = nom puis la team (qui se
+  // raccourcit en premier) ; ligne 2 = etiquettes principales (3) puis secondaires, cachees en
+  // entier si elles ne tiennent pas ; ligne 3 = « version · type » en petit, puis la description
+  // (gardee dans le launcher). A droite : les joueurs, et la langue dessous, jamais cachee.
+  // « Nouveau » en coin de l'icone (les lignes n'ont pas de banniere).
+  const newBadge = server.isNew ? `<span class="row-new-corner">${t("serverList.newBadge")}</span>` : "";
   const tags = serverTagsOf(server);
-  const tagsHtml = tags
-    .slice(0, 2)
-    .map((tag) => `<span class="row-tag">${escapeHtml(t(`serverPage.tags.${tag}`))}</span>`)
-    .join("") + (tags.length > 2 ? `<span class="row-tag">+${tags.length - 2}</span>` : "");
-  const langsHtml = serverLangsOf(server).map((lang) => `<span class="row-lang">${lang.toUpperCase()}</span>`).join("");
-  const meta = [server.modpackName, server.minecraftVersion, server.recommendedRamGB ? t("serverList.ramAdvised", { count: server.recommendedRamGB }) : null].filter(Boolean);
+  const mainSet = new Set(Array.isArray(server.mainTags) ? server.mainTags : tags.slice(0, 3));
+  const tagChip = (tag, cls) => `<span class="row-tag ${cls}">${escapeHtml(tagLabel(tag))}</span>`;
+  const tagsHtml = tags.filter((tag) => mainSet.has(tag)).map((tag) => tagChip(tag, "main")).join("") + tags.filter((tag) => !mainSet.has(tag)).map((tag) => tagChip(tag, "sec")).join("");
+  const langs = serverLangsOf(server);
+  const langsHtml = langs.length
+    ? langs.map((lang) => `<span class="row-lang${langs.length === 1 ? " solo" : ""}" title="${escapeHtml(t(`serverPage.languages.${lang}`))}">${lang.toUpperCase()}</span>`).join("")
+    : `<span class="row-lang none">${escapeHtml(t("serverList.noLang"))}</span>`;
+  const tech = [
+    server.minecraftVersion,
+    server.type === "modded" ? server.modpackName || t("serverCard.modded") : t("serverCard.vanilla"),
+    server.recommendedRamGB ? t("serverList.ramAdvised", { count: server.recommendedRamGB }) : null,
+  ].filter(Boolean).join(" · ");
   const friendNames = friendsBySlug().get(server.slug) || [];
-  // Amis sur la meme ligne que modpack/version, et ligne toujours presente (vide au besoin) :
-  // toutes les lignes ont la meme hauteur (16/10, Rushi : tailles imposees).
   const friendsHtml = friendNames.length
-    ? `<span class="row-friends">${escapeHtml(t("serverList.friendsPlaying", { count: friendNames.length, names: friendNames.slice(0, 3).join(", ") + (friendNames.length > 3 ? "…" : "") }))}</span>`
+    ? `<span class="chipx online"><span class="row-friends">${escapeHtml(t("serverList.friendsPlaying", { count: friendNames.length, names: friendNames.slice(0, 3).join(", ") + (friendNames.length > 3 ? "…" : "") }))}</span></span>`
     : "";
+  // Joueurs : un seul endroit, la colonne de droite. Maximum 0 = pas de maximum (« en ligne »).
+  const online = server.playerCount !== null && server.playerCount !== undefined;
+  const fill = fillLevel(server);
+  const side = online
+    ? `<b class="${fill === "full" || fill === "busy" ? `players-fill ${fill}` : ""}">${escapeHtml(String(server.playerCount))}</b><small>${escapeHtml(server.playerCapacity > 0 ? t("serverList.ofCapacity", { count: server.playerCapacity }) : t("serverList.onlineWord"))}</small>${fill === "full" || fill === "busy" ? `<small class="players-fill ${fill}">${escapeHtml(t(fill === "full" ? "serverCard.full" : "serverCard.busy"))}</small>` : ""}`
+    : server.pinged
+      ? `<b class="muted">—</b><small style="color:var(--state-off)">${escapeHtml(t("serverCard.offline"))}</small>`
+      : `<b class="muted">?</b><small class="muted">${escapeHtml(t("serverCard.unknown"))}</small>`;
+  const team = teamRowHtml(server);
   return `
-    <div class="row" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0">
-      <span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverIconInner(server)}</span>
+    <div class="row row-2l" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0" style="--row-band: ${serverBandCss(server)}">
+      <span class="row-band-hit" title="${escapeHtml(serverBandTitle(server))}"></span>
+      <span class="row-icon-wrap"><span class="server-icon" style="width: 38px; height: 38px; border-radius: 8px; font-size: 14px;">${serverIconInner(server)}</span>${newBadge}</span>
       <div class="row-body">
         <div class="row-title-line">
-          <h3>${escapeHtml(server.name)}</h3>
-          ${typeBadge(server.type)}
-          ${newBadge}
+          <h3 title="${escapeHtml(server.name)}">${escapeHtml(server.name)}</h3>
+          ${team ? `<span class="row-sep" aria-hidden="true">·</span>${team}` : ""}
+          ${manualModsBadgeHtml(server)}
           ${ownerTag}
-          ${tagsHtml}${langsHtml}
         </div>
-        <p>${played ? `<span class="row-played-inline">${escapeHtml(played.line)}${server.description ? " · " : ""}</span>` : ""}${escapeHtml(server.description || "")}</p>
-        <p class="row-meta">${escapeHtml(meta.join(" · "))}${meta.length && friendsHtml ? " · " : ""}${friendsHtml}${meta.length || friendsHtml ? "" : "&nbsp;"}</p>
+        <div class="row-chips row-tags-line">${tagsHtml}${friendsHtml}</div>
+        <p>${played ? `<span class="row-played-inline">${escapeHtml(played.line)} · </span>` : ""}<span class="row-tech">${escapeHtml(tech)}</span>${server.description ? ` · ${escapeHtml(server.description)}` : ""}</p>
       </div>
+      <div class="row-side">${side}<span class="row-langs">${langsHtml}</span></div>
       ${played ? `<div class="row-played">${escapeHtml(played.line)}</div>` : ""}
-      <div class="players">${playersLabel(server)}</div>
+      ${withPlay ? `<button type="button" class="row-play" data-play-slug="${escapeHtml(server.slug)}" title="${escapeHtml(t("home.playOn", { name: server.name }))}" aria-label="${escapeHtml(t("home.playOn", { name: server.name }))}">▶</button>` : ""}
+      ${withPlay ? `<span class="instance-more row-more"><button type="button" class="row-more-btn" data-more-slug="${escapeHtml(server.slug)}" aria-haspopup="menu" aria-expanded="false" title="${escapeHtml(t("myInstances.menuMore"))}" aria-label="${escapeHtml(t("myInstances.menuMore"))}">…</button><span class="instance-menu" role="menu" hidden><button type="button" class="instance-menu-item" data-row-install="${escapeHtml(server.slug)}">⬇<span>${escapeHtml(t("myInstances.menuInstall"))}<small>${escapeHtml(t("myInstances.menuInstallHint"))}</small></span></button><button type="button" class="instance-menu-item" data-row-open="${escapeHtml(server.slug)}">↗ ${escapeHtml(t("myInstances.menuPage"))}</button></span></span>` : ""}
       ${favoriteBtnHtml(server.slug, isFav)}
     </div>`;
 }
@@ -271,12 +426,29 @@ let allServers = [];
 // des langues). Fonction : PAGE_TAGS est declaree apres cette section.
 const filterTags = () => PAGE_TAGS.filter((tag) => tag !== "french" && tag !== "english");
 const FILTER_LANGS = ["fr", "en"];
-const LIST_SORTS = ["recent", "trend", "players", "played", "az"];
+const LIST_SORTS = ["recent", "trend", "players", "played", "az", "small"];
 function defaultListFilters() {
-  return { q: "", type: "all", online: false, lang: "all", tags: [], version: "all", friend: false, sort: "recent" };
+  return { q: "", type: "all", online: false, lang: "all", tags: [], version: "all", friend: false, team: "all", sort: "recent", reversed: false };
 }
 let listFilters = defaultListFilters();
 let listFiltersPanelOpen = false;
+
+// 23/10 (« Remplacer une etiquette » du site) : noms des etiquettes renommees ou ajoutees par
+// l'equipe, recus avec la liste (server.tagLabels) ; sinon le nom du dictionnaire du launcher.
+const serverTagLabels = new Map();
+function rememberTagLabels(servers) {
+  for (const server of servers || []) {
+    if (!server || typeof server.tagLabels !== "object" || !server.tagLabels) continue;
+    for (const [tag, names] of Object.entries(server.tagLabels)) {
+      if (names && typeof names.fr === "string" && typeof names.en === "string") serverTagLabels.set(tag, names);
+    }
+  }
+}
+function tagLabel(tag) {
+  const names = serverTagLabels.get(tag);
+  if (names) return window.i18n.getLocale() === "en" ? names.en : names.fr;
+  return t(`serverPage.tags.${tag}`);
+}
 
 function serverTagsOf(server) {
   return Array.isArray(server.tags) ? server.tags.filter((tag) => filterTags().includes(tag)) : [];
@@ -294,8 +466,10 @@ function isServerOnline(server) {
 }
 
 // « Un ami y joue » : slug -> pseudos des amis en ligne sur ce serveur. Vient de la liste d'amis
-// (friendsList, deja gardee une minute par main.js) : un appel au site au plus par minute, et
-// seulement quand une liste de serveurs est ouverte par un joueur connecte.
+// (friendsList, deja gardee une minute par main.js) : seulement quand une liste de serveurs est
+// ouverte par un joueur connecte. Audit de charge du 19/10 (B2) : rechargee au plus toutes les
+// 5 min ici (et non plus chaque minute, ~75 % du cout d'un joueur sur l'onglet Serveurs) ; l'onglet
+// Amis, lui, la recharge toujours a l'ouverture.
 function friendsBySlug() {
   const map = new Map();
   for (const friend of friendsList) {
@@ -306,8 +480,10 @@ function friendsBySlug() {
   return map;
 }
 let friendsForListsAt = 0;
+const FRIENDS_FOR_LISTS_MS = 5 * 60_000;
 function refreshFriendsForLists(onChange) {
-  if (!signedIn || Date.now() - friendsForListsAt < 60_000) return;
+  // 21/10 : pas de relecture des amis pendant une partie (une seule a la fermeture du jeu).
+  if (!signedIn || gamePlaying || Date.now() - friendsForListsAt < FRIENDS_FOR_LISTS_MS) return;
   friendsForListsAt = Date.now();
   const before = JSON.stringify([...friendsBySlug()]);
   refreshFriends().then(() => {
@@ -325,11 +501,41 @@ function serverMatches(server, f, skip, friends) {
   if (skip !== "tags" && f.tags?.length && !serverTagsOf(server).some((tag) => f.tags.includes(tag))) return false;
   if (skip !== "version" && f.version && f.version !== "all" && versionBranch(server.minecraftVersion) !== f.version) return false;
   if (skip !== "friend" && f.friend && !friends.has(server.slug)) return false;
+  // Filtre Team (19/10, version C validee par Rushi) : le clic sur le nom d'une team y mene.
+  if (skip !== "team" && f.team && f.team !== "all" && teamOf(server)?.slug !== f.team) return false;
   return true;
 }
 
+// Team d'apres son slug, lue sur les serveurs de l'annuaire (le site n'a pas de liste des teams).
+function teamBySlug(slug) {
+  for (const server of allServers) {
+    const team = teamOf(server);
+    if (team && team.slug === slug) return team;
+  }
+  return null;
+}
+
+// Clic sur le nom d'une team (lignes, fiche, lien omniscient://team/...) : la page Serveurs,
+// filtree sur cette team, avec son bandeau. Les autres filtres sont remis a zero.
+function showTeamInServers(slug) {
+  if (!TEAM_SLUG_RE.test(slug || "")) return;
+  listFilters = { ...defaultListFilters(), team: slug };
+  listFiltersPanelOpen = false;
+  serverListPage = 1;
+  showServersView();
+}
+
 // Tri stable : a egalite, l'ordre recu (deja du plus recent au plus ancien).
-function sortServerRows(servers, sort) {
+// Tris inversables (19/10, variante A validee par Rushi, memes mots que le site) : `reversed`
+// retourne l'ordre. Pour Tendance, Joueurs en ligne, Les plus joues et Petits serveurs actifs,
+// les serveurs pas actifs (hors ligne, sans mesure ou vides ; pour « Petits serveurs actifs »,
+// aussi ceux a moins de 3 joueurs) restent toujours a la fin, meme inverses : on ne met jamais en
+// avant un serveur mort.
+const SMALL_ACTIVE_MIN_PLAYERS = 3;
+// Duree du « Nouveau » et du coup de pouce en Tendance, en jours : meme valeur que NEW_DAYS du site
+// (site/src/lib/serverFilters.ts). Le site calcule isNew lui-meme ; ce nombre ne sert qu'au texte.
+const NEW_SERVER_DAYS = 7;
+function sortServerRows(servers, sort, reversed = false) {
   const indexed = servers.map((server, index) => ({ server, index }));
   const players = (s) => (isServerOnline(s) ? s.playerCount : -1);
   const cmp = {
@@ -337,10 +543,26 @@ function sortServerRows(servers, sort) {
     players: (a, b) => players(b) - players(a),
     played: (a, b) => (b.launchCount ?? 0) - (a.launchCount ?? 0),
     az: (a, b) => String(a.name).localeCompare(String(b.name)),
+    small: (a, b) => players(a) - players(b),
     online: (a, b) => Number(isServerOnline(b)) - Number(isServerOnline(a)) || players(b) - players(a),
   }[sort];
-  if (cmp) indexed.sort((a, b) => cmp(a.server, b.server) || a.index - b.index);
-  return indexed.map((entry) => entry.server);
+  // Actif = en ligne avec au moins 1 joueur (3 pour « Petits serveurs actifs »), meme regle que le site.
+  const activeWith = (min) => (s) => isServerOnline(s) && s.playerCount >= min;
+  const counts = { trend: activeWith(1), players: activeWith(1), played: activeWith(1), small: activeWith(SMALL_ACTIVE_MIN_PLAYERS) }[sort];
+  const order = (list) => {
+    if (cmp) list.sort((a, b) => cmp(a.server, b.server) || a.index - b.index);
+    return reversed ? list.reverse() : list;
+  };
+  if (!counts) return order(indexed).map((entry) => entry.server);
+  const live = order(indexed.filter((entry) => counts(entry.server)));
+  const rest = indexed.filter((entry) => !counts(entry.server)).sort((a, b) => players(b.server) - players(a.server) || a.index - b.index);
+  return [...live, ...rest].map((entry) => entry.server);
+}
+
+// Sens affiche sur le bouton ↑↓ (« Plus → moins ») pour chaque tri.
+function sortDirLabel(sort, reversed) {
+  const pair = String(t(`serverList.sortDir.${sort}`) || "").split("|");
+  return pair[reversed ? 1 : 0] || "";
 }
 
 function activeFilterKeys(f) {
@@ -351,6 +573,7 @@ function activeFilterKeys(f) {
   for (const tag of f.tags) keys.push(`tag:${tag}`);
   if (f.version !== "all") keys.push("version");
   if (f.friend) keys.push("friend");
+  if (f.team && f.team !== "all") keys.push("team");
   return keys;
 }
 function withoutFilter(f, key) {
@@ -359,6 +582,7 @@ function withoutFilter(f, key) {
   if (key === "lang") return { ...f, lang: "all" };
   if (key === "version") return { ...f, version: "all" };
   if (key === "friend") return { ...f, friend: false };
+  if (key === "team") return { ...f, team: "all" };
   return { ...f, tags: f.tags.filter((tag) => `tag:${tag}` !== key) };
 }
 function filterKeyLabel(key, f) {
@@ -367,7 +591,8 @@ function filterKeyLabel(key, f) {
   if (key === "lang") return t(`serverList.lang.${f.lang}`);
   if (key === "version") return f.version === "other" ? t("serverList.versionOther") : f.version;
   if (key === "friend") return t("serverList.filterFriend");
-  return t(`serverPage.tags.${key.slice(4)}`);
+  if (key === "team") return `${t("serverList.filterTeam")} : ${teamBySlug(f.team)?.name || f.team}`;
+  return tagLabel(key.slice(4));
 }
 
 // Le filtre dont le retrait rendrait le plus de serveurs (etat vide : « le filtre qui bloque »).
@@ -384,7 +609,7 @@ function blockingFilter(servers, f, friends) {
 function filteredServerList() {
   const friends = friendsBySlug();
   const rows = allServers.filter((s) => serverMatches(s, listFilters, null, friends));
-  return sortServerRows(rows, listFilters.sort);
+  return sortServerRows(rows, listFilters.sort, listFilters.reversed);
 }
 
 function chipHtml(key, label, active, count = null, extra = "") {
@@ -413,9 +638,23 @@ function renderListFilters(shownCount) {
   if (f.version !== "all" && !versionCounts.has(f.version)) versionCounts.set(f.version, 0);
   const rank = (b) => (b === "other" ? -1 : Number(b.slice(2)));
   const versions = [...versionCounts.entries()].sort((a, b) => rank(b[0]) - rank(a[0]));
-  const panelCount = f.tags.length + (f.version !== "all" ? 1 : 0);
+  // Barre allegee (19/10, preview « Filtre Team » version C validee) : la barre garde la recherche,
+  // Tous / Vanilla / Moddés et « Filtres » ; En ligne, Un ami y joue, langue, style, version et team
+  // vont dans le panneau. Le bouton compte tout ce qui est actif dans le panneau.
+  const panelCount = activeFilterKeys(f).filter((key) => key !== "type").length;
+  // Teams presentes (avec leur nombre de serveurs selon les autres filtres), la plus grosse d'abord.
+  const teamCounts = new Map();
+  for (const s of pool("team")) {
+    const team = teamOf(s);
+    if (!team) continue;
+    const entry = teamCounts.get(team.slug) || { team, count: 0 };
+    entry.count += 1;
+    teamCounts.set(team.slug, entry);
+  }
+  if (f.team !== "all" && !teamCounts.has(f.team)) teamCounts.set(f.team, { team: teamBySlug(f.team) || { slug: f.team, name: f.team }, count: 0 });
+  const teams = [...teamCounts.values()].sort((a, b) => b.count - a.count || a.team.name.localeCompare(b.team.name));
   // Sans tags ni versions (site plus ancien), le panneau n'aurait rien a proposer.
-  const hasPanel = allServers.some((s) => serverTagsOf(s).length || s.minecraftVersion);
+  const hasPanel = allServers.length > 0;
   const hasLangs = allServers.some((s) => serverLangsOf(s).length);
   const showFriend = signedIn && (f.friend || friends.size > 0);
 
@@ -425,14 +664,40 @@ function renderListFilters(shownCount) {
   const langSeg = ["all", ...FILTER_LANGS]
     .map((lang) => chipHtml(`lang:${lang}`, t(`serverList.lang.${lang}`), f.lang === lang, lang === "all" ? null : byLang.filter((s) => serverLangsOf(s).includes(lang)).length))
     .join("");
+  const section = (title, body, extra = "") => `<div class="list-filters-section"><div class="list-filters-panel-title">${title}${extra}</div>${body}</div>`;
+  const statusChips =
+    chipHtml("online", t("serverList.filterOnline"), f.online, pool("online").filter(isServerOnline).length) +
+    (showFriend ? chipHtml("friend", t("serverList.filterFriend"), f.friend, pool("friend").filter((s) => friends.has(s.slug)).length) : "");
+  const tagChips = filterTags()
+    .filter((tag) => f.tags.includes(tag) || byTags.some((s) => serverTagsOf(s).includes(tag)))
+    .map((tag) => chipHtml(`tag:${tag}`, tagLabel(tag), f.tags.includes(tag), byTags.filter((s) => serverTagsOf(s).includes(tag)).length))
+    .join("");
+  const versionChips =
+    chipHtml("version:all", t("serverList.versionAll"), f.version === "all") +
+    versions.map(([value, count]) => chipHtml(`version:${value}`, value === "other" ? t("serverList.versionOther") : value, f.version === value, count)).join("");
+  // Section Team : recherche (utile quand il y aura beaucoup de teams), icone, nom et nombre de serveurs.
+  const teamList = teams
+    .map(
+      ({ team, count }) =>
+        `<button type="button" class="filters-team-item${f.team === team.slug ? " active" : ""}" data-fkey="team:${escapeHtml(f.team === team.slug ? "all" : team.slug)}" data-team-name="${escapeHtml(team.name.toLowerCase())}" aria-pressed="${f.team === team.slug}">${teamAvatarHtml(team, 18)}<span>${escapeHtml(team.name)}</span><small>${count}</small></button>`,
+    )
+    .join("");
   const panel = listFiltersPanelOpen
     ? `<div class="list-filters-panel" role="dialog" aria-label="${escapeHtml(t("serverList.filters"))}">
-        <div class="list-filters-panel-title">${t("serverList.style")} <span class="muted">${t("serverList.styleHelp")}</span></div>
-        <div class="list-filters-wrap">${filterTags().filter((tag) => f.tags.includes(tag) || byTags.some((s) => serverTagsOf(s).includes(tag))).map((tag) => chipHtml(`tag:${tag}`, t(`serverPage.tags.${tag}`), f.tags.includes(tag), byTags.filter((s) => serverTagsOf(s).includes(tag)).length)).join("")}</div>
-        <div class="list-filters-panel-title">${t("serverList.version")}</div>
-        <div class="list-filters-wrap">${chipHtml("version:all", t("serverList.versionAll"), f.version === "all")}${versions
-          .map(([value, count]) => chipHtml(`version:${value}`, value === "other" ? t("serverList.versionOther") : value, f.version === value, count))
-          .join("")}</div>
+        ${section(t("serverList.filterType"), `<div class="list-filters-wrap">${typeSeg}</div>`)}
+        ${section(t("serverList.filterStatus"), `<div class="list-filters-wrap">${statusChips}</div>`)}
+        ${tagChips ? section(t("serverList.style"), `<div class="list-filters-wrap">${tagChips}</div>`, ` <span class="muted">${t("serverList.styleHelp")}</span>`) : ""}
+        ${hasLangs ? section(t("serverList.filterLang"), `<div class="list-filters-wrap">${langSeg}</div>`) : ""}
+        ${versions.length ? section(t("serverList.version"), `<div class="list-filters-wrap">${versionChips}</div>`) : ""}
+        ${
+          teams.length
+            ? section(
+                t("serverList.filterTeam"),
+                `${teams.length ? `<input type="search" id="filters-team-search" class="filters-team-search" placeholder="${escapeHtml(t("serverList.teamSearch"))}" autocomplete="off" />` : ""}<div class="filters-team-list">${teamList}</div>`,
+              )
+            : ""
+        }
+        <div class="list-filters-panel-foot">${panelCount ? `<button type="button" class="link-btn" data-fkey="clear">${t("serverList.clearAll")}</button>` : ""}</div>
       </div>`
     : "";
   const active = activeFilterKeys(f);
@@ -445,20 +710,49 @@ function renderListFilters(shownCount) {
   el.innerHTML = `
     <div class="list-filters-row">
       <div class="instances-filters" title="${escapeHtml(t("serverList.typeHelp"))}">${typeSeg}</div>
-      ${chipHtml("online", t("serverList.filterOnline"), f.online, pool("online").filter(isServerOnline).length)}
-      ${hasLangs ? `<div class="instances-filters">${langSeg}</div>` : ""}
-      ${showFriend ? chipHtml("friend", t("serverList.filterFriend"), f.friend, pool("friend").filter((s) => friends.has(s.slug)).length) : ""}
       ${hasPanel ? `<div class="list-filters-anchor">${chipHtml("panel", panelCount ? `${t("serverList.filters")} (${panelCount})` : t("serverList.filters"), listFiltersPanelOpen || panelCount > 0, null, `aria-expanded="${listFiltersPanelOpen}"`)}${panel}</div>` : ""}
+      <span class="list-sort-group" id="list-sort-slot"></span>
+      ${bandLegendHtml()}
       <span class="list-filters-count" aria-live="polite">${t("serverList.resultCount", { count: shownCount })}</span>
     </div>
-    ${listFilters.sort === "trend" ? `<p class="list-filters-note">${t("serverList.trendNote")}</p>` : ""}
-    ${activeChips}`;
+    ${listFilters.sort === "trend" ? `<p class="list-filters-note">${t("serverList.trendNote", { days: NEW_SERVER_DAYS })}</p>` : ""}
+    ${activeChips}
+    ${f.team !== "all" ? teamFilterBannerHtml(f.team, shownCount) : ""}`;
 
   el.querySelectorAll("[data-fkey]").forEach((btn) => btn.addEventListener("click", (event) => {
     event.stopPropagation();
     applyFilterKey(btn.dataset.fkey);
   }));
+  el.querySelector("[data-team-site]")?.addEventListener("click", (event) => window.mchub.openTeamLink("team", event.currentTarget.dataset.teamSite));
+  // Le menu « Trier » (element fixe, son ecouteur reste) est deplace a droite de « Filtres ».
+  const sortSlot = el.querySelector("#list-sort-slot");
+  if (sortSlot) {
+    listSortSelectEl.value = listFilters.sort;
+    sortSlot.append(listSortSelectEl.closest(".list-sort-label"), listSortDirBtn);
+    syncListSortDir();
+  }
+  // « Chercher une team… » : filtre la liste du panneau sans le redessiner (le texte tape reste).
+  el.querySelector("#filters-team-search")?.addEventListener("input", (event) => {
+    const needle = event.target.value.trim().toLowerCase();
+    el.querySelectorAll(".filters-team-item").forEach((item) => {
+      item.hidden = Boolean(needle) && !item.dataset.teamName.includes(needle);
+    });
+  });
   if (focusedKey) el.querySelector(`[data-fkey="${CSS.escape(focusedKey)}"]`)?.focus();
+}
+
+function teamFilterBannerHtml(slug, count) {
+  const team = teamBySlug(slug) || { slug, name: slug };
+  return `
+    <div class="team-filter-banner">
+      ${teamAvatarHtml(team, 44)}
+      <div class="team-filter-txt">
+        <b>${escapeHtml(team.name)}</b> <span class="muted">· ${escapeHtml(t("serverList.teamServerCount", { count }))}</span>
+        ${team.description ? `<p>${escapeHtml(team.description)}</p>` : ""}
+      </div>
+      <button type="button" class="link-btn" data-team-site="${escapeHtml(team.slug)}">${escapeHtml(t("serverList.teamOnSite"))}</button>
+      <button type="button" class="btn-secondary" data-fkey="remove:team">${escapeHtml(t("serverList.teamRemove"))}</button>
+    </div>`;
 }
 
 function applyFilterKey(key) {
@@ -470,6 +764,7 @@ function applyFilterKey(key) {
   else if (kind === "friend") listFilters = { ...f, friend: !f.friend };
   else if (kind === "tag") listFilters = { ...f, tags: f.tags.includes(value) ? f.tags.filter((tag) => tag !== value) : [...f.tags, value] };
   else if (kind === "version") listFilters = { ...f, version: value };
+  else if (kind === "team") listFilters = { ...f, team: value || "all" };
   else if (kind === "remove") listFilters = withoutFilter(f, value);
   else if (kind === "clear") listFilters = { ...defaultListFilters(), q: f.q, sort: f.sort };
   else if (kind === "panel") listFiltersPanelOpen = !listFiltersPanelOpen;
@@ -498,11 +793,14 @@ function filtersEmptyHtml() {
     ? `<button type="button" class="btn-secondary" data-empty="remove:${escapeHtml(block.key)}">${escapeHtml(t("serverList.noneRemove", { filter: filterKeyLabel(block.key, listFilters) }))} (+${block.gain})</button>`
     : "";
   const clear = activeFilterKeys(listFilters).length ? `<button type="button" class="btn-secondary" data-empty="clear">${t("serverList.clearAll")}</button>` : "";
+  const query = (listFilters.q || document.getElementById("server-search")?.value || "").trim();
+  const title = query ? t("serverList.noneForQuery", { query }) : t(activeFilterKeys(listFilters).length ? "serverList.noneTitle" : "serverList.noResults");
   return `
-    <div class="filters-empty">
-      <h3>${t(activeFilterKeys(listFilters).length ? "serverList.noneTitle" : "serverList.noResults")}</h3>
-      ${block ? `<p>${escapeHtml(t("serverList.noneHint", { filter: filterKeyLabel(block.key, listFilters) }))}</p>` : ""}
-      <div class="filters-empty-actions">${remove}${clear}</div>
+    <div class="filters-empty empty-state">
+      <span class="empty-state-icon">${EMPTY_ICONS.search}</span>
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(block ? t("serverList.noneHint", { filter: filterKeyLabel(block.key, listFilters) }) : t("serverList.noneTry"))}</p>
+      <div class="filters-empty-actions">${remove}${clear.replace('class="btn-secondary"', 'class="join-btn"')}</div>
     </div>`;
 }
 
@@ -547,8 +845,58 @@ function skeletonDetailHtml() {
 async function renderRowsInto(container, servers, origin, onFavoriteToggled, playedAtBySlug = null) {
   const favorites = await getFavoriteSlugs();
   container.innerHTML = servers
-    .map((server) => serverRowHtml(server, favorites.includes(server.slug), playedAtBySlug?.[server.slug] ?? null))
+    .map((server) => serverRowHtml(server, favorites.includes(server.slug), playedAtBySlug?.[server.slug] ?? null, origin === "favorites" || origin === "recent" || origin === "installed"))
     .join("");
+
+  container.querySelectorAll("[data-team-filter]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      showTeamInServers(btn.dataset.teamFilter);
+    });
+  });
+
+  // « … » des lignes (option C) : Installer (meme pendant une partie) et Voir la fiche.
+  container.querySelectorAll(".row-more-btn").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const menu = btn.parentElement.querySelector(".instance-menu");
+      const opening = menu.hidden;
+      closeInstanceMenus();
+      menu.hidden = !opening;
+      btn.setAttribute("aria-expanded", String(opening));
+    });
+  });
+  container.querySelectorAll("[data-row-install]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeInstanceMenus();
+      const server = servers.find((item) => item.slug === btn.dataset.rowInstall);
+      if (server) installServerStandalone(server, null);
+    });
+  });
+  container.querySelectorAll("[data-row-open]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeInstanceMenus();
+      detailOrigin = origin;
+      openDetail(btn.dataset.rowOpen);
+    });
+  });
+
+  // ▶ : lance sans ouvrir la fiche (meme garde que partout : launchServer refuse un 2e lancement).
+  container.querySelectorAll(".row-play").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const server = servers.find((item) => item.slug === btn.dataset.playSlug);
+      if (!server || btn.disabled) return;
+      btn.disabled = true;
+      try {
+        await launchServer(server);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
 
   container.querySelectorAll(".row").forEach((row) => {
     onRowActivate(row, () => {
@@ -560,7 +908,6 @@ async function renderRowsInto(container, servers, origin, onFavoriteToggled, pla
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
       await toggleFavorite(btn.dataset.slug);
-      await refreshPlaybarFavorites();
       onFavoriteToggled();
     });
   });
@@ -655,29 +1002,71 @@ listRefreshBtn.addEventListener("click", async () => {
   loadServers();
 });
 
+// Bouton ↑↓ a cote du menu « Trier » : inverse l'ordre et dit dans quel sens on est.
+const listSortDirBtn = document.createElement("button");
+listSortDirBtn.type = "button";
+listSortDirBtn.id = "list-sort-dir";
+listSortDirBtn.className = "list-sort-dir";
+listSortDirBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  listFilters = { ...listFilters, reversed: !listFilters.reversed };
+  serverListPage = 1;
+  renderFilteredList();
+});
+function syncListSortDir() {
+  const label = sortDirLabel(listFilters.sort, listFilters.reversed);
+  listSortDirBtn.innerHTML = `<span aria-hidden="true">${listFilters.reversed ? "↑" : "↓"}</span><small>${escapeHtml(label)}</small>`;
+  listSortDirBtn.title = t("serverList.sortReverse");
+  listSortDirBtn.setAttribute("aria-label", `${t("serverList.sortReverse")} : ${label}`);
+}
+
 listSortSelectEl.addEventListener("change", () => {
-  listFilters = { ...listFilters, sort: LIST_SORTS.includes(listSortSelectEl.value) ? listSortSelectEl.value : "recent" };
+  // Un nouveau tri repart toujours dans son sens habituel.
+  listFilters = { ...listFilters, sort: LIST_SORTS.includes(listSortSelectEl.value) ? listSortSelectEl.value : "recent", reversed: false };
   serverListPage = 1;
   renderFilteredList();
 });
 
 // Serveur gelé par l'équipe : même fiche, avec « Serveur gelé » à la place de « Rejoindre ».
+// Fiche disparue (19/10) : supprimee, ou plus publique. Au lieu d'une page vide ou d'une ligne
+// d'erreur, un message clair et ce qu'on peut encore faire (dossier installe, retirer des listes).
+async function renderMissingDetail(slug) {
+  listEl.hidden = true;
+  statusEl.hidden = true;
+  detailEl.hidden = false;
+  const local = await window.mchub.listLocalInstances().catch(() => ({ instances: [] }));
+  const installed = (local?.instances || []).some((instance) => instance.slug === slug);
+  detailEl.innerHTML = `
+    ${detailBreadcrumbHtml(slug)}
+    <div class="detail-missing">
+      <h2>${escapeHtml(slug)}</h2>
+      <p>${escapeHtml(t("serverDetail.missingText"))}</p>
+      <div class="detail-missing-actions">
+        ${installed ? `<button type="button" class="btn-secondary" id="missing-folder">${escapeHtml(t("myInstances.menuFolder"))}</button>` : ""}
+        <button type="button" class="btn-secondary" id="missing-forget">${escapeHtml(t("serverDetail.missingForget"))}</button>
+      </div>
+      ${installed ? `<p class="join-note">${escapeHtml(t("serverDetail.missingInstalledNote"))}</p>` : ""}
+    </div>`;
+  wireDetailBreadcrumb();
+  document.getElementById("missing-folder")?.addEventListener("click", () => window.mchub.instances.openFolder(slug));
+  document.getElementById("missing-forget")?.addEventListener("click", async (event) => {
+    event.currentTarget.disabled = true;
+    await pruneDeadSlug(slug);
+    toolsToast(t("serverDetail.missingForgotten"));
+  });
+}
+
 function renderFrozenDetail(slug) {
   listEl.hidden = true;
   statusEl.hidden = true;
   detailEl.hidden = false;
   detailEl.innerHTML = `
-    <button class="back">${t("serverDetail.back")}</button>
+    ${detailBreadcrumbHtml(slug)}
     <h2 style="margin: 16px 0 8px 0;">${escapeHtml(slug)}</h2>
-    <p style="color: #8ac3e0; margin: 0 0 16px 0;">${t("serverDetail.frozenText")}</p>
-    <button class="join-btn" disabled style="color: #8ac3e0; border-color: #8ac3e0;">${t("serverDetail.frozenBtn")}</button>
+    <p style="color: var(--frozen); margin: 0 0 16px 0;">${t("serverDetail.frozenText")}</p>
+    <button class="join-btn" disabled style="color: var(--frozen); border-color: var(--frozen);">${t("serverDetail.frozenBtn")}</button>
   `;
-  detailEl.querySelector(".back").addEventListener("click", () => {
-    if (detailOrigin === "favorites") showFavoritesView();
-    else if (detailOrigin === "recent") showRecentView();
-    else if (detailOrigin === "home") showHomeView();
-    else loadServers();
-  });
+  wireDetailBreadcrumb();
 }
 
 // Fiche personnalisable (16/10, disposition « deux colonnes » validee par Rushi) : le site envoie
@@ -895,7 +1284,7 @@ function openGalleryLightbox(item, index) {
 
 // Lecteur integre, lancement automatique, reglage « Bloquer » et petite phrase : coupes le 16/10
 // (YouTube demandait de se connecter, « pas un robot »). Le code reste ; true pour les reactiver.
-const VIDEO_EMBED_ENABLED = false;
+const VIDEO_EMBED_ENABLED = true; // rallume le 18/10 (test de Rushi : le lecteur marche)
 
 // Video de la fiche (16/10) : le lecteur YouTube (domaine youtube-nocookie) ne se charge qu'au
 // clic, ou des que la video est visible a 90 % si le proprietaire a coche « Lancer
@@ -958,7 +1347,42 @@ function clearPageTheme() {
   detailEl.classList.remove("has-wallpaper");
 }
 
+// Derniere fiche affichee : la pilule s'en sert pour retrouver un serveur prive (voir knownServer).
+var currentDetailServer = null;
+
+// En-tete de fiche, variante A (19/10, choisie par Rushi) : l'icone prend la hauteur du bloc de
+// texte a cote (nom, team, etiquettes), entre 44 et 108 px, coins arrondis. Recalculee quand la
+// fenetre change de largeur (le texte peut passer sur plus ou moins de lignes).
+const DETAIL_ICON_MIN = 44;
+const DETAIL_ICON_MAX = 108;
+let detailIconObserver = null;
+function fitDetailIcon() {
+  const head = detailEl.querySelector(".detail-header-col");
+  const icon = head?.querySelector(".detail-icon-fit");
+  const text = head?.querySelector(".detail-head-text");
+  if (!icon || !text) return;
+  const apply = () => {
+    const size = Math.max(DETAIL_ICON_MIN, Math.min(DETAIL_ICON_MAX, Math.round(text.offsetHeight)));
+    icon.style.width = icon.style.height = `${size}px`;
+    icon.style.fontSize = `${Math.round(size * 0.38)}px`;
+    icon.style.borderRadius = `${Math.max(12, Math.round(size * 0.2))}px`;
+  };
+  apply();
+  detailIconObserver?.disconnect();
+  if (typeof ResizeObserver !== "undefined") {
+    detailIconObserver = new ResizeObserver(apply);
+    detailIconObserver.observe(text);
+  }
+}
+
 async function renderDetail(server) {
+  currentDetailServer = server;
+  // Une fiche s'affiche seule : jamais l'en-tete de la page Serveurs (titre, recherche, filtres).
+  listToolbarEl.hidden = true;
+  listTitleEl.hidden = true;
+  listEl.hidden = true;
+  updateGuestBanner(false);
+  ownerInstallMessage(server);
   listEl.hidden = true;
   statusEl.hidden = true;
   detailEl.hidden = false;
@@ -967,8 +1391,10 @@ async function renderDetail(server) {
   const sections = pageVisibleSections(page, server);
 
   const tags = [`<span class="tag-chip">${server.type === "modded" ? t("serverCard.modded") : t("serverCard.vanilla")}</span>`];
-  for (const tag of page.tags) tags.push(`<span class="tag-chip tag-chip-accent">${t(`serverPage.tags.${tag}`)}</span>`);
-  for (const lang of page.languages) tags.push(`<span class="tag-chip tag-chip-outline">${t(`serverPage.languages.${lang}`)}</span>`);
+  for (const tag of page.tags) tags.push(`<span class="tag-chip tag-chip-accent">${escapeHtml(tagLabel(tag))}</span>`);
+  // Langue : meme etiquette que les lignes (variante A du 20/10), le code avec le nom en infobulle.
+  for (const lang of page.languages) tags.push(`<span class="lang-code${page.languages.length === 1 ? " solo" : ""}" title="${escapeHtml(t(`serverPage.languages.${lang}`))}">${escapeHtml(lang.toUpperCase())}</span>`);
+  if (!page.languages.length) tags.push(`<span class="lang-code none">${escapeHtml(t("serverList.noLang"))}</span>`);
 
   // Toujours actif, meme sans connexion (2026-10-11, audit onboarding) :
   // launchServer() demande la connexion lui-meme au clic si besoin — plus de
@@ -986,6 +1412,9 @@ async function renderDetail(server) {
   // servers:installStatus cote main.js, qui gere les deux cas).
   const showInstallBtn = !(await window.mchub.getServerInstallStatus(server.slug)).installed;
   const isFav = (await getFavoriteSlugs()).includes(server.slug);
+  // Lot 3 (audit 17/10) : le bouton principal dit l'action reelle, et « Installer » n'apparait
+  // plus deux fois.
+  const action = detailJoinAction(server, { installed: !showInstallBtn });
 
   const modpack =
     server.type === "modded" && server.curseforgeModpackName
@@ -996,20 +1425,24 @@ async function renderDetail(server) {
 
   applyPageTheme(page, server);
   detailEl.innerHTML = `
-    <button class="back">${t("serverDetail.back")}</button>
+    ${detailBreadcrumbHtml(server.name)}
     <div class="detail-hero">
       <div class="detail-banner">
         ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
       </div>
     </div>
-    <div class="detail-header">
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <div class="detail-icon detail-icon-inline">${serverIconInner(server)}</div>
-        <h2 style="margin: 0;">${escapeHtml(server.name)}</h2>
+    <div class="detail-header detail-header-col">
+      <div class="detail-icon detail-icon-inline detail-icon-fit">${serverIconInner(server)}</div>
+      <div class="detail-head-text">
+        <div class="detail-head-title">
+          <h2 style="margin: 0;">${escapeHtml(server.name)}</h2>
+          ${serverStatePillHtml(server)}
+          ${manualModsBadgeHtml(server)}
+        </div>
+        ${teamBylineHtml(server)}
+        <div class="tag-row">${tags.join("")}</div>
       </div>
-      ${server.playerCount == null && server.pinged ? `<p class="meta">${playersLabel(server)}</p>` : ""}
     </div>
-    <div class="tag-row">${tags.join("")}</div>
     <div class="detail-columns">
       <div class="detail-main">
         ${showDescription ? `<section class="detail-card"><p class="desc">${escapeHtml(server.description)}</p></section>` : ""}
@@ -1025,9 +1458,10 @@ async function renderDetail(server) {
       </div>
       <aside class="detail-side">
         <div class="detail-card detail-actions">
-          <button class="join-btn join-btn-wide" id="join-btn">${t("serverDetail.joinBtn")}</button>
+          <button class="join-btn join-btn-wide" id="join-btn" data-join-slug="${escapeHtml(server.slug)}" data-base-class="join-btn-wide" data-join-label="${action.label}" data-join-action="${action.kind}"${action.blocked ? ' data-join-blocked="1"' : ""}>${escapeHtml(t(action.label))}</button>
+          ${server.addToServerList === false ? `<p class="detail-list-note"><i aria-hidden="true"></i>${escapeHtml(t("serverDetail.noServerListNote"))}</p>` : ""}
           <div class="detail-actions-row">
-            ${showInstallBtn ? `<button class="btn-secondary" id="install-btn" type="button">${DOWNLOAD_SVG}${t("serverDetail.installBtn")}</button>` : ""}
+            ${showInstallBtn && action.kind !== "install" ? `<button class="btn-secondary" id="install-btn" type="button">${DOWNLOAD_SVG}${t("serverDetail.installBtn")}</button>` : ""}
             <button class="btn-secondary detail-fav-btn${isFav ? " active" : ""}" type="button" aria-pressed="${isFav}">${STAR_SVG}${isFav ? t("serverPage.favOn") : t("serverPage.fav")}</button>
             ${
               signedIn
@@ -1045,7 +1479,8 @@ async function renderDetail(server) {
             </div>
             <div class="stat-tile">
               <div class="stat-label">${t("serverDetail.players")}</div>
-              <div class="stat-value">${escapeHtml(playersText(server))}</div>
+              <div class="stat-value${fillLevel(server) && fillLevel(server) !== "ok" ? ` players-fill ${fillLevel(server)}` : ""}">${escapeHtml(playersText(server))}${fillLevel(server) === "full" ? ` · ${escapeHtml(t("serverCard.full"))}` : ""}</div>
+              ${fillLevel(server) ? `<div class="players-gauge ${fillLevel(server)}"><i style="width:${Math.min(100, Math.round((server.playerCount / server.playerCapacity) * 100))}%"></i></div>` : ""}
             </div>
             <div class="stat-tile">
               <div class="stat-label">${t("serverPage.type")}</div>
@@ -1072,7 +1507,7 @@ async function renderDetail(server) {
             page.extraTags.length
               ? `<div class="detail-more-tags">
                   <div class="stat-label">${t("serverPage.moreTags")}</div>
-                  <div class="tag-row">${page.extraTags.map((tag) => `<span class="tag-chip">${t(`serverPage.tags.${tag}`)}</span>`).join("")}</div>
+                  <div class="tag-row">${page.extraTags.map((tag) => `<span class="tag-chip">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>
                 </div>`
               : ""
           }
@@ -1081,16 +1516,37 @@ async function renderDetail(server) {
     </div>
   `;
 
-  detailEl.querySelector(".back").addEventListener("click", () => {
-    if (detailOrigin === "favorites") showFavoritesView();
-    else if (detailOrigin === "recent") showRecentView();
-    else if (detailOrigin === "home") showHomeView();
-    else loadServers();
-  });
+  wireDetailBreadcrumb();
+  fitDetailIcon();
+  // Fiche partielle (19/10) : un de SES serveurs pas encore dans l'annuaire, lu par la route du
+  // lancement (sans banniere ni description). On le dit plutot que de montrer des cases vides.
+  if (server.partial) {
+    const note = document.createElement("p");
+    note.className = "detail-partial-note";
+    note.textContent = t("serverDetail.partialNote");
+    const crumb = detailEl.querySelector(".detail-breadcrumb, nav");
+    if (crumb) crumb.after(note);
+    else detailEl.prepend(note);
+  }
 
   const joinBtn = document.getElementById("join-btn");
   if (joinBtn) {
-    joinBtn.addEventListener("click", () => joinServer(server, joinBtn));
+    joinBtn.addEventListener("click", async () => {
+      if (joinBtn.dataset.joinAction === "install") {
+        // Installer (sans lancer de compte) ; une fois pret, la fiche passe a « Jouer ».
+        await installServerStandalone(server, null);
+        const status = await window.mchub.getServerInstallStatus(server.slug).catch(() => null);
+        if (status?.installed && !detailEl.hidden && detailEl.querySelector(`[data-join-slug="${CSS.escape(server.slug)}"]`)) renderDetail(server);
+        return;
+      }
+      if (joinBtn.dataset.joinAction === "signin") {
+        await attemptSignIn(true);
+        if (signedIn && !detailEl.hidden) renderDetail(server);
+        return;
+      }
+      joinServer(server, joinBtn);
+    });
+    syncJoinButtons();
   }
 
   const installBtn = document.getElementById("install-btn");
@@ -1101,12 +1557,12 @@ async function renderDetail(server) {
   const favBtn = detailEl.querySelector(".detail-fav-btn");
   favBtn.addEventListener("click", async () => {
     await toggleFavorite(server.slug);
-    await refreshPlaybarFavorites();
     renderDetail(server);
   });
 
   const reportBtn = document.getElementById("report-open-btn");
   if (reportBtn) reportBtn.addEventListener("click", () => openReportDialog(server));
+  wireTeamByline(detailEl);
 
   detailEl.querySelectorAll("[data-link-kind]").forEach((btn) => {
     btn.addEventListener("click", () => window.mchub.openServerPageLink(btn.dataset.linkKind, btn.dataset.linkValue));
@@ -1123,6 +1579,10 @@ async function renderDetail(server) {
 // main.js) : ouvre la fiche du serveur, comme un clic dans l'annuaire. Un lien avec un code
 // d'invitation rejoint d'abord le serveur prive (meme chemin que « Rejoindre avec un code »).
 async function openServerFromLink(link) {
+  if (link?.kind === "team") {
+    showTeamInServers(link.value);
+    return;
+  }
   if (!link || (link.kind !== "server" && link.kind !== "join")) return;
   settingsPanelEl.hidden = true;
   accountPanelEl.hidden = true;
@@ -1397,39 +1857,699 @@ async function applyRecommendedRamIfNeeded(server) {
 }
 
 // Orchestration partagee du lancement, quel que soit le point d'entree
-// (bouton "Rejoindre" d'une fiche serveur ou bouton "Jouer" de la barre de
-// lancement rapide) — un seul endroit qui pilote la barre de progression du
-// bas, pour ne jamais avoir deux indicateurs de progression differents.
+// (bouton "Rejoindre" d'une fiche serveur, carte "Reprendre", "Mes instances"...).
+// La progression ne vit plus dans une barre du bas (supprimee, design 17/10 point 1) mais dans
+// la pilule d'etat de la barre du haut (voir renderActivity ci-dessous).
 let launchInProgress = false;
 
-function setPlaybarBusy(busy) {
-  document.getElementById("playbar-idle").hidden = busy;
-  document.getElementById("playbar-progress").hidden = !busy;
+// --- Pilule d'etat (design 17/10, points 1 et 2, preview validee par Rushi) ------------------
+// Un seul etat, lu au meme endroit par la pilule de la barre du haut ET par le bouton Rejoindre
+// de la fiche serveur : "empty" (jamais joue), "idle", "install", "start", "play", "fail".
+// Arreter le jeu se fait uniquement depuis le panneau de la pilule, avec confirmation.
+const activity = {
+  tasks: [], // derniere liste recue par tasks:update
+  current: null, // { slug, name } du lancement en cours / de la partie en cours
+  launch: null, // { percent, text } pendant launchServer, apres la fin des telechargements
+  failure: null, // { slug, name, error }
+  playingSince: 0,
+  confirmStop: false,
+  lastPlayed: null, // { slug, at }
+  speedEma: 0, // vitesse lissee (le temps restant ne doit pas sauter d'une seconde a l'autre)
+  autoLaunch: new Set(), // installations « Installer » a lancer des qu'elles sont finies
+  stopRequested: false, // arret demande par le joueur : sa fermeture n'est pas un plantage
+  diskFreeBytes: null, // place libre affichee dans l'erreur « disque plein »
+};
+
+const ACTIVITY_DL_SVG =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M3 13h10"/></svg>';
+
+// Serveur deja connu du renderer (liste affichee, cache de la liste, fiche ouverte) — sans appel.
+function knownServer(slug) {
+  if (!slug) return null;
+  return allServers.find((server) => server.slug === slug) || serverListCache?.servers?.find((server) => server.slug === slug) || (currentDetailServer?.slug === slug ? currentDetailServer : null);
 }
 
-// Bouton « Jouer » : pendant le démarrage ou pendant que Minecraft tourne, il affiche l'état
-// (et clignote) au lieu de « Jouer » — on ne peut pas lancer deux Minecraft à la fois.
-function syncPlaybarWithGame() {
-  const playBtn = document.getElementById("playbar-play");
-  const running = gamePlaying || launchStarting;
-  playBtn.classList.toggle("playing", running);
-  // Carre rouge « Arrêter le jeu » (16/10) : seulement pendant une vraie partie.
-  const stopBtn = document.getElementById("playbar-stop");
-  if (stopBtn) {
-    stopBtn.hidden = !gamePlaying;
-    stopBtn.title = t("instanceTools.stop");
-    stopBtn.setAttribute("aria-label", t("instanceTools.stop"));
+// Meme chose, en allant chercher la fiche si besoin (serveur prive, liste pas encore chargee).
+async function resolveServer(slug) {
+  const known = knownServer(slug);
+  if (known) return known;
+  try {
+    const result = await window.mchub.getServer(slug);
+    return result?.ok ? result.server : null;
+  } catch {
+    return null;
+  }
+}
+
+// Message du proprietaire pendant l'installation (design 17/10, point 6) : ecrit sur le site
+// (fiche > « Message pendant l'installation », pageConfig.installMessage), garde ici par serveur des
+// qu'une fiche ou un lancement le fait connaitre.
+const installMessages = new Map();
+function ownerInstallMessage(server) {
+  if (!server) return "";
+  const message = String(server.installMessage || server.page?.installMessage || "").trim();
+  if (message) installMessages.set(server.slug, message);
+  return message || installMessages.get(server.slug) || "";
+}
+
+function activityServerName(slug) {
+  if (!slug) return "";
+  if (activity.current?.slug === slug && activity.current.name) return activity.current.name;
+  if (activity.lastPlayed?.slug === slug && activity.lastPlayed.name) return activity.lastPlayed.name;
+  return knownServer(slug)?.name || slug;
+}
+
+function formatEta(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  if (seconds < 60) return t("activity.etaSeconds", { n: Math.max(5, Math.round(seconds / 5) * 5) });
+  return t("activity.etaMinutes", { n: Math.round(seconds / 60) });
+}
+
+function formatPlayMinutes(since) {
+  const minutes = Math.max(0, Math.floor((Date.now() - since) / 60_000));
+  if (minutes < 60) return t("activity.minutes", { n: minutes });
+  return t("activity.hours", { h: Math.floor(minutes / 60), m: String(minutes % 60).padStart(2, "0") });
+}
+
+// Calcule l'etat a afficher a partir de tout ce que le renderer sait deja (taches de
+// telechargement, lancement en cours, partie en cours, dernier echec).
+function activityState() {
+  if (gamesMoveProgress && gamesMoveProgress.stage !== "switched") {
+    const { doneBytes = 0, totalBytes = 0 } = gamesMoveProgress;
+    return { phase: "move", percent: totalBytes ? Math.min(99, Math.floor((doneBytes / totalBytes) * 100)) : 0, drive: gamesMoveProgress.drive };
   }
   if (gamePlaying) {
-    playBtn.textContent = t("playbar.minecraftRunning");
-    playBtn.disabled = true;
-  } else if (launchStarting) {
-    playBtn.textContent = t("playbar.minecraftStarting");
-    playBtn.disabled = true;
-  } else {
-    playBtn.textContent = t("playbar.play");
-    playBtn.disabled = !selectedFavoriteSlug || launchInProgress;
+    const slug = runningGameSlug && runningGameSlug !== "unknown" ? runningGameSlug : activity.current?.slug;
+    return { phase: "play", slug, name: activityServerName(slug) };
   }
+  if (launchStarting) return { phase: "start", slug: activity.current?.slug, name: activity.current?.name || "" };
+  const active = activity.tasks.filter((task) => task.status === "active" || task.status === "paused");
+  if (active.length) {
+    const task = active[0];
+    const totalBytes = active.reduce((sum, item) => sum + (item.totalBytes || 0), 0);
+    const doneBytes = active.reduce((sum, item) => sum + (item.bytes || 0), 0);
+    const speed = active.reduce((sum, item) => sum + (item.status === "active" ? item.speedBps || 0 : 0), 0);
+    const percent = totalBytes ? Math.min(99, Math.floor((doneBytes / totalBytes) * 100)) : null;
+    const smoothed = activity.speedEma || speed;
+    const etaS = totalBytes && smoothed > 0 ? (totalBytes - doneBytes) / smoothed : null;
+    return {
+      phase: "install",
+      slug: task.slug,
+      name: task.name || activityServerName(task.slug),
+      task,
+      percent,
+      etaS,
+      speed,
+      doneBytes,
+      totalBytes,
+      paused: task.status === "paused",
+    };
+  }
+  if (activity.launch && activity.current) {
+    const { percent } = activity.launch;
+    const installing = typeof percent === "number" && percent < 100;
+    return { phase: installing ? "install" : "start", slug: activity.current.slug, name: activity.current.name, percent: installing ? percent : null, launchText: activity.launch.text };
+  }
+  if (launchInProgress && activity.current) return { phase: "start", slug: activity.current.slug, name: activity.current.name };
+  if (activity.failure) return { phase: "fail", ...activity.failure };
+  return { phase: activity.lastPlayed ? "idle" : "empty", slug: activity.lastPlayed?.slug, name: activityServerName(activity.lastPlayed?.slug) };
+}
+
+function activityPillParts(state) {
+  switch (state.phase) {
+    case "install": {
+      let long;
+      if (state.paused) long = t("activity.pillPaused", { percent: state.percent ?? 0 });
+      else if (state.percent == null) long = t("activity.pillInstallNoPercent");
+      else {
+        const eta = formatEta(state.etaS);
+        long = eta ? t("activity.pillInstallEta", { percent: state.percent, eta }) : t("activity.pillInstall", { percent: state.percent });
+      }
+      const short = state.percent == null ? t("activity.shortInstall") : t("activity.shortPercent", { percent: state.percent });
+      // File d'attente (serie 2, idee 4) : « … · 2 en attente » quand d'autres installations attendent.
+      const waiting = queuedTasks().length;
+      if (waiting) long = `${long} · ${t("queue.waitingShort", { count: waiting })}`;
+      return { cls: "hl", icon: '<span class="activity-ring"></span>', long, short };
+    }
+    case "move":
+      return { cls: "hl", icon: '<span class="activity-ring"></span>', long: t("games.pill", { percent: state.percent, drive: state.drive || "" }), short: `⇄ ${state.percent} %` };
+    case "start":
+      return { cls: "hl", icon: '<span class="activity-ring"></span>', long: t("activity.pillStart"), short: t("activity.shortStart") };
+    case "play":
+      return {
+        cls: "hl",
+        icon: '<span class="status-dot online"></span>',
+        long: state.name ? t("activity.pillPlay", { name: state.name, time: formatPlayMinutes(activity.playingSince || Date.now()) }) : t("activity.shortPlay"),
+        short: t("activity.shortPlay"),
+      };
+    case "fail":
+      return { cls: "err", icon: '<span class="status-dot offline"></span>', long: t("activity.pillFail"), short: t("activity.shortFail") };
+    default:
+      return { cls: "", icon: ACTIVITY_DL_SVG, long: t("activity.ready"), short: t("activity.ready") };
+  }
+}
+
+function activityPanelHtml(state) {
+  const name = escapeHtml(state.name || "");
+  switch (state.phase) {
+    case "move":
+      return `
+        <h4>${escapeHtml(t("games.pill", { percent: state.percent, drive: state.drive || "" }))}</h4>
+        <span class="muted">${escapeHtml(t("games.closeHint"))}</span>
+        <div class="activity-row"><button type="button" class="activity-btn full" data-activity="move-show">${escapeHtml(t("games.showMove"))}</button></div>`;
+    case "empty":
+      return `
+        <h4>${escapeHtml(t("activity.nothing"))}</h4>
+        <span class="muted">${escapeHtml(t("activity.emptyText"))}</span>
+        <div class="activity-row"><button type="button" class="activity-btn full" data-activity="browse">${escapeHtml(t("activity.browse"))}</button></div>`;
+    case "idle": {
+      const when = activity.lastPlayed?.at ? relativeDayText(activity.lastPlayed.at) : "";
+      return `
+        <span class="muted">${escapeHtml(t("activity.nothing"))}</span>
+        <div class="activity-row between">
+          <span>${name}<br><span class="muted">${escapeHtml(when ? t("activity.lastPlayedWhen", { when }) : t("activity.lastPlayed"))}</span></span>
+          <button type="button" class="activity-btn full" data-activity="relaunch">${escapeHtml(t("activity.relaunch"))}</button>
+        </div>`;
+    }
+    case "install": {
+      const task = state.task;
+      const controls = task
+        ? `<span class="activity-row">
+            <button type="button" class="activity-btn" data-activity="${state.paused ? "resume" : "pause"}" data-id="${task.id}">${escapeHtml(state.paused ? t("titlebar.taskResume") : t("activity.pause"))}</button>
+            <button type="button" class="activity-btn danger" data-activity="cancel" data-id="${task.id}">${escapeHtml(t("activity.cancel"))}</button>
+          </span>`
+        : "";
+      const step = (task?.text || state.launchText || t("activity.preparing")).trim();
+      const volume =
+        state.totalBytes
+          ? `${formatTaskBytes(state.doneBytes)} / ${formatTaskBytes(state.totalBytes)}${state.speed > 0 ? ` · ${formatTaskSpeed(state.speed)}` : ""}`
+          : "";
+      const eta = state.paused ? t("titlebar.taskPaused") : formatEta(state.etaS);
+      const firstTime = state.slug && !playCountsCache[state.slug];
+      const steps = activitySteps(state);
+      // Pack FTB (21/10, preview validee) : d'ou viennent les mods, une ligne par origine non vide.
+      const origins = task?.origins;
+      const originsHtml = origins
+        ? [
+            ["curseforge", "activity.originCurseforge"],
+            ["modrinth", "activity.originModrinth"],
+            ["ftb", "activity.originFtb"],
+          ]
+            .filter(([key]) => Number(origins[key]) > 0)
+            .map(([key, label]) => `<span class="muted activity-detail">✓ ${escapeHtml(t(label, { count: Number(origins[key]) }))}</span>`)
+            .join("")
+        : "";
+      const autoLaunch =
+        task?.kind === "install"
+          ? `<label class="activity-row muted activity-check"><input type="checkbox" data-autolaunch="${escapeHtml(state.slug)}"${activity.autoLaunch.has(state.slug) ? " checked" : ""}> ${escapeHtml(t("activity.autoLaunch"))}</label>`
+          : "";
+      return `
+        <span class="activity-section">${escapeHtml(t("queue.inProgress"))}</span>
+        <div class="activity-row between"><h4>${name}</h4>${controls}</div>
+        <span class="activity-stepof">${escapeHtml(t("activity.stepOf", { n: steps.index, total: steps.total }))}</span>
+        ${steps.html}
+        ${originsHtml}
+        <span class="muted activity-detail">${escapeHtml(step)}</span>
+        <div class="activity-bar${state.percent == null ? " indeterminate" : ""}"><i style="width:${state.percent ?? 0}%"></i></div>
+        ${volume || eta ? `<div class="activity-row between"><span class="muted">${escapeHtml(volume)}</span><b class="activity-eta">${escapeHtml(eta ? `~${eta}` : "")}</b></div>` : ""}
+        ${firstTime ? `<span class="activity-tip">${escapeHtml(t("activity.firstTimeTip"))}</span>` : ""}
+        ${installMessages.get(state.slug) ? `<div class="owner-message"><span class="owner-message-label">${escapeHtml(t("firstInstall.ownerLabel"))}</span>${escapeHtml(installMessages.get(state.slug))}</div>` : ""}
+        ${autoLaunch}
+        ${queueHtml()}`;
+    }
+    case "start":
+      return `
+        <h4>${name}</h4>
+        <span class="muted">${escapeHtml(t("activity.starting"))}</span>
+        <div class="activity-bar indeterminate"><i></i></div>`;
+    case "play": {
+      const confirm = activity.confirmStop
+        ? `<div class="activity-confirm">
+            <span>${escapeHtml(t("activity.confirmStop"))}</span>
+            <div class="activity-row">
+              <button type="button" class="activity-btn danger-full" data-activity="stop-yes">${escapeHtml(t("activity.confirmYes"))}</button>
+              <button type="button" class="activity-btn" data-activity="stop-no">${escapeHtml(t("activity.confirmNo"))}</button>
+            </div>
+          </div>`
+        : "";
+      return `
+        <h4>${name || escapeHtml(t("activity.shortPlay"))}</h4>
+        <span class="muted">${escapeHtml(t("activity.playingFor", { time: formatPlayMinutes(activity.playingSince || Date.now()) }))}</span>
+        <div class="activity-row">
+          <button type="button" class="activity-btn danger" data-activity="stop">${escapeHtml(t("activity.stop"))}</button>
+          <button type="button" class="activity-btn" data-activity="log">${escapeHtml(t("activity.log"))}</button>
+        </div>
+        ${confirm}`;
+    }
+    case "fail": {
+      const info = describeFailure(state);
+      const btn = (action, label, cls = "") => `<button type="button" class="activity-btn${cls ? ` ${cls}` : ""}" data-activity="${action}">${escapeHtml(label)}</button>`;
+      const actions = {
+        disk: [btn("retry", t("activity.retry"), "full"), btn("move-games", t("games.moveShort")), btn("game-folder", t("activity.openFolder")), btn("copy-report", t("activity.copyReport"))],
+        net: [btn("retry", t("activity.retry"), "full"), btn("copy-report", t("activity.copyReport"))],
+        crash: [btn("retry", t("activity.retry"), "full"), btn("memory", t("activity.fixMemory")), btn("repair", t("activity.repairFiles")), btn("log", t("activity.seeLog"))],
+        java: [btn("retry", t("activity.retry"), "full"), btn("java-fix", t("activity.fixJava")), btn("log", t("activity.seeLog"))],
+        manual: [btn("manual", t("activity.showManual"), "full"), btn("retry", t("activity.retry"))],
+        generic: [btn("retry", t("activity.retry"), "full"), btn("log", t("activity.seeLog")), btn("services", t("activity.servicesStatus"))],
+      }[info.kind];
+      // Detail technique replie (lot 5 bis) : utile pour l'aide, sans faire peur au joueur.
+      const raw = String(state.error || "").trim();
+      const tech = raw && info.kind !== "manual" ? `<details class="activity-tech"><summary>${escapeHtml(t("activity.techDetails"))}</summary><code>${escapeHtml(raw.slice(0, 600))}</code></details>` : "";
+      const stage = activity.failure?.reportStage || null;
+      const warn = state.slug && signedIn && !stage ? btn("warn-server", t("activity.warnServer")) : "";
+      const report =
+        stage === "confirm"
+          ? `<div class="activity-confirm">
+              <b>${escapeHtml(t("activity.warnTitle"))}</b>
+              <ul class="activity-list">${["warnItemVersions", "warnItemProblem", "warnItemMod"].map((key) => `<li>${escapeHtml(t(`activity.${key}`))}</li>`).join("")}</ul>
+              <span class="muted">${escapeHtml(t("activity.warnPrivacy"))}</span>
+              <div class="activity-row">${btn("warn-send", t("activity.warnSend"), "full")}${btn("warn-cancel", t("activity.cancel"))}</div>
+            </div>`
+          : stage === "sending"
+            ? `<div class="activity-confirm"><span class="muted">${escapeHtml(t("activity.warnSending"))}</span></div>`
+            : stage === "sent"
+              ? `<div class="activity-okbox">${escapeHtml(t("activity.warnSent"))}</div>`
+              : stage === "error"
+                ? `<div class="activity-confirm"><span class="muted">${escapeHtml(t("activity.warnFailed"))}</span><div class="activity-row">${btn("warn-send", t("activity.retry"))}</div></div>`
+                : "";
+      return `
+        <div class="activity-errbox">
+          <b>✕ ${escapeHtml(info.title)}</b>
+          <span class="muted">${escapeHtml(info.body)}</span>
+          ${tech}
+          <div class="activity-row">${actions.join("")}${warn}</div>
+        </div>
+        ${report}
+        <div class="activity-row"><button type="button" class="activity-btn ghost" data-activity="dismiss">${escapeHtml(t("activity.dismiss"))}</button></div>`;
+    }
+    default:
+      return "";
+  }
+}
+
+// Etapes visibles du panneau (design 17/10, point 4, L3-A). Serveur moddé : 6 etapes, dont la
+// recherche sur Modrinth des mods que CurseForge bloque et les mods a ajouter a la main ; vanilla :
+// 3 etapes. Les etapes viennent de main.js (task.step) puis de game:progress pour le demarrage.
+const MODDED_STEPS = ["prepare", "java", "mods", "blocked", "manual", "start"];
+const VANILLA_STEPS = ["prepare", "java", "start"];
+
+function activitySteps(state) {
+  const task = state.task;
+  const modded = task ? task.modded !== false : knownServer(state.slug)?.type === "modded";
+  const order = modded ? MODDED_STEPS : VANILLA_STEPS;
+  const current = task ? task.step || "prepare" : "start";
+  const blocked = task?.blocked || null;
+  const curIndex = Math.max(0, order.indexOf(current));
+  const lines = order.map((step, index) => {
+    let label;
+    let done = index < curIndex;
+    if (step === "prepare") label = t("activity.stepPrepare");
+    else if (step === "java") label = t("activity.stepJava");
+    else if (step === "mods") label = task?.modsTotal ? t("activity.stepModsCount", { done: task.modsDone || 0, total: task.modsTotal }) : t("activity.stepMods");
+    else if (step === "blocked") {
+      // La recherche sur Modrinth se fait juste avant le telechargement des mods : deja connue.
+      if (blocked) done = true;
+      label = blocked ? t("activity.stepBlockedFound", { found: blocked.found, total: blocked.total }) : current === "mods" ? t("activity.stepBlockedNone") : t("activity.stepBlocked");
+      if (!blocked && current === "mods") done = true;
+    } else if (step === "manual") {
+      const left = blocked ? blocked.total - blocked.found : 0;
+      if (current === "mods") done = left === 0;
+      label = left > 0 ? t("activity.stepManualLeft", { count: left }) : t("activity.stepManualNone");
+    } else label = t("activity.stepStart");
+    const cur = index === curIndex && !done;
+    return `<div class="activity-step${done ? " done" : cur ? " cur" : ""}"><span class="activity-step-n">${done ? "✓" : index + 1}</span><span>${escapeHtml(label)}</span></div>`;
+  });
+  return { html: `<div class="activity-steps">${lines.join("")}</div>`, index: curIndex + 1, total: order.length };
+}
+
+// Echec affiche par la pilule (L3-E) : un titre clair et une phrase, plus le texte brut. Le type
+// choisit les boutons proposes (disque plein, connexion coupee, plantage du jeu...).
+function describeFailure(failure) {
+  const raw = String(failure.error || "");
+  const name = failure.name || "";
+  if (failure.manualMods) {
+    return { kind: "manual", title: t("manualMods.playbar", { count: failure.manualMods.filter((mod) => mod.reason !== "removed").length || failure.manualMods.length }), body: t("activity.manualBody") };
+  }
+  if (/ENOSPC|no space left|not enough space|espace disque/i.test(raw)) {
+    const free = activity.diskFreeBytes;
+    return { kind: "disk", title: t("activity.errDiskTitle"), body: free != null ? t("activity.errDiskFree", { free: formatTaskBytes(free) }) : t("activity.errDiskBody") };
+  }
+  // Site saturé (audit de charge du 19/10) : message de main.js, rien a reparer de ce cote.
+  if (/très demandé : réessaie dans une minute/i.test(raw)) {
+    return { kind: "net", title: t("activity.errBusyTitle"), body: t("activity.errBusyBody") };
+  }
+  if (/ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH|fetch failed|socket hang up|network|timed out|timeout/i.test(raw)) {
+    return { kind: "net", title: t("activity.errNetTitle"), body: t("activity.errNetBody") };
+  }
+  const code = raw.match(/code\s*(-?\d+)/i)?.[1];
+  if (failure.crashCode != null || (code && /fermé|arrêté|closed|exited|stopped/i.test(raw))) {
+    return { kind: "crash", title: t("activity.errCrashTitle", { code: failure.crashCode ?? code }), body: t("activity.errCrashBody") };
+  }
+  // Lot 5 bis : Java qui manque ou ne se prepare pas -> dit pourquoi et propose de le reparer.
+  if (/Version de Java|Java \d+ disponible|Java introuvable|Java a été téléchargé|UnsupportedClassVersionError|JAVA_HOME|could not find java|java\.exe.*ENOENT/i.test(raw)) {
+    const major = raw.match(/Java\s*(\d{1,2})/i)?.[1];
+    return { kind: "java", title: t("activity.errJavaTitle"), body: major ? t("activity.errJavaBodyMajor", { major }) : t("activity.errJavaBody") };
+  }
+  // Plus de texte technique brut en premier (lot 5 bis) : une phrase claire, le detail replie.
+  return { kind: "generic", title: t("activity.failTitle", { name }), body: t("activity.errGenericBody") };
+}
+
+// Notification Windows (L3-G) quand le launcher n'est pas au premier plan : installation finie,
+// ou jeu qui se lance tout seul. Un clic ramene la fenetre.
+function notifyIfAway(title, body) {
+  if (document.hasFocus() || typeof Notification === "undefined" || discreetMode) return;
+  try {
+    const notification = new Notification(title, { body, silent: false });
+    notification.onclick = () => window.mchub.windowControls.focus();
+  } catch {
+    // Notifications coupees par Windows : rien a faire, la pilule montre deja l'etat.
+  }
+}
+
+// --- Mode discret (design 17/10, point 6, preview validee) ------------------------------------
+// Un interrupteur dans la barre du haut et dans Parametres > Apparence. Il cache les adresses des
+// serveurs, les codes d'invitation, les pseudos des amis et les notifications (pas de pastille,
+// pas de notification Windows). Tout passe par la classe html.discreet et les elements .sensitive.
+let discreetMode = false;
+
+function applyDiscreetMode(on) {
+  discreetMode = Boolean(on);
+  document.documentElement.classList.toggle("discreet", discreetMode);
+  const btn = document.getElementById("discreet-toggle");
+  if (btn) {
+    btn.setAttribute("aria-pressed", String(discreetMode));
+    btn.innerHTML = `${discreetMode ? "◐" : "◑"} <span class="discreet-word">${escapeHtml(t("discreet.toggle"))}</span>`;
+    btn.title = t(discreetMode ? "discreet.onHint" : "discreet.offHint");
+    btn.setAttribute("aria-label", t("discreet.toggle"));
+  }
+}
+
+async function setDiscreetMode(on) {
+  applyDiscreetMode(on);
+  await window.mchub.settings.set({ discreetMode: discreetMode });
+}
+
+document.getElementById("discreet-toggle")?.addEventListener("click", () => setDiscreetMode(!discreetMode));
+window.mchub.settings.get().then((settings) => applyDiscreetMode(settings.discreetMode)).catch(() => applyDiscreetMode(false));
+
+// --- Etats vides (design 17/10, point 6, L5-G) : une phrase et un seul bouton par page ---------
+const EMPTY_ICONS = {
+  star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>',
+  people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  cloudOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3"/><path d="m1 1 22 22"/></svg>',
+};
+
+function emptyStateHtml({ icon, title, text, action, actionId, extraClass = "" }) {
+  return `
+    <div class="empty-state ${extraClass}">
+      <span class="empty-state-icon">${EMPTY_ICONS[icon] || ""}</span>
+      <h3>${escapeHtml(title)}</h3>
+      ${text ? `<p>${escapeHtml(text)}</p>` : ""}
+      ${action ? `<button type="button" class="join-btn" id="${actionId}">${escapeHtml(action)}</button>` : ""}
+    </div>`;
+}
+
+// --- File d'attente des installations (serie 2, idee 4, version A) -------------------------------
+function queuedTasks() {
+  return activity.tasks.filter((task) => task.status === "queued").sort((a, b) => (a.queuePosition || 99) - (b.queuePosition || 99));
+}
+
+function queueHtml() {
+  const queued = queuedTasks();
+  const rows = queued
+    .map((task, index) => `
+      <div class="queue-row${activity.queueMoved === task.id ? " moved" : ""}">
+        <span class="queue-n">${index + 1}</span>
+        <span class="task-item-icon">${escapeHtml((task.name || task.slug || "?").slice(0, 1).toUpperCase())}</span>
+        <span class="queue-name">${escapeHtml(task.name || task.slug)}</span>
+        ${index > 0 ? `<button type="button" class="activity-btn sm" data-activity="queue-first" data-id="${task.id}">${escapeHtml(t("queue.moveFirst"))}</button>` : ""}
+        <button type="button" class="queue-remove" data-activity="cancel" data-id="${task.id}" title="${escapeHtml(t("queue.remove"))}" aria-label="${escapeHtml(t("queue.remove"))}">✕</button>
+      </div>`)
+    .join("");
+  return `
+    <span class="activity-section">${escapeHtml(t("queue.waiting", { count: queued.length }))}</span>
+    ${queued.length ? rows : `<div class="queue-empty"><b>${escapeHtml(t("queue.emptyTitle"))}</b><span class="muted">${escapeHtml(t("queue.emptyText"))}</span></div>`}`;
+}
+
+// "aujourd'hui" / "hier" / "il y a 3 jours" — utilise par le panneau "Rien en cours".
+function relativeDayText(at) {
+  const days = Math.floor((Date.now() - at) / 86_400_000);
+  if (days <= 0) return t("activity.today");
+  if (days === 1) return t("activity.yesterday");
+  return t("activity.daysAgo", { n: days });
+}
+
+let playCountsCache = {};
+let activityRenderKey = "";
+
+function renderActivity() {
+  const state = activityState();
+  const pill = document.getElementById("tasks-trigger");
+  if (!pill) return;
+  const parts = activityPillParts(state);
+  pill.className = `activity-pill${parts.cls ? ` ${parts.cls}` : ""}`;
+  document.getElementById("activity-pill-icon").innerHTML = parts.icon;
+  document.getElementById("activity-pill-text").textContent = parts.long;
+  document.getElementById("activity-pill-short").textContent = parts.short;
+  pill.title = parts.long;
+  pill.setAttribute("aria-label", parts.long);
+
+  // Le panneau n'est redessine que si son contenu change (sinon un clic en cours sur un de ses
+  // boutons pourrait tomber sur un element remplace entre mousedown et click).
+  const panelHtml = activityPanelHtml(state);
+  if (panelHtml !== activityRenderKey) {
+    activityRenderKey = panelHtml;
+    document.getElementById("activity-panel").innerHTML = panelHtml;
+  }
+  syncJoinButtons(state);
+}
+
+// Bouton Rejoindre de la fiche serveur (design 17/10, point 2) : il suit le meme etat que la
+// pilule, pour que le joueur voie la suite la ou il a clique. Seulement pour le serveur
+// concerne : les autres fiches restent sur « Rejoindre » (desactive pendant qu'un autre
+// lancement est en cours, minecraft-launcher-core ne gere qu'un jeu a la fois).
+function syncJoinButtons(state = activityState()) {
+  document.querySelectorAll("[data-join-slug]").forEach((btn) => {
+    const slug = btn.dataset.joinSlug;
+    const mine = state.slug === slug;
+    let html;
+    let cls = "join-btn";
+    let disabled = false;
+    if (mine && state.phase === "install") {
+      cls += " join-progress";
+      disabled = true;
+      const modded = knownServer(slug)?.type === "modded";
+      const label = state.percent == null ? t("activity.joinPreparing") : t(modded ? "activity.joinMods" : "activity.joinFiles", { percent: state.percent });
+      html = `<span class="join-progress-label">${escapeHtml(label)}</span><span class="activity-bar${state.percent == null ? " indeterminate" : ""}"><i style="width:${state.percent ?? 0}%"></i></span>`;
+    } else if (mine && state.phase === "start") {
+      cls += " join-starting";
+      disabled = true;
+      html = `<span class="activity-ring"></span>${escapeHtml(t("activity.joinStarting"))}`;
+    } else if (mine && state.phase === "play") {
+      cls += " join-stop";
+      html = escapeHtml(t("activity.joinStop", { time: formatPlayMinutes(activity.playingSince || Date.now()) }));
+    } else if (mine && state.phase === "fail") {
+      cls += " join-retry";
+      html = escapeHtml(t("activity.joinRetry"));
+    } else {
+      html = escapeHtml(t(btn.dataset.joinLabel || "serverDetail.joinBtn"));
+      // Un seul lancement a la fois (minecraft-launcher-core) : les autres fiches attendent.
+      // Complet / hors ligne : bouton grise (lot 3), sauf si « Essayer quand meme » est choisi.
+      disabled = launchInProgress || launchStarting || btn.dataset.joinBlocked === "1";
+    }
+    if (btn.dataset.joinState !== `${cls}|${html}|${disabled}`) {
+      btn.dataset.joinState = `${cls}|${html}|${disabled}`;
+      btn.className = `${btn.dataset.baseClass || ""} ${cls}`.trim();
+      btn.innerHTML = html;
+      btn.disabled = disabled;
+    }
+  });
+}
+
+function openActivityPanel() {
+  const panel = document.getElementById("tasks-panel");
+  panel.hidden = false;
+  document.getElementById("tasks-trigger").setAttribute("aria-expanded", "true");
+}
+
+function closeActivityPanel() {
+  const panel = document.getElementById("tasks-panel");
+  if (panel.hidden) return;
+  panel.hidden = true;
+  document.getElementById("tasks-trigger").setAttribute("aria-expanded", "false");
+  if (activity.confirmStop) {
+    activity.confirmStop = false;
+    renderActivity();
+  }
+}
+
+async function handleActivityAction(btn) {
+  const action = btn.dataset.activity;
+  const state = activityState();
+  if (action === "browse") {
+    closeActivityPanel();
+    showServersView();
+  } else if (action === "relaunch" || action === "retry") {
+    const slug = state.slug;
+    const installOnly = action === "retry" && activity.failure?.action === "install";
+    closeActivityPanel();
+    activity.failure = null;
+    renderActivity();
+    const server = await resolveServer(slug);
+    if (server && installOnly) await installServerStandalone(server, null);
+    else if (server) await launchServer(server);
+    else if (slug) await openDetail(slug);
+  } else if (action === "pause") await window.mchub.tasks.pause(Number(btn.dataset.id));
+  else if (action === "resume") await window.mchub.tasks.resume(Number(btn.dataset.id));
+  else if (action === "cancel") await window.mchub.tasks.cancel(Number(btn.dataset.id));
+  else if (action === "stop") {
+    activity.confirmStop = true;
+    renderActivity();
+  } else if (action === "stop-no") {
+    activity.confirmStop = false;
+    renderActivity();
+  } else if (action === "stop-yes") {
+    activity.confirmStop = false;
+    activity.stopRequested = true;
+    closeActivityPanel();
+    const result = await window.mchub.stopGame();
+    toolsToast(result?.ok ? t("instanceTools.stopped") : t("instanceTools.stopFailed"));
+  } else if (action === "log") {
+    window.mchub.logs.openConsole();
+  } else if (action === "memory") {
+    closeActivityPanel();
+    openSettingsTab("memory");
+  } else if (action === "repair") {
+    // Reparer : reverifie et retelecharge les fichiers du jeu manquants ou abimes (meme outil
+    // que Parametres > Debogage), puis on peut relancer.
+    closeActivityPanel();
+    const { confirmed } = await showModal({ tone: "ok", title: t("activity.repairTitle"), body: t("activity.repairBody"), confirmLabel: t("activity.repairFiles"), cancelLabel: t("common.cancel") });
+    if (!confirmed) return;
+    await window.mchub.diagnostics.repair();
+    toolsToast(t("activity.repairDone"));
+  } else if (action === "java-fix") {
+    closeActivityPanel();
+    openSettingsTab("misc");
+  } else if (action === "services") {
+    closeActivityPanel();
+    mcStatusPanel.hidden = false;
+    loadMcStatus();
+  } else if (action === "help") {
+    closeActivityPanel();
+    const server = await resolveServer(state.slug);
+    if (server) openReportDialog(server);
+  } else if (action === "dismiss") {
+    activity.failure = null;
+    closeActivityPanel();
+    renderActivity();
+  } else if (action === "game-folder") {
+    window.mchub.settings.openGameFolder();
+  } else if (action === "move-show") {
+    closeActivityPanel();
+    if (!gamesMoveModal?.isOpen() && gamesMoveRequest) {
+      gamesMoveModal = openToolsModal({ title: t("games.movingTitle", { drive: gamesMoveRequest.drive }), bodyHtml: "", actions: [{ label: t("games.safeCancel"), value: "cancel-move" }] });
+      gamesMoveModal.done.then((value) => {
+        if (value === "cancel-move" && gamesMoveProgress && gamesMoveProgress.stage !== "switched") window.mchub.games.cancelMove();
+      });
+      renderGamesMoveProgress();
+    }
+  } else if (action === "move-games") {
+    closeActivityPanel();
+    openSettingsTab("misc");
+    openGamesMove();
+  } else if (action === "copy-report") {
+    const failure = activity.failure || {};
+    const report = [`Omniscient Launcher — ${failure.name || ""} (${failure.slug || "?"})`, new Date().toLocaleString(), String(failure.error || "")].join("\n");
+    try {
+      await navigator.clipboard.writeText(report);
+      toolsToast(t("activity.reportCopied"));
+    } catch {
+      toolsToast(t("activity.reportCopyFailed"));
+    }
+  } else if (action === "manual") {
+    const failure = activity.failure;
+    closeActivityPanel();
+    if (!failure?.manualMods) return;
+    const choice = await showManualModsModal(failure.manualMods, failure.fromModrinth, failure.fromModrinthMods, { slug: failure.slug });
+    if (choice !== "retry") return;
+    activity.failure = null;
+    renderActivity();
+    const server = await resolveServer(failure.slug);
+    if (!server) return;
+    if (failure.action === "install") await installServerStandalone(server, null);
+    else await launchServer(server);
+  } else if (action === "warn-server" || action === "warn-cancel") {
+    if (!activity.failure) return;
+    activity.failure.reportStage = action === "warn-server" ? "confirm" : null;
+    renderActivity();
+  } else if (action === "warn-send") {
+    const failure = activity.failure;
+    if (!failure?.slug) return;
+    const info = describeFailure(failure);
+    failure.reportStage = "sending";
+    renderActivity();
+    const kind = { disk: "disk", net: "net", crash: "crash", manual: "manual_mods" }[info.kind] || "other";
+    const result = await window.mchub.reportInstallProblem({
+      slug: failure.slug,
+      kind,
+      summary: info.title,
+      detail: String(failure.error || "").slice(0, 300),
+      minecraftVersion: knownServer(failure.slug)?.minecraftVersion || null,
+    });
+    if (activity.failure === failure) {
+      failure.reportStage = result?.ok ? "sent" : "error";
+      renderActivity();
+    }
+  } else if (action === "queue-first") {
+    const id = Number(btn.dataset.id);
+    const task = activity.tasks.find((item) => item.id === id);
+    await window.mchub.tasks.moveFirst(id);
+    activity.queueMoved = id;
+    setTimeout(() => {
+      if (activity.queueMoved === id) activity.queueMoved = null;
+      renderActivity();
+    }, 1400);
+    if (task) toolsToast(t("queue.moved", { name: task.name || task.slug }));
+  } else if (action === "play-task") {
+    closeActivityPanel();
+    const server = await resolveServer(btn.dataset.slug);
+    if (server) await launchServer(server);
+  }
+}
+
+// Ouvre la pilule sur la confirmation d'arret : utilise par le bouton « Arrêter » de la fiche et
+// des cartes d'instance, pour qu'il n'y ait qu'une seule facon d'arreter le jeu.
+function askStopFromPill() {
+  // Ouvert juste APRES le clic (19/10, bug « Arrêter ne fait rien » vu par Rushi) : le clic du
+  // bouton « Arrêter » (fiche, carte, bibliotheque, accueil) remontait jusqu'a l'ecouteur global
+  // qui ferme le panneau au clic exterieur — il s'ouvrait et se refermait aussitot, sans rien
+  // montrer. Attendre la fin du clic regle tous ces boutons d'un coup.
+  setTimeout(() => {
+    activity.confirmStop = true;
+    renderActivity();
+    openActivityPanel();
+  }, 0);
+}
+
+// Compat : l'ancien nom est encore appele depuis plusieurs endroits (cartes d'instance...).
+function syncPlaybarWithGame() {
+  renderActivity();
+}
+
+async function loadActivityHistory() {
+  try {
+    const settings = await window.mchub.settings.get();
+    playCountsCache = settings.playCounts || {};
+    const slug = settings.lastPlayedSlug || settings.recentlyPlayed?.[0] || null;
+    activity.lastPlayed = slug ? { slug, at: settings.recentPlayedAt?.[slug] || 0 } : null;
+  } catch {
+    // Reglages illisibles : la pilule reste sur « Prêt », rien de bloquant.
+  }
+  renderActivity();
 }
 
 async function launchServer(server) {
@@ -1437,15 +2557,14 @@ async function launchServer(server) {
   // applyRecommendedRamIfNeeded() (qui peut ouvrir une modale bloquante et
   // laisser largement le temps a un second clic de passer le test
   // ci-dessus avant que le flag soit leve). C'est ce qui protege tous les
-  // points d'entree (playbar, carte "Continuer", "Mes instances"/"Rejoint",
-  // fiche detail) d'un seul coup, meme ceux qui ne desactivent pas aussi
+  // points d'entree (carte "Reprendre", "Mes instances"/"Rejoint", fiche
+  // detail) d'un seul coup, meme ceux qui ne desactivent pas aussi
   // leur propre bouton par securite.
   if (launchInProgress) return null;
   launchInProgress = true;
 
   // Connexion demandee ici, pas avant (2026-10-11, audit onboarding) : premier
-  // moment ou elle est reellement necessaire, quel que soit le point d'entree
-  // (playbar, carte "Continuer", "Mes instances"/"Rejoint", fiche detail).
+  // moment ou elle est reellement necessaire, quel que soit le point d'entree.
   if (!signedIn) {
     const signedInNow = await attemptSignIn(true);
     if (!signedInNow) {
@@ -1454,115 +2573,196 @@ async function launchServer(server) {
     }
   }
 
+  if (!(await confirmFirstInstall(server, { launch: true }))) {
+    launchInProgress = false;
+    return null;
+  }
+
   const { proceed, memoryOverride } = await applyRecommendedRamIfNeeded(server);
   if (!proceed) {
     launchInProgress = false;
     return null;
   }
 
-  const playBtn = document.getElementById("playbar-play");
-  const label = document.getElementById("playbar-progress-label");
-  const percentEl = document.getElementById("playbar-progress-percent");
-  const fill = document.getElementById("playbar-progress-fill");
+  activity.current = { slug: server.slug, name: server.name };
+  activity.failure = null;
+  activity.launch = null;
+  renderActivity();
 
-  playBtn.disabled = true;
-  fill.classList.remove("error");
-  fill.style.width = "0%";
-  percentEl.textContent = "";
-  label.textContent = t("playbar.launchingServer", { name: server.name });
-  setPlaybarBusy(true);
-
+  // Les telechargements (modpack, Java) arrivent par tasks:update ; ce qui suit (bibliotheques et
+  // assets de Minecraft, telecharges par minecraft-launcher-core) arrive seulement ici.
   const stopListening = window.mchub.onGameProgress((status) => {
     if (!status || typeof status !== "object") return;
-    if (status.text) label.textContent = status.text;
+    const stillDownloading = activity.tasks.some((task) => task.slug === server.slug && (task.status === "active" || task.status === "paused"));
+    if (stillDownloading) return;
+    const next = { ...(activity.launch || {}) };
+    if (status.text) next.text = status.text;
     if (typeof status.task === "number" && typeof status.total === "number" && status.total > 0) {
-      const percent = Math.min(100, Math.round((status.task / status.total) * 100));
-      fill.style.width = `${percent}%`;
-      percentEl.textContent = `${percent}%`;
+      next.percent = Math.min(100, Math.round((status.task / status.total) * 100));
     }
+    activity.launch = next;
+    renderActivity();
   });
+  const firstLaunch = !playCountsCache[server.slug];
 
   const result = await window.mchub.playServer(server.slug, memoryOverride);
   stopListening();
   launchInProgress = false;
+  activity.launch = null;
 
   if (result.ok) {
-    fill.style.width = "100%";
-    percentEl.textContent = "";
-    label.textContent = t("playbar.launched");
-
     // Historique de lancement (dernier joue, compteur par serveur, liste des
-    // derniers joues) — sert au menu rapide de la barre de lancement (voir
-    // refreshPlaybarFavorites) et a la page "Recents" de la barre laterale.
+    // derniers joues) — sert a la carte « Reprendre » de l'Accueil et a la page "Recents".
     const settings = await window.mchub.settings.get();
     const playCounts = { ...(settings.playCounts || {}) };
     playCounts[server.slug] = (playCounts[server.slug] || 0) + 1;
+    playCountsCache = playCounts;
     const recentlyPlayed = [server.slug, ...(settings.recentlyPlayed || []).filter((s) => s !== server.slug)].slice(0, RECENT_MAX);
     const recentPlayedAt = datesForSlugs({ ...(settings.recentPlayedAt || {}), [server.slug]: Date.now() }, recentlyPlayed);
     await window.mchub.settings.set({ playCounts, lastPlayedSlug: server.slug, recentlyPlayed, recentPlayedAt });
-    selectedFavoriteSlug = server.slug;
-    await refreshPlaybarFavorites();
+    activity.lastPlayed = { slug: server.slug, at: Date.now() };
 
     // Parametres > Debogage (voir renderDebugTab) — deux reglages qui
     // n'ont d'effet qu'au moment ou une partie demarre reellement.
     if (settings.openConsoleOnLaunch) window.mchub.logs.openConsole();
     if (settings.keepLauncherOpenWhilePlaying === false) window.mchub.windowControls.minimize();
 
-    setTimeout(() => {
-      setPlaybarBusy(false);
+    if (firstLaunch) notifyIfAway(t("activity.notifyLaunchingTitle", { name: server.name }), t("activity.notifyLaunchingBody"));
+    if (!gamePlaying) {
       launchStarting = true;
-      syncPlaybarWithGame();
-      // Sécurité : si le jeu ne s'annonce jamais, le bouton reprend son état normal.
+      // Sécurité : si le jeu ne s'annonce jamais, la pilule reprend son état normal.
       setTimeout(() => {
         launchStarting = false;
-        syncPlaybarWithGame();
+        renderActivity();
       }, 60_000);
-    }, 1800);
+    }
+    renderActivity();
+  } else if (result.cancelled) {
+    renderActivity();
   } else {
-    fill.classList.add("error");
-    label.textContent = result.error;
     if (result.code === "manual_mods" && Array.isArray(result.manualMods)) {
       // Mods a ajouter a la main (14/10) : la fenetre explique quoi faire, et « Réessayer »
-      // relance tout de suite (la barre est liberee avant, sinon son minuteur la bloquerait
-      // en plein milieu du nouveau lancement).
-      label.textContent = t("manualMods.playbar", { count: result.manualMods.length });
-      playBtn.disabled = !selectedFavoriteSlug;
-      setPlaybarBusy(false);
-      const choice = await showManualModsModal(result.manualMods, result.fromModrinth);
-      return choice === "retry" ? launchServer(server) : result;
+      // relance tout de suite.
+      renderActivity();
+      const choice = await showManualModsModal(result.manualMods, result.fromModrinth, result.fromModrinthMods, { slug: server.slug });
+      if (choice === "retry") return launchServer(server);
+      // Fenetre fermee : l'echec reste dans la pilule, avec un bouton pour la rouvrir.
+      activity.failure = { slug: server.slug, name: server.name, error: result.error, action: "launch", manualMods: result.manualMods, fromModrinth: result.fromModrinth, fromModrinthMods: result.fromModrinthMods };
+      renderActivity();
+      return result;
     }
     if (result.frozen) {
+      renderActivity();
       await showModal({
         title: t("modal.frozenTitle"),
         body: t("modal.frozenBody", { name: server.name }),
         confirmLabel: t("modal.frozenClose"),
       });
+      return result;
     }
-    playBtn.disabled = !selectedFavoriteSlug;
-    // Meme mecanisme que le succes (setPlaybarBusy(false) different) —
-    // sinon la barre reste bloquee sur l'erreur pour toujours, le bouton
-    // Jouer et le selecteur de favoris devenant inaccessibles (c'etait le
-    // bug : ce chemin n'appelait jamais setPlaybarBusy(false)). Delai plus
-    // long qu'en cas de succes pour laisser le temps de lire l'erreur.
-    setTimeout(() => setPlaybarBusy(false), 4000);
+    // L'echec reste affiche (pilule rouge « Échec · Voir ») jusqu'a ce que le joueur relance ou
+    // ferme le message — plus de barre qui se vide toute seule apres 4 secondes.
+    activity.failure = { slug: server.slug, name: server.name, error: result.error, action: "launch" };
+    refreshDiskFreeForFailure();
+    renderActivity();
+    openActivityPanel();
   }
 
   return result;
 }
 
+// Ecran avant la 1re installation d'un serveur (design 17/10, point 4, L3-H) : place sur le disque,
+// memoire utilisee et message du proprietaire, avec un seul bouton. Il ne s'affiche que si le
+// serveur n'est pas encore installe. Disque trop plein : le bouton reste grise et l'ecran se met a
+// jour tout seul quand le joueur libere de la place. Resout true pour continuer.
+const FIRST_INSTALL_NEED_BYTES = { modded: 3 * 1024 ** 3, vanilla: 1024 ** 3 };
+
+async function confirmFirstInstall(server, { launch }) {
+  let installed = true;
+  try {
+    installed = (await window.mchub.getServerInstallStatus(server.slug))?.installed !== false;
+  } catch {
+    installed = true;
+  }
+  if (installed) return true;
+
+  const need = server.type === "modded" ? FIRST_INSTALL_NEED_BYTES.modded : FIRST_INSTALL_NEED_BYTES.vanilla;
+  let low = false;
+  const bodyHtml = (free) => {
+    low = free != null && free < need;
+    const size =
+      free == null
+        ? `<p class="first-install-line">${escapeHtml(t("firstInstall.sizeUnknown", { need: formatTaskBytes(need) }))}</p>`
+        : low
+          ? `<div class="activity-errbox"><b>✕ ${escapeHtml(t("activity.errDiskTitle"))}</b><span class="muted">${escapeHtml(t("firstInstall.diskNeed", { need: formatTaskBytes(need), free: formatTaskBytes(free) }))}</span><span class="muted">${escapeHtml(t("firstInstall.diskFreeUp"))}</span></div>`
+          : `<p class="first-install-line ok">✓ ${escapeHtml(t("firstInstall.sizeOk", { need: formatTaskBytes(need), free: formatTaskBytes(free) }))}</p>`;
+    const ram = server.recommendedRamGB ? `<p class="first-install-line">${escapeHtml(t("firstInstall.ram", { count: server.recommendedRamGB }))}</p>` : "";
+    // Lot 5 bis : prevenir AVANT l'installation qu'il y aura des mods a ajouter a la main.
+    const manualCount = Number(server.manualModsCount) || 0;
+    const manual = manualCount > 0 ? `<p class="first-install-line">ⓘ ${escapeHtml(t("manualMods.badgeTip", { count: manualCount }))}</p>` : "";
+    const ownerMessage = ownerInstallMessage(server);
+    const message = ownerMessage ? `<div class="owner-message"><span class="owner-message-label">${escapeHtml(t("firstInstall.ownerLabel"))}</span>${escapeHtml(ownerMessage)}</div>` : "";
+    return `${size}${ram}${manual}${message}<p class="first-install-note">${escapeHtml(t("firstInstall.onlyOnce"))}</p>`;
+  };
+  const readFree = async () => {
+    try {
+      const result = await window.mchub.diskFree();
+      return result?.ok ? result.freeBytes : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const modal = openToolsModal({
+    title: t("firstInstall.title", { name: server.name }),
+    bodyHtml: bodyHtml(await readFree()),
+    actions: [],
+  });
+  const goLabel = launch ? t("firstInstall.installPlay") : t("firstInstall.install");
+  const renderActions = () =>
+    modal.setActions([
+      { label: t("firstInstall.cancel"), value: "cancel" },
+      ...(low ? [{ label: t("activity.openFolder"), onClick: () => window.mchub.settings.openGameFolder() }] : []),
+      { label: goLabel, cls: "join-btn", onClick: (btn) => (low ? btn.blur() : modal.close("go")) },
+    ]);
+  renderActions();
+  const markGo = () => document.getElementById("instance-tools-actions")?.querySelector(".join-btn")?.toggleAttribute("disabled", low);
+  markGo();
+  // Disque trop plein : on relit la place libre toutes les 3 s tant que l'ecran est ouvert.
+  const poll = setInterval(async () => {
+    if (!modal.isOpen()) return clearInterval(poll);
+    const wasLow = low;
+    const free = await readFree();
+    if (!modal.isOpen()) return;
+    modal.bodyEl.innerHTML = bodyHtml(free);
+    if (wasLow !== low) renderActions();
+    markGo();
+  }, 3000);
+  const choice = await modal.done;
+  clearInterval(poll);
+  return choice === "go";
+}
+
+// Erreur « disque plein » : la place restante est relue pour l'afficher dans le message.
+function refreshDiskFreeForFailure() {
+  if (!/ENOSPC|no space left|not enough space|espace disque/i.test(String(activity.failure?.error || ""))) return;
+  window.mchub.diskFree().then((result) => {
+    activity.diskFreeBytes = result?.ok ? result.freeBytes : null;
+    renderActivity();
+  });
+}
+
 async function joinServer(server, joinBtn) {
-  joinBtn.disabled = true;
-  joinBtn.textContent = t("serverDetail.joinBtnLaunching");
-
-  const result = await launchServer(server);
-
-  if (result && result.ok) {
-    joinBtn.textContent = t("serverDetail.joinBtnLaunched");
+  // Pendant une partie sur CE serveur, le meme bouton sert a arreter (avec confirmation, dans
+  // le panneau de la pilule).
+  const state = activityState();
+  if (state.slug === server.slug && state.phase === "play") {
+    askStopFromPill();
     return;
   }
-
-  joinBtn.disabled = false;
-  joinBtn.textContent = t("serverDetail.joinBtn");
+  joinBtn.disabled = true;
+  await launchServer(server);
+  syncJoinButtons();
 }
 
 // Bouton "Installer" (2026-10-11, audit onboarding) : telecharge le modpack
@@ -1574,29 +2774,53 @@ async function joinServer(server, joinBtn) {
 // double-clic qui en creerait une seconde pour rien (meme si server:install
 // la rejette aussi de son cote, par securite).
 async function installServerStandalone(server, btn) {
-  btn.disabled = true;
+  // `btn` peut manquer : « Réessayer » de la pilule relance une installation sans bouton.
+  if (btn) btn.disabled = true;
+  if (!(await confirmFirstInstall(server, { launch: false }))) {
+    if (btn) btn.disabled = false;
+    return;
+  }
+  // « Lancer le jeu quand c'est fini » (point 4, L3-G) : coche par defaut, decochable dans la pilule.
+  activity.autoLaunch.add(server.slug);
+  activity.failure = null;
+  renderActivity();
   let retry = false;
+  let launchAfter = false;
   try {
     const result = await window.mchub.installServer(server.slug, server.name);
     if (result?.ok) {
       // Disparait tout de suite pour CE serveur (2026-10-11) — pas besoin de
       // quitter puis revenir sur la fiche pour que ça se mette a jour.
-      btn.remove();
+      btn?.remove();
+      launchAfter = activity.autoLaunch.has(server.slug);
+      notifyIfAway(
+        launchAfter ? t("activity.notifyLaunchingTitle", { name: server.name }) : t("activity.notifyReadyTitle", { name: server.name }),
+        launchAfter ? t("activity.notifyLaunchingBody") : t("activity.notifyReadyBody"),
+      );
       return;
     }
+    if (result?.cancelled) return;
     if (result?.code === "manual_mods" && Array.isArray(result.manualMods)) {
-      retry = (await showManualModsModal(result.manualMods, result.fromModrinth)) === "retry";
+      retry = (await showManualModsModal(result.manualMods, result.fromModrinth, result.fromModrinthMods, { slug: server.slug })) === "retry";
+      if (!retry) activity.failure = { slug: server.slug, name: server.name, error: result.error, action: "install", manualMods: result.manualMods, fromModrinth: result.fromModrinth, fromModrinthMods: result.fromModrinthMods };
     } else if (result?.frozen) {
       await showModal({
         title: t("modal.frozenTitle"),
         body: t("modal.frozenBody", { name: server.name }),
         confirmLabel: t("modal.frozenClose"),
       });
+    } else {
+      activity.failure = { slug: server.slug, name: server.name, error: result?.error || "", action: "install" };
+      refreshDiskFreeForFailure();
+      openActivityPanel();
     }
   } finally {
-    if (document.body.contains(btn)) btn.disabled = false;
+    activity.autoLaunch.delete(server.slug);
+    renderActivity();
+    if (btn && document.body.contains(btn)) btn.disabled = false;
+    if (launchAfter) launchServer(server);
   }
-  if (retry && document.body.contains(btn)) await installServerStandalone(server, btn);
+  if (retry) await installServerStandalone(server, btn && document.body.contains(btn) ? btn : null);
 }
 
 // Fenetre des mods qu'un modpack CurseForge interdit de telecharger par les autres launchers
@@ -1617,11 +2841,26 @@ function boldLabelIn(el, text, label) {
 
 // `fromModrinth` : mods bloques deja recuperes sur Modrinth (meme fichier, voir findOnModrinth dans
 // modpack.js) — la liste ne montre que ceux qui restent, le bandeau dit combien ont ete pris.
-function showManualModsModal(manualMods, fromModrinth = 0) {
+// Point 4 (L3-F) : les lignes se cochent seules quand le fichier arrive dans Telechargements
+// (verifie toutes les 2 s), « Je l'ai déjà » coche a la main, et l'installation reprend toute seule
+// des que tout est la. Les mods deja pris sur Modrinth sont listes en dessous.
+// Lot 5 (audit 17/10, preview v3 validee) : titre « Encore X mods à ajouter », 3 etapes courtes,
+// barre « 1 sur 2 ajouté », boutons Plus tard / Réessayer / Continuer l'installation (actif quand
+// tout est la), puis « Tout est prêt ». Un fichier retire de CurseForge : bouton « Prévenir le
+// serveur » (jamais d'envoi sans clic, audit du 19/10), une fois par serveur et par session.
+const removedModsReported = new Set();
+function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = [], context = {}) {
   return new Promise((resolve) => {
     const modrinthEl = document.getElementById("manual-mods-modrinth");
     modrinthEl.hidden = !(fromModrinth > 0);
     modrinthEl.textContent = fromModrinth > 0 ? t("manualMods.modrinthBanner", { count: fromModrinth }) : "";
+    const viaModrinthEl = document.getElementById("manual-mods-via-modrinth");
+    viaModrinthEl.innerHTML = Array.isArray(fromModrinthMods) && fromModrinthMods.length
+      ? `<p class="manual-mods-section">${escapeHtml(t("manualMods.fromModrinthTitle"))}</p>${fromModrinthMods
+          .map((name) => `<div class="manual-mod"><div class="manual-mod-text"><span class="manual-mod-name">${escapeHtml(name)}</span><span class="manual-mod-file">${escapeHtml(t("manualMods.sameFile"))}</span></div><span class="manual-mod-chip done">${escapeHtml(t("manualMods.modrinthOk"))}</span></div>`)
+          .join("")}`
+      : "";
+    viaModrinthEl.hidden = !viaModrinthEl.innerHTML;
     const overlay = document.getElementById("manual-mods-overlay");
     const stepsEl = document.getElementById("manual-mods-steps");
     const listEl2 = document.getElementById("manual-mods-list");
@@ -1630,6 +2869,32 @@ function showManualModsModal(manualMods, fromModrinth = 0) {
     const removed = manualMods.filter((mod) => mod.reason === "removed");
     const onlyRemoved = blocked.length === 0;
 
+    // Audit du 19/10 (L-B1) : plus d'envoi automatique. Le proprietaire n'est prevenu que si le
+    // joueur clique sur « Prévenir le serveur » (bouton plus bas) ; seuls partent les noms des
+    // fichiers retires, deja affiches dans cette fenetre, et les versions.
+    const reportRemoved = async (button) => {
+      if (!context.slug || removedModsReported.has(context.slug)) return;
+      removedModsReported.add(context.slug);
+      button.disabled = true;
+      button.textContent = t("activity.warnSending");
+      const result = await window.mchub
+        .reportInstallProblem({
+          slug: context.slug,
+          kind: "manual_mods",
+          summary: t("manualMods.removedTitle"),
+          detail: removed.map((mod) => mod.fileName || mod.modName || `#${mod.fileId}`).join(", ").slice(0, 300),
+          minecraftVersion: knownServer(context.slug)?.minecraftVersion || null,
+        })
+        .catch(() => null);
+      if (result?.ok) {
+        button.textContent = `✓ ${t("manualMods.warnSent")}`;
+      } else {
+        removedModsReported.delete(context.slug);
+        button.disabled = false;
+        button.textContent = t("activity.warnServer");
+        toolsToast(t("activity.warnFailed"));
+      }
+    };
     document.getElementById("manual-mods-title").textContent = onlyRemoved
       ? t("manualMods.removedTitle")
       : t("manualMods.title", { count: blocked.length });
@@ -1640,13 +2905,56 @@ function showManualModsModal(manualMods, fromModrinth = 0) {
     stepsEl.hidden = onlyRemoved;
     for (const [key, label] of [
       ["manualMods.step1", t("manualMods.openPage")],
-      ["manualMods.step2", t("manualMods.downloadsWord")],
-      ["manualMods.step3", t("manualMods.retry")],
+      ["manualMods.step2", "Download"],
+      ["manualMods.step3", t("manualMods.downloadsWord")],
     ]) {
       const li = document.createElement("li");
       boldLabelIn(li, t(key), label);
       stepsEl.append(li);
     }
+    // Barre « 1 sur 2 ajouté » (lot 5).
+    const progressEl = document.getElementById("manual-mods-progress");
+    const progressBar = progressEl.querySelector("i");
+    const progressText = document.getElementById("manual-mods-progress-text");
+    const totalToAdd = blocked.filter((mod) => mod.fileName).length;
+    progressEl.hidden = onlyRemoved || totalToAdd === 0;
+    progressText.hidden = progressEl.hidden;
+    let continueBtn = null;
+    const syncProgress = () => {
+      const done = Math.min(received.size, totalToAdd);
+      progressBar.style.width = `${totalToAdd ? Math.round((done / totalToAdd) * 100) : 0}%`;
+      progressText.textContent = t("manualMods.progress", { count: done, total: totalToAdd });
+      if (continueBtn) continueBtn.disabled = done < totalToAdd;
+    };
+
+    // Lignes a cocher : nom de fichier attendu -> { chip, row }.
+    const received = new Set();
+    const rowsByFile = new Map();
+    let finished = false;
+    let pollTimer = null;
+    const titleEl = document.getElementById("manual-mods-title");
+    const noteEl = document.getElementById("manual-mods-note");
+    const markReceived = (fileName) => {
+      if (finished || received.has(fileName) || !rowsByFile.has(fileName)) return;
+      received.add(fileName);
+      const { chip, row } = rowsByFile.get(fileName);
+      chip.className = "manual-mod-chip done";
+      chip.textContent = t("manualMods.received");
+      row.classList.add("received");
+      row.querySelectorAll("button").forEach((button) => button.remove());
+      const left = rowsByFile.size - received.size;
+      titleEl.textContent = left > 0 ? t("manualMods.title", { count: left }) : t("manualMods.allHere");
+      syncProgress();
+      if (left === 0 && !onlyRemoved && removed.length === 0) {
+        // « Tout est prêt » puis l'installation reprend toute seule.
+        document.getElementById("manual-mods-body").textContent = t("manualMods.doneBody", { count: totalToAdd });
+        stepsEl.hidden = true;
+        progressBar.classList.add("done");
+        noteEl.textContent = t("manualMods.continuing");
+        noteEl.classList.add("ok");
+        setTimeout(() => finish("retry"), 1600);
+      }
+    };
 
     listEl2.innerHTML = "";
     for (const mod of [...blocked, ...removed]) {
@@ -1666,7 +2974,7 @@ function showManualModsModal(manualMods, fromModrinth = 0) {
       const chip = document.createElement("span");
       const gone = mod.reason === "removed";
       chip.className = `manual-mod-chip ${gone ? "gone" : "todo"}`;
-      chip.textContent = gone ? t("manualMods.notFound") : t("manualMods.toDownload");
+      chip.textContent = gone ? t("manualMods.notFound") : t("manualMods.waiting");
       row.append(text, chip);
       if (!gone && mod.pageUrl) {
         const open = document.createElement("button");
@@ -1678,6 +2986,15 @@ function showManualModsModal(manualMods, fromModrinth = 0) {
           open.textContent = `✓ ${t("manualMods.openPage")}`;
         });
         row.append(open);
+      }
+      if (!gone && mod.fileName) {
+        rowsByFile.set(mod.fileName, { chip, row });
+        const have = document.createElement("button");
+        have.type = "button";
+        have.className = "btn-ghost";
+        have.textContent = t("manualMods.haveIt");
+        have.addEventListener("click", () => markReceived(mod.fileName));
+        row.append(have);
       }
       listEl2.append(row);
     }
@@ -1693,17 +3010,43 @@ function showManualModsModal(manualMods, fromModrinth = 0) {
       return button;
     };
     const finish = (choice) => {
+      if (finished) return;
+      finished = true;
+      clearInterval(pollTimer);
+      noteEl.classList.remove("ok");
       overlay.hidden = true;
       document.body.classList.remove("modal-blocking");
       resolve(choice);
     };
+    // Surveillance du dossier Telechargements tant que la fenetre est ouverte.
+    if (rowsByFile.size) {
+      const poll = async () => {
+        try {
+          const found = await window.mchub.findModsInDownloads([...rowsByFile.keys()]);
+          found.forEach(markReceived);
+        } catch {
+          // Dossier illisible : le joueur peut toujours cocher a la main.
+        }
+      };
+      pollTimer = setInterval(poll, 2000);
+      poll();
+    }
+    if (removed.length && context.slug && signedIn) {
+      const warnBtn = makeButton(t("activity.warnServer"), "btn-ghost", () => reportRemoved(warnBtn));
+      if (removedModsReported.has(context.slug)) {
+        warnBtn.disabled = true;
+        warnBtn.textContent = `✓ ${t("manualMods.warnSent")}`;
+      }
+    }
     if (onlyRemoved) {
       makeButton(t("manualMods.close"), "join-btn push", () => finish("close"));
     } else {
-      makeButton(t("manualMods.openDownloads"), "btn-secondary", () => window.mchub.openDownloadsFolder());
-      makeButton(t("manualMods.close"), "btn-secondary push", () => finish("close"));
-      makeButton(t("manualMods.retry"), "join-btn", () => finish("retry"));
+      makeButton(t("manualMods.openDownloads"), "btn-ghost", () => window.mchub.openDownloadsFolder());
+      makeButton(t("manualMods.later"), "btn-secondary push", () => finish("close"));
+      makeButton(t("manualMods.retry"), "btn-secondary", () => finish("retry"));
+      continueBtn = makeButton(t("manualMods.continue"), "join-btn", () => finish("retry"));
     }
+    syncProgress();
 
     overlay.querySelector(".modal-box").classList.add("pop-in");
     overlay.hidden = false;
@@ -1712,6 +3055,9 @@ function showManualModsModal(manualMods, fromModrinth = 0) {
 }
 
 async function openDetail(slug) {
+  // Retour qui garde la place (serie 2, idee 3) : position de la liste et serveur ouvert.
+  detailReturn = { origin: detailOrigin, scroll: document.querySelector("main")?.scrollTop || 0, slug, query: detailOrigin === "search" ? paletteLastQuery : "" };
+  listViewGeneration++;
   homePanelEl.hidden = true;
   favoritesPanelEl.hidden = true;
   recentPanelEl.hidden = true;
@@ -1728,6 +3074,10 @@ async function openDetail(slug) {
   const result = await window.mchub.getServer(slug);
   if (!result.ok && result.frozen) {
     renderFrozenDetail(slug);
+    return;
+  }
+  if (!result.ok && result.notFound) {
+    renderMissingDetail(slug);
     return;
   }
   if (!result.ok) {
@@ -1754,13 +3104,20 @@ async function fetchServerList({ force = false } = {}) {
   }
   const result = await window.mchub.listServers();
   if (result.ok) {
+    rememberTagLabels(result.servers);
     serverListCache = result;
     serverListCacheAt = Date.now();
   }
   return result;
 }
 
+// Vue demandee en dernier : une liste qui finit de charger APRES l'ouverture d'une fiche (lien
+// « Ouvrir dans le launcher » du site, clic rapide) ne doit plus reafficher l'en-tete Serveurs
+// par-dessus la fiche (bug vu par Rushi le 17/10).
+let listViewGeneration = 0;
+
 async function loadServers() {
+  const generation = ++listViewGeneration;
   statusEl.hidden = true;
   detailEl.hidden = true;
   listEl.hidden = false;
@@ -1771,11 +3128,25 @@ async function loadServers() {
   // silencieux) — mais il alimente au passage le cache ci-dessus pour la
   // barre de lancement rapide.
   const result = await fetchServerList({ force: true });
+  if (generation !== listViewGeneration) return;
   if (!result.ok) {
-    listEl.hidden = true;
-    statusEl.hidden = false;
-    statusEl.classList.add("error");
-    statusEl.textContent = t("serverList.errorPrefix", { error: result.error });
+    // Idee 2 du lancement (19/10) : un bloc calme avec deux sorties plutot qu'une ligne rouge.
+    // Le detail technique reste en petit, pour l'aide.
+    listEl.innerHTML = `
+      <div class="filters-empty empty-state list-error-state">
+        <span class="empty-state-icon">${EMPTY_ICONS.cloudOff}</span>
+        <h3>${escapeHtml(t("serverList.errorTitle"))}</h3>
+        <p>${escapeHtml(t("serverList.errorText"))}</p>
+        <div class="filters-empty-actions">
+          <button type="button" class="join-btn" id="list-error-retry">${escapeHtml(t("serverList.errorRetry"))}</button>
+          <button type="button" class="btn-secondary" id="list-error-library">${escapeHtml(t("serverList.errorLibrary"))}</button>
+        </div>
+        ${result.error ? `<small class="list-error-detail">${escapeHtml(result.error)}</small>` : ""}
+      </div>`;
+    const pager = document.getElementById("server-list-pager-slot");
+    if (pager) pager.innerHTML = "";
+    document.getElementById("list-error-retry").addEventListener("click", () => loadServers());
+    document.getElementById("list-error-library").addEventListener("click", () => showLibraryView());
     return;
   }
   renderList(result.servers);
@@ -1929,6 +3300,7 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
     }
     signedIn = false;
     currentProfile = null;
+    clearBootProfile();
     myInstancesServers = [];
     myJoinedServers = [];
     // Retour en mode visiteur, pas vers l'ecran de connexion bloquant
@@ -1949,13 +3321,58 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
 
 function enterApp(profile, opts) {
   signedIn = true;
+  saveBootProfile(profile);
   updateGuestBanner(false);
   gateEl.hidden = true;
   appEl.hidden = false;
   renderAccountHeader(profile, opts);
   showHomeView();
-  refreshPlaybarFavorites();
   refreshNotifications();
+  maybeShowFirstRunWizard();
+}
+
+// Assistant du premier lancement (design 17/10, point 6, L5-I) : trois gros choix au tout premier
+// demarrage, puis plus jamais (« Continuer » comme « Passer » le marquent comme vu). Un joueur qui a
+// deja joue (historique present) ne le voit pas.
+let firstRunWizardShown = false;
+async function maybeShowFirstRunWizard() {
+  if (firstRunWizardShown) return;
+  const settings = await window.mchub.settings.get();
+  if (settings.firstRunWizardDone || settings.lastPlayedSlug || (settings.recentlyPlayed || []).length) return;
+  firstRunWizardShown = true;
+  const options = [
+    { value: "join", icon: "▶", color: "linear-gradient(135deg,#2c6e45,#1f4f8a)", title: t("wizard.join"), sub: t("wizard.joinSub") },
+    { value: "packs", icon: "▣", color: "linear-gradient(135deg,#7a3fb0,#2a1840)", title: t("wizard.packs"), sub: t("wizard.packsSub") },
+    { value: "vanilla", icon: "⛏", color: "linear-gradient(135deg,#b06a3f,#40220f)", title: t("wizard.vanilla"), sub: t("wizard.vanillaSub") },
+  ];
+  let choice = "join";
+  const modal = openToolsModal({
+    title: t("wizard.title"),
+    bodyHtml: `<p class="first-install-note" style="margin:0">${escapeHtml(t("wizard.body"))}</p><div class="wizard-options">${options
+      .map((o) => `<button type="button" class="wizard-option" data-wizard="${o.value}" aria-pressed="${o.value === choice}"><span class="wiz-ico" style="background:${o.color}">${o.icon}</span><b>${escapeHtml(o.title)}</b><small>${escapeHtml(o.sub)}</small></button>`)
+      .join("")}</div>`,
+    actions: [
+      { label: t("wizard.skip"), value: "skip" },
+      { label: t("wizard.next"), cls: "join-btn", value: "go" },
+    ],
+  });
+  modal.bodyEl.querySelectorAll(".wizard-option").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      choice = btn.dataset.wizard;
+      modal.bodyEl.querySelectorAll(".wizard-option").forEach((other) => other.setAttribute("aria-pressed", String(other === btn)));
+    });
+    btn.addEventListener("dblclick", () => modal.close("go"));
+  });
+  const result = await modal.done;
+  await window.mchub.settings.set({ firstRunWizardDone: true });
+  // Serie 2, idee 9 : si le disque des jeux a peu de place, proposer d'en choisir un autre.
+  if (await maybeAskGamesDrive()) return;
+  if (result !== "go") return;
+  if (choice === "packs") showMyInstancesView();
+  else {
+    if (choice === "vanilla") listFilters = { ...listFilters, type: "vanilla" };
+    showServersView();
+  }
 }
 
 function wireGate() {
@@ -1999,12 +3416,13 @@ const mcStatusList = document.getElementById("mc-status-list");
 
 const MC_STATUS_RANK = { ok: 0, degraded: 1, offline: 2 };
 const MC_STATUS_CLASS = { ok: "online", degraded: "degraded", offline: "offline" };
-const MC_STATUS_TILE = { minecraft: ["MC", "#62b246"], modrinth: ["Mr", "#1bd96a"], curseforge: ["CF", "#f16436"] };
+// FTB : texte seulement, couleur neutre (pas de logo ni de couleur de marque).
+const MC_STATUS_TILE = { minecraft: ["MC", "#62b246"], modrinth: ["Mr", "#1bd96a"], curseforge: ["CF", "#f16436"], ftb: ["FTB", "#6b7280"] };
 const MC_STATUS_REFRESH_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>';
 const MC_STATUS_CHEV_SVG = '<svg class="mc-status-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
 // Replies par defaut : seul le test de connexion reste ouvert. Un clic sur un
 // fournisseur l'ouvre (il sort de cet ensemble).
-const mcStatusCollapsed = new Set(["minecraft", "modrinth", "curseforge"]);
+const mcStatusCollapsed = new Set(["minecraft", "modrinth", "curseforge", "ftb"]);
 let mcStatusData = null; // derniere reponse { fetchedAt, groups }
 let mcStatusLoading = false;
 // Test de debit de CE PC : state "idle" | "running" | "done" | "error" (voir main.js status:getConnection).
@@ -2120,6 +3538,16 @@ function renderMcStatus(data) {
   const states = groups.flatMap((g) => g.services.map((s) => s.state));
   const worst = worstMcState(states);
   mcStatusDot.className = `status-dot ${MC_STATUS_CLASS[worst]}`;
+  // Barre du haut allegee (design 17/10, point 1) : une pastille seule quand tout va bien, un mot
+  // ne revient qu'en cas de panne ou de ralentissement (un point seul ferait croire a une panne).
+  const word = document.getElementById("mc-status-word");
+  const label = worst === "offline" ? t("titlebar.servicesDown") : worst === "degraded" ? t("titlebar.servicesSlow") : t("titlebar.servicesOk");
+  word.textContent = label;
+  word.hidden = worst === "ok";
+  mcStatusTrigger.classList.toggle("down", worst === "offline");
+  mcStatusTrigger.classList.toggle("slow", worst === "degraded");
+  mcStatusTrigger.title = label;
+  mcStatusTrigger.setAttribute("aria-label", label);
 
   const groupsHtml = groups
     .map((group) => {
@@ -2214,9 +3642,24 @@ function wireMcStatus() {
     mcStatusPanel.hidden = true;
   });
   wireDismissOnEscape(mcStatusPanel, mcStatusTrigger);
-  // Vérifié dès le démarrage (avant même la connexion) pour que le point
-  // ait une vraie couleur sans attendre un clic.
-  loadMcStatus();
+  // Vérifié en DERNIER au démarrage (bug signalé par Rushi le 18/10) : lancé en même temps que
+  // tout le reste, le test subissait les ralentissements du chargement et le point passait à
+  // l'orange alors que tout allait bien. On attend que l'appli soit affichée et au calme.
+  scheduleStartupMcStatus();
+}
+
+function scheduleStartupMcStatus() {
+  const ready = () => !appEl.hidden && !document.body.classList.contains("bootstrapping");
+  const run = () => {
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 0));
+    setTimeout(() => idle(() => { if (!mcStatusData && !mcStatusLoading) loadMcStatus(); }, { timeout: 4000 }), 3000);
+  };
+  if (ready()) return run();
+  const timer = setInterval(() => {
+    if (!ready()) return;
+    clearInterval(timer);
+    run();
+  }, 500);
 }
 
 // Cloche de notifications : alertes personnelles du joueur (reponse/
@@ -2240,17 +3683,18 @@ function notifTimeLabel(iso) {
 // Couleur par type de notification : gel en bleu, messages de l'équipe selon leur type, messages
 // diffusés (panel admin, voir site/src/app/admin/design/bind.ts notificationsHtml) pareil.
 const NOTIF_COLORS = {
-  server_frozen: "#8ac3e0",
-  admin_info: "#9184d9",
-  admin_warning: "#e8c547",
+  // Couleurs du theme (sombre ET clair) au lieu de codes fixes (audit 17/10, lot 1).
+  server_frozen: "var(--notif-frozen)",
+  admin_info: "var(--notif-info)",
+  admin_warning: "var(--warn)",
   admin_error: "var(--danger)",
-  broadcast_announcement: "#9184d9",
-  broadcast_maintenance: "#e8c547",
+  broadcast_announcement: "var(--notif-info)",
+  broadcast_maintenance: "var(--warn)",
   broadcast_alert: "var(--danger)",
-  broadcast_promotion: "#5fd3a0",
-  verification_approved: "#5fd3a0",
+  broadcast_promotion: "var(--success)",
+  verification_approved: "var(--success)",
   verification_rejected: "var(--danger)",
-  instance_back_online: "#5fd3a0",
+  instance_back_online: "var(--success)",
 };
 const BROADCAST_TITLE_KEYS = {
   broadcast_announcement: "broadcastAnnouncementTitle",
@@ -2297,8 +3741,10 @@ function notifItemHtml(notif) {
 
 function renderNotifications() {
   if (!latestNotifications.length) {
-    notifListEl.className = "notif-empty";
-    notifListEl.textContent = t("titlebar.noNotifications");
+    notifListEl.className = "";
+    // Pas de bouton ici (audit 17/10, lot 1) : « Régler les notifications » menait a des
+    // Parametres sans aucun reglage de notifications.
+    notifListEl.innerHTML = emptyStateHtml({ icon: "bell", title: t("notifications.emptyTitle"), text: t("notifications.emptyText"), extraClass: "notif-empty-state" });
     return;
   }
   notifListEl.className = "";
@@ -2366,8 +3812,8 @@ function showMaintenanceScreen(message) {
 
 // Au demarrage, avant meme l'ecran de connexion : si une maintenance est active, personne ne
 // passe sans le code (voir platformSettings.ts cote site, activateLauncherMaintenance).
-async function ensureNotInMaintenance() {
-  const status = await window.mchub.checkMaintenance();
+async function ensureNotInMaintenance(pendingCheck) {
+  const status = await (pendingCheck || window.mchub.checkMaintenance());
   if (!status.active) return;
   bootstrapEl.hidden = true;
   await showMaintenanceScreen(status.message);
@@ -2378,9 +3824,32 @@ async function ensureNotInMaintenance() {
 // pas seulement au demarrage. maintenanceBypassed evite de rebloquer la meme session
 // une fois le bon code entre.
 async function checkMaintenanceLoop() {
-  if (maintenanceBypassed) return;
+  if (maintenanceBypassed || pulseIsFresh()) return;
   const status = await window.mchub.checkMaintenance();
   if (status.active) await showMaintenanceScreen(status.message);
+}
+
+// Idee 2 du lancement (19/10) : le signal de presence (sendPresenceHeartbeat, chaque minute)
+// rapporte aussi la maintenance et, une fois sur 5, les notifications. Tant qu'il repond, les
+// verifications separees ci-dessus et plus bas ne refont pas l'appel (moins de charge sur la
+// base du site). Pas connecte ou site pas encore a jour : elles tournent comme avant.
+let lastGroupedPulseAt = 0;
+let maintenanceScreenOpen = false;
+// Frais = recu depuis moins de 2,5 envois de presence (en jeu, la presence ne part que toutes les
+// 5 min : voir window.OMNI_REFRESH dans refreshSettings.js).
+function pulseIsFresh() {
+  const every = gamePlaying ? window.OMNI_REFRESH.PRESENCE_PLAYING_MS : window.OMNI_REFRESH.PRESENCE_IDLE_MS;
+  return Date.now() - lastGroupedPulseAt < every * 2.5;
+}
+
+async function showMaintenanceFromPulse(message) {
+  if (maintenanceBypassed || maintenanceScreenOpen) return;
+  maintenanceScreenOpen = true;
+  try {
+    await showMaintenanceScreen(message);
+  } finally {
+    maintenanceScreenOpen = false;
+  }
 }
 
 async function showNotificationPopup(notif) {
@@ -2407,7 +3876,17 @@ async function refreshNotifications() {
   if (!signedIn) return;
   const result = await window.mchub.listNotifications();
   if (!result.ok) return;
-  latestNotifications = result.notifications;
+  await applyNotifications(result.notifications);
+}
+
+// Tour planifie (toutes les 5 min) : inutile si le signal groupe vient de les rapporter.
+async function scheduledRefreshNotifications() {
+  if (pulseIsFresh()) return;
+  await refreshNotifications();
+}
+
+async function applyNotifications(notifications) {
+  latestNotifications = notifications;
   renderNotifications();
   const unreadCount = latestNotifications.filter((n) => !n.read).length;
   notifBadgeEl.hidden = unreadCount === 0;
@@ -2434,7 +3913,6 @@ async function refreshNotifications() {
 const TASK_PAUSE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
 const TASK_RESUME_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M7 4v16l14-8z"/></svg>';
 const TASK_CANCEL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
-const TASK_RING_CIRCUMFERENCE = 62.8; // 2 * PI * r(=10), voir le cercle dans index.html
 
 function formatTaskBytes(n) {
   if (!n || n <= 0) return "0 Mo";
@@ -2466,6 +3944,9 @@ function taskRowHtml(task, isActive) {
       <button class="task-item-action" data-action="cancel" data-id="${task.id}" title="${t("titlebar.taskCancel")}">${TASK_CANCEL_SVG}</button>
     `
     : "";
+  const playDone = !isActive && task.status === "complete" && task.kind === "install"
+    ? `<button type="button" class="activity-btn full task-play" data-activity="play-task" data-slug="${escapeHtml(task.slug)}">${escapeHtml(t("home.play"))}</button>`
+    : "";
   return `
     <div class="task-item${task.status === "error" ? " task-error" : ""}">
       <div class="task-item-row">
@@ -2474,7 +3955,7 @@ function taskRowHtml(task, isActive) {
           <div class="task-item-name">${escapeHtml(task.name || task.slug)}</div>
           <div class="task-item-meta">${escapeHtml(metaParts.filter(Boolean).join(" · "))}</div>
         </div>
-        <div class="task-item-actions">${actions}</div>
+        <div class="task-item-actions">${actions}${playDone}</div>
       </div>
       ${pct != null ? `<div class="task-progress-track"><div class="task-progress-fill" style="width:${pct}%;"></div></div>` : ""}
     </div>
@@ -2482,40 +3963,22 @@ function taskRowHtml(task, isActive) {
 }
 
 function renderTasksPanel(tasks) {
-  const active = tasks.filter((task) => task.status === "active" || task.status === "paused");
+  activity.tasks = tasks;
+  const running = tasks.filter((task) => task.status === "active");
+  const speed = running.reduce((sum, task) => sum + (task.speedBps || 0), 0);
+  // Moyenne glissante : le temps restant reste lisible au lieu de sauter a chaque paquet recu.
+  activity.speedEma = running.length === 0 ? 0 : activity.speedEma ? activity.speedEma * 0.8 + speed * 0.2 : speed;
+  // Le haut du panneau montre deja la tache en cours (voir activityPanelHtml) : la liste ne
+  // garde que les AUTRES telechargements actifs et ceux qui sont termines.
+  const active = tasks.filter((task) => task.status === "active" || task.status === "paused").slice(1);
   const complete = tasks.filter((task) => task.status === "complete" || task.status === "error" || task.status === "cancelled");
 
-  const trigger = document.getElementById("tasks-trigger");
-  const nameEl = document.getElementById("tasks-current-name");
-  const speedEl = document.getElementById("tasks-speed");
-  const ringFill = document.getElementById("tasks-ring-fill");
-  const hasActive = active.length > 0;
-  trigger.classList.toggle("has-active", hasActive);
-  if (hasActive) {
-    // Le premier de la liste "active" : des que celui-ci passe a "complete",
-    // il sort de ce tableau et le suivant prend naturellement sa place au
-    // prochain rendu — pas besoin de suivre explicitement "lequel afficher".
-    nameEl.textContent = active[0].name || active[0].slug;
-    nameEl.hidden = false;
-    const totalSpeed = active.reduce((sum, task) => sum + (task.speedBps || 0), 0);
-    const speedText = formatTaskSpeed(totalSpeed);
-    speedEl.textContent = speedText || "…";
-    speedEl.hidden = false;
-    const totalBytes = active.reduce((sum, task) => sum + (task.totalBytes || 0), 0);
-    const doneBytes = active.reduce((sum, task) => sum + (task.bytes || 0), 0);
-    const progress = totalBytes ? doneBytes / totalBytes : 0;
-    ringFill.style.strokeDashoffset = String(TASK_RING_CIRCUMFERENCE * (1 - progress));
-  } else {
-    nameEl.hidden = true;
-    speedEl.hidden = true;
-    ringFill.style.strokeDashoffset = String(TASK_RING_CIRCUMFERENCE);
-  }
-
-  document.getElementById("tasks-empty").hidden = tasks.length > 0;
   document.getElementById("tasks-active-section").hidden = active.length === 0;
   document.getElementById("tasks-complete-section").hidden = complete.length === 0;
+  document.getElementById("tasks-list-scroll").classList.toggle("empty", active.length === 0 && complete.length === 0);
   document.getElementById("tasks-active-list").innerHTML = active.map((task) => taskRowHtml(task, true)).join("");
   document.getElementById("tasks-complete-list").innerHTML = complete.map((task) => taskRowHtml(task, false)).join("");
+  renderActivity();
 }
 
 function wireTasksMenu() {
@@ -2524,13 +3987,26 @@ function wireTasksMenu() {
 
   trigger.addEventListener("click", (event) => {
     event.stopPropagation();
-    panel.hidden = !panel.hidden;
+    if (panel.hidden) openActivityPanel();
+    else closeActivityPanel();
   });
-  panel.addEventListener("click", (event) => event.stopPropagation());
-  document.addEventListener("click", () => {
-    panel.hidden = true;
+  panel.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const btn = event.target.closest("[data-activity]");
+    if (btn) handleActivityAction(btn);
   });
+  panel.addEventListener("change", (event) => {
+    const box = event.target.closest("[data-autolaunch]");
+    if (!box) return;
+    if (box.checked) activity.autoLaunch.add(box.dataset.autolaunch);
+    else activity.autoLaunch.delete(box.dataset.autolaunch);
+  });
+  document.addEventListener("click", () => closeActivityPanel());
   wireDismissOnEscape(panel, trigger);
+  // « En jeu · 12 min » : la duree avance toute seule.
+  setInterval(() => {
+    if (gamePlaying) renderActivity();
+  }, 30_000);
 
   document.getElementById("tasks-list-scroll").addEventListener("click", async (event) => {
     const btn = event.target.closest(".task-item-action");
@@ -2620,7 +4096,7 @@ function friendRowHtml(friend) {
         <span class="status-dot${friend.online ? " online" : ""}"></span>
       </span>
       <span class="friends-item-text">
-        <span class="friends-item-name">${escapeHtml(name)}</span>
+        <span class="friends-item-name sensitive" data-mask="${escapeHtml(t("discreet.friendMask"))}">${escapeHtml(name)}</span>
         <span class="friends-item-status${friend.online ? " online" : ""}">${t(friend.online ? "friends.online" : "friends.offline")}</span>
       </span>
       <button type="button" class="icon-btn friends-item-remove" data-id="${escapeHtml(friend.userId)}" title="${t("friends.remove")}" aria-label="${t("friends.remove")}">
@@ -2643,7 +4119,7 @@ function friendRequestRowHtml(request, kind) {
     <div class="friends-item friends-request ${kind}" data-id="${id}">
       <span class="friends-item-avatar">${escapeHtml(name.charAt(0).toUpperCase())}</span>
       <span class="friends-item-text">
-        <span class="friends-item-name">${escapeHtml(name)}</span>
+        <span class="friends-item-name sensitive" data-mask="${escapeHtml(t("discreet.friendMask"))}">${escapeHtml(name)}</span>
         <span class="friends-item-status">${t(kind === "incoming" ? "friends.incomingHint" : "friends.outgoingHint")}</span>
       </span>
       <span class="friends-request-actions">${actions}</span>
@@ -2682,7 +4158,9 @@ function renderFriendsList() {
         </span>
         <h3>${t("friends.empty")}</h3>
         <p>${t("friends.emptyHint")}</p>
+        <button type="button" class="join-btn friends-empty-add">${t("friends.emptyAction")}</button>
       </div>`;
+    listEl.querySelector(".friends-empty-add")?.addEventListener("click", () => document.getElementById("friends-add-input")?.focus());
     return;
   }
   const online = friendsList.filter((f) => f.online);
@@ -2740,6 +4218,10 @@ async function showFriendsView() {
   // Etat vide affiche tout de suite (la page n'est jamais blanche), remplace par la vraie liste
   // des que l'API repond.
   renderFriendsList();
+  document.getElementById("friends-policy-pop").hidden = true;
+  document.getElementById("friends-gear")?.setAttribute("aria-expanded", "false");
+  document.getElementById("friends-gear").hidden = !signedIn;
+  renderFriendPolicyCard(document.getElementById("friends-policy-slot"), { where: "friends" });
   await refreshFriends();
 }
 
@@ -2779,6 +4261,19 @@ function wireFriends() {
   listEl.addEventListener("click", async (event) => {
     const btn = event.target.closest(".friends-item-remove, .friends-request-accept, .friends-request-decline, .friends-request-cancel");
     if (!btn) return;
+    // Retirer un ami se confirme (lot 4) ; refuser ou annuler une demande, non (rien n'est perdu).
+    if (btn.classList.contains("friends-item-remove")) {
+      // Mode discret : le pseudo reste masque, meme dans la fenetre.
+      const name = discreetMode ? t("discreet.friendMask") : btn.closest(".friends-item")?.querySelector(".friends-item-name")?.textContent?.trim() || "";
+      const { confirmed } = await showModal({
+        tone: "danger",
+        title: t("friends.removeTitle", { name }),
+        body: t("friends.removeBody", { name }),
+        confirmLabel: t("friends.removeBtn"),
+        cancelLabel: t("common.cancel"),
+      });
+      if (!confirmed) return;
+    }
     btn.closest(".friends-item").querySelectorAll("button").forEach((b) => (b.disabled = true));
     feedbackEl.hidden = true;
     const result = btn.classList.contains("friends-request-accept")
@@ -2797,10 +4292,21 @@ function wireFriends() {
 // plus bas, meme intervalle que silentRefreshList — REFRESH_INTERVAL_MS), jamais un intervalle a
 // part. Echec silencieux (voir presence:heartbeat cote main.js, qui ne rejette jamais) : un
 // heartbeat rate ne fait que retarder le passage "hors ligne" d'un ami, jamais a signaler au joueur.
+let presencePulseCount = 0;
 async function sendPresenceHeartbeat() {
   if (!signedIn) return;
-  const result = await window.mchub.sendPresenceHeartbeat();
-  if (result?.accountDeleted) handleAccountDeleted();
+  // Notifications 1 fois sur 5 (toutes les 5 min, comme avant) ; en jeu, a chaque envoi (il n'y en
+  // a qu'un toutes les 5 min).
+  presencePulseCount += 1;
+  const result = await window.mchub.sendPresenceHeartbeat({ withNotifications: gamePlaying || presencePulseCount % 5 === 0 });
+  if (result?.accountDeleted) {
+    handleAccountDeleted();
+    return;
+  }
+  if (!result?.ok || !result.grouped || !signedIn) return;
+  lastGroupedPulseAt = Date.now();
+  if (result.notifications) await applyNotifications(result.notifications);
+  if (result.maintenance?.active) showMaintenanceFromPulse(result.maintenance.message);
 }
 
 // Compte Omniscient supprime sur le site pendant que le launcher etait connecte (voir
@@ -2865,24 +4371,45 @@ document.getElementById("guest-banner-later").addEventListener("click", () => {
 // publier dessus pour l'instant) : uniquement ce qui vient de donnees deja
 // disponibles localement — dernier serveur joue, favoris, et un apercu de
 // "Mes instances" pour les proprietaires.
-function homeContinueCardHtml(server) {
+// Carte « Reprendre » (design 17/10, point 3, preview validee) : le dernier serveur joue, un gros
+// bouton Jouer qui suit l'etat de la pilule (voir syncJoinButtons), et les favoris en puces juste
+// en dessous. Remplace l'ancienne grande carte « Continuer » et le menu favori de la barre du bas.
+function homeContinueCardHtml(server, playedAt) {
+  const when = playedAt ? relativeDayText(playedAt) : "";
   return `
-    <div class="home-continue-card" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0">
-      <div class="home-continue-banner">
-        ${server.bannerUrl ? `<img src="${escapeHtml(server.bannerUrl)}" alt="" />` : ""}
+    <div class="home-resume" data-slug="${escapeHtml(server.slug)}" role="button" tabindex="0">
+      <span class="home-resume-icon">${serverIconInner(server)}</span>
+      <div class="home-resume-txt">
+        <span class="home-resume-when">${escapeHtml(when ? t("activity.lastPlayedWhen", { when }) : t("activity.lastPlayed"))}</span>
+        <h2>${escapeHtml(server.name)}</h2>
+        <p>${playersLabel(server)}</p>
       </div>
-      <div class="home-continue-body">
-        <div class="home-continue-who">
-          <span class="home-continue-icon">${serverIconInner(server)}</span>
-          <div class="home-continue-txt">
-            <span class="home-continue-eyebrow">${t("home.continuePlaying")}</span>
-            <h2>${escapeHtml(server.name)}</h2>
-            <p>${playersLabel(server)}</p>
-          </div>
-        </div>
-        <button type="button" class="join-btn home-continue-play" data-slug="${escapeHtml(server.slug)}">${t("serverDetail.joinBtn")}</button>
-      </div>
+      <button type="button" class="join-btn home-resume-play" data-join-slug="${escapeHtml(server.slug)}" data-base-class="home-resume-play" data-join-label="home.play">${t("home.play")}</button>
     </div>`;
+}
+
+// Premier lancement : pas encore de dernier serveur, on invite a en choisir un.
+function homeResumeEmptyHtml() {
+  return `
+    <div class="home-resume-empty">
+      <b>${escapeHtml(t("home.firstServerTitle"))}</b>
+      <p>${escapeHtml(t("home.firstServerBody"))}</p>
+      <button type="button" class="join-btn" id="home-first-browse">${escapeHtml(t("home.browseServers"))}</button>
+    </div>`;
+}
+
+function homeFavoriteChipsHtml(servers) {
+  return `<div class="home-fav-chips" id="home-fav-chips">${servers
+    .slice(0, 3)
+    .map(
+      (server) => `
+      <button type="button" class="home-fav-chip" data-slug="${escapeHtml(server.slug)}" title="${escapeHtml(t("home.playOn", { name: server.name }))}">
+        <span class="home-fav-chip-icon">${serverIconInner(server)}</span>
+        <span class="home-fav-chip-name">${escapeHtml(server.name)}</span>
+        <span class="home-fav-chip-play" aria-hidden="true">▶</span>
+      </button>`,
+    )
+    .join("")}</div>`;
 }
 
 function homeInstanceRowHtml(server) {
@@ -2893,7 +4420,7 @@ function homeInstanceRowHtml(server) {
       <div class="row-body">
         <div class="row-title-line">
           <h3>${escapeHtml(server.name)}</h3>
-          <span class="badge"${server.frozenAt ? " style=\"color:#8ac3e0;border-color:#8ac3e0\"" : ""}>${t(`myInstances.${instanceBadgeKey(status, server)}`)}</span>
+          <span class="badge"${server.frozenAt ? " style=\"color:var(--frozen);border-color:var(--frozen)\"" : ""}>${t(`myInstances.${instanceBadgeKey(status, server)}`)}</span>
           ${verificationBadgeHtml(server)}
         </div>
         <p>${instanceStatusLineHtml(server, status)}</p>
@@ -2931,11 +4458,65 @@ async function showHomeView() {
 // aussi ce libelle, sinon il serait faux.
 const TEAM_PICK_SLUGS = [];
 
+// --- Demarrage plus rapide (18/10, point 1) : dernier pseudo et dernier accueil gardes en memoire
+// (localStorage, jamais de jeton : seulement id, pseudo et skins du profil Minecraft public).
+const BOOT_PROFILE_KEY = "mchub.bootProfile";
+const HOME_CACHE_KEY = "mchub.homeCache";
+let homeBootPreview = false;
+let homeRenderGeneration = 0;
+
+function readBootProfile() {
+  try {
+    const profile = JSON.parse(localStorage.getItem(BOOT_PROFILE_KEY) || "null");
+    return profile && profile.id && profile.name ? profile : null;
+  } catch {
+    return null;
+  }
+}
+function saveBootProfile(profile) {
+  try {
+    if (profile?.id) localStorage.setItem(BOOT_PROFILE_KEY, JSON.stringify({ id: profile.id, name: profile.name, skins: profile.skins }));
+  } catch {
+    // Pas de memoire : le prochain demarrage attendra la reconnexion, comme avant.
+  }
+}
+function clearBootProfile() {
+  try {
+    localStorage.removeItem(BOOT_PROFILE_KEY);
+    localStorage.removeItem(HOME_CACHE_KEY);
+  } catch {
+    // Rien de plus a faire.
+  }
+}
+function readHomeCache() {
+  try {
+    const cache = JSON.parse(localStorage.getItem(HOME_CACHE_KEY) || "null");
+    return cache && currentProfile && cache.profileId === currentProfile.id ? cache.data : null;
+  } catch {
+    return null;
+  }
+}
+function saveHomeCache(data) {
+  try {
+    if (currentProfile) localStorage.setItem(HOME_CACHE_KEY, JSON.stringify({ profileId: currentProfile.id, data }));
+  } catch {
+    // Cache facultatif.
+  }
+}
+
 async function renderHomeView() {
   homePanelEl.className = "detail";
-  homePanelEl.innerHTML = `
+  const generation = ++homeRenderGeneration;
+  const cached = readHomeCache();
+  if (cached) {
+    paintHomeView(cached);
+  } else {
+    homePanelEl.innerHTML = `
     <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: escapeHtml(currentProfile ? currentProfile.name : "") })}</h2>
     ${skeletonListHtml(2)}`;
+  }
+  // Apercu du demarrage : les vraies donnees viendront avec la reconnexion (enterApp).
+  if (homeBootPreview) return;
 
   const [settings, favoriteSlugs, myServersResult] = await Promise.all([
     settingsWithFreshRecents(),
@@ -2944,12 +4525,35 @@ async function renderHomeView() {
   ]);
 
   // En même temps plutôt que l'une après l'autre (14/10) : l'accueil attendait la somme des trois.
-  const [continueResolved, favoriteServers, listResult] = await Promise.all([
+  const [continueResolved, favoriteServers, listResult, featuredResult] = await Promise.all([
     settings.lastPlayedSlug ? resolveServersBySlug([settings.lastPlayedSlug]) : Promise.resolve([]),
     favoriteSlugs.length > 0 ? resolveServersBySlug(favoriteSlugs.slice(0, 4)) : Promise.resolve([]),
     fetchServerList(),
+    window.mchub.getFeaturedServer().catch(() => ({ ok: false })),
   ]);
+  if (generation !== homeRenderGeneration) return;
+  // Seulement ce que l'accueil affiche (les serveurs les plus actifs), pas tout l'annuaire.
+  const busiestForCache = (listResult.ok ? listResult.servers : [])
+    .filter((s) => (s.playerCount ?? 0) > 0)
+    .sort((a, b) => (b.playerCount ?? 0) - (a.playerCount ?? 0))
+    .slice(0, 8);
+  const homeData = {
+    settings: { lastPlayedSlug: settings.lastPlayedSlug || null, recentPlayedAt: settings.recentPlayedAt || {} },
+    favoriteSlugs,
+    myServersResult: myServersResult.ok ? { ok: true, servers: myServersResult.servers.slice(0, 4).map(({ ip: _ip, inviteCode: _code, ...rest }) => rest) } : { ok: false, servers: [] },
+    continueResolved,
+    favoriteServers,
+    listResult: { ok: Boolean(listResult.ok), servers: listResult.ok ? busiestForCache : [] },
+    featured: featuredResult?.ok && featuredResult.server?.slug ? { server: featuredResult.server } : null,
+  };
+  // Un echec reseau ne remplace pas un bon cache par un accueil vide.
+  if (listResult.ok) saveHomeCache(homeData);
+  paintHomeView(homeData);
+}
+
+function paintHomeView({ settings, favoriteSlugs, myServersResult, continueResolved, favoriteServers, listResult, featured = null }) {
   const continueServer = continueResolved[0] || null;
+  const continuePlayedAt = continueServer ? settings.recentPlayedAt?.[continueServer.slug] || null : null;
   const myServers = myServersResult.ok ? myServersResult.servers.slice(0, 4) : [];
 
   // Joueur sans historique : au lieu d'une phrase grise, les serveurs les plus actifs du moment.
@@ -2963,7 +4567,11 @@ async function renderHomeView() {
   const whereServers = continueServer ? [] : busiest.slice(0, 3);
   whereServers.forEach((s) => shownSlugs.add(s.slug));
   const allKnown = listResult.ok ? listResult.servers : [];
+  // « Petit serveur du jour » choisi par le site (19/10) s'il n'est pas deja affiche ailleurs sur
+  // l'accueil ; sinon (null, appel rate, doublon) l'ancien choix : le plus actif non affiche.
+  const dailyPick = featured?.server && !shownSlugs.has(featured.server.slug) ? featured.server : null;
   const teamPick =
+    dailyPick ||
     TEAM_PICK_SLUGS.map((slug) => allKnown.find((s) => s.slug === slug)).find(Boolean) ||
     busiest.find((s) => !shownSlugs.has(s.slug)) ||
     null;
@@ -2974,23 +4582,25 @@ async function renderHomeView() {
     <div class="home-main">
     ${
       continueServer
-        ? homeContinueCardHtml(continueServer)
-        : whereServers.length > 0
-          ? `<div class="home-section">
+        ? homeContinueCardHtml(continueServer, continuePlayedAt)
+        : `${homeResumeEmptyHtml()}${
+            whereServers.length > 0
+              ? `<div class="home-section">
               <div class="home-section-header"><h3>${t("home.whereTitle")}</h3></div>
               <p class="join-note" style="margin: 0 0 12px;">${t("home.whereSub")}</p>
               <div class="server-list" id="home-where-list">${whereServers.map((s) => serverRowHtml(s, favoriteSlugs.includes(s.slug))).join("")}</div>
             </div>`
-          : `<p class="join-note" style="margin-bottom: 18px;">${t("home.noHistory")}</p>`
+              : ""
+          }`
     }
     <div class="home-section">
       <div class="home-section-header">
-        <h3>${t("nav.favorites")}</h3>
+        <h3>${t("home.yourFavorites")}</h3>
         ${favoriteServers.length > 0 ? `<button type="button" class="home-see-all" data-target="favorites">${t("home.seeAll")}</button>` : ""}
       </div>
       ${
         favoriteServers.length > 0
-          ? `<div class="server-list" id="home-favorites-list">${favoriteServers.map((s) => serverRowHtml(s, true)).join("")}</div>`
+          ? homeFavoriteChipsHtml(favoriteServers)
           : `<div class="home-empty-card"><p>${t("favorites.empty")}</p><button type="button" class="btn-secondary" id="home-browse-btn">${t("home.browseServers")}</button></div>`
       }
     </div>
@@ -3014,9 +4624,9 @@ async function renderHomeView() {
               <div class="home-pick" id="home-pick" data-slug="${escapeHtml(teamPick.slug)}" role="button" tabindex="0">
                 <div class="home-pick-banner">${teamPick.bannerUrl ? `<img src="${escapeHtml(teamPick.bannerUrl)}" alt="" />` : ""}</div>
                 <div class="home-pick-body">
-                  <span class="home-pick-tag">${t("home.teamPick")}</span>
+                  <span class="home-pick-tag">${t(dailyPick ? "home.dailyPick" : "home.teamPick")}</span>
                   <h3>${escapeHtml(teamPick.name)}</h3>
-                  <p>${t("home.teamPickDesc")}</p>
+                  <p>${t(dailyPick ? "home.dailyPickDesc" : "home.teamPickDesc")}</p>
                   <button type="button" class="btn-secondary">${t("home.viewPage")}</button>
                 </div>
               </div>
@@ -3040,44 +4650,43 @@ async function renderHomeView() {
     });
   }
 
-  const playBtn = homePanelEl.querySelector(".home-continue-play");
+  const playBtn = homePanelEl.querySelector(".home-resume-play");
   if (playBtn) {
-    // Desactivation synchrone AVANT tout await (meme principe que le bouton
-    // "Rejoindre" de la fiche detail) : sans ca, un double-clic rapide peut
-    // lancer deux fois avant que launchInProgress ne soit leve (§3.13).
-    playBtn.addEventListener("click", async (event) => {
+    // Meme bouton que « Rejoindre » de la fiche : il lance, puis devient « Arrêter » pendant la
+    // partie (joinServer s'en charge, avec la confirmation de la pilule).
+    playBtn.addEventListener("click", (event) => {
       event.stopPropagation();
       if (!continueServer || playBtn.disabled) return;
-      playBtn.disabled = true;
-      try {
-        await launchServer(continueServer);
-      } finally {
-        playBtn.disabled = false;
-      }
+      joinServer(continueServer, playBtn);
     });
+    syncJoinButtons();
   }
-  const continueCard = homePanelEl.querySelector(".home-continue-card");
+  const continueCard = homePanelEl.querySelector(".home-resume");
   if (continueCard) {
     onRowActivate(continueCard, () => {
       detailOrigin = "home";
       openDetail(continueCard.dataset.slug);
     });
   }
+  document.getElementById("home-first-browse")?.addEventListener("click", showServersView);
 
-  const favoritesListEl = document.getElementById("home-favorites-list");
-  if (favoritesListEl) {
-    favoritesListEl.querySelectorAll(".row").forEach((row) => {
-      onRowActivate(row, () => {
-        detailOrigin = "home";
-        openDetail(row.dataset.slug);
-      });
+  // Puces favoris : un clic lance directement le serveur.
+  homePanelEl.querySelectorAll(".home-fav-chip").forEach((chip) => {
+    chip.addEventListener("click", async () => {
+      const server = favoriteServers.find((item) => item.slug === chip.dataset.slug);
+      if (!server || chip.disabled) return;
+      chip.disabled = true;
+      try {
+        await launchServer(server);
+      } finally {
+        chip.disabled = false;
+      }
     });
-  }
+  });
   homePanelEl.querySelectorAll(".favorite-btn").forEach((btn) => {
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
       await toggleFavorite(btn.dataset.slug);
-      await refreshPlaybarFavorites();
       renderHomeView();
     });
   });
@@ -3148,7 +4757,7 @@ function recentSlugsFromSettings(settings) {
   return settings?.lastPlayedSlug ? [settings.lastPlayedSlug] : [];
 }
 
-async function showFavoritesView() {
+async function showFavoritesView({ tab = "favorites" } = {}) {
   homePanelEl.hidden = true;
   statusEl.hidden = true;
   listEl.hidden = true;
@@ -3169,7 +4778,8 @@ async function showFavoritesView() {
   navMyInstancesBtn.classList.remove("active");
   navFriendsBtn.classList.remove("active");
   navFavoritesBtn.classList.add("active");
-  await renderFavoritesList();
+  if (tab === "installed") await renderInstalledList();
+  else await renderFavoritesList();
 }
 
 // Etat vide des pages Favoris et Recents (preview validee le 2026-10-14) : grand bloc grise
@@ -3180,32 +4790,170 @@ const PAGE_EMPTY_ICONS = {
   recent: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>',
 };
 
+// --- Ma bibliotheque (planche L5-C) -----------------------------------------------------------
+// Favoris, Recents et Installes reunis dans une seule page a onglets : une seule icone dans la
+// barre laterale, qui rouvre le dernier onglet choisi.
+// Lot 3 (audit 17/10) : Installes en premier et par defaut, puis le dernier onglet choisi est
+// garde dans les reglages (relu au premier affichage).
+let libraryTab = "installed";
+let libraryTabLoaded = false;
+let librarySavedTab = null;
+
+function setLibraryTab(tab) {
+  libraryTab = tab;
+  if (librarySavedTab !== tab) {
+    librarySavedTab = tab;
+    window.mchub.settings.set({ libraryTab: tab }).catch(() => {});
+  }
+}
+
+function libraryHeaderHtml(tab) {
+  const tabs = [
+    ["installed", t("library.installed")],
+    ["favorites", t("nav.favorites")],
+    ["recent", t("nav.recent")],
+  ];
+  return `
+    <h2>${escapeHtml(t("nav.library"))}</h2>
+    <div class="library-tabs" role="tablist" aria-label="${escapeHtml(t("nav.library"))}">
+      ${tabs.map(([key, label]) => `<button type="button" role="tab" data-library-tab="${key}" aria-selected="${key === tab}">${escapeHtml(label)}</button>`).join("")}
+      ${bandLegendHtml()}
+    </div>`;
+}
+
+function wireLibraryTabs(panelEl) {
+  panelEl.querySelectorAll("[data-library-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.libraryTab;
+      if (tab === "recent") showRecentView();
+      else if (tab === "installed") showInstalledView();
+      else showFavoritesView();
+    });
+  });
+}
+
+async function showLibraryView() {
+  if (!libraryTabLoaded) {
+    libraryTabLoaded = true;
+    const saved = (await window.mchub.settings.get().catch(() => ({})))?.libraryTab;
+    if (["installed", "favorites", "recent"].includes(saved)) libraryTab = librarySavedTab = saved;
+  }
+  if (libraryTab === "recent") showRecentView();
+  else if (libraryTab === "installed") showInstalledView();
+  else showFavoritesView();
+}
+
+// Onglet « Installés » : les serveurs prets a jouer sur ce PC (instances presentes sur le disque),
+// avec le meme ▶ que Favoris et Recents. Affiche dans le panneau des favoris.
+async function showInstalledView() {
+  await showFavoritesView({ tab: "installed" });
+}
+
+async function renderInstalledList() {
+  setLibraryTab("installed");
+  favoritesPanelEl.className = "server-list";
+  favoritesPanelEl.innerHTML = `${libraryHeaderHtml("installed")}${skeletonListHtml(3)}`;
+  wireLibraryTabs(favoritesPanelEl);
+  let slugs = [];
+  try {
+    const local = await window.mchub.listLocalInstances();
+    slugs = local?.ok ? local.instances.map((instance) => instance.slug).filter(Boolean) : [];
+  } catch {
+    slugs = [];
+  }
+  if (libraryTab !== "installed") return;
+  if (slugs.length === 0) {
+    favoritesPanelEl.className = "detail is-empty";
+    favoritesPanelEl.innerHTML = `${libraryHeaderHtml("installed")}${emptyStateHtml({ icon: "box", title: t("myInstances.offlineEmptyTitle"), text: t("myInstances.offlineEmpty"), action: t("myInstances.offlineEmptyAction"), actionId: "library-installed-join" })}`;
+    wireLibraryTabs(favoritesPanelEl);
+    document.getElementById("library-installed-join")?.addEventListener("click", showServersView);
+    return;
+  }
+  const servers = await resolveServersBySlug(slugs);
+  if (libraryTab !== "installed") return;
+  favoritesPanelEl.innerHTML = `
+    ${libraryHeaderHtml("installed")}
+    <p class="join-note library-installed-summary">${escapeHtml(t("library.installedCount", { count: servers.length }))}</p>
+    ${pageToolbarHtml("installed")}
+    <div class="list-rows server-list"></div>`;
+  wireLibraryTabs(favoritesPanelEl);
+  const rowsEl = favoritesPanelEl.querySelector(".list-rows");
+  const settings = await window.mchub.settings.get().catch(() => ({}));
+  const playedAt = settings?.recentPlayedAt || {};
+  const sizes = {};
+  const draw = async (rows) => {
+    if (rows.length === 0) {
+      rowsEl.innerHTML = pageNoMatchHtml();
+      return;
+    }
+    const f = pageFilters.installed;
+    const sorted =
+      f.sort === "size" ? [...rows].sort((a, b) => (sizes[b.slug] || 0) - (sizes[a.slug] || 0))
+      : f.sort === "last" ? [...rows].sort((a, b) => (playedAt[b.slug] || 0) - (playedAt[a.slug] || 0))
+      : rows;
+    await renderRowsInto(rowsEl, sorted, "installed", renderInstalledList);
+    // Taille de chaque serveur, a droite de la ligne (vide tant qu'elle n'est pas lue).
+    rowsEl.querySelectorAll(".row[data-slug]").forEach((row) => {
+      const bytes = sizes[row.dataset.slug];
+      // Un serveur vanilla partage les fichiers du jeu : son dossier pese quelques octets, rien a afficher.
+      if (!bytes || bytes < 1024 * 1024) return;
+      const tag = document.createElement("span");
+      tag.className = "row-size";
+      tag.textContent = formatTaskBytes(bytes);
+      row.insertBefore(tag, row.querySelector(".row-play") || row.lastElementChild);
+    });
+  };
+  let redraw = draw;
+  wirePageToolbar(favoritesPanelEl, "installed", servers, (rows) => {
+    redraw = () => draw(rows);
+    draw(rows);
+  });
+  // Tailles lues en arriere-plan, puis total en en-tete et lien vers la suppression groupee.
+  const read = await window.mchub.instances.sizes(servers.map((server) => server.slug)).catch(() => ({}));
+  if (libraryTab !== "installed" || favoritesPanelEl.hidden) return;
+  Object.assign(sizes, read || {});
+  const total = Object.values(sizes).reduce((sum, bytes) => sum + (bytes || 0), 0);
+  const summary = favoritesPanelEl.querySelector(".library-installed-summary");
+  if (summary && total >= 1024 * 1024) {
+    summary.innerHTML = `${escapeHtml(t("library.installedTotal", { count: servers.length, size: formatTaskBytes(total) }))} · <button type="button" class="link-btn" id="library-free-space">${escapeHtml(t("library.freeSpace"))}</button>`;
+    summary.querySelector("#library-free-space").addEventListener("click", async () => {
+      await showMyInstancesView();
+      bulk.on = true;
+      bulk.sel.clear();
+      renderMyInstancesGrid();
+    });
+  }
+  redraw();
+}
+
 function renderPageEmpty(panelEl, kind, titleKey) {
   panelEl.className = "detail is-empty";
   panelEl.innerHTML = `
-    <h2>${t(titleKey)}</h2>
+    ${kind === "favorites" || kind === "recent" ? libraryHeaderHtml(kind) : `<h2>${t(titleKey)}</h2>`}
     <div class="page-empty">
       <div class="page-empty-icon">${PAGE_EMPTY_ICONS[kind]}</div>
       <h3>${t(`${kind}.emptyTitle`)}</h3>
       <p>${t(`${kind}.emptyText`)}</p>
-      <button type="button" class="btn-secondary page-empty-browse">${t("home.browseServers")}</button>
+      <button type="button" class="join-btn page-empty-browse">${t(`${kind}.emptyAction`)}</button>
     </div>
   `;
   panelEl.querySelector(".page-empty-browse").addEventListener("click", showServersView);
+  wireLibraryTabs(panelEl);
 }
 
 // Favoris et Recents (16/10, option C) : recherche, « En ligne », « Un ami y joue » et un tri
 // propre a chaque page, sur la liste deja chargee (aucun appel en plus par clic). La barre est
 // dessinee une fois par ouverture ; seules les lignes sont re-dessinees quand on tape.
-const PAGE_SORTS = { favorites: ["online", "az", "players"], recent: ["last", "players", "az"] };
+const PAGE_SORTS = { favorites: ["online", "az", "players"], recent: ["last", "players", "az"], installed: ["last", "az", "size"] };
 const pageFilters = {
   favorites: { q: "", online: false, friend: false, sort: "online" },
   recent: { q: "", online: false, friend: false, sort: "last" },
+  installed: { q: "", online: false, friend: false, sort: "last" },
 };
 
 function pageToolbarHtml(kind) {
   const f = pageFilters[kind];
-  const sortLabel = (sort) => t({ online: "serverList.sortOnlineFirst", last: "serverList.sortLastPlayed", az: "serverList.sortAz", players: "serverList.sortPlayers" }[sort]);
+  const sortLabel = (sort) => t({ online: "serverList.sortOnlineFirst", last: "serverList.sortLastPlayed", az: "serverList.sortAz", players: "serverList.sortPlayers", size: "library.sortSize" }[sort]);
   return `
     <div class="list-toolbar page-toolbar">
       <div class="list-search">
@@ -3262,6 +5010,7 @@ function pageNoMatchHtml() {
 }
 
 async function renderFavoritesList() {
+  setLibraryTab("favorites");
   const favorites = await getFavoriteSlugs();
 
   if (favorites.length === 0) {
@@ -3271,17 +5020,20 @@ async function renderFavoritesList() {
 
   favoritesPanelEl.className = "server-list";
   favoritesPanelEl.innerHTML = `
-    <h2>${t("nav.favorites")}</h2>
+    ${libraryHeaderHtml("favorites")}
     <p class="join-note">${t("favorites.header")}</p>
     ${skeletonListHtml(favorites.length)}`;
 
   const favoriteServers = await resolveServersBySlug(favorites);
+  // Onglet change pendant le chargement : ne pas ecraser l'onglet affiche entre-temps.
+  if (libraryTab !== "favorites") return;
   favoritesPanelEl.innerHTML = `
-    <h2>${t("nav.favorites")}</h2>
+    ${libraryHeaderHtml("favorites")}
     <p class="join-note">${t("favorites.header")}</p>
     ${pageToolbarHtml("favorites")}
     <div class="list-rows server-list"></div>`;
   const rowsEl = favoritesPanelEl.querySelector(".list-rows");
+  wireLibraryTabs(favoritesPanelEl);
   wirePageToolbar(favoritesPanelEl, "favorites", favoriteServers, (rows) => {
     if (rows.length === 0) rowsEl.innerHTML = pageNoMatchHtml();
     else renderRowsInto(rowsEl, rows, "favorites", renderFavoritesList);
@@ -3308,11 +5060,13 @@ async function showRecentView() {
   navFavoritesBtn.classList.remove("active");
   navMyInstancesBtn.classList.remove("active");
   navFriendsBtn.classList.remove("active");
-  navRecentBtn.classList.add("active");
+  navRecentBtn.classList.remove("active");
+  navFavoritesBtn.classList.add("active");
   await renderRecentList();
 }
 
 async function renderRecentList() {
+  setLibraryTab("recent");
   const settings = await window.mchub.settings.get();
   const { entries, patch } = recentEntries(settings, Date.now());
   if (patch) await window.mchub.settings.set(patch);
@@ -3326,17 +5080,19 @@ async function renderRecentList() {
 
   recentPanelEl.className = "server-list";
   recentPanelEl.innerHTML = `
-    <h2>${t("nav.recent")}</h2>
+    ${libraryHeaderHtml("recent")}
     <p class="join-note">${t("recent.header")}</p>
     ${skeletonListHtml(recentSlugs.length)}`;
 
   const recentServers = await resolveServersBySlug(recentSlugs);
+  if (libraryTab !== "recent") return;
   recentPanelEl.innerHTML = `
-    <h2>${t("nav.recent")}</h2>
+    ${libraryHeaderHtml("recent")}
     <p class="join-note">${t("recent.header")}</p>
     ${pageToolbarHtml("recent")}
     <div class="list-rows server-list"></div>`;
   const rowsEl = recentPanelEl.querySelector(".list-rows");
+  wireLibraryTabs(recentPanelEl);
   // « Derniere partie » : l'ordre de resolveServersBySlug, deja du plus recent au plus ancien.
   wirePageToolbar(recentPanelEl, "recent", recentServers, (rows) => {
     if (rows.length === 0) rowsEl.innerHTML = pageNoMatchHtml();
@@ -3367,6 +5123,23 @@ window.mchub.getSiteUrl().then((url) => { siteUrl = url; });
 // une liste independante de myInstancesServers (les serveurs POSSEDES),
 // jamais fusionnee avec elle ni comptee dans le filtre "Tout".
 let myJoinedServers = [];
+
+// Variante B (19/10, choisie par Rushi) : l'etat et les joueurs de chaque serveur en une pastille
+// sur la ligne du nom, apres ses badges (deplacee le 19/10 a la demande de Rushi), sans colonne de plus a cote de Tester / Jouer / « … ». Memes couleurs que
+// l'annuaire ; maximum 0 = pas de maximum. Sans mesure (jamais joint) : « Statut inconnu ».
+function instancePlayersPillHtml(server) {
+  if (server.frozenAt) return "";
+  const online = server.playerCount !== null && server.playerCount !== undefined;
+  if (!online) {
+    return server.pinged
+      ? `<span class="instance-players off"><span class="status-dot"></span>${escapeHtml(t("serverCard.offline"))}</span>`
+      : `<span class="instance-players unknown"><span class="status-dot unknown"></span>${escapeHtml(t("serverCard.unknown"))}</span>`;
+  }
+  const fill = fillLevel(server);
+  const count = server.playerCapacity > 0 ? `${server.playerCount} / ${server.playerCapacity}` : t("serverList.onlineChip", { count: server.playerCount });
+  const word = fill === "full" || fill === "busy" ? ` · ${t(fill === "full" ? "serverCard.full" : "serverCard.busy")}` : "";
+  return `<span class="instance-players ${fill === "full" || fill === "busy" ? fill : "on"}"><span class="status-dot${fill === "full" || fill === "busy" ? "" : " online"}"></span>${escapeHtml(count + word)}</span>`;
+}
 
 function instanceStatus(server) {
   if (!server.published) return "paused";
@@ -3401,17 +5174,17 @@ function verificationBadgeHtml(server) {
 // afficher a la place du nombre de joueurs pour un serveur prive/en pause.
 function instanceStatusLineHtml(server, status) {
   if (status === "paused" && server.frozenAt) {
-    return `<span class="status-dot" style="background:#8ac3e0"></span><span style="color:#8ac3e0">${t("myInstances.frozenLine")}</span>`;
+    return `<span class="status-dot" style="background:var(--frozen)"></span><span style="color:var(--frozen)">${t("myInstances.frozenLine")}</span>`;
   }
   if (!server.frozenAt && server.verificationStatus === "pending") {
-    return `<span class="status-dot" style="background:var(--warn)"></span><span style="color:var(--warn)">${t("myInstances.pendingLine")}</span>`;
+    return `<span class="status-dot" style="background:var(--pending)"></span><span style="color:var(--pending)">${t("myInstances.pendingLine")}</span>`;
   }
   if (!server.frozenAt && server.verificationStatus === "rejected") {
     return `<span class="status-dot" style="background:var(--danger)"></span><span style="color:var(--danger)">${t("myInstances.rejectedLine")}</span>`;
   }
   if (status === "paused") return `<span class="status-dot"></span>${t("myInstances.hiddenNote")}`;
   if (status !== "private") return playersLabel(server);
-  const label = t("myInstances.inviteCodeLabel", { code: `<code>${escapeHtml(server.inviteCode || "")}</code>` });
+  const label = t("myInstances.inviteCodeLabel", { code: `<code class="sensitive" data-mask="••••••">${escapeHtml(server.inviteCode || "")}</code>` });
   return `${label} <button type="button" class="icon-btn copy-invite-link" data-code="${escapeHtml(server.inviteCode || "")}" title="${t("myInstances.copyInviteLink")}" aria-label="${t("myInstances.copyInviteLink")}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
@@ -3440,6 +5213,9 @@ const INSTANCE_ICONS = {
   leave: '<svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></svg>',
   key: '<svg viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 9.3-9.3" /><path d="m16 7 3 3" /><path d="m14 9 2 2" /></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>',
+  more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="19" cy="12" r="1.4" /></svg>',
+  download: '<svg viewBox="0 0 24 24"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>',
+  folder: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>',
 };
 
 // `label` : texte affiche a cote de l'icone (seulement quand l'icone seule ne suffit pas).
@@ -3461,17 +5237,34 @@ function instanceCardHtml(server) {
           <h3>${escapeHtml(server.name)}</h3>
           <span class="instance-badge ${server.frozenAt ? "frozen" : status}">${t(`myInstances.${badgeKey}`)}</span>
           ${verificationBadgeHtml(server)}
+          ${instancePlayersPillHtml(server)}
         </div>
-        <p>${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)} · ${escapeHtml(server.ip)}</p>
+        <p class="instance-card-meta">${t(server.type === "modded" ? "serverCard.modded" : "serverCard.vanilla")} · ${escapeHtml(server.minecraftVersion)} · <span class="sensitive" data-mask="${escapeHtml(t("discreet.hiddenAddress"))}">${escapeHtml(server.ip)}</span></p>
         ${status === "public" && server.verificationStatus === "approved" ? "" : `<div class="instance-card-status">${statusLine}</div>`}
       </div>
       <div class="instance-card-actions">
         ${canSelfTest(server) ? instanceActionHtml({ cls: "my-instance-selftest", icon: "flask", tip: t("myInstances.selfTestButton"), label: t("myInstances.selfTestShort"), data: { slug: server.slug } }) : ""}
         ${status !== "paused" ? instancePlayOrStopHtml(server.slug) : ""}
-        ${instanceActionHtml({ cls: "my-instance-manage", icon: "external", tip: t("myInstances.manageTip"), data: { id: server.id } })}
-        ${instanceActionHtml({ cls: "my-instance-channel", icon: "gear", tip: t("myInstances.channelButton"), data: { slug: server.slug } })}
+        ${instanceMoreMenuHtml(server, [
+          `<button type="button" class="instance-menu-item my-instance-manage" data-id="${escapeHtml(server.id)}">${INSTANCE_ICONS.external}${escapeHtml(t("myInstances.manageTip"))}</button>`,
+          `<button type="button" class="instance-menu-item my-instance-channel" data-slug="${escapeHtml(server.slug)}">${INSTANCE_ICONS.gear}${escapeHtml(t("myInstances.channelButton"))}</button>`,
+        ])}
       </div>
     </div>`;
+}
+
+// Menu « … » des cartes (option C validee par Rushi le 18/10) : Installer y est toujours actif,
+// meme pendant une partie (installation en arriere-plan), avec la fiche, les reglages et le dossier.
+function instanceMoreMenuHtml(server, extraItems = []) {
+  const items = [
+    `<button type="button" class="instance-menu-item my-instance-install" data-slug="${escapeHtml(server.slug)}">${INSTANCE_ICONS.download || "⬇"}<span>${escapeHtml(t("myInstances.menuInstall"))}<small>${escapeHtml(t("myInstances.menuInstallHint"))}</small></span></button>`,
+    ...extraItems,
+    `<button type="button" class="instance-menu-item my-instance-folder" data-slug="${escapeHtml(server.slug)}">${INSTANCE_ICONS.folder || "📁"}${escapeHtml(t("myInstances.menuFolder"))}</button>`,
+  ];
+  return `<span class="instance-more">
+      ${instanceActionHtml({ cls: "my-instance-more", icon: "more", tip: t("myInstances.menuMore"), data: { slug: server.slug }, attrsExtra: ' aria-haspopup="menu" aria-expanded="false"' })}
+      <span class="instance-menu" role="menu" hidden>${items.join("")}</span>
+    </span>`;
 }
 
 // Carte d'un serveur prive rejoint via le code/lien de quelqu'un d'autre
@@ -3494,8 +5287,10 @@ function joinedCardHtml(server) {
       </div>
       <div class="instance-card-actions">
         ${instancePlayOrStopHtml(server.slug)}
-        ${instanceActionHtml({ cls: "my-instance-leave", icon: "leave", tip: t("myInstances.leave"), data: { slug: server.slug }, disabled: runningGameSlug === server.slug })}
-        ${instanceActionHtml({ cls: "my-instance-channel", icon: "gear", tip: t("myInstances.channelButton"), data: { slug: server.slug } })}
+        ${instanceMoreMenuHtml(server, [
+          `<button type="button" class="instance-menu-item my-instance-leave" data-slug="${escapeHtml(server.slug)}"${runningGameSlug === server.slug ? " disabled" : ""}>${INSTANCE_ICONS.leave}${escapeHtml(t("myInstances.leave"))}</button>`,
+          `<button type="button" class="instance-menu-item my-instance-channel" data-slug="${escapeHtml(server.slug)}">${INSTANCE_ICONS.gear}${escapeHtml(t("myInstances.channelButton"))}</button>`,
+        ])}
       </div>
     </div>`;
 }
@@ -3887,9 +5682,13 @@ function renderMyInstancesGrid() {
         <h2>${t("nav.myInstances")}</h2>
         <p class="join-note">${t("myInstances.subtitle")}</p>
       </div>
-      <button type="button" class="btn-secondary join-code-btn" id="my-instances-join">${INSTANCE_ICONS.key}${t("myInstances.joinByCodeButton")}</button>
+      <div class="instances-header-actions">
+        ${all.length ? `<button type="button" class="btn-secondary" id="my-instances-select">${bulk.on ? escapeHtml(t("bulk.cancel")) : `☐ ${escapeHtml(t("bulk.select"))}`}</button>` : ""}
+        <button type="button" class="btn-secondary join-code-btn" id="my-instances-join">${INSTANCE_ICONS.key}${t("myInstances.joinByCodeButton")}</button>
+      </div>
     </div>
     ${instancesToolbarHtml(myInstancesServers, myJoinedServers.length, topPagerHtml(myInstancesPage, pageCount, "my-instances-pager"))}
+    ${bulk.on ? bulkBarHtml(all) : ""}
     ${
       all.length === 0
         ? `<p class="join-note">${t("myInstances.filterEmpty")}</p>`
@@ -3898,6 +5697,7 @@ function renderMyInstancesGrid() {
   `;
 
   document.getElementById("my-instances-join").addEventListener("click", joinByCodeFlow);
+  wireBulkSelection(all);
 
   document.getElementById("my-instances-pager-prev")?.addEventListener("click", () => {
     myInstancesPage -= 1;
@@ -3990,6 +5790,35 @@ function renderMyInstancesGrid() {
     });
   });
 
+  myInstancesPanelEl.querySelectorAll(".my-instance-more").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const menu = btn.parentElement.querySelector(".instance-menu");
+      const opening = menu.hidden;
+      closeInstanceMenus();
+      menu.hidden = !opening;
+      btn.setAttribute("aria-expanded", String(opening));
+      if (opening) menu.querySelector("button:not([disabled])")?.focus();
+    });
+  });
+  myInstancesPanelEl.querySelectorAll(".instance-menu-item").forEach((item) => item.addEventListener("click", () => setTimeout(closeInstanceMenus, 0)));
+  myInstancesPanelEl.querySelectorAll(".my-instance-install").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeInstanceMenus();
+      const server = myInstancesServers.find((s) => s.slug === btn.dataset.slug) || myJoinedServers.find((s) => s.slug === btn.dataset.slug);
+      // Installation sans lancer le jeu : possible pendant une partie (file d'attente du lot 4).
+      if (server) installServerStandalone(server, null);
+    });
+  });
+  myInstancesPanelEl.querySelectorAll(".my-instance-folder").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeInstanceMenus();
+      window.mchub.instances.openFolder(btn.dataset.slug);
+    });
+  });
+
   myInstancesPanelEl.querySelectorAll(".my-instance-manage").forEach((btn) => {
     btn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -4000,8 +5829,10 @@ function renderMyInstancesGrid() {
   myInstancesPanelEl.querySelectorAll(".my-instance-leave").forEach((btn) => {
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
+      const leaveName = (myJoinedServers || []).find((item) => item.slug === btn.dataset.slug)?.name || btn.dataset.slug;
       const { confirmed } = await showModal({
-        title: t("myInstances.leave"),
+        tone: "ok",
+        title: t("myInstances.leaveTitle", { name: leaveName }),
         body: t("myInstances.leaveConfirm"),
         confirmLabel: t("myInstances.leave"),
         cancelLabel: t("common.cancel"),
@@ -4091,13 +5922,14 @@ function renderOfflineInstancesGrid(instances) {
     </div>
     ${
       instances.length === 0
-        ? `<p class="join-note">${t("myInstances.offlineEmpty")}</p>`
+        ? emptyStateHtml({ icon: "box", title: t("myInstances.offlineEmptyTitle"), text: t("myInstances.offlineEmpty"), action: t("myInstances.offlineEmptyAction"), actionId: "instances-empty-join" })
         : `<div class="instance-grid">${instances.map(offlineInstanceCardHtml).join("")}</div>`
     }
   `;
 
+  document.getElementById("instances-empty-join")?.addEventListener("click", showServersView);
   myInstancesPanelEl.querySelectorAll(".my-instance-play-offline").forEach((btn) => {
-    // Meme garde synchrone qu'ailleurs (my-instance-play, playbar) : desactive avant tout await.
+    // Meme garde synchrone qu'ailleurs (my-instance-play) : desactive avant tout await.
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
       if (btn.disabled) return;
@@ -4120,50 +5952,41 @@ function renderOfflineInstancesGrid(instances) {
 async function launchOfflineInstance(instance) {
   if (launchInProgress) return null;
   launchInProgress = true;
-
-  const label = document.getElementById("playbar-progress-label");
-  const percentEl = document.getElementById("playbar-progress-percent");
-  const fill = document.getElementById("playbar-progress-fill");
-
-  fill.classList.remove("error");
-  fill.style.width = "0%";
-  percentEl.textContent = "";
-  label.textContent = t("playbar.launchingServer", { name: instance.modpackName || instance.slug });
-  setPlaybarBusy(true);
+  const name = instance.modpackName || instance.slug;
+  activity.current = { slug: instance.slug, name };
+  activity.failure = null;
+  activity.launch = { percent: null, text: "" };
+  renderActivity();
 
   const stopListening = window.mchub.onGameProgress((status) => {
     if (!status || typeof status !== "object") return;
-    if (status.text) label.textContent = status.text;
+    const next = { ...(activity.launch || {}) };
+    if (status.text) next.text = status.text;
     if (typeof status.task === "number" && typeof status.total === "number" && status.total > 0) {
-      const percent = Math.min(100, Math.round((status.task / status.total) * 100));
-      fill.style.width = `${percent}%`;
-      percentEl.textContent = `${percent}%`;
+      next.percent = Math.min(100, Math.round((status.task / status.total) * 100));
     }
+    activity.launch = next;
+    renderActivity();
   });
 
   const result = await window.mchub.playOfflineServer(instance.slug);
   stopListening();
   launchInProgress = false;
+  activity.launch = null;
 
   if (result.ok) {
-    fill.style.width = "100%";
-    percentEl.textContent = "";
-    label.textContent = t("playbar.launched");
-    setTimeout(() => {
-      setPlaybarBusy(false);
+    if (!gamePlaying) {
       launchStarting = true;
-      syncPlaybarWithGame();
       setTimeout(() => {
         launchStarting = false;
-        syncPlaybarWithGame();
+        renderActivity();
       }, 60_000);
-    }, 1800);
-  } else {
-    fill.classList.add("error");
-    label.textContent = result.error;
-    setTimeout(() => setPlaybarBusy(false), 4000);
+    }
+  } else if (!result.cancelled) {
+    activity.failure = { slug: instance.slug, name, error: result.error };
+    openActivityPanel();
   }
-
+  renderActivity();
   return result;
 }
 
@@ -4266,11 +6089,14 @@ function wireSettingsNav() {
 
 async function renderSettingsTab(tab) {
   const contentEl = document.getElementById("settings-content");
+  // Une section choisie fait quitter la recherche (serie 2, idee 8).
+  if (settingsSearchActive()) clearSettingsSearch();
   const settings = await window.mchub.settings.get();
   // Debogage (grille) et Divers (colonnes facon journal) s'etalent sur la largeur ; les autres
   // onglets gardent leur colonne etroite.
   contentEl.classList.toggle("settings-content-wide", tab === "debug" || tab === "misc");
   if (tab === "language") return renderLanguageTab(contentEl, settings);
+  if (tab === "privacy") return renderPrivacyTab(contentEl);
   if (tab === "memory") return renderMemoryTab(contentEl, settings);
   if (tab === "misc") return renderMiscTab(contentEl, settings);
   if (tab === "debug") return renderDebugTab(contentEl, settings);
@@ -4432,6 +6258,7 @@ function renderDebugTab(contentEl, settings) {
       [t("debug.labelJava"), info.java || t("debug.javaNotDetected")],
       [t("settings.ramAllocation"), info.memory],
       [t("debug.labelGpu"), info.gpu || t("debug.gpuUnknown")],
+      [t("games.folderTitle"), info.gamesFree ? `${info.gamesFolder} · ${t("games.freeShort", { free: info.gamesFree })}` : info.gamesFolder || "—"],
     ];
     sysInfoEl.innerHTML = rows.map(([label, value]) => `<span class="label">${label}</span><span class="value">${escapeHtml(value)}</span>`).join("");
     const copyBtn = document.getElementById("settings-copy-sysinfo");
@@ -4459,14 +6286,16 @@ function renderDebugTab(contentEl, settings) {
     document.getElementById("settings-cache-size-desc").textContent = t("debug.clearCacheDesc", { size: formatCacheSize(bytes) });
   });
   document.getElementById("settings-clear-cache").addEventListener("click", async () => {
-    if (!window.confirm(t("debug.clearCacheConfirm"))) return;
+    const { confirmed } = await showModal({ tone: "warn", title: t("debug.clearCacheTitle"), body: t("debug.clearCacheBody"), confirmLabel: t("debug.clearCacheBtn"), cancelLabel: t("common.cancel") });
+    if (!confirmed) return;
     await window.mchub.diagnostics.clearCache();
     document.getElementById("settings-reset-status").textContent = t("debug.cacheCleared");
     document.getElementById("settings-cache-size-desc").textContent = t("debug.clearCacheDesc", { size: formatCacheSize(0) });
   });
 
   document.getElementById("settings-reset").addEventListener("click", async () => {
-    if (!window.confirm(t("debug.resetConfirm"))) return;
+    const { confirmed } = await showModal({ tone: "danger", title: t("debug.resetTitle"), body: t("debug.resetBody"), confirmLabel: t("debug.resetBtn"), cancelLabel: t("common.cancel") });
+    if (!confirmed) return;
     const updated = await window.mchub.settings.reset();
     window.themeControls.applyTheme(updated);
     document.body.classList.toggle("compact-list", !!updated.compactServerList);
@@ -4503,11 +6332,32 @@ function renderAppearanceTab(contentEl, settings) {
         <p class="settings-row-desc">${t("appearance.accentColorDesc")}</p>
         <div class="accent-swatches">
           ${window.themeControls.ACCENT_PRESETS.map((color, i) => {
-            const names = [t("appearance.accentPurple"), t("appearance.accentBlue"), t("appearance.accentGreen"), t("appearance.accentOrange"), t("appearance.accentPink")];
-            return `<button type="button" class="accent-swatch${settings.accentColor === color ? " active" : ""}" data-accent-value="${color}" style="background:${color};" aria-label="${names[i] || color}"></button>`;
+            // Meme ordre que ACCENT_PRESETS (theme.js) : bleu, violet, vert, orange, rose (audit 17/10,
+            // lot 1 : les deux premiers noms etaient inverses). La pastille active porte une coche.
+            const names = [t("appearance.accentBlue"), t("appearance.accentPurple"), t("appearance.accentGreen"), t("appearance.accentOrange"), t("appearance.accentPink")];
+            const active = (settings.accentColor || window.themeControls.ACCENT_PRESETS[0]) === color;
+            return `<button type="button" class="accent-swatch${active ? " active" : ""}" data-accent-value="${color}" style="background:${color};" aria-label="${names[i] || color}" title="${names[i] || color}" aria-pressed="${active}">${active ? '<span aria-hidden="true">✓</span>' : ""}</button>`;
           }).join("")}
         </div>
       </div>
+      <div class="settings-divider"></div>
+      <div>
+        <div class="settings-row-label">${t("appearance.reduceMotion")}</div>
+        <p class="settings-row-desc">${t("appearance.reduceMotionDesc")}</p>
+        <div class="motion-options" role="group" aria-label="${escapeHtml(t("appearance.reduceMotion"))}">
+          ${["auto", "on", "off"]
+            .map((value) => `<button type="button" class="${(settings.reduceMotion || "auto") === value ? "active" : ""}" data-motion-value="${value}" aria-pressed="${(settings.reduceMotion || "auto") === value}">${t(`appearance.reduceMotion_${value}`)}</button>`)
+            .join("")}
+        </div>
+      </div>
+      <div class="settings-divider"></div>
+      <label class="settings-row" style="cursor: pointer;">
+        <span>
+          <span class="settings-row-label">${t("discreet.settingTitle")}</span>
+          <p class="settings-row-desc">${t("discreet.settingDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-discreet" ${discreetMode ? "checked" : ""} />
+      </label>
       <div class="settings-divider"></div>
       <label class="settings-row" style="cursor: pointer;">
         <span>
@@ -4533,6 +6383,14 @@ function renderAppearanceTab(contentEl, settings) {
       renderAppearanceTab(contentEl, updated);
     });
   });
+  contentEl.querySelectorAll("[data-motion-value]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const updated = await window.mchub.settings.set({ reduceMotion: btn.dataset.motionValue });
+      window.themeControls.applyTheme(updated);
+      renderAppearanceTab(contentEl, updated);
+    });
+  });
+  document.getElementById("settings-discreet").addEventListener("change", (event) => setDiscreetMode(event.target.checked));
   document.getElementById("settings-compact-list").addEventListener("change", async (event) => {
     await window.mchub.settings.set({ compactServerList: event.target.checked });
     document.body.classList.toggle("compact-list", event.target.checked);
@@ -4672,10 +6530,16 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
         </div>
       </div>
       <div class="settings-divider"></div>
-      <div>
-        <div class="settings-row-label">${t("settings.gameFolder")}</div>
-        <p class="settings-path" style="margin-top: 6px;">${escapeHtml(settings.gameRoot)}</p>
-        <button id="settings-open-folder" class="btn-secondary" type="button" style="margin-top: 6px;">${t("settings.openFolder")}</button>
+      <div class="games-folder-card">
+        <div class="settings-row-label">${t("games.folderTitle")}</div>
+        <p class="settings-row-desc">${t("games.folderDesc")}</p>
+        <p class="settings-path" id="games-folder-path" style="margin-top: 6px;">${escapeHtml(settings.gameRoot)}</p>
+        <p class="settings-row-desc" id="games-folder-size">${t("common.checking")}</p>
+        <p class="games-folder-warn" id="games-folder-warn" hidden></p>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+          <button id="games-change-drive" class="join-btn" type="button">${t("games.change")}</button>
+          <button id="settings-open-folder" class="btn-secondary" type="button">${t("settings.openFolder")}</button>
+        </div>
       </div>
       <div class="settings-divider"></div>
       <div class="settings-row">
@@ -4737,8 +6601,10 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
   `;
 
   document.getElementById("settings-open-folder").addEventListener("click", () => {
-    window.mchub.settings.openGameFolder();
+    window.mchub.games.openFolder();
   });
+  document.getElementById("games-change-drive").addEventListener("click", () => openGamesMove());
+  fillGamesFolderCard();
   document.getElementById("settings-beta-channel").addEventListener("change", async (event) => {
     await window.mchub.settings.set({ betaChannel: event.target.checked });
     renderMiscTab(contentEl, { ...settings, betaChannel: event.target.checked }, { betaPending: true });
@@ -4930,8 +6796,14 @@ async function renderAccountPanel() {
     <div id="account-list" style="margin-top: 12px;"></div>
     <p class="join-note" id="account-list-status"></p>
     <button id="account-add-btn" class="btn-secondary" type="button">${t("account.addAccountBtn")}</button>
+
+    <h2 style="margin-top: 32px;">${t("account.myDataTitle")}</h2>
+    <p class="join-note" style="margin: 4px 0 10px;">${t("account.myDataHint")}</p>
+    <button id="account-my-data-btn" class="btn-secondary" type="button">${t("account.myDataBtn")}</button>
   `;
 
+  // « Récupérer mes données » (23/10) : ouvre Paramètres du site, où se trouve le bouton.
+  document.getElementById("account-my-data-btn").addEventListener("click", () => window.mchub.openLegalPage("myData"));
   wireAccountPanelActions();
   await refreshAccountList();
 }
@@ -4995,6 +6867,15 @@ async function refreshAccountList() {
   listContainer.querySelectorAll(".account-remove-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.id;
+      const name = accounts.find((a) => a.id === id)?.name || "";
+      const { confirmed } = await showModal({
+        tone: "warn",
+        title: t("account.forgetTitle", { name }),
+        body: t("account.forgetBody"),
+        confirmLabel: t("account.forgetConfirmBtn"),
+        cancelLabel: t("common.cancel"),
+      });
+      if (!confirmed) return;
       const result = await window.mchub.account.remove(id);
       if (!result.ok) {
         // Pas de mutation optimiste si l'appel IPC a echoue : le compte
@@ -5090,139 +6971,10 @@ function wireAccountPanelActions() {
   });
 }
 
-// Barre de lancement rapide (bas de l'appli) : au plus 5 lignes — le dernier
-// serveur reellement joue s'il n'est pas deja favori (mis en avant en haut,
-// etiquette "Dernier joue"), puis les 3 favoris les plus joues (par nombre de
-// lancements reussis, pas juste l'ordre d'ajout), puis un lien "+ de favoris"
-// vers la page dediee si plus de 3 favoris existent.
-async function refreshPlaybarFavorites() {
-  const favTrigger = document.getElementById("playbar-fav-trigger");
-  const favIcon = document.getElementById("playbar-fav-icon");
-  const favName = document.getElementById("playbar-fav-name");
-  const favPanel = document.getElementById("playbar-fav-panel");
-  const playBtn = document.getElementById("playbar-play");
-
-  const settings = await settingsWithFreshRecents();
-  const favorites = settings.favoriteServers || [];
-  const playCounts = settings.playCounts || {};
-  const lastPlayedSlug = settings.lastPlayedSlug || null;
-  const showLastPlayed = !!lastPlayedSlug && !favorites.includes(lastPlayedSlug);
-
-  if (favorites.length === 0 && !lastPlayedSlug) {
-    selectedFavoriteSlug = null;
-    favTrigger.disabled = true;
-    favIcon.innerHTML = "";
-    favName.textContent = t("playbar.addFavoritePrompt");
-    if (!launchInProgress) playBtn.disabled = true;
-    favPanel.innerHTML = `<div class="playbar-fav-empty">${t("playbar.emptyHint")}</div>`;
-    return;
-  }
-
-  const result = await fetchServerList();
-  const allServers = result.ok ? result.servers : [];
-  const resolve = (slug) => allServers.find((s) => s.slug === slug) || { slug, name: slug };
-
-  const topFavorites = [...favorites].sort((a, b) => (playCounts[b] || 0) - (playCounts[a] || 0)).slice(0, 3);
-
-  const rows = [];
-  if (showLastPlayed) rows.push({ slug: lastPlayedSlug, kind: "last-played" });
-  topFavorites.forEach((slug) => rows.push({ slug, kind: "favorite" }));
-
-  const hasMoreFavorites = favorites.length > 3;
-  const availableSlugs = rows.map((r) => r.slug);
-
-  if (!selectedFavoriteSlug || !availableSlugs.includes(selectedFavoriteSlug)) {
-    selectedFavoriteSlug = availableSlugs.includes(lastPlayedSlug) ? lastPlayedSlug : rows[0]?.slug || null;
-  }
-
-  const selected = resolve(selectedFavoriteSlug);
-  favTrigger.disabled = false;
-  if (!launchInProgress && !gamePlaying && !launchStarting) playBtn.disabled = false;
-  favIcon.innerHTML = `<span class="server-icon" style="width: 22px; height: 22px; font-size: 10px;">${serverIconInner(selected)}</span>`;
-  favName.textContent = selected.name;
-
-  favPanel.innerHTML =
-    rows
-      .map((row) => {
-        const server = resolve(row.slug);
-        return `
-      <div class="playbar-fav-row" data-slug="${escapeHtml(row.slug)}">
-        <span class="server-icon" style="width: 24px; height: 24px; font-size: 11px;">${serverIconInner(server)}</span>
-        <span class="playbar-fav-row-name">
-          ${row.kind === "last-played" ? `<span class="playbar-fav-row-tag">${t("playbar.lastPlayed")}</span>` : ""}
-          <span class="playbar-fav-row-title">${escapeHtml(server.name)}</span>
-        </span>
-        ${
-          row.kind === "favorite"
-            ? `<button class="playbar-fav-remove" type="button" data-slug="${escapeHtml(row.slug)}" title="${t("common.removeFavorite")}">✕</button>`
-            : ""
-        }
-      </div>`;
-      })
-      .join("") + (hasMoreFavorites ? `<div class="playbar-fav-row playbar-fav-more" id="playbar-fav-more">${t("playbar.moreFavorites")}</div>` : "");
-
-  favPanel.querySelectorAll(".playbar-fav-row:not(.playbar-fav-more)").forEach((row) => {
-    row.addEventListener("click", (event) => {
-      if (event.target.closest(".playbar-fav-remove")) return;
-      selectedFavoriteSlug = row.dataset.slug;
-      favPanel.hidden = true;
-      refreshPlaybarFavorites();
-    });
-  });
-  favPanel.querySelectorAll(".playbar-fav-remove").forEach((btn) => {
-    btn.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      await toggleFavorite(btn.dataset.slug);
-      await refreshPlaybarFavorites();
-      // L'etoile sur la carte/fiche correspondante ne se met a jour qu'au
-      // prochain rendu de cette vue — un detail mineur, pas la peine de
-      // garder une reference au serveur actuellement affiche juste pour ca.
-    });
-  });
-  const moreBtn = document.getElementById("playbar-fav-more");
-  if (moreBtn) {
-    moreBtn.addEventListener("click", () => {
-      favPanel.hidden = true;
-      showFavoritesView();
-    });
-  }
-}
-
-function wirePlaybar() {
-  const favTrigger = document.getElementById("playbar-fav-trigger");
-  const favPanel = document.getElementById("playbar-fav-panel");
-  const playBtn = document.getElementById("playbar-play");
-
-  favTrigger.addEventListener("click", (event) => {
-    event.stopPropagation();
-    favPanel.hidden = !favPanel.hidden;
-  });
-  document.addEventListener("click", () => {
-    favPanel.hidden = true;
-  });
-
-  playBtn.addEventListener("click", async () => {
-    if (!selectedFavoriteSlug || playBtn.disabled) return;
-    // Desactivation synchrone AVANT le premier await (meme principe que le bouton
-    // "Rejoindre" de la fiche detail) : sans ca, un double-clic rapide peut relancer
-    // getServer()/launchServer() une seconde fois avant que launchInProgress ne soit
-    // leve (§3.13). syncPlaybarWithGame() reprend ensuite la main sur l'etat du bouton.
-    playBtn.disabled = true;
-    try {
-      const result = await window.mchub.getServer(selectedFavoriteSlug);
-      // Si la fiche ne charge pas (serveur gelé, par exemple), on tente quand même : le launcher
-      // affichera la raison exacte renvoyée par le site au lieu de ne rien faire.
-      await launchServer(result.ok ? result.server : { slug: selectedFavoriteSlug, name: selectedFavoriteSlug });
-    } finally {
-      syncPlaybarWithGame();
-    }
-  });
-}
-
 function wireSidebar() {
   navHomeBtn.addEventListener("click", showHomeView);
   navServersBtn.addEventListener("click", showServersView);
-  navFavoritesBtn.addEventListener("click", showFavoritesView);
+  navFavoritesBtn.addEventListener("click", showLibraryView);
   navRecentBtn.addEventListener("click", showRecentView);
   navMyInstancesBtn.addEventListener("click", showMyInstancesView);
   navSettingsBtn.addEventListener("click", showSettingsView);
@@ -5233,52 +6985,105 @@ function wireSidebar() {
 // bloquant futur. Résout avec { confirmed, checked } plutôt que de bloquer
 // le thread comme un confirm() natif, pour rester cohérent avec le reste de
 // l'UI (pas de fenêtre système grise dans une appli aussi personnalisée).
-function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel, tone, stripeColor }) {
+// Fenetre de confirmation unique (audit 17/10, lot 4, preview validee par Rushi) :
+// - tone "ok" | "warn" | "danger" : filet du haut, icone et bouton de la meme couleur ;
+// - Echap ou clic sur le fond = Annuler, focus sur Annuler a l'ouverture, Tab reste dans la
+//   fenetre, le focus revient au bouton qui l'a ouverte ;
+// - requireText : le bouton reste grise tant que ce texte exact n'est pas tape.
+// stripeColor reste pour les messages diffuses (couleur du type de message).
+const MODAL_TONE_ICONS = { ok: "i", warn: "!", danger: "!" };
+function showModal({ title, body, confirmLabel, cancelLabel, checkboxLabel, tone, stripeColor, requireText, requireLabel }) {
   return new Promise((resolve) => {
     const overlay = document.getElementById("modal-overlay");
+    const modalBox = overlay.querySelector(".modal-box");
     const confirmBtn = document.getElementById("modal-confirm");
     const cancelBtn = document.getElementById("modal-cancel");
     const checkboxRow = document.getElementById("modal-checkbox-row");
     const checkbox = document.getElementById("modal-checkbox");
+    const icon = document.getElementById("modal-icon");
+    const typedRow = document.getElementById("modal-typed-row");
+    const typedInput = document.getElementById("modal-typed-input");
+    const opener = document.activeElement;
 
     document.getElementById("modal-title").textContent = title;
-    // Couleur du titre : celle du type de message diffuse si fournie, sinon rouge pour une
-    // alerte critique (ex. RAM au-delà de 80 % de la machine), sinon la couleur par defaut.
-    document.getElementById("modal-title").style.color = stripeColor || (tone === "danger" ? "var(--danger)" : "");
+    document.getElementById("modal-title").style.color = stripeColor || "";
     document.getElementById("modal-body").textContent = body;
+    document.getElementById("modal-body").hidden = !body;
     confirmBtn.textContent = confirmLabel;
+    confirmBtn.className = `join-btn${tone === "warn" || tone === "danger" ? ` tone-${tone}` : ""}`;
     cancelBtn.hidden = !cancelLabel;
     cancelBtn.textContent = cancelLabel || "";
     checkboxRow.hidden = !checkboxLabel;
     document.getElementById("modal-checkbox-label").textContent = checkboxLabel || "";
     checkbox.checked = false;
-
-    const modalBox = overlay.querySelector(".modal-box");
-    modalBox.classList.add("pop-in");
+    icon.hidden = !tone;
+    icon.textContent = MODAL_TONE_ICONS[tone] || "";
+    modalBox.classList.remove("tone-ok", "tone-warn", "tone-danger");
+    if (tone) modalBox.classList.add(`tone-${tone}`);
     modalBox.style.borderTopColor = stripeColor || "";
+    typedRow.hidden = !requireText;
+    typedInput.value = "";
+    document.getElementById("modal-typed-label").textContent = requireLabel || "";
+    const syncTyped = () => {
+      confirmBtn.disabled = !!requireText && typedInput.value.trim() !== requireText;
+    };
+    syncTyped();
+
+    modalBox.classList.add("pop-in");
     overlay.hidden = false;
     // Filet de securite : coupe les clics sur le reste de l'appli tant que cette modale est
     // ouverte, independamment du z-index (voir le commentaire CSS sur body.modal-blocking).
     document.body.classList.add("modal-blocking");
+    (requireText ? typedInput : cancelLabel ? cancelBtn : confirmBtn).focus();
 
-    const cleanup = () => {
+    const finish = (confirmed) => {
+      const checked = checkbox.checked;
       overlay.hidden = true;
       document.body.classList.remove("modal-blocking");
       confirmBtn.removeEventListener("click", onConfirm);
       cancelBtn.removeEventListener("click", onCancel);
+      overlay.removeEventListener("mousedown", onBackdrop);
+      document.removeEventListener("keydown", onKey, true);
+      typedInput.removeEventListener("input", syncTyped);
+      confirmBtn.disabled = false;
+      if (opener && typeof opener.focus === "function" && document.contains(opener)) opener.focus();
+      resolve({ confirmed, checked });
     };
     const onConfirm = () => {
-      const checked = checkbox.checked;
-      cleanup();
-      resolve({ confirmed: true, checked });
+      if (!confirmBtn.disabled) finish(true);
     };
-    const onCancel = () => {
-      const checked = checkbox.checked;
-      cleanup();
-      resolve({ confirmed: false, checked });
+    // Sans bouton Annuler (simple message), Echap et le fond ferment comme le bouton.
+    const onCancel = () => finish(!cancelLabel);
+    const onBackdrop = (event) => {
+      if (event.target === overlay) onCancel();
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCancel();
+      } else if (event.key === "Tab") {
+        const items = [...modalBox.querySelectorAll("button, input")].filter((el) => !el.hidden && !el.disabled && el.offsetParent !== null);
+        if (!items.length) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      } else if (event.key === "Enter" && event.target === typedInput && !confirmBtn.disabled) {
+        event.preventDefault();
+        finish(true);
+      }
     };
     confirmBtn.addEventListener("click", onConfirm);
     cancelBtn.addEventListener("click", onCancel);
+    overlay.addEventListener("mousedown", onBackdrop);
+    document.addEventListener("keydown", onKey, true);
+    typedInput.addEventListener("input", syncTyped);
   });
 }
 
@@ -5300,7 +7105,9 @@ function selfTestStepRowHtml(step, status, detail) {
   // sinon un simple échec d'IP affichait à tort "tout échoué" comme si chaque contrôle avait
   // individuellement rate, alors que les suivants n'ont jamais tourné (constate le 2026-10-10).
   const icon =
-    status === "pass"
+    status === "warn"
+      ? `<span class="selftest-warn-icon" aria-hidden="true">!</span>`
+      : status === "pass"
       ? `<span style="color:var(--success);">✅</span>`
       : status === "fail"
         ? `<span style="color:var(--danger);">❌</span>`
@@ -5310,7 +7117,9 @@ function selfTestStepRowHtml(step, status, detail) {
             ? `<span style="color:var(--muted);">—</span>`
             : `<span class="status-dot"></span>`;
   const statusText =
-    status === "pass"
+    status === "warn"
+      ? t("selfTest.statusWarn")
+      : status === "pass"
       ? t("selfTest.statusPass")
       : status === "fail"
         ? t("selfTest.statusFail")
@@ -5319,7 +7128,7 @@ function selfTestStepRowHtml(step, status, detail) {
           : status === "skipped"
             ? t("selfTest.statusSkipped")
             : "";
-  const color = status === "pass" ? "var(--success)" : status === "fail" ? "var(--danger)" : "var(--muted)";
+  const color = status === "pass" ? "var(--success)" : status === "warn" ? "var(--state-busy)" : status === "fail" ? "var(--danger)" : "var(--muted)";
   // Check #1 ("IP joignable") : affiche la latence mesurée par le ping quand il réussit —
   // un chiffre concret plutot qu'un simple pass/fail. Voir mcPing.js pour la mesure (pingMs).
   const label =
@@ -5338,7 +7147,13 @@ function selfTestStepRowHtml(step, status, detail) {
 // pourquoi. Mods bloques par CurseForge : leur liste et le conseil au proprietaire.
 function selfTestDetailHtml(step, status, detail) {
   let text = "";
-  if (step.key === "modpack" && status === "fail" && detail) {
+  if (step.key === "modpack" && (status === "warn" || status === "pass") && detail) {
+    const rescued = Array.isArray(detail.fromModrinthMods) ? detail.fromModrinthMods.length : 0;
+    const manual = Array.isArray(detail.manualMods) ? detail.manualMods.length : 0;
+    if (rescued + manual > 0) {
+      text = [t("selfTest.blockedCount", { count: rescued + manual }), t("selfTest.rescuedCount", { count: rescued }), manual ? t("selfTest.manualCount", { count: manual }) : ""].filter(Boolean).join(" · ");
+    }
+  } else if (step.key === "modpack" && status === "fail" && detail) {
     const mods = Array.isArray(detail.manualMods) ? detail.manualMods : [];
     const blocked = mods.filter((mod) => mod.reason !== "removed");
     if (blocked.length) {
@@ -5351,6 +7166,8 @@ function selfTestDetailHtml(step, status, detail) {
     }
   } else if (step.key === "gameStarted" && status === "skipped" && detail?.incompletePack) {
     text = t("selfTest.incompletePack");
+  } else if (step.key === "gameStarted" && status === "skipped" && detail?.manualModsSkipped) {
+    text = t("selfTest.manualSkipped");
   }
   if (!text) return "";
   return `<div style="margin:-4px 0 0 30px;font-size:12.5px;color:var(--muted);line-height:1.45;">${escapeHtml(text)}</div>`;
@@ -5372,7 +7189,7 @@ function renderSelfTestChecklist(statuses, details) {
 // seul point d'entree, reutilise pour la fin normale du test ET pour l'annulation.
 function finalizeSelfTestStatuses(statuses) {
   for (const step of SELF_TEST_STEPS) {
-    if (statuses[step.key] !== "pass" && statuses[step.key] !== "fail") {
+    if (statuses[step.key] !== "pass" && statuses[step.key] !== "fail" && statuses[step.key] !== "warn") {
       statuses[step.key] = "skipped";
     }
   }
@@ -5395,8 +7212,10 @@ function runSelfTestFlow(server) {
     document.getElementById("selftest-title").textContent = t("selfTest.title", { name: server.name });
     document.getElementById("selftest-intro").textContent = t("selfTest.intro");
     outcomeEl.hidden = true;
+    outcomeEl.className = "join-note";
     errorEl.hidden = true;
     actionsEl.innerHTML = "";
+    document.getElementById("selftest-report").innerHTML = "";
 
     const statuses = { reachable: "pending", modpack: "pending", gameStarted: "pending", connection: "pending" };
     const details = {};
@@ -5416,11 +7235,20 @@ function runSelfTestFlow(server) {
 
     const finish = () => {
       stopListening();
+      stopManual();
       overlay.hidden = true;
       document.body.classList.remove("modal-blocking");
       resolve();
     };
 
+    // Lot 5 (« aide puis lancement ») : mods a ajouter a la main pendant le test.
+    const stopManual = window.mchub.onSelfTestManualMods(async (fields) => {
+      overlay.hidden = true;
+      const choice = await showManualModsModal(fields.manualMods || [], fields.fromModrinth || 0, fields.fromModrinthMods || [], { slug: server.slug });
+      overlay.hidden = false;
+      document.body.classList.add("modal-blocking");
+      window.mchub.answerSelfTestManualMods(choice);
+    });
     const stopListening = window.mchub.onSelfTestProgress((progress) => {
       if (!progress || !progress.step) return;
       statuses[progress.step] = progress.status;
@@ -5464,8 +7292,35 @@ function runSelfTestFlow(server) {
       renderSelfTestChecklist(statuses, details);
       outcomeEl.hidden = false;
 
-      if (result.allPassed) {
-        outcomeEl.textContent = `${t("selfTest.allPassedTitle")} ${t("selfTest.allPassedBody")}`;
+      const manualList = Array.isArray(result.manualMods) ? result.manualMods : [];
+      const rescuedList = Array.isArray(result.fromModrinthMods) ? result.fromModrinthMods : [];
+      document.getElementById("selftest-report").innerHTML = selfTestReportHtml(manualList, rescuedList);
+      if (result.allPassed || result.canPublish) {
+        outcomeEl.className = `selftest-verdict ${manualList.length ? "allow" : "go"}`;
+        outcomeEl.textContent = manualList.length
+          ? t("selfTest.verdictAllow", { count: manualList.length })
+          : rescuedList.length
+            ? t("selfTest.verdictGo", { count: rescuedList.length })
+            : `${t("selfTest.allPassedTitle")} ${t("selfTest.allPassedBody")}`;
+        if (manualList.length) {
+          const copyBtn = closeBtn(t("selfTest.copyList"), async () => {
+            const lines = manualList.map((mod) => `${mod.modName || mod.fileName || ""}${mod.pageUrl ? ` — ${mod.pageUrl}` : ""}`);
+            try {
+              await navigator.clipboard.writeText(lines.join("\n"));
+              toolsToast(t("selfTest.copied"));
+            } catch {
+              /* presse-papiers indisponible */
+            }
+          });
+          copyBtn.className = "btn-secondary";
+          actionsEl.appendChild(copyBtn);
+          const retestBtn = closeBtn(t("selfTest.retest"), () => {
+            finish();
+            runSelfTestFlow(server);
+          });
+          retestBtn.className = "btn-secondary";
+          actionsEl.appendChild(retestBtn);
+        }
         const submitBtn = closeBtn(t("selfTest.submit"), async () => {
           submitBtn.disabled = true;
           submitBtn.textContent = t("selfTest.submitting");
@@ -5473,6 +7328,7 @@ function runSelfTestFlow(server) {
             slug: server.slug,
             checks: result.checks,
             detectedVersion: result.detectedVersion,
+            manualMods: manualList,
           });
           if (report.ok && report.passed) {
             outcomeEl.textContent = t("selfTest.submitted");
@@ -5486,8 +7342,9 @@ function runSelfTestFlow(server) {
           }
         });
         actionsEl.appendChild(submitBtn);
-        actionsEl.appendChild(closeBtn(t("selfTest.close"), finish));
+        if (!manualList.length) actionsEl.appendChild(closeBtn(t("selfTest.close"), finish));
       } else {
+        outcomeEl.className = "join-note";
         outcomeEl.textContent = `${t("selfTest.somePassedTitle")} ${t("selfTest.somePassedBody")}`;
         actionsEl.appendChild(closeBtn(t("selfTest.close"), finish));
       }
@@ -5647,7 +7504,6 @@ async function boot() {
   wireTasksMenu();
   wireNotifications();
   wireFriends();
-  wirePlaybar();
 
   // Ecran de demarrage : ne couvre que les verifications reelles qui
   // precedent la premiere UI interactive (mise a jour, Java, reprise de
@@ -5659,8 +7515,16 @@ async function boot() {
   // packagee (dev via `electron .`), main.js resout tout de suite sans rien
   // verifier reellement, mais cette etape reste visible un court instant
   // pour ne pas donner une impression buguee (texte qui clignote).
+  // Demarrage plus rapide (18/10, point 2 valide par Rushi) : maintenance et reconnexion
+  // Microsoft partent tout de suite, en meme temps que la verification de mise a jour, au lieu
+  // d'attendre chacune la precedente. Leurs resultats sont lus plus bas, au meme endroit qu'avant.
+  const maintenanceCheck = window.mchub.checkMaintenance().catch(() => ({ active: false }));
+  const sessionRestore = window.mchub.tryRestoreSession().catch(() => ({ ok: false }));
+
   bootstrapStatusEl.textContent = t("bootstrap.checkingUpdates");
-  bootstrapProgressEl.style.width = "15%";
+  // Ecran de demarrage honnete (design 17/10, point 4) : la vraie etape et une barre qui tourne ;
+  // un vrai pourcentage seulement pendant le telechargement d'une mise a jour.
+  bootstrapProgressEl.parentElement.classList.add("indeterminate");
   let updateReadyToInstall = false;
   const stopUpdateStatus = window.mchub.updates.onStatus((status) => {
     lastUpdatePhase = status.phase;
@@ -5668,7 +7532,10 @@ async function boot() {
       bootstrapStatusEl.textContent = status.percent
         ? t("bootstrap.downloadingUpdateProgress", { percent: status.percent })
         : t("bootstrap.downloadingUpdate", { version: status.version });
-      bootstrapProgressEl.style.width = `${15 + Math.round((status.percent || 0) * 0.55)}%`;
+      if (status.percent) {
+        bootstrapProgressEl.parentElement.classList.remove("indeterminate");
+        bootstrapProgressEl.style.width = `${Math.round(status.percent)}%`;
+      }
     } else if (status.phase === "ready-to-install") {
       bootstrapStatusEl.textContent = t("bootstrap.updateReady");
       bootstrapProgressEl.style.width = "100%";
@@ -5704,7 +7571,7 @@ async function boot() {
   // utile, mais volontairement plus appele ici.
 
   bootstrapStatusEl.textContent = t("bootstrap.resumingSession");
-  bootstrapProgressEl.style.width = "85%";
+  bootstrapProgressEl.parentElement.classList.add("indeterminate");
 
   // Sortie de la petite fenetre de demarrage vers la taille normale de
   // l'appli — sans effet si ensureJavaAvailable() l'a deja fait juste avant
@@ -5718,18 +7585,38 @@ async function boot() {
   }
 
   bootstrapEl.hidden = true;
-  await ensureNotInMaintenance();
+  await ensureNotInMaintenance(maintenanceCheck);
 
   // Connexion differee (2026-10-11, audit onboarding) : une reprise de
   // session silencieuse est tentee, mais on ne bloque plus sur l'ecran de
   // connexion si elle echoue — l'annuaire reste parcourable sans compte.
   // Voir attemptSignIn() pour le moment ou la connexion est reellement
   // demandee (clic sur "Jouer").
-  const restored = await window.mchub.tryRestoreSession();
+  // Point 1 (18/10) : si la reconnexion n'est pas encore finie, l'accueil s'affiche deja avec le
+  // dernier pseudo et les dernieres donnees connues, puis se rafraichit tout seul des qu'elle
+  // aboutit. Les clics sur l'accueil attendent ce moment (classe boot-preview, voir index.html).
+  const lastProfile = readBootProfile();
+  let restored = lastProfile ? await Promise.race([sessionRestore, new Promise((resolve) => setTimeout(() => resolve(null), 120))]) : null;
+  if (!restored && lastProfile) {
+    homeBootPreview = true;
+    document.body.classList.add("boot-preview");
+    gateEl.hidden = true;
+    appEl.hidden = false;
+    renderAccountHeader(lastProfile);
+    showHomeView();
+  }
+  if (!restored) restored = await sessionRestore;
+  homeBootPreview = false;
+  document.body.classList.remove("boot-preview");
   if (restored.ok) {
     enterApp(restored.profile);
     startServerLinks();
     return;
+  }
+  if (lastProfile) {
+    // Reconnexion ratee : on oublie l'apercu, retour au mode visiteur comme avant.
+    currentProfile = null;
+    clearBootProfile();
   }
 
   gateEl.hidden = true;
@@ -5748,24 +7635,54 @@ boot();
 // Ne touche à rien si le joueur est sur une page de détail, et reste
 // silencieux en cas d'échec (on ne veut pas interrompre l'utilisateur
 // pour un ping raté en tâche de fond).
-const REFRESH_INTERVAL_MS = 60_000;
+// 21/10 (cache des fiches) : delais lus dans refreshSettings.js (un seul fichier de reglages).
+// La liste ne se rafraichit seule qu'au plus toutes les 3 min, hors partie, et seulement si la
+// fenetre du launcher est visible (pas reduite ni cachee).
+const REFRESH_INTERVAL_MS = window.OMNI_REFRESH.PRESENCE_IDLE_MS;
+let lastSilentListRefreshAt = Date.now();
 
 async function silentRefreshList() {
-  if (!signedIn || listEl.hidden) return;
+  if (!signedIn || listEl.hidden || gamePlaying || document.hidden) return;
+  lastSilentListRefreshAt = Date.now();
+  const generation = listViewGeneration;
   const result = await fetchServerList({ force: true });
-  if (result.ok) renderList(result.servers);
+  if (result.ok && generation === listViewGeneration && !listEl.hidden) renderList(result.servers);
 }
 
 // Pendant une partie, on interroge moins souvent (le launcher reste ouvert pour
 // la console de debug). Le delai est relu a chaque tour.
 const REFRESH_PLAYING_INTERVAL_MS = 300_000;
-let gamePlaying = false;
+// `var` (pas `let`) : lu aussi par des fonctions definies plus haut (refreshFriendsForLists,
+// pulseIsFresh), qui peuvent tourner avant cette ligne.
+var gamePlaying = false;
 let launchStarting = false;
-window.mchub.onGameState((running) => {
+window.mchub.onGameState((running, exitCode) => {
+  if (running && !gamePlaying) {
+    activity.playingSince = Date.now();
+    activity.stopRequested = false;
+  }
+  // Jeu ferme avec une erreur dans les 2 premieres minutes, sans que le joueur l'ait arrete :
+  // c'est un plantage au demarrage, affiche comme un echec clair (point 4, L3-E).
+  if (!running && gamePlaying && exitCode && !activity.stopRequested && Date.now() - activity.playingSince < 120_000) {
+    const slug = runningGameSlug && runningGameSlug !== "unknown" ? runningGameSlug : activity.current?.slug;
+    activity.failure = { slug, name: activityServerName(slug), error: t("activity.errCrashTitle", { code: exitCode }), crashCode: exitCode, action: "launch" };
+    setTimeout(openActivityPanel, 0);
+  }
+  const changed = gamePlaying !== running;
   gamePlaying = running;
+  // 21/10 : presence envoyee tout de suite au lancement et a la fermeture du jeu (puis toutes les
+  // 5 min en jeu) ; a la fermeture, une actualisation de la liste et des amis.
+  if (changed) {
+    schedulePresence(0);
+    if (!running) {
+      friendsForListsAt = 0;
+      silentRefreshList();
+    }
+  }
   // Que le jeu demarre ou s'arrete, "en cours de demarrage" n'est plus vrai.
   launchStarting = false;
-  syncPlaybarWithGame();
+  if (!running) activity.confirmStop = false;
+  renderActivity();
 });
 
 function scheduleRefresh(task, baseMs = REFRESH_INTERVAL_MS) {
@@ -5776,9 +7693,13 @@ function scheduleRefresh(task, baseMs = REFRESH_INTERVAL_MS) {
   setTimeout(tick, baseMs);
 }
 
-scheduleRefresh(silentRefreshList);
+scheduleRefresh(silentRefreshList, window.OMNI_REFRESH.LIST_REFRESH_MS);
+// Fenetre de nouveau visible apres plus de 3 min sans rafraichissement : une actualisation.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && Date.now() - lastSilentListRefreshAt >= window.OMNI_REFRESH.LIST_REFRESH_MS) silentRefreshList();
+});
 // Notifications : toutes les 5 minutes (chaque appel interroge la base du site).
-scheduleRefresh(refreshNotifications, 300_000);
+scheduleRefresh(scheduledRefreshNotifications, 300_000);
 scheduleRefresh(checkMaintenanceLoop, 120_000);
 // Presence (systeme d'amis) : MEME valeur de cycle que silentRefreshList ci-dessus
 // (REFRESH_INTERVAL_MS, 60s) — greffe dessus comme demande, pas un nouvel intervalle ni celui
@@ -5789,7 +7710,21 @@ scheduleRefresh(checkMaintenanceLoop, 120_000);
 // le mauvais choix ici — un ami en train de JOUER est le cas ou on veut le plus montrer "en
 // ligne", pas le laisser passer "hors ligne" apres 2 min (ONLINE_WINDOW_MS cote site) faute de
 // heartbeat. setInterval direct, jamais ralenti, jamais arrete.
-setInterval(sendPresenceHeartbeat, REFRESH_INTERVAL_MS);
+// 21/10 (cache des fiches, valide par Rushi) : en jeu, la presence ne part plus que toutes les
+// 5 min (PRESENCE_PLAYING_MS), plus un envoi immediat au lancement et a la fermeture du jeu (voir
+// onGameState). Le site garde « en ligne » 7 min : pas de clignotement pour un ami en partie.
+var presenceTimer = null;
+function schedulePresence(delayMs) {
+  clearTimeout(presenceTimer);
+  presenceTimer = setTimeout(async () => {
+    try {
+      await sendPresenceHeartbeat();
+    } finally {
+      schedulePresence(gamePlaying ? window.OMNI_REFRESH.PRESENCE_PLAYING_MS : window.OMNI_REFRESH.PRESENCE_IDLE_MS);
+    }
+  }, delayMs);
+}
+schedulePresence(REFRESH_INTERVAL_MS);
 
 // --- Fichiers de l'instance + « Arrêter le jeu » (16/10, option B validee par Rushi) ----------
 // Les actions sur les fichiers vivent dans la fenetre Reglages (engrenage, tout a droite de la
@@ -5900,19 +7835,10 @@ function openToolsModal({ title, bodyHtml, actions, wide = false, tone = "" }) {
   return controller;
 }
 
-async function confirmStopGame() {
-  const modal = openToolsModal({
-    title: t("instanceTools.stopTitle"),
-    bodyHtml: `<p>${escapeHtml(t("instanceTools.stopBody"))}</p>`,
-    tone: "danger",
-    actions: [
-      { label: t("instanceTools.cancel"), value: "cancel" },
-      { label: t("instanceTools.stop"), cls: "btn-danger", value: "stop" },
-    ],
-  });
-  if ((await modal.done) !== "stop") return;
-  const result = await window.mchub.stopGame();
-  toolsToast(result?.ok ? t("instanceTools.stopped") : t("instanceTools.stopFailed"));
+// Arreter le jeu (design 17/10, point 2) : une seule facon, la confirmation du panneau de la
+// pilule — les boutons « Arrêter » des cartes et de la fiche y renvoient.
+function confirmStopGame() {
+  askStopFromPill();
 }
 
 // --- Section « Fichiers de l'instance » de la fenetre Reglages ------------------------------
@@ -6104,18 +8030,1501 @@ async function refreshRunningGame(running) {
     }
   }
   runningGameSlug = slug;
+  renderActivity();
   if (!myInstancesPanelEl.hidden && myInstancesPanelEl.querySelector(".instances-filters")) renderMyInstancesGrid();
 }
 
 window.mchub.onGameState((running) => refreshRunningGame(running));
-document.getElementById("playbar-stop")?.addEventListener("click", confirmStopGame);
 // Fenetre rechargee pendant une partie : on reprend l'etat reel du jeu.
 window.mchub
   .getGameStatus()
   .then((status) => {
     if (!status?.running) return;
     gamePlaying = true;
-    syncPlaybarWithGame();
+    activity.playingSince = Date.now();
+    renderActivity();
     return refreshRunningGame(true);
   })
   .catch(() => {});
+
+// Pilule d'etat : dernier serveur joue (panneau « Rien en cours » / « Relancer »).
+loadActivityHistory();
+
+// Ctrl+Entrée (design 17/10, point 3) : relance le dernier serveur joué depuis n'importe quelle
+// page. Ignoré dans un champ de saisie (Ctrl+Entrée peut y valoir « envoyer ») et tant que
+// l'appli n'est pas ouverte (portail de connexion, écran de démarrage).
+document.addEventListener("keydown", async (event) => {
+  if (!(event.ctrlKey || event.metaKey) || event.key !== "Enter" || event.repeat) return;
+  if (event.target.closest?.("input, textarea, select, [contenteditable='true']")) return;
+  if (appEl.hidden || document.body.classList.contains("modal-blocking")) return;
+  event.preventDefault();
+  const state = activityState();
+  const slug = activity.lastPlayed?.slug;
+  if (!slug) {
+    toolsToast(t("home.shortcutNone"));
+    return;
+  }
+  if (state.phase === "install" || state.phase === "start" || state.phase === "play") {
+    toolsToast(t("home.shortcutBusy", { name: state.name || activityServerName(slug) }));
+    return;
+  }
+  const server = await resolveServer(slug);
+  if (!server) {
+    toolsToast(t("home.shortcutNone"));
+    return;
+  }
+  toolsToast(t("home.shortcutLaunching", { name: server.name }));
+  launchServer(server);
+});
+
+// --- Barre laterale depliable (serie 2, idee 1, preview validee) ---------------------------------
+// Repliee par defaut ; le bouton en haut la deplie et le launcher s'en souvient. Sous 900 px elle se
+// replie seule : depliee a la main, elle passe par-dessus la page (sans etre memorisee) et se referme
+// des qu'on choisit une page. Les noms viennent des memes cles que les infobulles (data-i18n-title).
+const sidebarEl = document.getElementById("sidebar");
+const sidebarToggleEl = document.getElementById("sidebar-toggle");
+let sidebarExpandedSetting = false;
+let sidebarOverlayOpen = false;
+const SIDEBAR_NARROW = 900;
+
+function applySidebarLabels() {
+  sidebarEl.querySelectorAll(".sidebar-btn[data-i18n-title]").forEach((btn) => {
+    let label = btn.querySelector(".sidebar-label");
+    if (!label) {
+      label = document.createElement("span");
+      label.className = "sidebar-label";
+      btn.appendChild(label);
+    }
+    label.textContent = t(btn.dataset.i18nTitle);
+  });
+  // Compte (avatar en bas) : son pseudo, discret comme le reste en mode Discret.
+  const account = sidebarEl.querySelector("#ms-account .account-trigger");
+  if (account && !account.querySelector(".sidebar-label")) {
+    const label = document.createElement("span");
+    label.className = "sidebar-label";
+    label.textContent = currentProfile?.name || t("nav.account");
+    account.appendChild(label);
+  }
+}
+
+function renderSidebarState() {
+  const narrow = window.innerWidth < SIDEBAR_NARROW;
+  const expanded = narrow ? sidebarOverlayOpen : sidebarExpandedSetting;
+  sidebarEl.classList.toggle("expanded", expanded);
+  sidebarEl.classList.toggle("overlay", narrow && expanded);
+  // Coin du logo (variante D) : s'elargit avec la barre quand elle est depliee dans la page
+  // (pas quand elle passe par-dessus en petite fenetre).
+  document.body.classList.toggle("sidebar-expanded", expanded && !narrow);
+  let scrim = document.querySelector(".sidebar-scrim");
+  if (narrow && expanded && !scrim) {
+    scrim = document.createElement("div");
+    scrim.className = "sidebar-scrim";
+    scrim.addEventListener("click", () => {
+      sidebarOverlayOpen = false;
+      renderSidebarState();
+    });
+    document.body.appendChild(scrim);
+  } else if (!(narrow && expanded) && scrim) scrim.remove();
+  const label = t(expanded ? "nav.collapse" : "nav.expand");
+  sidebarToggleEl.setAttribute("aria-expanded", String(expanded));
+  sidebarToggleEl.title = label;
+  sidebarToggleEl.setAttribute("aria-label", label);
+  let toggleLabel = sidebarToggleEl.querySelector(".sidebar-label");
+  if (!toggleLabel) {
+    toggleLabel = document.createElement("span");
+    toggleLabel.className = "sidebar-label";
+    sidebarToggleEl.appendChild(toggleLabel);
+  }
+  toggleLabel.textContent = label;
+}
+
+sidebarToggleEl.addEventListener("click", async () => {
+  if (window.innerWidth < SIDEBAR_NARROW) {
+    sidebarOverlayOpen = !sidebarOverlayOpen;
+  } else {
+    sidebarExpandedSetting = !sidebarExpandedSetting;
+    window.mchub.settings.set({ sidebarExpanded: sidebarExpandedSetting }).catch(() => {});
+  }
+  renderSidebarState();
+});
+// Petite fenetre : choisir une page referme la barre depliee par-dessus.
+sidebarEl.addEventListener("click", (event) => {
+  if (event.target.closest(".sidebar-btn:not(.sidebar-toggle)") && sidebarOverlayOpen) {
+    sidebarOverlayOpen = false;
+    renderSidebarState();
+  }
+});
+window.addEventListener("resize", () => {
+  if (window.innerWidth >= SIDEBAR_NARROW) sidebarOverlayOpen = false;
+  renderSidebarState();
+});
+new MutationObserver(() => applySidebarLabels()).observe(document.getElementById("ms-account"), { childList: true });
+window.mchub.settings
+  .get()
+  .then((settings) => {
+    sidebarExpandedSetting = settings.sidebarExpanded === true;
+  })
+  .catch(() => {})
+  .finally(() => {
+    applySidebarLabels();
+    renderSidebarState();
+    // La langue est appliquee pendant le demarrage : on remet les noms a jour juste apres.
+    setTimeout(applySidebarLabels, 2500);
+  });
+
+// --- Recherche globale Ctrl+K (serie 2, idee 2, preview validee) --------------------------------
+// Une seule recherche pour tout le launcher : serveurs, Ma bibliotheque, Mes instances, amis,
+// reglages et quelques actions. Fleches pour choisir, Entree pour ouvrir, Echap pour fermer ; le ▶
+// d'un serveur le lance directement. Tout se cherche dans ce qui est deja charge (aucun appel en
+// plus). Rien tape : derniers serveurs joues et quelques raccourcis.
+const paletteEl = document.getElementById("palette");
+const paletteInput = document.getElementById("palette-input");
+const paletteList = document.getElementById("palette-list");
+let paletteItems = [];
+let paletteSel = 0;
+let paletteFavorites = [];
+let paletteRecent = [];
+var paletteLastQuery = "";
+
+const normSearch = (value) => String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+function openSettingsTab(tab) {
+  activeSettingsTab = tab;
+  settingsPanelEl.querySelectorAll(".settings-nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  showSettingsView();
+}
+
+// Reglages et actions : liste fixe, avec des mots en plus pour les trouver (« ram » -> Memoire).
+function paletteStaticEntries() {
+  const setting = (key, tab, words) => ({ group: "settings", title: t(key), sub: `${t("nav.settings")} › ${t(`settings.tab${tab[0].toUpperCase()}${tab.slice(1)}`)}`, words, icon: "⚙", run: () => openSettingsTab(tab) });
+  const lastSlug = activity.lastPlayed?.slug;
+  return [
+    setting("appearance.theme", "appearance", "theme sombre clair dark light"),
+    setting("appearance.accentColor", "appearance", "couleur accent color"),
+    setting("appearance.reduceMotion", "appearance", "animations motion"),
+    setting("discreet.settingTitle", "appearance", "discret streamer live"),
+    setting("language.launcherLanguage", "language", "langue language english francais"),
+    setting("search.memory", "memory", "memoire ram memory java go gb"),
+    setting("settings.javaLabel", "misc", "java jdk memoire"),
+    setting("settings.gameFolder", "misc", "dossier folder jeu game disque"),
+    setting("settings.betaVersion", "misc", "beta version mise a jour update"),
+    setting("settings.tabDebug", "debug", "debug journal logs"),
+    ...(lastSlug
+      ? [{ group: "actions", title: t("search.actionRelaunch", { name: activityServerName(lastSlug) }), sub: "Ctrl+Entrée", words: "relancer jouer play again", icon: "▶", run: async () => { const server = await resolveServer(lastSlug); if (server) launchServer(server); } }]
+      : []),
+    { group: "actions", title: t("help.title"), sub: "F1", words: "aide help probleme problem souci bug", icon: "?", run: () => showHelpView() },
+    { group: "actions", title: t("search.actionGameFolder"), sub: "", words: "dossier folder", icon: "↳", run: () => window.mchub.settings.openGameFolder() },
+    { group: "actions", title: t("search.actionCopyLog"), sub: "", words: "bug rapport report journal log copier copy", icon: "↳", run: async () => { try { await navigator.clipboard.writeText(await window.mchub.logs.copyLatest()); toolsToast(t("debug.copied")); } catch { toolsToast(t("activity.reportCopyFailed")); } } },
+    { group: "actions", title: t(discreetMode ? "search.actionDiscreetOff" : "search.actionDiscreetOn"), sub: "", words: "discret streamer live", icon: "◐", run: () => setDiscreetMode(!discreetMode) },
+  ];
+}
+
+function serverEntry(server, group, sub) {
+  return {
+    group,
+    title: server.name,
+    sub,
+    words: `${server.slug} ${server.modpackName || ""}`,
+    server,
+    run: () => {
+      detailOrigin = "search";
+      openDetail(server.slug);
+    },
+  };
+}
+
+function paletteIndex() {
+  const servers = serverListCache?.servers || allServers || [];
+  const byslug = new Map(servers.map((server) => [server.slug, server]));
+  const entries = [];
+  for (const server of servers) {
+    const online = server.playerCount != null ? ` · ${t("serverList.onlineChip", { count: server.playerCount })}` : "";
+    entries.push(serverEntry(server, "servers", `${server.minecraftVersion || ""}${online}`));
+  }
+  for (const slug of paletteFavorites) {
+    const server = byslug.get(slug) || knownServer(slug);
+    if (server) entries.push(serverEntry(server, "library", t("search.favorite")));
+  }
+  for (const server of myInstancesServers || []) entries.push({ ...serverEntry(server, "instances", server.minecraftVersion || ""), run: () => showMyInstancesView() });
+  if (!discreetMode) {
+    for (const friend of friendsList || []) {
+      entries.push({ group: "friends", title: friend.minecraftUsername || "?", sub: t(friend.online ? "friends.online" : "friends.offline"), words: "", icon: (friend.minecraftUsername || "?").charAt(0).toUpperCase(), run: () => showFriendsView() });
+    }
+  }
+  return entries.concat(paletteStaticEntries());
+}
+
+function paletteResults(query) {
+  const q = normSearch(query.trim());
+  if (!q) {
+    const recent = paletteRecent.map((slug) => knownServer(slug)).filter(Boolean).slice(0, 3).map((server) => serverEntry(server, "recent", server.minecraftVersion || ""));
+    const statics = paletteStaticEntries();
+    return recent.concat(statics.filter((entry) => entry.group === "actions").slice(0, 2), statics.filter((entry) => entry.group === "settings").slice(5, 6));
+  }
+  const order = ["servers", "library", "instances", "friends", "settings", "actions"];
+  return paletteIndex()
+    .filter((entry) => normSearch(`${entry.title} ${entry.sub} ${entry.words}`).includes(q))
+    .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
+    .slice(0, 40);
+}
+
+function highlightMatch(text, query) {
+  const raw = String(text || "");
+  const q = normSearch(query.trim());
+  const at = q ? normSearch(raw).indexOf(q) : -1;
+  if (at < 0) return escapeHtml(raw);
+  return `${escapeHtml(raw.slice(0, at))}<mark>${escapeHtml(raw.slice(at, at + q.length))}</mark>${escapeHtml(raw.slice(at + q.length))}`;
+}
+
+function renderPalette() {
+  const query = paletteInput.value;
+  paletteItems = paletteResults(query);
+  if (paletteSel >= paletteItems.length) paletteSel = Math.max(0, paletteItems.length - 1);
+  if (!paletteItems.length) {
+    paletteList.innerHTML = `<div class="palette-none"><b>${escapeHtml(t("search.none", { query }))}</b><span>${escapeHtml(t("search.noneHint"))}</span><button type="button" class="join-btn" id="palette-directory">${escapeHtml(t("search.noneAction"))}</button></div>`;
+    document.getElementById("palette-directory").addEventListener("click", () => {
+      const text = paletteInput.value;
+      closeCommandPalette();
+      listFilters = { ...listFilters, q: text };
+      showServersView();
+    });
+    return;
+  }
+  let lastGroup = null;
+  paletteList.innerHTML = paletteItems
+    .map((entry, index) => {
+      const head = entry.group !== lastGroup ? `<div class="palette-group">${escapeHtml(t(`search.group_${entry.group}`))}</div>` : "";
+      lastGroup = entry.group;
+      const icon = entry.server ? serverIconInner(entry.server) : escapeHtml(entry.icon || "");
+      const play = entry.server && entry.group !== "instances" ? `<button type="button" class="palette-play" data-palette-play="${index}" aria-label="${escapeHtml(t("home.playOn", { name: entry.title }))}">▶</button>` : "";
+      // Option C (18/10) : pendant une partie, Installer reste possible depuis la recherche.
+      const install = entry.server && gamePlaying ? `<button type="button" class="palette-play palette-install" data-palette-install="${index}" title="${escapeHtml(t("myInstances.menuInstall"))}" aria-label="${escapeHtml(t("myInstances.menuInstall"))}">⬇</button>` : "";
+      return `${head}<div class="palette-item${index === paletteSel ? " sel" : ""}" role="option" aria-selected="${index === paletteSel}" data-palette-index="${index}"><span class="palette-icon">${icon}</span><span class="palette-text"><span>${highlightMatch(entry.title, query)}</span>${entry.sub ? `<small>${highlightMatch(entry.sub, query)}</small>` : ""}</span>${install}${play}</div>`;
+    })
+    .join("");
+  paletteList.querySelector(".palette-item.sel")?.scrollIntoView({ block: "nearest" });
+}
+
+async function openCommandPalette(initialQuery = "") {
+  if (appEl.hidden) return;
+  try {
+    const settings = await window.mchub.settings.get();
+    paletteFavorites = await getFavoriteSlugs();
+    paletteRecent = settings.recentlyPlayed || [];
+  } catch {
+    // Donnees locales illisibles : la recherche marche quand meme sur le reste.
+  }
+  paletteInput.value = typeof initialQuery === "string" ? initialQuery : "";
+  paletteSel = 0;
+  paletteEl.hidden = false;
+  renderPalette();
+  paletteInput.focus();
+}
+
+function closeCommandPalette() {
+  paletteEl.hidden = true;
+}
+
+function runPaletteEntry(index, play) {
+  const entry = paletteItems[index];
+  if (!entry) return;
+  paletteLastQuery = paletteInput.value;
+  closeCommandPalette();
+  if (play && entry.server) launchServer(entry.server);
+  else entry.run();
+}
+
+document.getElementById("search-trigger").addEventListener("click", () => openCommandPalette());
+paletteInput.addEventListener("input", () => {
+  paletteSel = 0;
+  renderPalette();
+});
+paletteEl.addEventListener("click", (event) => {
+  if (event.target === paletteEl) return closeCommandPalette();
+  const installBtn = event.target.closest("[data-palette-install]");
+  if (installBtn) {
+    const entry = paletteItems[Number(installBtn.dataset.paletteInstall)];
+    closeCommandPalette();
+    if (entry?.server) installServerStandalone(entry.server, null);
+    return;
+  }
+  const play = event.target.closest("[data-palette-play]");
+  if (play) return runPaletteEntry(Number(play.dataset.palettePlay), true);
+  const item = event.target.closest("[data-palette-index]");
+  if (item) runPaletteEntry(Number(item.dataset.paletteIndex), false);
+});
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    if (paletteEl.hidden) openCommandPalette();
+    else closeCommandPalette();
+    return;
+  }
+  // Fiche ouverte : Echap revient a la liste (sauf si un panneau ou une fenetre est ouvert).
+  if (event.key === "Escape" && paletteEl.hidden && !detailEl.hidden && !document.body.classList.contains("modal-blocking") && !event.target.closest?.("input, textarea, select") && !document.querySelector(".tasks-panel:not([hidden]), .notif-panel:not([hidden]), .mc-status-panel:not([hidden])")) {
+    event.preventDefault();
+    goBackFromDetail();
+    return;
+  }
+  if (paletteEl.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeCommandPalette();
+  } else if (event.key === "ArrowDown" && paletteItems.length) {
+    event.preventDefault();
+    paletteSel = (paletteSel + 1) % paletteItems.length;
+    renderPalette();
+  } else if (event.key === "ArrowUp" && paletteItems.length) {
+    event.preventDefault();
+    paletteSel = (paletteSel - 1 + paletteItems.length) % paletteItems.length;
+    renderPalette();
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    runPaletteEntry(paletteSel, event.ctrlKey);
+  }
+});
+
+// --- Fil d'Ariane et Retour qui garde la place (serie 2, idee 3, preview validee) ---------------
+// Sur une fiche, une ligne montre d'ou l'on vient (« ‹ Serveurs › Moddé › Cobblemon FR »). Le lien,
+// Echap ou le bouton « retour » de la souris ramenent au meme endroit de la liste, avec les memes
+// filtres, et la carte ouverte s'allume un instant pour qu'on la retrouve.
+var detailReturn = { origin: "servers", scroll: 0, slug: null, query: "" };
+
+function detailBreadcrumbHtml(name) {
+  const origin = detailReturn.origin || "servers";
+  const typeLabel = { all: t("crumb.all"), vanilla: t("serverCard.vanilla"), modded: t("serverCard.modded") }[listFilters.type] || t("crumb.all");
+  const parts = {
+    servers: [t("nav.servers"), listFilters.q ? `« ${listFilters.q} »` : typeLabel],
+    home: [t("nav.home"), null],
+    favorites: [t("nav.library"), t("nav.favorites")],
+    recent: [t("nav.library"), t("nav.recent")],
+    installed: [t("nav.library"), t("library.installed")],
+    instances: [t("nav.myInstances"), null],
+    search: [t("crumb.search"), detailReturn.query ? `« ${detailReturn.query} »` : null],
+  }[origin] || [t("nav.servers"), null];
+  return `
+    <nav class="detail-crumb" aria-label="${escapeHtml(t("crumb.label"))}">
+      <button type="button" class="detail-crumb-back" title="${escapeHtml(t("crumb.backHint"))}">‹ ${escapeHtml(parts[0])}</button>
+      ${parts[1] ? `<span class="detail-crumb-sep">›</span><span>${escapeHtml(parts[1])}</span>` : ""}
+      <span class="detail-crumb-sep">›</span><b>${escapeHtml(name || "")}</b>
+    </nav>`;
+}
+
+function wireDetailBreadcrumb() {
+  detailEl.querySelector(".detail-crumb-back")?.addEventListener("click", goBackFromDetail);
+}
+
+async function goBackFromDetail() {
+  const { origin, scroll, slug, query } = detailReturn;
+  if (origin === "search") {
+    openCommandPalette(query);
+    return;
+  }
+  if (origin === "favorites") await showFavoritesView();
+  else if (origin === "recent") await showRecentView();
+  else if (origin === "installed") await showInstalledView();
+  else if (origin === "home") await showHomeView();
+  else if (origin === "instances") await showMyInstancesView();
+  else {
+    navServersBtn.classList.add("active");
+    await loadServers();
+  }
+  // La liste se redessine en plusieurs temps : on attend que la carte soit la (1,5 s au plus), puis
+  // meme position et la carte ouverte s'allume un instant.
+  const main = document.querySelector("main");
+  for (let i = 0; i < 30; i++) {
+    const card = slug ? document.querySelector(`.row[data-slug="${CSS.escape(slug)}"]`) : null;
+    if (card && card.offsetParent) {
+      if (main) main.scrollTop = scroll;
+      card.classList.add("row-flash");
+      setTimeout(() => card.classList.remove("row-flash"), 1400);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (main) main.scrollTop = scroll;
+}
+
+// Bouton « retour » de la souris (bouton 4) sur une fiche.
+document.addEventListener("mouseup", (event) => {
+  if (event.button !== 3 || detailEl.hidden || appEl.hidden) return;
+  event.preventDefault();
+  goBackFromDetail();
+});
+
+// --- Page Aide (serie 2, idee 6, version A validee) -----------------------------------------------
+// Tout l'aide au meme endroit : recherche, problemes frequents expliques simplement avec des
+// boutons qui menent au bon endroit, et « Toujours bloque ? » (rapport de diagnostic, journaux,
+// console). Ces outils restent aussi dans Parametres > Debogage. F1 ouvre la page de partout.
+const helpPanelEl = document.getElementById("help-panel");
+const navHelpBtn = document.getElementById("nav-help");
+let helpOpen = "launch";
+let helpQuery = "";
+
+const HELP_QUESTIONS = [
+  { id: "launch", icon: "▶", words: "lance lancer demarre demarrer crash java start launch run", actions: ["log", "retry"] },
+  { id: "mods", icon: "⬇", words: "mod mods telecharge telecharger curseforge modrinth bloque download blocked", actions: ["downloads"] },
+  { id: "disk", icon: "💾", words: "disque place stockage espace plein disk space storage full deplacer move", actions: ["instances", "move-games"] },
+  { id: "ram", icon: "🧠", words: "memoire ram rame lag lent ferme memory slow close", actions: ["memory"] },
+  { id: "ms", icon: "🔑", words: "microsoft compte connexion connecter account sign login", actions: ["account"] },
+  { id: "off", icon: "📡", words: "hors ligne serveur offline ping down", actions: ["report"] },
+];
+
+function helpMatches() {
+  const q = normSearch(helpQuery.trim());
+  if (!q) return HELP_QUESTIONS;
+  const words = q.split(/\s+/).filter((w) => w.length > 2);
+  return HELP_QUESTIONS.filter((item) => {
+    const hay = normSearch(`${t(`help.q_${item.id}`)} ${item.words}`);
+    return words.some((w) => hay.includes(w) || item.words.split(" ").some((x) => w.startsWith(x)));
+  });
+}
+
+async function runHelpAction(action) {
+  const lastSlug = activity.lastPlayed?.slug;
+  if (action === "log") window.mchub.logs.openConsole();
+  else if (action === "retry") {
+    const server = lastSlug ? await resolveServer(lastSlug) : null;
+    if (server) launchServer(server);
+    else showServersView();
+  } else if (action === "downloads") window.mchub.openDownloadsFolder();
+  else if (action === "instances") showMyInstancesView();
+  else if (action === "move-games") {
+    openSettingsTab("misc");
+    openGamesMove();
+  }
+  else if (action === "memory") openSettingsTab("memory");
+  else if (action === "account") showAccountView();
+  else if (action === "report") {
+    const server = lastSlug ? await resolveServer(lastSlug) : null;
+    if (server) openReportDialog(server);
+    else showServersView();
+  } else if (action === "export") {
+    const result = await window.mchub.diagnostics.exportReport();
+    if (result?.ok) toolsToast(t("debug.reportExported"));
+  } else if (action === "logs-folder") window.mchub.logs.openLogsFolder();
+  else if (action === "console") window.mchub.logs.openConsole();
+}
+
+function renderHelpList() {
+  const list = document.getElementById("help-faq");
+  if (!list) return;
+  const found = helpMatches();
+  if (found.length && !found.some((item) => item.id === helpOpen)) helpOpen = found[0].id;
+  list.innerHTML = found.length
+    ? found
+        .map((item) => {
+          const open = item.id === helpOpen;
+          const steps = t(`help.a_${item.id}`).split("\n");
+          return `
+          <div class="help-q${open ? " open" : ""}">
+            <button type="button" data-help-q="${item.id}" aria-expanded="${open}"><span class="help-q-icon">${item.icon}</span>${escapeHtml(t(`help.q_${item.id}`))}<span class="help-q-chev">›</span></button>
+            ${open ? `<div class="help-a"><ol>${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol><div class="help-a-actions">${item.actions.map((action, i) => `<button type="button" class="${i === 0 ? "join-btn" : "btn-secondary"}" data-help-action="${action}">${escapeHtml(t(`help.act_${action}`))}</button>`).join("")}</div></div>` : ""}
+          </div>`;
+        })
+        .join("")
+    : `<div class="help-none"><b>${escapeHtml(t("help.none", { query: helpQuery }))}</b>${escapeHtml(t("help.noneText"))}</div>`;
+}
+
+async function showHelpView() {
+  [homePanelEl, statusEl, listEl, listToolbarEl, listTitleEl, detailEl, settingsPanelEl, accountPanelEl, favoritesPanelEl, recentPanelEl, myInstancesPanelEl, friendsPanelEl].forEach((el) => {
+    if (el) el.hidden = true;
+  });
+  updateGuestBanner(false);
+  helpPanelEl.hidden = false;
+  [navHomeBtn, navServersBtn, navFavoritesBtn, navRecentBtn, navMyInstancesBtn, navFriendsBtn, navSettingsBtn].forEach((btn) => btn.classList.remove("active"));
+  navHelpBtn.classList.add("active");
+  helpPanelEl.innerHTML = `
+    <h2>${escapeHtml(t("help.title"))}</h2>
+    <label class="help-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+      <input type="search" id="help-search" value="${escapeHtml(helpQuery)}" placeholder="${escapeHtml(t("help.search"))}" autocomplete="off" />
+    </label>
+    <h3 style="font-size: 14px; margin: 0;">${escapeHtml(t("help.frequent"))}</h3>
+    <div class="help-faq" id="help-faq"></div>
+    <div class="help-stuck">
+      <b>${escapeHtml(t("help.stuckTitle"))}</b>
+      <p>${escapeHtml(t("help.stuckText"))}</p>
+      <div class="help-stuck-actions">
+        <button type="button" class="join-btn" data-help-action="export">${escapeHtml(t("help.act_export"))}</button>
+        <button type="button" class="btn-secondary" data-help-action="logs-folder">${escapeHtml(t("help.act_logs-folder"))}</button>
+        <button type="button" class="btn-secondary" data-help-action="console">${escapeHtml(t("help.act_console"))}</button>
+      </div>
+    </div>
+    <div class="help-version"><span id="help-version-text">…</span><button type="button" class="btn-secondary" id="help-copy" style="padding: 3px 10px;">${escapeHtml(t("help.copy"))}</button></div>`;
+  renderHelpList();
+  const input = document.getElementById("help-search");
+  input.addEventListener("input", () => {
+    helpQuery = input.value;
+    renderHelpList();
+  });
+  helpPanelEl.addEventListener("click", helpPanelClick);
+  try {
+    const info = await window.mchub.diagnostics.getSystemInfo();
+    const line = `Omniscient ${info.launcherVersion || ""} · ${info.os || ""} · Java ${info.java || "—"}`;
+    document.getElementById("help-version-text").textContent = line;
+    document.getElementById("help-copy").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(line);
+        toolsToast(t("help.copied"));
+      } catch {
+        // Presse-papiers indisponible : rien de bloquant.
+      }
+    };
+  } catch {
+    document.getElementById("help-version-text").textContent = "Omniscient";
+  }
+}
+
+function helpPanelClick(event) {
+  const q = event.target.closest("[data-help-q]");
+  if (q) {
+    helpOpen = helpOpen === q.dataset.helpQ ? null : q.dataset.helpQ;
+    renderHelpList();
+    return;
+  }
+  const action = event.target.closest("[data-help-action]");
+  if (action) runHelpAction(action.dataset.helpAction);
+}
+
+function hideHelpPanel() {
+  helpPanelEl.hidden = true;
+  navHelpBtn.classList.remove("active");
+  helpPanelEl.removeEventListener("click", helpPanelClick);
+}
+
+// Toute autre page cache l'Aide : boutons de la barre laterale (ecouteurs deja poses), et les
+// fonctions d'affichage appelees ailleurs (recherche Ctrl+K, cartes, liens).
+sidebarEl.addEventListener("click", (event) => {
+  const btn = event.target.closest(".sidebar-btn");
+  if (btn && btn !== navHelpBtn && btn !== sidebarToggleEl) hideHelpPanel();
+}, true);
+for (const name of ["showHomeView", "showServersView", "showFavoritesView", "showRecentView", "showInstalledView", "showMyInstancesView", "showFriendsView", "showSettingsView", "showAccountView", "openDetail"]) {
+  // Les fonctions declarees en haut d'un script classique sont des proprietes de window : les
+  // remplacer ici change aussi les appels faits par leur nom ailleurs dans ce fichier.
+  const original = globalThis[name];
+  if (typeof original !== "function") continue;
+  globalThis[name] = function (...args) {
+    hideHelpPanel();
+    return original.apply(this, args);
+  };
+}
+navHelpBtn.addEventListener("click", showHelpView);
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "F1" || appEl.hidden) return;
+  event.preventDefault();
+  showHelpView();
+});
+
+// --- Suppression en masse (serie 2, idee 7, version A : corbeille + Annuler) ---------------------
+// « Sélectionner » dans Mes instances : on coche plusieurs cartes (Maj+clic pour une suite, Ctrl+A
+// pour tout, Echap pour annuler), des raccourcis « Serveurs de test » / « Pas joué depuis 30
+// jours », puis une seule confirmation. Les fichiers partent dans la corbeille, avec « Annuler »
+// pendant quelques secondes. Le serveur en cours de jeu et les vanilla (pas de fichiers propres)
+// ne peuvent pas etre coches.
+var bulk = { on: false, sel: new Set(), last: null, sizes: new Map() };
+const BULK_UNDO_MS = 8000;
+
+// Cochable : serveur moddé, pas en cours de jeu, et des fichiers presents sur ce PC (taille lue
+// par filesInfo ; tant qu'elle n'est pas connue, la carte reste cochable).
+function bulkSelectable(server) {
+  return server.type === "modded" && server.slug !== runningGameSlug && bulk.sizes.get(server.slug) !== 0;
+}
+
+function bulkBarHtml(all) {
+  const total = [...bulk.sel].reduce((sum, slug) => sum + (bulk.sizes.get(slug) || 0), 0);
+  // Rien de supprimable (que des serveurs vanilla, ou rien d'installe) : on le dit clairement.
+  if (all && !all.some(bulkSelectable)) {
+    return `
+    <div class="bulk-bar bulk-none">
+      <span><b>${escapeHtml(t("bulk.noneTitle"))}</b><br /><span class="muted">${escapeHtml(t("bulk.noneText"))}</span></span>
+    </div>`;
+  }
+  return `
+    <div class="bulk-chips">
+      <button type="button" class="sort-chip" data-bulk-pick="test">${escapeHtml(t("bulk.pickTest"))}</button>
+      <button type="button" class="sort-chip" data-bulk-pick="old">${escapeHtml(t("bulk.pickOld"))}</button>
+      <button type="button" class="sort-chip" data-bulk-pick="all">${escapeHtml(t("bulk.pickAll"))}</button>
+      <button type="button" class="sort-chip" data-bulk-pick="none">${escapeHtml(t("bulk.pickNone"))}</button>
+    </div>
+    <div class="bulk-bar">
+      <b>${escapeHtml(bulk.sel.size ? t("bulk.selected", { count: bulk.sel.size, size: formatTaskBytes(total) }) : t("bulk.hint"))}</b>
+      <button type="button" class="btn-danger" id="bulk-delete"${bulk.sel.size ? "" : " disabled"}>${escapeHtml(t("bulk.delete"))}</button>
+    </div>`;
+}
+
+function wireBulkSelection(all) {
+  document.getElementById("my-instances-select")?.addEventListener("click", () => {
+    bulk.on = !bulk.on;
+    bulk.sel.clear();
+    renderMyInstancesGrid();
+  });
+  if (!bulk.on) return;
+  const selectable = all.filter(bulkSelectable).map((server) => server.slug);
+  // Tailles affichees : lues une fois par instance (fichiers supprimables, mondes gardes).
+  selectable.filter((slug) => !bulk.sizes.has(slug)).forEach(async (slug) => {
+    const info = await window.mchub.instances.filesInfo(slug).catch(() => null);
+    bulk.sizes.set(slug, info?.ok && info.modded ? info.bytesKeep : 0);
+    if (bulk.sizes.get(slug) === 0) bulk.sel.delete(slug);
+    if (bulk.on) renderMyInstancesGrid();
+  });
+  myInstancesPanelEl.querySelectorAll(".instance-card").forEach((card) => {
+    const slug = card.dataset.slug;
+    const ok = selectable.includes(slug);
+    card.classList.add("bulk-mode");
+    card.classList.toggle("bulk-disabled", !ok);
+    card.classList.toggle("bulk-selected", bulk.sel.has(slug));
+    const server = all.find((item) => item.slug === slug);
+    // Carte non cochable : la raison est ecrite sur la carte (retour de Rushi 17/10), pas
+    // seulement au survol.
+    const reason = slug === runningGameSlug ? "Playing" : server?.type !== "modded" ? "Vanilla" : "Installed";
+    card.title = ok ? "" : t(`bulk.not${reason}`);
+    card.insertAdjacentHTML(
+      "afterbegin",
+      ok ? `<span class="bulk-check" aria-hidden="true">${bulk.sel.has(slug) ? "✓" : ""}</span>` : `<span class="bulk-reason">${escapeHtml(t(`bulk.short${reason}`))}</span>`,
+    );
+    card.addEventListener("click", (event) => {
+      if (!ok || event.target.closest("button, a")) return;
+      if (event.shiftKey && bulk.last && selectable.includes(bulk.last)) {
+        const [from, to] = [selectable.indexOf(bulk.last), selectable.indexOf(slug)].sort((a, b) => a - b);
+        selectable.slice(from, to + 1).forEach((item) => bulk.sel.add(item));
+      } else if (bulk.sel.has(slug)) bulk.sel.delete(slug);
+      else bulk.sel.add(slug);
+      bulk.last = slug;
+      renderMyInstancesGrid();
+    });
+  });
+  myInstancesPanelEl.querySelectorAll("[data-bulk-pick]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pick = btn.dataset.bulkPick;
+      let slugs = [];
+      if (pick === "all") slugs = selectable;
+      else if (pick === "test") slugs = all.filter((server) => selectable.includes(server.slug) && /test/i.test(server.name)).map((server) => server.slug);
+      else if (pick === "old") {
+        const settings = await window.mchub.settings.get();
+        const limit = Date.now() - 30 * 86_400_000;
+        slugs = selectable.filter((slug) => (settings.recentPlayedAt?.[slug] || 0) < limit);
+      }
+      bulk.sel = new Set(slugs);
+      renderMyInstancesGrid();
+    });
+  });
+  document.getElementById("bulk-delete")?.addEventListener("click", () => confirmBulkDelete(all));
+}
+
+async function confirmBulkDelete(all) {
+  const chosen = all.filter((server) => bulk.sel.has(server.slug));
+  if (!chosen.length) return;
+  const total = chosen.reduce((sum, server) => sum + (bulk.sizes.get(server.slug) || 0), 0);
+  const modal = openToolsModal({
+    title: t("bulk.confirmTitle", { count: chosen.length }),
+    tone: "danger",
+    bodyHtml: `
+      <ul class="bulk-list">${chosen.map((server) => `<li>${escapeHtml(server.name)} · ${escapeHtml(formatTaskBytes(bulk.sizes.get(server.slug) || 0))}</li>`).join("")}</ul>
+      <p>${escapeHtml(t("bulk.freed", { size: formatTaskBytes(total) }))}</p>
+      <label class="bulk-keep"><input type="checkbox" id="bulk-keep" checked /> ${escapeHtml(t("bulk.keep"))}</label>
+      <p class="tools-note">${escapeHtml(t("bulk.trashNote"))}</p>`,
+    actions: [
+      { label: t("bulk.cancel"), value: "cancel" },
+      { label: t("bulk.confirmBtn", { count: chosen.length }), cls: "btn-danger", value: "go" },
+    ],
+  });
+  const keepEl = modal.bodyEl.querySelector("#bulk-keep");
+  let keepPersonal = true;
+  keepEl.addEventListener("change", () => (keepPersonal = keepEl.checked));
+  if ((await modal.done) !== "go") return;
+  const result = await window.mchub.instances.trashFiles(chosen.map((server) => server.slug), { keepPersonal });
+  bulk.on = false;
+  bulk.sel.clear();
+  bulk.sizes.clear();
+  renderMyInstancesGrid();
+  if (!result?.ok) return toolsToast(t("instanceTools.delError", { error: result?.error || "?" }));
+  if (result.done.length) showUndoToast(result);
+  else toolsToast(t("bulk.noneDone"));
+}
+
+// Bandeau « Annuler » (8 s) : a part des petits messages (toolsToast). Avant (audit 17/10, lot 1),
+// il portait la meme classe et le message suivant l'effacait : « Annuler » disparaissait alors que
+// la suppression partait quand meme a la fin du delai.
+function showUndoToast(result) {
+  const el = document.createElement("div");
+  el.className = "undo-toast";
+  el.setAttribute("role", "status");
+  el.innerHTML = `<span>✓ ${escapeHtml(t("bulk.done", { count: result.done.length, size: formatTaskBytes(result.freedBytes) }))}</span><button type="button" class="btn-secondary">${escapeHtml(t("bulk.undo"))}</button>`;
+  document.body.appendChild(el);
+  let undone = false;
+  const timer = setTimeout(() => {
+    el.remove();
+    if (!undone) window.mchub.instances.finalizeTrash(result.batch);
+  }, BULK_UNDO_MS);
+  el.querySelector("button").addEventListener("click", async () => {
+    undone = true;
+    clearTimeout(timer);
+    el.remove();
+    await window.mchub.instances.undoTrash(result.batch);
+    toolsToast(t("bulk.undone"));
+    if (!myInstancesPanelEl.hidden) renderMyInstancesGrid();
+  });
+}
+
+document.addEventListener("keydown", (event) => {
+  if (!bulk.on || myInstancesPanelEl.hidden || document.body.classList.contains("modal-blocking") || event.target.closest?.("input, textarea")) return;
+  if (event.key === "Escape") {
+    bulk.on = false;
+    bulk.sel.clear();
+    renderMyInstancesGrid();
+  } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+    event.preventDefault();
+    const pool = myInstancesFilter === "joined" ? myJoinedServers : myInstancesServers;
+    pool.filter(bulkSelectable).forEach((server) => bulk.sel.add(server.slug));
+    renderMyInstancesGrid();
+  }
+});
+
+// --- Parametres plein ecran (serie 2, idee 8, version A validee) ---------------------------------
+// Les onglets dessinent toujours leurs <section> comme avant ; ici on les re-range en cartes :
+// chaque bloc separe par un trait devient sa propre carte, le titre d'une section devient un titre
+// de groupe, et le tout tombe dans une grille qui met autant de colonnes que la largeur le permet.
+// Les noeuds sont deplaces (pas recopies) : les ecouteurs poses par les onglets restent en place.
+const settingsContentEl = document.getElementById("settings-content");
+const settingsResultsEl = document.getElementById("settings-search-results");
+const settingsFindInput = document.getElementById("settings-find-input");
+const SETTINGS_TABS = ["appearance", "language", "memory", "misc", "privacy", "debug"];
+
+function cardifySettings(host) {
+  if (!host || host.firstElementChild?.classList.contains("settings-cards")) return;
+  if (!host.firstElementChild) return;
+  const grid = document.createElement("div");
+  grid.className = "settings-cards";
+  const raw = [...host.children];
+  const sections = [];
+  for (const node of raw) {
+    if (node.matches(".settings-grid, .settings-masonry")) sections.push(...node.querySelectorAll(":scope > .settings-section, :scope > section"));
+    else sections.push(node);
+  }
+  for (const node of sections) {
+    if (!node.matches?.(".settings-section")) {
+      node.classList.add("settings-wide");
+      grid.append(node);
+      continue;
+    }
+    // Chaque section devient un groupe (titre + sa propre grille) : les cartes d'un groupe
+    // s'etirent sur toute la largeur et ont la meme hauteur sur une rangee (retour de Rushi 17/10).
+    const danger = node.classList.contains("settings-reset");
+    const group = document.createElement("div");
+    group.className = "settings-group";
+    const first = node.firstElementChild;
+    if (first && first.tagName === "H3") {
+      const title = document.createElement("h3");
+      title.className = "settings-group-title";
+      title.textContent = first.textContent;
+      group.append(title);
+      first.remove();
+    }
+    const groupGrid = document.createElement("div");
+    groupGrid.className = "settings-group-grid";
+    group.append(groupGrid);
+    grid.append(group);
+    let card = null;
+    const flush = () => {
+      if (card && card.childElementCount) groupGrid.append(card);
+      card = null;
+    };
+    for (const child of [...node.children]) {
+      if (child.classList.contains("settings-divider")) {
+        flush();
+        continue;
+      }
+      if (!card) {
+        card = document.createElement("section");
+        card.className = `settings-section${danger ? " settings-card-danger" : ""}`;
+      }
+      card.append(child);
+    }
+    flush();
+  }
+  host.replaceChildren(grid);
+  if (host === settingsContentEl || host.closest("#settings-search-results")) applySettingsFilter();
+}
+
+// Les onglets se redessinent eux-memes apres un changement (innerHTML) : on re-range a chaque fois.
+new MutationObserver(() => {
+  if (settingsContentEl.firstElementChild && !settingsContentEl.firstElementChild.classList.contains("settings-cards")) cardifySettings(settingsContentEl);
+  settingsResultsEl.querySelectorAll(".settings-search-host").forEach((host) => {
+    if (host.firstElementChild && !host.firstElementChild.classList.contains("settings-cards")) cardifySettings(host);
+  });
+}).observe(document.getElementById("settings-panel"), { childList: true, subtree: true });
+
+// Un reglage modifie : sa carte s'allume un instant (l'enregistrement reste immediat).
+document.getElementById("settings-panel").addEventListener("change", (event) => {
+  const card = event.target.closest?.(".settings-group-grid > .settings-section");
+  if (!card) return;
+  card.classList.add("settings-card-flash");
+  setTimeout(() => card.classList.remove("settings-card-flash"), 900);
+});
+
+// --- Recherche dans les reglages ---
+function settingsSearchActive() {
+  return !settingsResultsEl.hidden;
+}
+
+function clearSettingsSearch() {
+  settingsFindInput.value = "";
+  settingsResultsEl.replaceChildren();
+  settingsResultsEl.hidden = true;
+  settingsContentEl.hidden = false;
+}
+
+let settingsSearchToken = 0;
+async function runSettingsSearch() {
+  const query = settingsFindInput.value.trim();
+  if (!query) {
+    if (settingsSearchActive()) {
+      clearSettingsSearch();
+      settingsPanelEl.querySelectorAll(".settings-nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === activeSettingsTab));
+      await renderSettingsTab(activeSettingsTab);
+    }
+    return;
+  }
+  if (!settingsSearchActive()) {
+    // Toutes les sections a la fois : on vide la section affichee (sinon ses id seraient en double).
+    const token = ++settingsSearchToken;
+    settingsContentEl.replaceChildren();
+    settingsContentEl.hidden = true;
+    settingsResultsEl.hidden = false;
+    settingsPanelEl.querySelectorAll(".settings-nav-btn").forEach((b) => b.classList.remove("active"));
+    const settings = await window.mchub.settings.get();
+    if (token !== settingsSearchToken || !settingsSearchActive()) return;
+    const count = document.createElement("p");
+    count.className = "settings-search-count";
+    settingsResultsEl.append(count);
+    for (const tab of SETTINGS_TABS) {
+      const block = document.createElement("div");
+      block.className = "settings-search-tab";
+      block.dataset.tab = tab;
+      const title = document.createElement("h3");
+      title.className = "settings-tab-title";
+      title.textContent = t(`settings.tab${tab[0].toUpperCase()}${tab.slice(1)}`);
+      const host = document.createElement("div");
+      host.className = "settings-search-host";
+      block.append(title, host);
+      settingsResultsEl.append(block);
+      const render = { language: renderLanguageTab, memory: renderMemoryTab, misc: renderMiscTab, privacy: renderPrivacyTab, debug: renderDebugTab }[tab] || renderAppearanceTab;
+      try {
+        await render(host, settings);
+      } catch {
+        /* une section qui ne se dessine pas ne bloque pas la recherche */
+      }
+      cardifySettings(host);
+    }
+  }
+  applySettingsFilter();
+}
+
+function applySettingsFilter() {
+  if (!settingsSearchActive()) return;
+  const words = normSearch(settingsFindInput.value).split(/\s+/).filter(Boolean);
+  let total = 0;
+  settingsResultsEl.querySelectorAll(".settings-search-tab").forEach((block) => {
+    let shown = 0;
+    block.querySelectorAll(".settings-cards > .settings-group").forEach((group) => {
+      const lastTitle = group.querySelector(".settings-group-title");
+      let groupHits = 0;
+      group.querySelectorAll(".settings-group-grid > .settings-section").forEach((item) => {
+      const text = normSearch(`${lastTitle?.textContent || ""} ${item.textContent} ${[...item.querySelectorAll("[placeholder], [title], [aria-label]")].map((el) => el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("aria-label")).join(" ")}`);
+      // Debut de mot : « ram » trouve « RAM » mais pas « paramètres ».
+      const textWords = text.split(/[^a-z0-9+]+/).filter(Boolean);
+      const hit = item.classList.contains("settings-section") && words.every((word) => textWords.some((w) => w.startsWith(word)));
+      item.hidden = !hit;
+      if (hit) {
+        shown++;
+        groupHits++;
+      }
+      });
+      group.hidden = groupHits === 0;
+    });
+    block.querySelectorAll(".settings-cards > .settings-wide").forEach((item) => (item.hidden = true));
+    block.hidden = shown === 0;
+    total += shown;
+  });
+  const count = settingsResultsEl.querySelector(".settings-search-count");
+  settingsResultsEl.querySelector(".settings-nores")?.remove();
+  if (count) count.textContent = total ? t("settings.found", { count: total }) : "";
+  if (!total) {
+    const empty = document.createElement("div");
+    empty.className = "settings-nores";
+    empty.innerHTML = `<b>${escapeHtml(t("settings.noResult", { query: settingsFindInput.value.trim() }))}</b>
+      <span>${escapeHtml(t("settings.noResultHint"))}</span>
+      <button type="button" class="btn-secondary">${escapeHtml(t("settings.openHelp"))}</button>`;
+    empty.querySelector("button").addEventListener("click", () => showHelpView());
+    settingsResultsEl.append(empty);
+  }
+}
+
+let settingsFindTimer = null;
+settingsFindInput.addEventListener("input", () => {
+  clearTimeout(settingsFindTimer);
+  settingsFindTimer = setTimeout(runSettingsSearch, 120);
+});
+settingsFindInput.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && settingsFindInput.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    settingsFindInput.value = "";
+    runSettingsSearch();
+  }
+});
+// Ctrl+F sur la page Parametres : va dans la recherche des reglages.
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && !settingsPanelEl.hidden) {
+    event.preventDefault();
+    settingsFindInput.focus();
+    settingsFindInput.select();
+  }
+});
+cardifySettings(settingsContentEl);
+
+// --- Dossier des jeux sur un autre disque (serie 2, idee 9, version validee) --------------------
+// Un seul dossier pour tout (instances, mondes, mods, Java, cache), deplace en entier par le
+// launcher : choisir le disque -> confirmer -> copier, verifier, basculer (redemarrage) -> l'ancien
+// dossier est efface au demarrage suivant. Voir gamesLocation.js et games:* dans main.js.
+var gamesMoveProgress = null;
+const GAMES_LOW_FREE = 30 * 1024 ** 3;
+
+function gamesBytes(bytes) {
+  return formatTaskBytes(bytes || 0);
+}
+
+window.mchub.games.onProgress((payload) => {
+  gamesMoveProgress = payload;
+  renderActivity();
+  if (gamesMoveModal?.isOpen()) renderGamesMoveProgress();
+});
+
+async function fillGamesFolderCard() {
+  const info = await window.mchub.games.info();
+  const pathEl = document.getElementById("games-folder-path");
+  if (!pathEl) return;
+  pathEl.textContent = info.base;
+  const warn = document.getElementById("games-folder-warn");
+  if (info.missingRoot && warn) {
+    warn.hidden = false;
+    warn.textContent = t("games.missing", { path: info.missingRoot, drive: info.drive });
+  }
+  const size = await window.mchub.games.size();
+  const sizeEl = document.getElementById("games-folder-size");
+  if (sizeEl) sizeEl.textContent = t("games.sizeOn", { size: gamesBytes(size.bytes), drive: info.drive });
+}
+
+function gamesDiskHtml(disk, needBytes, selected) {
+  const tooSmall = !disk.current && disk.free < needBytes + 300 * 1024 ** 2;
+  const blocked = disk.current || tooSmall || disk.type === "network";
+  const usedPct = disk.total ? Math.round(((disk.total - disk.free) / disk.total) * 100) : 0;
+  const badge = disk.current
+    ? `<span class="games-badge">${escapeHtml(t("games.current"))}</span>`
+    : tooSmall
+      ? `<span class="games-badge warn">${escapeHtml(t("games.tooSmall"))}</span>`
+      : disk.type === "network"
+        ? `<span class="games-badge warn">${escapeHtml(t("games.network"))}</span>`
+        : disk.type === "removable"
+          ? `<span class="games-badge warn">${escapeHtml(t("games.usb"))}</span>`
+          : disk.best
+            ? `<span class="games-badge ok">${escapeHtml(t("games.best"))}</span>`
+            : "";
+  const name = disk.label ? `${disk.label} (${disk.drive})` : disk.drive;
+  return `<button type="button" class="games-disk${selected ? " on" : ""}" data-drive="${escapeHtml(disk.drive)}" ${blocked ? "disabled" : ""}>
+      <span class="games-disk-ico">${escapeHtml(disk.drive)}</span>
+      <span class="games-disk-col"><b>${escapeHtml(name)}</b><span class="games-cap"><i style="width:${usedPct}%"></i></span><small>${escapeHtml(t("games.free", { free: gamesBytes(disk.free), total: gamesBytes(disk.total) }))}</small></span>
+      ${badge}
+    </button>`;
+}
+
+let gamesMoveModal = null;
+let gamesMoveRequest = null;
+
+// Etape 1 : choisir le disque.
+async function openGamesMove({ firstRun = false } = {}) {
+  const busy = gamesMoveProgress && gamesMoveProgress.stage !== "switched";
+  if (busy && gamesMoveModal?.isOpen()) return;
+  const info = await window.mchub.games.info();
+  if (info.interrupted) return showGamesInterrupted(info.interrupted);
+  const modal = openToolsModal({
+    title: t(firstRun ? "games.wizTitle" : "games.pickTitle"),
+    bodyHtml: `<p class="first-install-note" style="margin:0">${escapeHtml(t("common.checking"))}</p>`,
+    actions: [{ label: t(firstRun ? "games.keepHere" : "activity.cancel"), value: "cancel" }],
+    wide: false,
+  });
+  gamesMoveModal = modal;
+  const [size, drives] = await Promise.all([window.mchub.games.size(), window.mchub.games.drives()]);
+  if (!modal.isOpen()) return;
+  const candidates = drives.filter((d) => !d.current && d.type !== "network" && d.free >= size.bytes + 300 * 1024 ** 2);
+  const best = candidates.filter((d) => d.type !== "removable").sort((a, b) => b.free - a.free)[0];
+  drives.forEach((d) => (d.best = best && d.drive === best.drive));
+  let chosen = best?.drive || candidates[0]?.drive || null;
+  const render = () => {
+    modal.bodyEl.innerHTML = `
+      <p class="first-install-note" style="margin:0">${escapeHtml(firstRun ? t("games.wizBody") : t("games.pickBody", { size: gamesBytes(size.bytes) }))}</p>
+      <div class="games-disks">${drives.map((d) => gamesDiskHtml(d, size.bytes, d.drive === chosen)).join("")}</div>
+      ${candidates.length ? "" : `<p class="games-folder-warn">${escapeHtml(t("games.noOther"))}</p>`}`;
+    modal.bodyEl.querySelectorAll(".games-disk:not([disabled])").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        chosen = btn.dataset.drive;
+        render();
+      }),
+    );
+    modal.setActions([
+      { label: t(firstRun ? "games.keepHere" : "activity.cancel"), value: "cancel" },
+      { label: t("games.next"), cls: "join-btn", value: "next" },
+    ]);
+    const nextBtn = modal.bodyEl.parentElement.querySelector("#instance-tools-actions .join-btn");
+    if (nextBtn) nextBtn.disabled = !chosen;
+  };
+  render();
+  const result = await modal.done;
+  if (result !== "next" || !chosen) return false;
+  return confirmGamesMove(drives.find((d) => d.drive === chosen), size, info);
+}
+
+// Etape 2 : confirmer (d'ou vers ou, taille, place restante, ce qui part, ce qui reste).
+async function confirmGamesMove(disk, size, info) {
+  let deleteOld = true;
+  const after = Math.max(0, disk.free - size.bytes);
+  const modal = openToolsModal({
+    title: t("games.confirmTitle", { drive: disk.drive }),
+    bodyHtml: `
+      <div class="games-ft">
+        <div><small>${escapeHtml(t("games.from"))}</small><b>${escapeHtml(info.drive)}</b><span class="games-mono">${escapeHtml(info.base)}</span></div>
+        <span aria-hidden="true">→</span>
+        <div><small>${escapeHtml(t("games.to"))}</small><b>${escapeHtml(disk.drive)}</b><span class="games-mono">${escapeHtml(disk.target)}</span></div>
+      </div>
+      <div class="games-line"><span>${escapeHtml(t("games.toMove"))}</span><b>${escapeHtml(gamesBytes(size.bytes))}</b></div>
+      <span class="games-muted">${escapeHtml(t("games.after", { free: gamesBytes(after), drive: disk.drive }))}</span>
+      <ul class="games-list">${["what1", "what2", "what3", "what4"].map((k) => `<li>${escapeHtml(t(`games.${k}`))}</li>`).join("")}</ul>
+      <span class="games-muted">${escapeHtml(t("games.stays", { drive: gamesDriveOfUserData(info) }))}</span>
+      <label class="games-check"><input type="checkbox" id="games-delete-old" checked /> ${escapeHtml(t("games.deleteOld"))}</label>
+      <span class="games-hint">${escapeHtml(t("games.closeHint"))}</span>`,
+    actions: [
+      { label: t("activity.cancel"), value: "cancel" },
+      { label: t("games.move"), cls: "join-btn", value: "move" },
+    ],
+  });
+  modal.bodyEl.querySelector("#games-delete-old").addEventListener("change", (event) => (deleteOld = event.target.checked));
+  const result = await modal.done;
+  if (result !== "move") return false;
+  return runGamesMove({ drive: disk.drive, deleteOld });
+}
+
+function gamesDriveOfUserData(info) {
+  return info.isDefault ? info.drive : "C:";
+}
+
+const GAMES_STEPS = ["copy", "verify", "switch", "delete"];
+
+function renderGamesMoveProgress() {
+  if (!gamesMoveModal?.isOpen()) return;
+  const p = gamesMoveProgress || { stage: "scan", doneBytes: 0, totalBytes: 0 };
+  const idx = { scan: 0, copy: 0, verify: 1, switched: 3 }[p.stage] ?? 0;
+  const percent = p.totalBytes ? Math.min(100, Math.floor((p.doneBytes / p.totalBytes) * 100)) : 0;
+  let html = `
+    <div class="games-line"><b>${p.stage === "scan" ? escapeHtml(t("games.scanning")) : `${escapeHtml(gamesBytes(p.doneBytes))} / ${escapeHtml(gamesBytes(p.totalBytes))}`}</b><span class="games-muted">${percent} %</span></div>
+    <div class="games-bar"><i style="width:${p.stage === "scan" ? 3 : percent}%"></i></div>
+    <span class="games-muted">${escapeHtml(t("games.currentFile"))}</span>
+    <span class="games-mono">${escapeHtml(p.file || "—")}</span>
+    <div class="games-steps">${GAMES_STEPS.map((step, i) => `<div class="games-step ${i < idx ? "done" : i === idx ? "cur" : ""}"><span class="n">${i < idx ? "✓" : i + 1}</span>${escapeHtml(t(`games.step_${step}`))}${step === "delete" && gamesMoveRequest && !gamesMoveRequest.deleteOld ? " (—)" : ""}</div>`).join("")}</div>`;
+  gamesMoveModal.bodyEl.innerHTML = html;
+}
+
+// Etape 3 : deplacement, puis bascule et redemarrage.
+async function runGamesMove({ drive, deleteOld, resume = false }) {
+  gamesMoveRequest = { drive, deleteOld, resume };
+  gamesMoveProgress = { stage: "scan", doneBytes: 0, totalBytes: 0, drive };
+  renderActivity();
+  const modal = openToolsModal({
+    title: t("games.movingTitle", { drive }),
+    bodyHtml: "",
+    actions: [{ label: t("games.safeCancel"), value: "cancel-move" }],
+  });
+  gamesMoveModal = modal;
+  renderGamesMoveProgress();
+  // « Annuler (sans risque) » arrete le deplacement tant que la bascule n'est pas faite. Fermer la
+  // fenetre autrement (Echap, clic a cote) la cache seulement : la pilule montre la suite.
+  modal.done.then((value) => {
+    if (value === "cancel-move" && gamesMoveProgress && gamesMoveProgress.stage !== "switched") window.mchub.games.cancelMove();
+  });
+  const result = await window.mchub.games.move({ drive, deleteOld, resume });
+  gamesMoveProgress = null;
+  renderActivity();
+  if (result?.ok) {
+    const done = openToolsModal({
+      title: t("games.switchedTitle", { drive: result.drive }),
+      bodyHtml: `<div class="games-ok"><b>✓ ${escapeHtml(t("games.switchedBody", { drive: result.drive }))}</b><span class="games-mono">${escapeHtml(result.to)}</span><span class="games-muted">${escapeHtml(t(deleteOld ? "games.switchedDelete" : "games.switchedKeep"))}</span></div>`,
+      actions: [{ label: t("games.restartNow"), cls: "join-btn", value: "restart" }],
+    });
+    // Le launcher doit redemarrer pour utiliser le nouveau dossier : il le fait de lui-meme.
+    const timer = setTimeout(() => done.close("restart"), 6000);
+    await done.done;
+    clearTimeout(timer);
+    window.mchub.games.restart();
+    return true;
+  }
+  if (modal.isOpen()) modal.close("result");
+  showGamesMoveError(result || { code: "failed" }, { drive, deleteOld });
+  return false;
+}
+
+function showGamesMoveError(result, request) {
+  const code = result.code;
+  if (code === "cancelled") {
+    openToolsModal({
+      title: t("games.cancelledTitle"),
+      bodyHtml: `<p class="first-install-note" style="margin:0">${escapeHtml(t("games.cancelledBody", { drive: request.drive }))}</p>`,
+      actions: [{ label: t("games.ok"), cls: "join-btn", value: "ok" }],
+    });
+    return;
+  }
+  const texts = {
+    noSpace: [t("games.eSpaceTitle", { drive: request.drive }), t("games.eSpaceBody", { need: gamesBytes(result.needBytes), free: gamesBytes(result.freeBytes), drive: request.drive })],
+    gameRunning: [t("games.eGameTitle"), t("games.eGameBody")],
+    installing: [t("games.eInstallTitle"), t("games.eInstallBody")],
+    targetLost: [t("games.eLostTitle", { drive: request.drive }), t("games.eLostBody")],
+    targetNotEmpty: [t("games.eNotEmptyTitle"), t("games.eNotEmptyBody", { path: result.target || "" })],
+    sameDrive: [t("games.eSameTitle"), t("games.eSameBody")],
+  }[code] || [t("games.eFailTitle"), `${t("games.eFailBody")}${result.error ? `\n${result.error}` : ""}`];
+  const actions =
+    code === "noSpace" || code === "targetNotEmpty" || code === "sameDrive"
+      ? [
+          { label: t("activity.cancel"), value: "cancel" },
+          { label: t("games.otherDrive"), cls: "join-btn", value: "pick" },
+        ]
+      : code === "gameRunning"
+        ? [
+            { label: t("games.later"), value: "cancel" },
+            { label: t("games.stopGame"), cls: "join-btn", value: "stop" },
+          ]
+        : code === "installing"
+          ? [{ label: t("games.ok"), cls: "join-btn", value: "cancel" }]
+          : [
+              { label: t("games.keepCurrent"), value: "abandon" },
+              { label: t("activity.retry"), cls: "join-btn", value: "retry" },
+            ];
+  const modal = openToolsModal({
+    title: texts[0],
+    bodyHtml: `<p class="first-install-note" style="margin:0;white-space:pre-line">${escapeHtml(texts[1])}</p>`,
+    actions,
+    tone: "danger",
+  });
+  modal.done.then(async (value) => {
+    if (value === "pick") openGamesMove();
+    else if (value === "stop") askStopFromPill();
+    else if (value === "retry") runGamesMove({ ...request, resume: true });
+    else if (value === "abandon") {
+      await window.mchub.games.abandonInterrupted();
+      toolsToast(t("games.keptToast"));
+    }
+  });
+}
+
+// Deplacement interrompu (launcher ferme pendant la copie, coupure de courant).
+function showGamesInterrupted(interrupted) {
+  const modal = openToolsModal({
+    title: t("games.eCrashTitle"),
+    bodyHtml: `<p class="first-install-note" style="margin:0">${escapeHtml(t("games.eCrashBody", { copied: gamesBytes(interrupted.copiedBytes), drive: interrupted.toDrive }))}</p>`,
+    actions: [
+      { label: t("games.eCrashCancel"), value: "abandon" },
+      { label: t("games.eCrashResume"), cls: "join-btn", value: "resume" },
+    ],
+  });
+  modal.done.then(async (value) => {
+    if (value === "resume") runGamesMove({ drive: interrupted.toDrive, deleteOld: true, resume: true });
+    else if (value === "abandon") {
+      await window.mchub.games.abandonInterrupted();
+      toolsToast(t("games.keptToast"));
+    }
+  });
+}
+
+// Premier lancement : proposer un autre disque seulement si celui des jeux a peu de place
+// (moins de 30 Go) et qu'un autre disque local en a nettement plus.
+async function maybeAskGamesDrive() {
+  try {
+    const info = await window.mchub.games.info();
+    if (!info.isDefault || info.interrupted) return false;
+    const drives = await window.mchub.games.drives();
+    const current = drives.find((d) => d.current);
+    if (!current || current.free >= GAMES_LOW_FREE) return false;
+    if (!drives.some((d) => !d.current && d.type === "local" && d.free > current.free + 20 * 1024 ** 3)) return false;
+    return await openGamesMove({ firstRun: true });
+  } catch {
+    return false;
+  }
+}
+
+// Au demarrage : fin d'un deplacement, ou deplacement interrompu a reprendre.
+setTimeout(async () => {
+  const info = await window.mchub.games.info().catch(() => null);
+  if (!info) return;
+  if (info.justMoved) {
+    window.mchub.games.ackMoved();
+    openToolsModal({
+      title: t("games.doneHeading"),
+      bodyHtml: `<div class="games-ok"><b>✓ ${escapeHtml(t("games.doneTitle", { drive: info.justMoved.drive }))}</b><span class="games-muted">${escapeHtml(info.justMoved.freedBytes ? t("games.doneFreed", { size: gamesBytes(info.justMoved.freedBytes), drive: info.justMoved.fromDrive }) : t("games.doneKept", { drive: info.justMoved.fromDrive }))}</span><span class="games-mono">${escapeHtml(info.justMoved.to)}</span></div>`,
+      actions: [{ label: t("games.ok"), cls: "join-btn", value: "ok" }],
+    });
+  } else if (info.interrupted) {
+    showGamesInterrupted(info.interrupted);
+  }
+}, 1800);
+
+// Coin du logo (variante D) : la barre laterale n'existe que quand #app est affiche (pas sur
+// l'ecran de demarrage ni sur la connexion) ; sinon le logo garde son nom.
+{
+  const appBox = document.getElementById("app");
+  const syncSidebarPresence = () => document.body.classList.toggle("has-sidebar", !appBox.hidden);
+  new MutationObserver(syncSidebarPresence).observe(appBox, { attributes: true, attributeFilter: ["hidden"] });
+  syncSidebarPresence();
+}
+
+// --- Fiche serveur : bouton qui dit l'action + pastille d'etat (audit 17/10, lot 3) ------------
+// Reglage en attente de Rushi : false = complet / hors ligne -> bouton grise qui dit pourquoi ;
+// true = bouton actif « Essayer quand meme ».
+const JOIN_TRY_ANYWAY = true;
+
+function detailJoinAction(server, { installed }) {
+  const state = serverBandState(server);
+  if (state === "full" || state === "off") {
+    if (JOIN_TRY_ANYWAY) return { kind: "join", label: "serverDetail.tryAnyway" };
+    return { kind: "blocked", label: state === "full" ? "serverDetail.btnFull" : "serverDetail.btnOffline", blocked: true };
+  }
+  if (server.type === "modded" && !installed) return { kind: "install", label: "serverDetail.btnInstall" };
+  if (!signedIn) return { kind: "signin", label: "serverDetail.btnSignIn" };
+  return { kind: "join", label: "serverDetail.btnPlay" };
+}
+
+// Meme mot et meme couleur que la table des etats (lot 2) : « En ligne · 34 / 40 »,
+// « Presque plein », « Complet », « Hors ligne », « Inconnu ».
+function serverStatePillHtml(server) {
+  const state = serverBandState(server);
+  const text = {
+    ok: `${t("serverCard.onlineWord")} · ${playersText(server)}`,
+    busy: `${t("serverCard.busy")} · ${playersText(server)}`,
+    full: `${t("serverCard.full")} · ${playersText(server)}`,
+    off: t("serverCard.offline"),
+    unknown: t("serverCard.unknown"),
+  }[state];
+  const dot = state === "unknown" ? '<span class="status-dot unknown"></span>' : `<span class="status-dot" style="background:${BAND_COLORS[state]}"></span>`;
+  return `<span class="detail-state detail-state-${state}">${dot}${escapeHtml(text)}</span>`;
+}
+
+// Rapport du test (lot 5, preview v3) : mods a ajouter a la main, avec ce que vivront les joueurs.
+// Jamais « les joueurs ne pourront pas jouer » : le launcher les guide pas a pas.
+function selfTestReportHtml(manualList, rescuedList) {
+  if (!manualList.length) return "";
+  const items = manualList
+    .map(
+      (mod) => `<li><b>${escapeHtml(mod.modName || mod.fileName || "?")}</b><span class="selftest-tag">${escapeHtml(t("selfTest.notOnModrinth"))}</span>${
+        mod.pageUrl ? `<button type="button" class="link-btn" data-mod-page="${escapeHtml(mod.pageUrl)}">${escapeHtml(t("selfTest.curseforgePage"))}</button>` : ""
+      }</li>`,
+    )
+    .join("");
+  const rescued = rescuedList.length
+    ? `<details><summary>${escapeHtml(t("selfTest.rescuedTitle", { count: rescuedList.length }))}</summary><ul class="selftest-mods">${rescuedList
+        .map((name) => `<li><b>${escapeHtml(name)}</b><span class="selftest-tag ok">Modrinth ✓</span></li>`)
+        .join("")}</ul></details>`
+    : "";
+  return `<div class="selftest-box">
+      <h4>${escapeHtml(t("selfTest.manualTitle", { count: manualList.length }))}</h4>
+      <p>${escapeHtml(t("selfTest.manualBody"))}</p>
+      <ul class="selftest-mods">${items}</ul>
+      ${rescued}
+      <p>${escapeHtml(t("selfTest.manualTodo"))}</p>
+    </div>`;
+}
+
+document.getElementById("selftest-report")?.addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-mod-page]");
+  if (btn) window.mchub.openModPage(btn.dataset.modPage);
+});
+
+// Badge bleu « X mods à ajouter » (lot 5) : fiche et lignes de liste. Jamais rouge, et le bouton
+// principal reste « Installer ».
+function manualModsBadgeHtml(server) {
+  const count = Number(server?.manualModsCount) || 0;
+  if (count <= 0) return "";
+  return `<span class="manual-mods-badge" title="${escapeHtml(t("manualMods.badgeTip", { count }))}">ⓘ ${escapeHtml(t("manualMods.badge", { count }))}</span>`;
+}
+
+// --- « Qui peut m'ajouter en ami » (variante C validee par Rushi le 18/10) --------------------------
+// Meme carte en haut de la page Amis et dans Parametres > Confidentialite : changer l'un change
+// l'autre (le reglage vit sur le site). Par defaut « Seulement avec mon code ». En mode discret,
+// le code d'ami est cache (« ••• ••• » + œil), comme les adresses.
+let friendCodeRevealed = false;
+
+async function renderFriendPolicyCard(slot, { where }) {
+  if (!slot) return;
+  if (!signedIn) {
+    slot.innerHTML = "";
+    return;
+  }
+  const settings = await window.mchub.friends.getSettings().catch(() => null);
+  // Site plus ancien (pas encore cette API) : pas de carte plutot qu'une carte cassee.
+  if (!settings?.ok) {
+    slot.innerHTML = where === "settings" || where === "pop" ? `<p class="friend-policy-note">${escapeHtml(t("friends.policyUnavailable"))}</p>` : "";
+    if (where === "friends") renderFriendCodeLine(null);
+    return;
+  }
+  const policy = settings.friendPolicy;
+  // Le site renvoie le code sans tiret (« K7Q9XM ») : affiche « K7Q-9XM », plus facile a dicter.
+  const rawCode = String(settings.friendCode || "").replace(/-/g, "");
+  const code = rawCode.length === 6 ? `${rawCode.slice(0, 3)}-${rawCode.slice(3)}` : rawCode;
+  const shownCode = discreetMode && !friendCodeRevealed ? "••• •••" : code;
+  const opt = (value, recommended) => `
+    <label class="friend-policy-opt">
+      <input type="radio" name="friend-policy-${where}" value="${value}" ${policy === value ? "checked" : ""} />
+      <span><b>${escapeHtml(t(`friends.policy_${value}`))}</b>${recommended ? `<span class="friend-policy-rec">${escapeHtml(t("friends.recommended"))}</span>` : ""}<small>${escapeHtml(t(`friends.policy_${value}D`))}</small></span>
+    </label>`;
+  // Page Amis (preview de l'engrenage, 18/10) : plus de carte au milieu, seulement le rappel
+  // « Personne » et la ligne du code sous le champ d'ajout. Le reglage s'ouvre par l'engrenage.
+  if (where === "friends") {
+    slot.innerHTML = policy === "none" ? `<div class="friend-policy-banner"><span>${escapeHtml(t("friends.noneBanner"))}</span><button type="button" class="link-btn" data-friend-policy-open>${escapeHtml(t("friends.change"))}</button></div>` : "";
+    slot.querySelector("[data-friend-policy-open]")?.addEventListener("click", () => openFriendsGear());
+    renderFriendCodeLine(policy === "code" ? code : null);
+    return;
+  }
+  slot.innerHTML = `
+    <div class="friend-policy">
+      ${where === "pop" ? `<div class="friend-policy-head"><h3>${escapeHtml(t("friends.policyQ"))}</h3><button type="button" class="friend-policy-close" data-friend-policy-close aria-label="${escapeHtml(t("common.close"))}">✕</button></div>` : `<h3>${escapeHtml(t("friends.policyQ"))}</h3>`}
+      <div class="friend-policy-opts" role="radiogroup" aria-label="${escapeHtml(t("friends.policyQ"))}">${opt("all")}${opt("code", true)}${opt("none")}</div>
+      ${
+        policy === "code" && code
+          ? `<div class="friend-code-row">
+              <span class="settings-row-label">${escapeHtml(t("friends.myCode"))}</span>
+              <span class="friend-code">${escapeHtml(shownCode)}</span>
+              ${discreetMode ? `<button type="button" class="icon-btn" data-friend-code-eye title="${escapeHtml(t("friends.showCode"))}" aria-label="${escapeHtml(t("friends.showCode"))}">👁</button>` : ""}
+              <button type="button" class="btn-secondary" data-friend-code-copy>${escapeHtml(t("friends.copy"))}</button>
+              <button type="button" class="btn-secondary" data-friend-code-new>${escapeHtml(t("friends.newCode"))}</button>
+            </div>
+            <p class="friend-policy-note">${escapeHtml(t("friends.newCodeD"))}</p>`
+          : ""
+      }
+      ${where === "settings" ? `<p class="friend-policy-note">${escapeHtml(t("friends.alsoOnFriends"))}</p>` : ""}
+      ${where === "pop" ? `<p class="friend-policy-note">${escapeHtml(t("friends.alsoIn"))} <button type="button" class="link-btn" data-friend-policy-settings>${escapeHtml(t("friends.alsoInLink"))}</button></p>` : ""}
+    </div>`;
+  slot.querySelector("[data-friend-policy-close]")?.addEventListener("click", () => closeFriendsGear());
+  slot.querySelector("[data-friend-policy-settings]")?.addEventListener("click", () => {
+    closeFriendsGear();
+    openSettingsTab("privacy");
+  });
+  slot.querySelectorAll(`input[name="friend-policy-${where}"]`).forEach((input) =>
+    input.addEventListener("change", async () => {
+      const result = await window.mchub.friends.setPolicy(input.value);
+      toolsToast(result?.ok ? t("friends.saved") : t("friends.actionError"));
+      renderFriendPolicyCard(slot, { where });
+      // Le bandeau et la ligne du code de la page Amis suivent le changement fait dans l'engrenage.
+      if (where === "pop") renderFriendPolicyCard(document.getElementById("friends-policy-slot"), { where: "friends" });
+    }),
+  );
+  slot.querySelector("[data-friend-code-eye]")?.addEventListener("click", () => {
+    friendCodeRevealed = !friendCodeRevealed;
+    renderFriendPolicyCard(slot, { where });
+  });
+  slot.querySelector("[data-friend-code-copy]")?.addEventListener("click", async (event) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      event.target.textContent = t("friends.copied");
+    } catch {
+      /* presse-papiers indisponible */
+    }
+  });
+  slot.querySelector("[data-friend-code-new]")?.addEventListener("click", async () => {
+    const { confirmed } = await showModal({ tone: "warn", title: t("friends.newCodeTitle"), body: t("friends.newCodeD"), confirmLabel: t("friends.newCode"), cancelLabel: t("common.cancel") });
+    if (!confirmed) return;
+    const result = await window.mchub.friends.newCode();
+    toolsToast(result?.ok ? t("friends.saved") : t("friends.actionError"));
+    renderFriendPolicyCard(slot, { where });
+  });
+}
+
+// Ligne « Ton code d'ami : K7Q-9XM · Copier » sous le champ d'ajout (cache en mode discret).
+function renderFriendCodeLine(code) {
+  const line = document.getElementById("friends-mycode");
+  if (!line) return;
+  line.hidden = !code;
+  if (!code) return;
+  const shown = discreetMode && !friendCodeRevealed ? "••• •••" : code;
+  line.innerHTML = `${escapeHtml(t("friends.yourCode"))} <code>${escapeHtml(shown)}</code>${discreetMode ? `<button type="button" class="link-btn" data-code-eye>${escapeHtml(t("friends.showCode"))}</button>` : ""}<button type="button" class="link-btn" data-code-copy>${escapeHtml(t("friends.copy"))}</button>`;
+  line.querySelector("[data-code-eye]")?.addEventListener("click", () => {
+    friendCodeRevealed = !friendCodeRevealed;
+    renderFriendCodeLine(code);
+  });
+  line.querySelector("[data-code-copy]")?.addEventListener("click", async (event) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      event.target.textContent = t("friends.copied");
+    } catch {
+      /* presse-papiers indisponible */
+    }
+  });
+}
+
+// Engrenage de la page Amis : ouvre/ferme le panneau du reglage (croix, Echap, clic a cote).
+function openFriendsGear() {
+  const pop = document.getElementById("friends-policy-pop");
+  const gear = document.getElementById("friends-gear");
+  if (!pop || !gear) return;
+  pop.hidden = false;
+  gear.setAttribute("aria-expanded", "true");
+  renderFriendPolicyCard(pop, { where: "pop" }).then(() => pop.querySelector("input:checked")?.focus());
+}
+function closeFriendsGear() {
+  const pop = document.getElementById("friends-policy-pop");
+  const gear = document.getElementById("friends-gear");
+  if (!pop || pop.hidden) return;
+  pop.hidden = true;
+  gear?.setAttribute("aria-expanded", "false");
+  gear?.focus();
+}
+document.getElementById("friends-gear")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (document.getElementById("friends-policy-pop").hidden) openFriendsGear();
+  else closeFriendsGear();
+});
+document.addEventListener("click", (event) => {
+  const pop = document.getElementById("friends-policy-pop");
+  if (pop && !pop.hidden && !pop.contains(event.target) && !document.body.classList.contains("modal-blocking")) closeFriendsGear();
+});
+document.addEventListener("keydown", (event) => {
+  const pop = document.getElementById("friends-policy-pop");
+  if (event.key === "Escape" && pop && !pop.hidden && !document.body.classList.contains("modal-blocking")) {
+    event.stopPropagation();
+    closeFriendsGear();
+  }
+});
+
+// Parametres > Confidentialite : pour l'instant ce seul reglage (le Mode discret reste dans
+// Apparence, son deplacement est un autre sujet).
+function renderPrivacyTab(contentEl) {
+  contentEl.innerHTML = `
+    <section class="settings-section">
+      <h3 class="settings-section-title">${escapeHtml(t("friends.policyQ"))}</h3>
+      <div class="settings-wide-slot" id="settings-friend-policy-${contentEl.id || "search"}"></div>
+    </section>`;
+  const slot = contentEl.querySelector(".settings-wide-slot");
+  renderFriendPolicyCard(slot, { where: "settings" });
+}
+
+// --- Menus « … » (option C, 18/10) : fermeture commune ---------------------------------------
+function closeInstanceMenus() {
+  document.querySelectorAll(".instance-menu:not([hidden])").forEach((menu) => {
+    menu.hidden = true;
+    menu.parentElement.querySelector("[aria-expanded]")?.setAttribute("aria-expanded", "false");
+  });
+}
+document.addEventListener("click", (event) => {
+  if (!event.target.closest?.(".instance-more")) closeInstanceMenus();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && document.querySelector(".instance-menu:not([hidden])")) {
+    event.stopPropagation();
+    closeInstanceMenus();
+  }
+}, true);

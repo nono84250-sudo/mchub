@@ -1,0 +1,306 @@
+{
+ "date": "2026-10-21T01:40:26.714Z",
+ "total": {
+  "total": 6220,
+  "curseforge": 6033,
+  "modrinth": 124,
+  "main": 63
+ },
+ "dl": {
+  "avec": "200",
+  "sans": "200"
+ },
+ "rows": [
+  {
+   "name": "FTB Evolution 2",
+   "mc": "26.1.2",
+   "total": 424,
+   "curseforge": 408,
+   "modrinth": 12,
+   "main": 4,
+   "aLaMain": [
+    "ftb auxilium",
+    "Anima: Soul Magic",
+    "More Overlays Updated",
+    "rgp client"
+   ]
+  },
+  {
+   "name": "FTB StoneBlock 4",
+   "mc": "1.21.1",
+   "total": 413,
+   "curseforge": 405,
+   "modrinth": 5,
+   "main": 3,
+   "aLaMain": [
+    "rgp client",
+    "ftb auxilium",
+    "Create: Shimmer"
+   ]
+  },
+  {
+   "name": "FTB Presents Direwolf20 1.21",
+   "mc": "1.21.1",
+   "total": 319,
+   "curseforge": 311,
+   "modrinth": 5,
+   "main": 3,
+   "aLaMain": [
+    "Not Enough Patterns",
+    "rgp client",
+    "ftb auxilium"
+   ]
+  },
+  {
+   "name": "All the Mods 10",
+   "mc": "1.21.1",
+   "total": 499,
+   "curseforge": 493,
+   "modrinth": 6,
+   "main": 0,
+   "aLaMain": [],
+   "packFile": "All the Mods 10 - ATM10 - All the Mods 10-8.3"
+  },
+  {
+   "name": "Enigmatica 10",
+   "mc": "1.21.1",
+   "total": 313,
+   "curseforge": 308,
+   "modrinth": 5,
+   "main": 0,
+   "aLaMain": []
+  },
+  {
+   "name": "All the Mods 9",
+   "mc": "1.20.1",
+   "total": 435,
+   "curseforge": 430,
+   "modrinth": 3,
+   "main": 2,
+   "aLaMain": [
+    "More Overlays Updated",
+    "Corail Tombstone"
+   ],
+   "packFile": "All the Mods 9 - ATM9 - All the Mods 9-1.1.1"
+  },
+  {
+   "name": "FTB Architect's Exodus",
+   "mc": "1.20.1",
+   "total": 356,
+   "curseforge": 351,
+   "modrinth": 2,
+   "main": 3,
+   "aLaMain": [
+    "rgp client",
+    "ftb auxilium",
+    "More Overlays Updated"
+   ]
+  },
+  {
+   "name": "FTB Unstable 1.20 Fabric",
+   "mc": "1.20.1",
+   "total": 134,
+   "curseforge": 130,
+   "modrinth": 3,
+   "main": 1,
+   "aLaMain": [
+    "ftbauxilium"
+   ]
+  },
+  {
+   "name": "FTB Skies",
+   "mc": "1.19.2",
+   "total": 327,
+   "curseforge": 320,
+   "modrinth": 3,
+   "main": 4,
+   "aLaMain": [
+    "FTB SkyBlock Addons",
+    "Hexerei",
+    "rgp client",
+    "ftb auxilium"
+   ]
+  },
+  {
+   "name": "FTB Legend of the Eyes",
+   "mc": "1.19.2",
+   "total": 143,
+   "curseforge": 135,
+   "modrinth": 5,
+   "main": 3,
+   "aLaMain": [
+    "Creatures From The Snow [Fabric]",
+    "ftbauxilium",
+    "ponderjs"
+   ]
+  },
+  {
+   "name": "FTB StoneBlock 3",
+   "mc": "1.18.2",
+   "total": 224,
+   "curseforge": 222,
+   "modrinth": 0,
+   "main": 2,
+   "aLaMain": [
+    "ftb auxilium",
+    "rgp client"
+   ]
+  },
+  {
+   "name": "FTB OceanBlock",
+   "mc": "1.16.5",
+   "total": 206,
+   "curseforge": 202,
+   "modrinth": 0,
+   "main": 4,
+   "aLaMain": [
+    "Spawner Bug Fix",
+    "ftb auxilium",
+    "ftb janitor",
+    "kubejs tinkers"
+   ]
+  },
+  {
+   "name": "FTB Cotton",
+   "mc": "1.16.5",
+   "total": 103,
+   "curseforge": 92,
+   "modrinth": 2,
+   "main": 9,
+   "aLaMain": [
+    "Better Sodium Video Settings Button",
+    "Gilded Netherite for Fabric",
+    "Gunpowder",
+    "Gunpowder Utilities",
+    "ftb chunks",
+    "ftb library",
+    "ftb ranks",
+    "ftb teams",
+    "ftbauxilium"
+   ]
+  },
+  {
+   "name": "FTB Revelation",
+   "mc": "1.12.2",
+   "total": 210,
+   "curseforge": 198,
+   "modrinth": 7,
+   "main": 5,
+   "aLaMain": [
+    "ChickenASM",
+    "ftb auxilium",
+    "AutoSave",
+    "AutoSave",
+    "ShetiPhian ASM"
+   ]
+  },
+  {
+   "name": "FTB Interactions Remastered",
+   "mc": "1.12.2",
+   "total": 284,
+   "curseforge": 276,
+   "modrinth": 1,
+   "main": 7,
+   "aLaMain": [
+    "moresoundconfig core",
+    "llibrary core",
+    "mcjtytools",
+    "AutoConfig",
+    "AutoSave",
+    "ftb auxilium",
+    "ChickenASM"
+   ]
+  },
+  {
+   "name": "FTB Presents Stoneblock 2",
+   "mc": "1.12.2",
+   "total": 226,
+   "curseforge": 226,
+   "modrinth": 0,
+   "main": 0,
+   "aLaMain": []
+  },
+  {
+   "name": "Enigmatica 2 Expert",
+   "mc": "1.12.2",
+   "total": 271,
+   "curseforge": 265,
+   "modrinth": 2,
+   "main": 4,
+   "aLaMain": [
+    "MemoryTester",
+    "XU2-Patcher",
+    "Netherending Ores",
+    "IC2 Patcher"
+   ]
+  },
+  {
+   "name": "Divine Journey 2",
+   "mc": "1.12.2",
+   "total": 223,
+   "curseforge": 223,
+   "modrinth": 0,
+   "main": 0,
+   "aLaMain": []
+  },
+  {
+   "name": "FTB Presents SkyFactory 3",
+   "mc": "1.10.2",
+   "total": 186,
+   "curseforge": 185,
+   "modrinth": 0,
+   "main": 1,
+   "aLaMain": [
+    "Decocraft"
+   ]
+  },
+  {
+   "name": "FTB Infinity Evolved 1.7",
+   "mc": "1.7.10",
+   "total": 139,
+   "curseforge": 134,
+   "modrinth": 1,
+   "main": 4,
+   "aLaMain": [
+    "commons codec",
+    "commons compress",
+    "ThaumicTinkerer",
+    "EJML core"
+   ]
+  },
+  {
+   "name": "Create: Astral",
+   "mc": "1.18.2",
+   "total": 197,
+   "curseforge": 196,
+   "modrinth": 0,
+   "main": 1,
+   "aLaMain": [
+    "WI Zoom"
+   ]
+  },
+  {
+   "name": "Cabricality (Create)",
+   "mc": "1.20.2",
+   "total": 58,
+   "curseforge": 7,
+   "modrinth": 50,
+   "main": 1,
+   "aLaMain": [
+    "No Unused Chunks"
+   ]
+  },
+  {
+   "name": "Craftoria (Create)",
+   "mc": "1.21.1",
+   "total": 530,
+   "curseforge": 516,
+   "modrinth": 12,
+   "main": 2,
+   "aLaMain": [
+    "Apothic Nerf",
+    "FramedBlocksPlus"
+   ]
+  }
+ ]
+}

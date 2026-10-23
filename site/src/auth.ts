@@ -1,9 +1,16 @@
 import NextAuth from "next-auth";
+import { cache } from "react";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { db } from "@/lib/db";
 import { getMinecraftProfileFromMicrosoftToken, PendingApprovalError } from "@/lib/xboxAuth";
 import { clearAccountDeletion } from "@/lib/users";
 import { normalizeMinecraftUuid } from "@/lib/launcherSession";
+
+// Audit des boucles du 23/10 : sur /dashboard, le layout ET la page appellent auth(), et chaque
+// appel relisait lockedAt dans D1 (un aller-retour REST de plus par affichage, limite Cloudflare).
+// cache() de React partage la lecture entre les appels d'un meme rendu ; hors rendu React (proxy.ts),
+// il ne memorise rien et relit comme avant. Le verrou reste donc revalide a chaque requete.
+const readLockState = cache((id: string) => db.orm.public.User.select("lockedAt").where({ id }).first());
 
 // "Se connecter avec Microsoft" est desormais l'unique moyen de se
 // connecter au site (plus d'email/mot de passe) : le meme identifiant
@@ -52,7 +59,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Trouve par l'audit du 2026-10-10 (§1.8), jamais corrige a l'epoque faute d'avoir ete
         // assigne a un agent — corrige ici le soir meme, en relisant le reste du dossier.
         if (token.id) {
-          const current = await db.orm.public.User.select("lockedAt").where({ id: token.id }).first();
+          const current = await readLockState(token.id);
           // Second audit du 14/10 (I4) : un compte supprime (plus de ligne "user") gardait son
           // jeton web jusqu'a 30 jours sur ses autres appareils. On le coupe comme un verrou.
           if (!current || current.lockedAt) {

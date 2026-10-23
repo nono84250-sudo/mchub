@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
-import { getLauncherMaintenance } from "@/lib/platformSettings";
+import { getLauncherMaintenance, getLauncherStatus } from "@/lib/platformSettings";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // Statut de la maintenance, lu par le launcher (au demarrage et depuis le pop-up d'une
@@ -11,10 +11,12 @@ export async function GET(request: Request) {
   }
   const limited = rateLimitResponse(request, "launcher-maintenance-status", 10);
   if (limited) return limited;
-  const maintenance = await getLauncherMaintenance();
+  // Lecture en cache (idee 2 du lancement, 19/10) : le launcher non connecte interroge cette
+  // route toutes les 2 minutes, le meme etat pour tout le monde.
+  const { maintenance } = await getLauncherStatus();
   return NextResponse.json({
-    active: maintenance?.active ?? false,
-    message: maintenance?.message ?? null,
+    active: maintenance.active,
+    message: maintenance.message,
   });
 }
 

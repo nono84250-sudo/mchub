@@ -34,6 +34,9 @@ export async function POST(request: Request) {
     // Trace complete (audit 14/10, I-8d) : categories exportees et adresse qui a fait la demande.
     text: `Export des données généré (droit d'accès) : compte${categories.length ? ", " + categories.join(", ") : ""}${email ? `. Messages de contact joints, demande reçue depuis ${email}` : ""}.`,
     createdBy: admin.username,
+    // Note de trace verrouillee (23/10) : jamais supprimable, meme par le proprietaire, pour
+    // garder la preuve de qui a recupere les donnees de qui (voir api/admin/note-delete).
+    kind: "export",
   });
 
   return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });

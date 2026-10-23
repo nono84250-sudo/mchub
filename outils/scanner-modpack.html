@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scanner de modpack</title>
+<!-- Outil de test local, indépendant du site (20/10/2026).
+     Lit un pack CurseForge (export .zip, dossier mods ou fichiers .jar) et cherche chaque mod sur
+     Modrinth. Aucune clé, aucun appel à l'API CurseForge : seulement l'API publique de Modrinth.
+     Rien n'est envoyé ailleurs : les fichiers sont lus dans le navigateur. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{
+  --bg:#f5f6f3; --surface:#fff; --fg:#1c211d; --muted:#5d665f; --line:#dde2da;
+  --accent:#0e8a45; --accent-soft:#e2f3e8;
+  --same:#0e8a45; --same-soft:#e2f3e8; --found:#1f6fb2; --found-soft:#e3eef9;
+  --other:#9a6400; --other-soft:#fcf0d6; --none:#b3261e; --none-soft:#fbe3e1;
+  --code:#eef0eb;
+  --f-body:"Segoe UI",system-ui,-apple-system,sans-serif; --f-mono:Consolas,ui-monospace,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#121613; --surface:#1a201b; --fg:#e5eae4; --muted:#9aa49c; --line:#2d352e;
+  --accent:#3fd17f; --accent-soft:#173323;
+  --same:#3fd17f; --same-soft:#173323; --found:#6fb3f0; --found-soft:#162a3d;
+  --other:#f2bf5a; --other-soft:#3a2e14; --none:#ff8a80; --none-soft:#3b1d1b; --code:#232a24; color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--f-body);padding:28px max(16px,env(safe-area-inset-left,0px)) 60px}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+h1{font-size:1.6rem;margin:0}
+h2{font-size:1.1rem;margin:0}
+p{margin:0}
+.muted{color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:.9rem}
+input[type=text],select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg)}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:22px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+button,.btn{font:600 .92rem var(--f-body);padding:9px 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+@media (prefers-color-scheme:dark){button.primary{color:#0b1a10}}
+button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible,.btn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+input[type=file]{display:none}
+.files{font-size:.88rem;color:var(--muted)}
+.progress{height:8px;background:var(--code);border-radius:99px;overflow:hidden}
+.progress>div{height:100%;width:0;background:var(--accent);transition:width .2s}
+.big{font-size:1.5rem;font-weight:700}
+.big b{color:var(--accent)}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-size:.82rem;font-weight:600;padding:4px 10px;border-radius:99px;white-space:nowrap}
+.s-same{background:var(--same-soft);color:var(--same)}
+.s-found{background:var(--found-soft);color:var(--found)}
+.s-other{background:var(--other-soft);color:var(--other)}
+.s-none{background:var(--none-soft);color:var(--none)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{text-align:left;padding:7px 8px;border-top:1px solid var(--line);vertical-align:top}
+th{font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-top:0}
+td small{color:var(--muted);display:block;font-family:var(--f-mono);font-size:.78rem;word-break:break-all}
+a{color:var(--found)}
+.filter{display:flex;gap:8px;flex-wrap:wrap}
+.filter button{padding:5px 11px;font-size:.82rem}
+.filter button[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.note{font-size:.88rem;background:var(--code);padding:10px 12px;border-radius:8px}
+.hist td,.hist th{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:6px">
+    <h1>Scanner de modpack CurseForge → Modrinth</h1>
+    <p class="muted">Outil de test local. Dépose un pack CurseForge : la page cherche chaque mod sur Modrinth et dit combien elle en retrouve. Les fichiers restent sur ton PC, seule l'API publique de Modrinth est appelée.</p>
+  </header>
+
+  <section class="card">
+    <h2>1. Le pack</h2>
+    <div class="drop" id="drop">
+      <p><b>Glisse ici</b> l'export CurseForge (.zip), le dossier <code>mods</code> du pack, ou des fichiers .jar</p>
+      <div class="btns">
+        <label class="btn" for="pick-files">Choisir des fichiers (.zip / .jar)<input id="pick-files" type="file" multiple accept=".zip,.jar"></label>
+        <label class="btn" for="pick-folder">Choisir le dossier mods<input id="pick-folder" type="file" webkitdirectory multiple></label>
+      </div>
+      <p class="files" id="files">Aucun fichier choisi.</p>
+    </div>
+    <p class="note">Le plus fiable : le <b>dossier mods</b> du pack installé (dans l'app CurseForge : clic droit sur le profil → « Ouvrir le dossier »). Un export .zip seul ne contient souvent que des numéros : la page lit alors la liste <code>modlist.html</code> si elle est dedans.</p>
+    <div class="grid">
+      <label for="pack-name">Nom du pack<input id="pack-name" type="text" placeholder="ex. Better MC 4"></label>
+      <label for="mc">Version de Minecraft<input id="mc" type="text" placeholder="ex. 1.20.1"></label>
+      <label for="loader">Mod loader
+        <select id="loader"><option value="">Choisir…</option><option value="forge">Forge</option><option value="neoforge">NeoForge</option><option value="fabric">Fabric</option><option value="quilt">Quilt</option></select>
+      </label>
+    </div>
+    <p class="muted" style="font-size:.85rem">Si le .zip contient <code>manifest.json</code>, ces champs se remplissent tout seuls.</p>
+    <div><button class="primary" id="scan" disabled>Scanner sur Modrinth</button></div>
+    <div class="progress" hidden id="prog"><div></div></div>
+    <p class="muted" id="status" aria-live="polite"></p>
+  </section>
+
+  <section class="card" id="result" hidden>
+    <h2>2. Résultat</h2>
+    <p class="big" id="headline"></p>
+    <div class="chips" id="chips"></div>
+    <div class="filter" id="filter"></div>
+    <div class="tablewrap"><table id="table"><thead><tr><th>Mod</th><th>Résultat</th><th>Sur Modrinth</th></tr></thead><tbody></tbody></table></div>
+    <div><button id="copy">Copier le bilan</button> <span class="muted" id="copied"></span></div>
+  </section>
+
+  <section class="card">
+    <h2>Packs déjà testés</h2>
+    <div class="tablewrap"><table class="hist" id="hist"><thead><tr><th>Pack</th><th>Version</th><th>Trouvés</th><th>Identiques</th><th>Pas pour cette version</th><th>Introuvables</th><th>Date</th></tr></thead><tbody></tbody></table></div>
+    <p class="muted" id="hist-empty">Aucun pack testé pour l'instant.</p>
+    <div><button id="hist-clear">Vider l'historique</button></div>
+  </section>
+
+  <section class="card">
+    <h2>Comment la page décide</h2>
+    <ul style="margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:4px">
+      <li><span class="chip s-same">Identique</span> le même fichier existe sur Modrinth (même empreinte). Arrive souvent : beaucoup d'auteurs publient le même .jar sur les deux sites.</li>
+      <li><span class="chip s-found">Trouvé</span> même mod trouvé par son identifiant ou son nom, avec une version pour cette version de Minecraft et ce loader.</li>
+      <li><span class="chip s-other">Pas pour cette version</span> le mod est sur Modrinth, mais pas pour cette version de Minecraft ou ce loader.</li>
+      <li><span class="chip s-none">Introuvable</span> rien de sûr sur Modrinth : à mettre à la main.</li>
+    </ul>
+    <p class="muted" style="font-size:.85rem">« Trouvés » dans le bilan = Identique + Trouvé. Un nom proche mais pas sûr n'est jamais compté comme trouvé.</p>
+  </section>
+</div>
+
+<script>
+const API = "https://api.modrinth.com/v2";
+const $ = (id) => document.getElementById(id);
+let inputFiles = [];
+let lastReport = null;
+let currentFilter = "all";
+
+const STATUS = {
+  same: { label: "Identique", cls: "s-same" },
+  found: { label: "Trouvé", cls: "s-found" },
+  other: { label: "Pas pour cette version", cls: "s-other" },
+  none: { label: "Introuvable", cls: "s-none" },
+};
+
+// ---------- Choix des fichiers ----------
+function setFiles(list) {
+  inputFiles = [...list].filter((f) => /\.(zip|jar)$/i.test(f.name));
+  $("files").textContent = inputFiles.length
+    ? `${inputFiles.length} fichier(s) : ${inputFiles.slice(0, 4).map((f) => f.name).join(", ")}${inputFiles.length > 4 ? "…" : ""}`
+    : "Aucun fichier .zip ou .jar choisi.";
+  $("scan").disabled = !inputFiles.length;
+  const zip = inputFiles.find((f) => /\.zip$/i.test(f.name));
+  if (zip) prefillFromZip(zip);
+}
+$("pick-files").addEventListener("change", (e) => setFiles(e.target.files));
+$("pick-folder").addEventListener("change", (e) => setFiles(e.target.files));
+const drop = $("drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  drop.classList.remove("over");
+  const files = [];
+  const items = [...(e.dataTransfer.items || [])].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (items.length) {
+    for (const entry of items) await walkEntry(entry, files);
+  } else files.push(...e.dataTransfer.files);
+  setFiles(files);
+});
+function walkEntry(entry, out) {
+  return new Promise((resolve) => {
+    if (entry.isFile) entry.file((f) => { out.push(f); resolve(); }, () => resolve());
+    else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      const readBatch = () => reader.readEntries(async (batch) => {
+        if (!batch.length) { for (const child of all) await walkEntry(child, out); resolve(); }
+        else { all.push(...batch); readBatch(); }
+      }, () => resolve());
+      readBatch();
+    } else resolve();
+  });
+}
+
+function parseLoaderId(id) {
+  const m = /^(forge|neoforge|fabric|quilt)-/i.exec(id || "");
+  return m ? m[1].toLowerCase() : "";
+}
+async function prefillFromZip(file) {
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const mf = zip.file("manifest.json");
+    if (!mf) return;
+    const manifest = JSON.parse(await mf.async("string"));
+    if (manifest.name) $("pack-name").value = manifest.version ? `${manifest.name} ${manifest.version}` : manifest.name;
+    if (manifest.minecraft?.version) $("mc").value = manifest.minecraft.version;
+    const loaders = manifest.minecraft?.modLoaders || [];
+    const primary = loaders.find((l) => l.primary) || loaders[0];
+    const loader = parseLoaderId(primary?.id);
+    if (loader) $("loader").value = loader;
+  } catch { /* zip illisible : l'utilisateur remplira les champs */ }
+}
+
+// ---------- Lecture des mods ----------
+async function sha1Hex(buffer) {
+  const digest = await crypto.subtle.digest("SHA-1", buffer);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function tomlValue(text, key) {
+  const m = new RegExp(`^\\s*${key}\\s*=\\s*["']([^"'\\n]*)["']`, "m").exec(text);
+  return m ? m[1] : null;
+}
+
+// Identité d'un .jar d'après ses fichiers de description (Fabric, Quilt, Forge/NeoForge, ancien Forge).
+async function readJarMeta(buffer, fileName) {
+  const meta = { modId: null, name: null, version: null };
+  try {
+    const jar = await JSZip.loadAsync(buffer);
+    const read = async (p) => (jar.file(p) ? jar.file(p).async("string") : null);
+    const fabric = await read("fabric.mod.json");
+    const quilt = await read("quilt.mod.json");
+    const toml = (await read("META-INF/neoforge.mods.toml")) || (await read("META-INF/mods.toml"));
+    const mcmod = await read("mcmod.info");
+    if (fabric) {
+      const j = JSON.parse(fabric.replace(/[\u0000-\u001f]+/g, " "));
+      Object.assign(meta, { modId: j.id, name: j.name || j.id, version: j.version });
+    } else if (quilt) {
+      const j = JSON.parse(quilt).quilt_loader || {};
+      Object.assign(meta, { modId: j.id, name: j.metadata?.name || j.id, version: j.version });
+    } else if (toml) {
+      const block = toml.split(/\[\[\s*mods\s*\]\]/)[1] || toml;
+      Object.assign(meta, { modId: tomlValue(block, "modId"), name: tomlValue(block, "displayName"), version: tomlValue(block, "version") });
+      if (meta.version && meta.version.includes("${")) {
+        const mf = await read("META-INF/MANIFEST.MF");
+        const v = mf && /Implementation-Version:\s*(\S+)/.exec(mf);
+        meta.version = v ? v[1] : null;
+      }
+    } else if (mcmod) {
+      let j = JSON.parse(mcmod.replace(/[\u0000-\u001f]+/g, " "));
+      if (!Array.isArray(j)) j = j.modList || j.modlist || [];
+      if (j[0]) Object.assign(meta, { modId: j[0].modid, name: j[0].name, version: j[0].version });
+    }
+  } catch { /* jar sans description lisible : on se rabat sur le nom du fichier */ }
+  if (!meta.name) meta.name = nameFromFile(fileName);
+  return meta;
+}
+
+function nameFromFile(fileName) {
+  return fileName.replace(/\.jar$/i, "")
+    .replace(/[-_+ ](mc)?\d+(\.\d+)+.*$/i, "")
+    .replace(/[-_](forge|neoforge|fabric|quilt)$/i, "")
+    .replace(/[-_]/g, " ").trim() || fileName;
+}
+
+// Export CurseForge : manifest.json (numéros), modlist.html (noms + liens) et éventuels .jar dans overrides/.
+async function readExportZip(file, mods, notes) {
+  const zip = await JSZip.loadAsync(file);
+  const manifestFile = zip.file("manifest.json");
+  const manifest = manifestFile ? JSON.parse(await manifestFile.async("string")) : null;
+  let fromList = 0;
+  const modlist = zip.file("modlist.html");
+  if (modlist) {
+    const doc = new DOMParser().parseFromString(await modlist.async("string"), "text/html");
+    for (const a of doc.querySelectorAll("a[href]")) {
+      const href = a.getAttribute("href");
+      const slug = /curseforge\.com\/minecraft\/[^/]+\/([^/?#]+)/i.exec(href)?.[1] || null;
+      const name = a.textContent.replace(/\s*\(by [^)]*\)\s*$/i, "").trim();
+      if (!name) continue;
+      mods.push({ source: "liste du pack", file: href, name, modId: null, cfSlug: slug, version: null });
+      fromList++;
+    }
+  }
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !/\.jar$/i.test(entry.name)) continue;
+    const buffer = await entry.async("arraybuffer");
+    mods.push(await jarEntry(buffer, entry.name.split("/").pop()));
+  }
+  const listed = manifest?.files?.length || 0;
+  if (listed && !fromList) {
+    notes.push(`L'export contient ${listed} mod(s) CurseForge désignés seulement par des numéros, sans modlist.html : ils ne peuvent pas être identifiés sans clé. Utilise plutôt le dossier mods du pack.`);
+  }
+}
+
+async function jarEntry(buffer, fileName) {
+  const [sha1, meta] = await Promise.all([sha1Hex(buffer), readJarMeta(buffer, fileName)]);
+  return { source: "fichier", file: fileName, sha1, ...meta, cfSlug: null };
+}
+
+// ---------- Appels Modrinth (limite : 300/min ; on reste vers 4/s) ----------
+let lastCall = 0;
+async function mr(path, init) {
+  const wait = Math.max(0, lastCall + 260 - Date.now());
+  if (wait) await new Promise((r) => setTimeout(r, wait));
+  lastCall = Date.now();
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const res = await fetch(API + path, init);
+    if (res.status === 429) {
+      setStatus("Limite Modrinth atteinte, pause de 30 secondes…");
+      await new Promise((r) => setTimeout(r, 30000));
+      continue;
+    }
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Modrinth a répondu ${res.status}`);
+    return res.json();
+  }
+  throw new Error("Modrinth refuse trop d'appels, réessaie dans une minute.");
+}
+
+const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+
+function loadersFor(loader, mc) {
+  if (loader === "quilt") return ["quilt", "fabric"];
+  if (loader === "neoforge") return mc === "1.20.1" ? ["neoforge", "forge"] : ["neoforge"];
+  return [loader];
+}
+
+// Correspondance sûre seulement : identifiant, slug ou nom exact (sans espaces ni ponctuation).
+// Meme nom au suffixe pres : « Architectury » = « Architectury API », « Jade » = « Jade Forge ».
+const SUFFIXES = ["", "api", "lib", "library", "mod", "core", "forge", "fabric", "neoforge", "reforged", "port", "unofficial", "continuation", "updated", "neo"];
+function sameName(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 4 && long.startsWith(short) && SUFFIXES.includes(long.slice(short.length));
+}
+
+// Correspondance sûre seulement : identifiant, slug ou nom identique (sans espaces ni ponctuation),
+// ou identique au suffixe près. Jamais un nom seulement ressemblant.
+function scoreHit(hit, mod) {
+  const keys = [mod.modId, mod.cfSlug, mod.name].map(norm).filter(Boolean);
+  const slug = norm(hit.slug), title = norm(hit.title);
+  if (mod.cfSlug && hit.slug === mod.cfSlug) return 3;
+  if (keys.includes(slug) || keys.includes(title)) return 2;
+  if (keys.some((k) => sameName(k, slug) || sameName(k, title))) return 1;
+  return 0;
+}
+
+// « BiomesOPlenty » -> « Biomes O Plenty » : la recherche Modrinth ne trouve pas les noms collés.
+const splitCamel = (s) => (s || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z])([A-Z][a-z])/g, "$1 $2");
+
+async function findByName(mod, mc, loaders) {
+  const key = norm(mod.name) || norm(mod.modId);
+  // Noms collés en minuscules (« cookingforblockheads ») : début du mot, la recherche complète le reste.
+  const prefixes = key.length >= 8 ? [key.slice(0, 8), key.slice(0, 5)] : [];
+  const queries = [...new Set([mod.name, splitCamel(mod.name), mod.modId, mod.cfSlug && mod.cfSlug.replace(/-/g, " "), ...prefixes].filter(Boolean))];
+  let best = null;
+  for (const q of queries) {
+    const params = new URLSearchParams({ query: q, limit: prefixes.includes(q) ? "20" : "10", facets: JSON.stringify([["project_type:mod"]]) });
+    const data = await mr(`/search?${params}`);
+    for (const hit of data?.hits || []) {
+      const score = scoreHit(hit, mod);
+      if (score && (!best || score > best.score || (score === best.score && hit.downloads > best.hit.downloads))) best = { hit, score };
+    }
+    if (best) break;
+  }
+  if (!best) return { status: "none" };
+  const params = new URLSearchParams({ loaders: JSON.stringify(loaders), game_versions: JSON.stringify([mc]) });
+  const versions = (await mr(`/project/${best.hit.project_id}/version?${params}`)) || [];
+  const project = { slug: best.hit.slug, title: best.hit.title };
+  if (!versions.length) return { status: "other", project };
+  const same = mod.version && versions.find((v) => v.version_number === mod.version || v.version_number.includes(mod.version));
+  return { status: "found", project, version: (same || versions[0]).version_number, sameVersion: !!same };
+}
+
+// ---------- Scan ----------
+function setStatus(text) { $("status").textContent = text; }
+function setProgress(done, total) {
+  $("prog").hidden = false;
+  $("prog").firstElementChild.style.width = total ? `${Math.round((done / total) * 100)}%` : "0";
+}
+
+$("scan").addEventListener("click", async () => {
+  const mc = $("mc").value.trim();
+  const loader = $("loader").value;
+  if (!mc || !loader) { setStatus("Indique la version de Minecraft et le loader avant de scanner."); return; }
+  $("scan").disabled = true;
+  const notes = [];
+  const mods = [];
+  try {
+    setStatus("Lecture des fichiers…");
+    let i = 0;
+    for (const f of inputFiles) {
+      setProgress(i++, inputFiles.length);
+      const buffer = await f.arrayBuffer();
+      if (/\.zip$/i.test(f.name)) await readExportZip(f, mods, notes);
+      else mods.push(await jarEntry(buffer, f.name));
+    }
+    // Un même mod lu deux fois (zip + dossier) ne compte qu'une fois.
+    const seen = new Set();
+    const unique = mods.filter((m) => {
+      const key = m.sha1 || `n:${norm(m.cfSlug || m.modId || m.name)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (!unique.length) throw new Error(notes[0] || "Aucun mod trouvé dans ces fichiers.");
+
+    setStatus("Recherche des fichiers identiques sur Modrinth…");
+    const hashes = unique.filter((m) => m.sha1).map((m) => m.sha1);
+    const byHash = {};
+    for (let k = 0; k < hashes.length; k += 200) {
+      Object.assign(byHash, (await mr("/version_files", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hashes: hashes.slice(k, k + 200), algorithm: "sha1" }),
+      })) || {});
+    }
+    const projectIds = [...new Set(Object.values(byHash).map((v) => v.project_id))];
+    const projects = {};
+    for (let k = 0; k < projectIds.length; k += 100) {
+      for (const p of (await mr(`/projects?ids=${encodeURIComponent(JSON.stringify(projectIds.slice(k, k + 100)))}`)) || []) projects[p.id] = p;
+    }
+
+    const loaders = loadersFor(loader, mc);
+    let done = 0;
+    for (const mod of unique) {
+      setProgress(done++, unique.length);
+      setStatus(`Recherche par nom : ${mod.name} (${done}/${unique.length})`);
+      const exact = mod.sha1 && byHash[mod.sha1];
+      if (exact) {
+        const p = projects[exact.project_id];
+        mod.result = { status: "same", project: p ? { slug: p.slug, title: p.title } : null, version: exact.version_number };
+        continue;
+      }
+      try {
+        mod.result = await findByName(mod, mc, loaders);
+      } catch (e) {
+        mod.result = { status: "none", error: e.message };
+      }
+    }
+    setProgress(1, 1);
+    const report = buildReport(unique, { name: $("pack-name").value.trim() || inputFiles[0].name, mc, loader, notes });
+    lastReport = report;
+    saveHistory(report);
+    renderReport(report);
+    setStatus(notes.join(" "));
+  } catch (e) {
+    setStatus(`Erreur : ${e.message}`);
+  } finally {
+    $("scan").disabled = !inputFiles.length;
+  }
+});
+
+function buildReport(mods, info) {
+  const count = (s) => mods.filter((m) => m.result.status === s).length;
+  return { ...info, mods, total: mods.length, same: count("same"), found: count("found"), other: count("other"), none: count("none"), date: new Date().toISOString() };
+}
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const LOADER_NAME = { forge: "Forge", neoforge: "NeoForge", fabric: "Fabric", quilt: "Quilt" };
+
+function renderReport(r) {
+  $("result").hidden = false;
+  const ok = r.same + r.found;
+  $("headline").innerHTML = `Modrinth a trouvé <b>${ok}</b> mod(s) sur <b>${r.total}</b> (${Math.round((ok / r.total) * 100)} %)`;
+  $("chips").innerHTML = ["same", "found", "other", "none"].map((s) => `<span class="chip ${STATUS[s].cls}">${STATUS[s].label} : ${r[s]}</span>`).join("");
+  $("filter").innerHTML = [["all", "Tous"], ["same", "Identiques"], ["found", "Trouvés"], ["other", "Pas pour cette version"], ["none", "Introuvables"]]
+    .map(([k, l]) => `<button data-f="${k}" aria-pressed="${currentFilter === k}">${l}</button>`).join("");
+  const order = { none: 0, other: 1, found: 2, same: 3 };
+  const rows = [...r.mods].sort((a, b) => order[a.result.status] - order[b.result.status] || a.name.localeCompare(b.name))
+    .filter((m) => currentFilter === "all" || m.result.status === currentFilter)
+    .map((m) => {
+      const res = m.result;
+      const st = STATUS[res.status];
+      const link = res.project ? `<a href="https://modrinth.com/mod/${esc(res.project.slug)}" target="_blank" rel="noopener">${esc(res.project.title)}</a>` : "—";
+      let detail = "";
+      if (res.status === "same") detail = `version ${esc(res.version)}`;
+      if (res.status === "found") detail = res.sameVersion ? `même version ${esc(res.version)}` : m.version ? `autre version : ${esc(res.version)}` : `version proposée : ${esc(res.version)}`;
+      if (res.status === "other") detail = `pas de version ${esc(r.mc)} ${esc(LOADER_NAME[r.loader])}`;
+      if (res.error) detail = esc(res.error);
+      return `<tr><td>${esc(m.name)}${m.version ? ` <span class="muted">${esc(m.version)}</span>` : ""}<small>${esc(m.file)}</small></td>`
+        + `<td><span class="chip ${st.cls}">${st.label}</span>${detail ? `<small>${detail}</small>` : ""}</td><td>${link}</td></tr>`;
+    });
+  $("table").tBodies[0].innerHTML = rows.join("") || `<tr><td colspan="3" class="muted">Aucun mod dans ce filtre.</td></tr>`;
+}
+$("filter").addEventListener("click", (e) => {
+  const f = e.target.closest("button")?.dataset.f;
+  if (!f || !lastReport) return;
+  currentFilter = f;
+  renderReport(lastReport);
+});
+
+$("copy").addEventListener("click", async () => {
+  if (!lastReport) return;
+  const r = lastReport;
+  const lines = [
+    `${r.name} (${r.mc} ${LOADER_NAME[r.loader]}) : Modrinth a trouvé ${r.same + r.found} mods sur ${r.total}`,
+    `Identiques ${r.same} · Trouvés ${r.found} · Pas pour cette version ${r.other} · Introuvables ${r.none}`,
+    "",
+    "À mettre à la main :",
+    ...r.mods.filter((m) => m.result.status === "none" || m.result.status === "other").map((m) => `- ${m.name}${m.version ? " " + m.version : ""} (${STATUS[m.result.status].label})`),
+  ];
+  const text = lines.join("\n");
+  try { await navigator.clipboard.writeText(text); $("copied").textContent = "Copié."; }
+  catch { $("copied").textContent = "Copie impossible : sélectionne le texte du tableau à la main."; }
+});
+
+// ---------- Historique (dans ce navigateur seulement) ----------
+const HIST_KEY = "scanner-modpack-historique";
+function loadHistory() { try { return JSON.parse(localStorage.getItem(HIST_KEY)) || []; } catch { return []; } }
+function saveHistory(r) {
+  const h = loadHistory();
+  h.unshift({ name: r.name, mc: r.mc, loader: r.loader, total: r.total, same: r.same, found: r.found, other: r.other, none: r.none, date: r.date });
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, 50))); } catch {}
+  renderHistory();
+}
+function renderHistory() {
+  const h = loadHistory();
+  $("hist-empty").hidden = h.length > 0;
+  $("hist").tBodies[0].innerHTML = h.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.mc)} ${esc(LOADER_NAME[r.loader] || "")}</td>`
+    + `<td><b>${r.same + r.found}/${r.total}</b> (${Math.round(((r.same + r.found) / r.total) * 100)} %)</td><td>${r.same}</td><td>${r.other}</td><td>${r.none}</td>`
+    + `<td>${new Date(r.date).toLocaleString("fr-BE", { dateStyle: "short", timeStyle: "short" })}</td></tr>`).join("");
+}
+$("hist-clear").addEventListener("click", () => { try { localStorage.removeItem(HIST_KEY); } catch {} renderHistory(); });
+renderHistory();
+</script>
+</body>
+</html>

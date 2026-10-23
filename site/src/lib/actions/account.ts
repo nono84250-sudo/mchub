@@ -37,6 +37,12 @@ export async function deleteAccount(confirmation: string): Promise<{ error: Dele
     await execSql(`DELETE FROM "instanceWatch" WHERE lower(replace("minecraftUuid", '-', '')) = ?`, [
       normalizeMinecraftUuid(user.minecraftUuid),
     ]);
+    // Signalements et problemes d'installation envoyes PAR le joueur (sur ses serveurs ou ceux
+    // des autres) : rattaches a l'UUID, pas a user.id, donc pas de cascade non plus. « Supprimer
+    // mon compte » doit tout effacer (23/10).
+    const uuid = normalizeMinecraftUuid(user.minecraftUuid);
+    await execSql(`DELETE FROM "report" WHERE lower(replace("reporterMinecraftUuid", '-', '')) = ?`, [uuid]);
+    await execSql(`DELETE FROM "installProblem" WHERE lower(replace("reporterMinecraftUuid", '-', '')) = ?`, [uuid]);
   }
 
   // Empreinte du compte supprime : le launcher, s'il reste connecte, ne le recreera pas tout

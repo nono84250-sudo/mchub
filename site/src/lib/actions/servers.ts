@@ -5,20 +5,27 @@ import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { deleteR2ImageIfOwned, deleteAllR2Images } from "@/lib/serverImages";
+import { ownTeamIdOrNull } from "@/lib/teams";
+import { deleteR2ImageIfOwned, deleteAllR2Images, imagesUsedByAnotherOwner } from "@/lib/serverImages";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { slugify } from "@/lib/slug";
 import { generateUniqueInviteCode } from "@/lib/inviteCode";
-import { DEFAULT_MODPACK_CHANNEL, type ModpackChannel, type ModpackSource } from "@/lib/modpack-types";
+import { DEFAULT_MODPACK_CHANNEL, parseModpackSource, type ModpackChannel, type ModpackSource } from "@/lib/modpack-types";
 import { runAndStoreChecks } from "@/lib/verification";
 import { requestServerAppeal } from "@/lib/appeals";
 import { addressUsedByFrozenServer } from "@/lib/frozenAddress";
 import { isOwnImageUrl } from "@/lib/ownImageUrl";
+import { supportsAutoConnect } from "@/lib/minecraft-version-constants";
+import { SERVER_TEMPLATES, isServerTemplate } from "@/lib/serverTemplates";
+import { MANUAL_MODS_READY } from "@/lib/manualMods";
+import { DEFAULT_PAGE_CONFIG, normalizePageConfig } from "@/lib/serverPage";
 
 export type ServerActionState = { error: string } | undefined;
 
 // Second audit du 14/10 (I2) : adresse deja utilisee par un serveur gele (voir lib/frozenAddress.ts).
 const FROZEN_ADDRESS_ERROR = "Cette adresse est celle d'un serveur gelé par l'équipe : elle ne peut pas être utilisée pour une autre fiche.";
+// Audit du 19/10 (S-I1) : image deja utilisee par la fiche d'un autre compte (voir lib/serverImages.ts).
+const FOREIGN_IMAGE_ERROR = "Cette image appartient à la fiche d'un autre serveur : envoie ta propre image.";
 
 type ServerFormValues = {
   name: string;
@@ -37,6 +44,7 @@ type ServerFormValues = {
   modpackChannel: ModpackChannel;
   recommendedRamGB: number | null;
   autoConnect: boolean;
+  addToServerList: boolean;
 };
 
 async function requestHost(): Promise<string | null> {
@@ -62,14 +70,17 @@ function readForm(
   const curseforgeModpackId = String(formData.get("curseforgeModpackId") ?? "").trim() || null;
   const curseforgeModpackName = String(formData.get("curseforgeModpackName") ?? "").trim() || null;
   const curseforgeModpackVersion = String(formData.get("curseforgeModpackVersion") ?? "").trim() || null;
-  const modpackSource: ModpackSource = formData.get("modpackSource") === "modrinth" ? "modrinth" : "curseforge";
+  const modpackSource: ModpackSource = parseModpackSource(formData.get("modpackSource"));
   const modpackChannel: ModpackChannel = formData.get("modpackChannel") === "beta" ? "beta" : DEFAULT_MODPACK_CHANNEL;
   const recommendedRamRaw = String(formData.get("recommendedRamGB") ?? "").trim();
   const recommendedRamGB = recommendedRamRaw ? Number(recommendedRamRaw) : null;
   // Coche par defaut (meme logique qu'un checkbox HTML absent du FormData quand decoche) :
   // seule sa presence explicite a "false" la desactive (voir ServerForm.tsx, qui envoie
   // toujours un champ hidden "0" a cote de la case pour ce cas precis).
-  const autoConnect = formData.get("autoConnect") !== "false";
+  const addToServerList = formData.get("addToServerList") !== "false";
+  // Sans liste Multijoueur, la connexion directe est le seul moyen d'entrer : forcee, meme si
+  // le formulaire (case desactivee, donc absente du FormData) ou un appel trafique dit le contraire.
+  const autoConnect = !addToServerList || formData.get("autoConnect") !== "false";
 
   if (!name || !description || !minecraftVersion || !ip) {
     return { error: "Nom, description, version et IP sont obligatoires." };
@@ -81,8 +92,12 @@ function readForm(
   ) {
     return { error: "Les images (bannière, icône, fond) doivent être envoyées depuis ce formulaire." };
   }
+  // Avant 1.20, pas de connexion directe (Quick Play) : sans liste Multijoueur, personne n'entrerait.
+  if (!addToServerList && !supportsAutoConnect(minecraftVersion)) {
+    return { error: "Sur Minecraft avant 1.20, l'adresse doit rester dans la liste Multijoueur (la connexion directe n'existe pas)." };
+  }
   if (type === "modded" && !curseforgeModpackId) {
-    return { error: "Un serveur moddé doit indiquer son modpack (CurseForge ou Modrinth)." };
+    return { error: "Un serveur moddé doit indiquer son modpack (CurseForge, Modrinth ou FTB)." };
   }
   // Plafonnee a 32 Go : au-dela, le launcher clampe silencieusement la
   // valeur reelle utilisee (voir settingsStore.js/MAX_GB cote launcher),
@@ -109,6 +124,7 @@ function readForm(
     modpackChannel: type === "modded" ? modpackChannel : DEFAULT_MODPACK_CHANNEL,
     recommendedRamGB,
     autoConnect,
+    addToServerList,
   };
 }
 
@@ -140,6 +156,9 @@ export async function createServer(_prevState: ServerActionState, formData: Form
   const parsed = readForm(formData, await requestHost());
   if ("error" in parsed) return parsed;
   if (await addressUsedByFrozenServer(parsed.ip)) return { error: FROZEN_ADDRESS_ERROR };
+  if (await imagesUsedByAnotherOwner([parsed.bannerUrl, parsed.iconUrl, parsed.backgroundUrl], session.user.id)) {
+    return { error: FOREIGN_IMAGE_ERROR };
+  }
 
   const slug = await uniqueSlugFor(parsed.name);
   // Toute nouvelle fiche est privee, quoi qu'en dise le formulaire (visibilite retiree de
@@ -156,8 +175,20 @@ export async function createServer(_prevState: ServerActionState, formData: Form
   // verification admin encombrerait cette liste de fiches que le proprietaire ne publiera
   // peut-etre jamais (decision produit du 2026-10-10). La vraie entree en file se fait dans
   // updateServer, au moment ou le proprietaire demande reellement a passer public.
+  // Modele de fiche choisi a l'etape 1 (design 2026-10-17, point 7) : seules ses etiquettes
+  // sont gardees ici (description/type/RAM arrivent deja preremplies dans le formulaire).
+  const template = formData.get("template");
+  const pageConfig = isServerTemplate(template)
+    ? JSON.stringify(normalizePageConfig({ ...DEFAULT_PAGE_CONFIG, tags: [...SERVER_TEMPLATES[template].tags] }))
+    : undefined;
+
+  // Team choisie a l'etape 1 (teams, 19/10) : seulement une team de ce compte, sinon aucune.
+  const teamId = await ownTeamIdOrNull(session.user.id, String(formData.get("teamId") ?? "") || null);
+
   const server = await db.orm.public.Server.create({
     ...parsed,
+    ...(pageConfig ? { pageConfig } : {}),
+    ...(teamId ? { teamId } : {}),
     isPrivate,
     slug,
     inviteCode,
@@ -183,6 +214,8 @@ export async function updateServer(
   const parsed = readForm(formData, await requestHost(), owned);
   if ("error" in parsed) return parsed;
   if (parsed.ip !== owned.ip && (await addressUsedByFrozenServer(parsed.ip, serverId))) return { error: FROZEN_ADDRESS_ERROR };
+  const addedImages = (["bannerUrl", "iconUrl", "backgroundUrl"] as const).filter((k) => parsed[k] !== owned[k]).map((k) => parsed[k]);
+  if (await imagesUsedByAnotherOwner(addedImages, session.user.id)) return { error: FOREIGN_IMAGE_ERROR };
 
   // Un changement d'IP, de version declaree ou de modpack rend l'auto-test precedent caduc —
   // meme esprit que runAndStoreChecks ci-dessous pour le controle automatique du site : une
@@ -228,7 +261,9 @@ export async function updateServer(
     isPrivate,
     inviteCode,
     ...(parsed.ip !== owned.ip ? { lastPingedAt: null, playerCount: null, playerCapacity: null } : {}),
-    ...(connectionChanged ? { selfTestPassedAt: null, selfTestDetectedVersion: null } : {}),
+    ...(connectionChanged
+      ? { selfTestPassedAt: null, selfTestDetectedVersion: null, ...(MANUAL_MODS_READY ? { manualModsCount: 0, manualModsJson: null } : {}) }
+      : {}),
     // 2026-10-10 : verificationReason (motif du refus precedent) ne se vidait jamais — un
     // serveur refuse puis republie gardait l'ancien motif affiche (manage/[id]/page.tsx) meme
     // apres avoir ete remis en file et potentiellement reapprouve.
@@ -236,10 +271,11 @@ export async function updateServer(
   });
 
   // Image remplacee ou retiree : l'ancienne ne sert plus a rien sur R2 (sauf si une fiche
-  // dupliquee la partage encore, verifie dans deleteR2ImageIfOwned).
-  if (parsed.bannerUrl !== owned.bannerUrl) await deleteR2ImageIfOwned(owned.bannerUrl, serverId);
-  if (parsed.iconUrl !== owned.iconUrl) await deleteR2ImageIfOwned(owned.iconUrl, serverId);
-  if (parsed.backgroundUrl !== owned.backgroundUrl) await deleteR2ImageIfOwned(owned.backgroundUrl, serverId);
+  // dupliquee la partage encore, verifie dans deleteR2ImageIfOwned). null : la fiche est deja a
+  // jour en base et compte aussi (banniere devenue icone, image aussi dans la galerie...).
+  if (parsed.bannerUrl !== owned.bannerUrl) await deleteR2ImageIfOwned(owned.bannerUrl, null);
+  if (parsed.iconUrl !== owned.iconUrl) await deleteR2ImageIfOwned(owned.iconUrl, null);
+  if (parsed.backgroundUrl !== owned.backgroundUrl) await deleteR2ImageIfOwned(owned.backgroundUrl, null);
 
   // Controles automatiques du site : lances au moment ou la fiche entre reellement dans la
   // file (ci-dessus), ou re-lances si une fiche deja en file (encore en attente/refusee,
@@ -342,6 +378,11 @@ export async function duplicateServer(serverId: string): Promise<ServerActionSta
     modpackChannel: source.modpackChannel,
     recommendedRamGB: source.recommendedRamGB,
     autoConnect: source.autoConnect,
+    addToServerList: source.addToServerList,
+    // Meme team que l'original (teams, 19/10), si c'est bien une team de ce compte.
+    ...((source as { teamId?: string | null }).teamId
+      ? { teamId: await ownTeamIdOrNull(session.user.id, (source as { teamId?: string | null }).teamId ?? null) }
+      : {}),
     // Une fiche mise en pause reste en pause dans sa copie — sans ça, un
     // serveur intentionnellement masque republiait automatiquement sa
     // copie (le defaut du schema est `true`).

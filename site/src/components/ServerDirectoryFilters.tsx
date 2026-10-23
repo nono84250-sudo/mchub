@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDirectoryLoading } from "@/components/DirectoryLoading";
 import { useRouter } from "next/navigation";
-import { Funnel, MagnifyingGlass, X } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, Funnel, MagnifyingGlass, X } from "@phosphor-icons/react";
+import { TeamAvatar } from "@/components/TeamAvatar";
 import { useI18n } from "@/i18n/I18nProvider";
-import { PAGE_TAGS, type PageTag } from "@/lib/serverPage";
+import type { PageTag } from "@/lib/serverPage";
+import { allTags, tagName, type CustomTag } from "@/lib/tagCatalog";
 import {
   SERVER_SORTS,
   activeFilterKeys,
@@ -25,16 +28,31 @@ const SORT_LABEL: Record<(typeof SERVER_SORTS)[number], string> = {
   players: "servers.sortPlayers",
   played: "servers.sortPlayed",
   az: "servers.sortAz",
+  small: "servers.sortSmall",
 };
 
-type Props = { filters: ServerListFilters; facets: ServerFacets; total: number };
+// Sens affiche sur le bouton ↑↓ : [sens habituel, inverse]. Memes mots dans le launcher.
+const ORDER_LABEL: Record<(typeof SERVER_SORTS)[number], [string, string]> = {
+  recent: ["servers.orderNewOld", "servers.orderOldNew"],
+  trend: ["servers.orderMoreLess", "servers.orderLessMore"],
+  players: ["servers.orderMoreLess", "servers.orderLessMore"],
+  played: ["servers.orderMoreLess", "servers.orderLessMore"],
+  az: ["servers.orderAZ", "servers.orderZA"],
+  small: ["servers.orderSmallBig", "servers.orderBigSmall"],
+};
 
-export function ServerDirectoryFilters({ filters, facets, total }: Props) {
-  const { t } = useI18n();
+// customTags : etiquettes ajoutees par l'equipe (demandes d'etiquettes), pour leurs noms.
+type Props = { filters: ServerListFilters; facets: ServerFacets; total: number; customTags?: CustomTag[] };
+
+export function ServerDirectoryFilters({ filters, facets, total, customTags = [] }: Props) {
+  const { t, locale } = useI18n();
+  const tagLabel = (tag: string) => tagName(tag, locale, customTags) || tag;
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  // Transition partagee avec la liste (DirectoryLoading.tsx) : barre + cartes fantomes pendant le chargement.
+  const { pending, start: startTransition } = useDirectoryLoading();
   const [q, setQ] = useState(filters.q);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [teamQuery, setTeamQuery] = useState("");
   const [narrow, setNarrow] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const filtersBtnRef = useRef<HTMLButtonElement>(null);
@@ -91,16 +109,24 @@ export function ServerDirectoryFilters({ filters, facets, total }: Props) {
 
   const toggleTag = (tag: PageTag) =>
     go({ ...filters, tags: filters.tags.includes(tag) ? filters.tags.filter((x) => x !== tag) : [...filters.tags, tag] });
-  const clearAll = () => go({ ...filters, type: "all", online: false, lang: "all", tags: [], version: "all" });
+  const clearAll = () => go({ ...filters, type: "all", online: false, lang: "all", tags: [], version: "all", team: "" });
 
-  const panelCount = filters.tags.length + (filters.version !== "all" ? 1 : 0);
+  // Menu allege (19/10, meme logique que le launcher, design valide par Rushi) : la barre garde
+  // les tris, Tous/Vanilla/Modde et « Filtres (n) » ; En ligne, Langue, Style, Version et Team
+  // passent dans le panneau. Le chiffre compte tout ce qui est coche dans le panneau.
+  const panelCount =
+    filters.tags.length + (filters.version !== "all" ? 1 : 0) + (filters.online ? 1 : 0) + (filters.lang !== "all" ? 1 : 0) + (filters.team ? 1 : 0);
+  const teamName = (slug: string) => facets.teams.find((x) => x.slug === slug)?.name ?? slug;
+  const needle = teamQuery.trim().toLowerCase();
+  const shownTeams = facets.teams.filter((x) => !needle || x.name.toLowerCase().includes(needle));
   const versionLabel = (v: string) => (v === "all" ? t("servers.versionAll") : v === "other" ? t("servers.versionOther") : `${v}.x`);
   const filterLabel = (key: FilterKey) => {
     if (key === "type") return t(filters.type === "modded" ? "servers.modded" : "servers.vanilla");
     if (key === "online") return t("servers.filterOnline");
     if (key === "lang") return t(`serverPage.languages.${filters.lang}`);
     if (key === "version") return versionLabel(filters.version);
-    return t(`serverPage.tags.${key.slice(4)}`);
+    if (key === "team") return t("servers.teamChip", { team: teamName(filters.team) });
+    return tagLabel(key.slice(4));
   };
   const countText = t(total === 1 ? "servers.resultCount" : "servers.resultCountPlural", { count: total });
 
@@ -149,13 +175,52 @@ export function ServerDirectoryFilters({ filters, facets, total }: Props) {
         </button>
       </div>
       <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 text-[11px] uppercase tracking-wider text-muted">{t("servers.status")}</legend>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            aria-pressed={filters.online}
+            aria-label={`${t("servers.filterOnline")}, ${facets.online}`}
+            onClick={() => go({ ...filters, online: !filters.online })}
+            className={`${chip(filters.online)} rounded-full border ${filters.online ? "border-accent" : "border-border"}`}
+          >
+            {check(filters.online)}
+            <span aria-hidden className="h-2 w-2 rounded-full bg-success" />
+            {t("servers.filterOnline")}
+            {count(facets.online)}
+          </button>
+        </div>
+      </fieldset>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 text-[11px] uppercase tracking-wider text-muted">{t("serverPage.editor.languages")}</legend>
+        <div className="flex flex-wrap gap-1.5">
+          {langOptions.map(([value, label]) => {
+            const on = filters.lang === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={on}
+                aria-label={`${t(label)}, ${facets.lang[value]}`}
+                onClick={() => go({ ...filters, lang: value })}
+                className={`${chip(on)} rounded-full border ${on ? "border-accent" : "border-border"}`}
+              >
+                {check(on)}
+                {t(label)}
+                {count(facets.lang[value])}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-[11px] uppercase tracking-wider text-muted">{t("servers.style")}</legend>
         <p className="text-xs text-muted">{t("servers.styleHelp")}</p>
         <div className="flex flex-wrap gap-1.5">
           {/* 30 etiquettes : on ne montre que celles qui ont des serveurs (ou deja cochees). */}
-          {PAGE_TAGS.filter((tag) => facets.tags[tag] > 0 || filters.tags.includes(tag)).map((tag) => {
+          {allTags(customTags).filter((tag) => (facets.tags[tag] ?? 0) > 0 || filters.tags.includes(tag)).map((tag) => {
             const on = filters.tags.includes(tag);
-            const n = facets.tags[tag];
+            const n = facets.tags[tag] ?? 0;
             const disabled = n === 0 && !on;
             return (
               <button
@@ -163,12 +228,12 @@ export function ServerDirectoryFilters({ filters, facets, total }: Props) {
                 type="button"
                 aria-pressed={on}
                 aria-disabled={disabled || undefined}
-                aria-label={`${t(`serverPage.tags.${tag}`)}, ${n}`}
+                aria-label={`${tagLabel(tag)}, ${n}`}
                 onClick={() => !disabled && toggleTag(tag)}
                 className={`${chip(on, disabled)} rounded-full border ${on ? "border-accent" : "border-border"}`}
               >
                 {check(on)}
-                {t(`serverPage.tags.${tag}`)}
+                {tagLabel(tag)}
                 {count(n)}
               </button>
             );
@@ -199,6 +264,48 @@ export function ServerDirectoryFilters({ filters, facets, total }: Props) {
           })}
         </div>
       </fieldset>
+      {facets.teams.length ? (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1 text-[11px] uppercase tracking-wider text-muted">{t("servers.team")}</legend>
+          {facets.teams.length > 5 ? (
+            <label className="field-with-icon">
+              <span className="sr-only">{t("servers.teamSearch")}</span>
+              <MagnifyingGlass className="h-4 w-4" />
+              <input
+                type="search"
+                value={teamQuery}
+                onChange={(e) => setTeamQuery(e.target.value)}
+                placeholder={t("servers.teamSearch")}
+                className="field-input h-9 w-full py-0 text-sm"
+              />
+            </label>
+          ) : null}
+          <div className="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+            {shownTeams.map((team) => {
+              const on = filters.team === team.slug;
+              const disabled = team.count === 0 && !on;
+              return (
+                <button
+                  key={team.slug}
+                  type="button"
+                  aria-pressed={on}
+                  aria-disabled={disabled || undefined}
+                  aria-label={`${team.name}, ${team.count}`}
+                  onClick={() => !disabled && go({ ...filters, team: on ? "" : team.slug })}
+                  className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+                    on ? "bg-accent/15 font-medium text-foreground" : "text-foreground hover:bg-surface-raised"
+                  } ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
+                >
+                  <TeamAvatar team={team} size={18} />
+                  <span className="min-w-0 flex-1 truncate">{team.name}</span>
+                  {count(team.count)}
+                </button>
+              );
+            })}
+            {!shownTeams.length ? <p className="px-2 py-1.5 text-xs text-muted">{t("servers.teamNone")}</p> : null}
+          </div>
+        </fieldset>
+      ) : null}
       <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
         <button type="button" onClick={clearAll} className="text-sm text-accent underline underline-offset-4">
           {t("servers.clearAll")}
@@ -236,21 +343,6 @@ export function ServerDirectoryFilters({ filters, facets, total }: Props) {
             className="field-input w-full"
           />
         </label>
-        <label htmlFor="servers-sort" className="flex items-center gap-2 text-xs text-muted sm:ml-auto">
-          {t("servers.sortLabel")}
-          <select
-            id="servers-sort"
-            value={filters.sort}
-            onChange={(e) => go({ ...filters, sort: e.target.value as ServerListFilters["sort"] })}
-            className="field-input h-9 py-0"
-          >
-            {SERVER_SORTS.map((s) => (
-              <option key={s} value={s}>
-                {t(SORT_LABEL[s])}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
 
       <div className="relative flex flex-wrap items-center gap-2">
@@ -275,37 +367,6 @@ export function ServerDirectoryFilters({ filters, facets, total }: Props) {
             })}
           </div>
           <button
-            type="button"
-            aria-pressed={filters.online}
-            aria-label={`${t("servers.filterOnline")}, ${facets.online}`}
-            onClick={() => go({ ...filters, online: !filters.online })}
-            className={`${chip(filters.online)} rounded-full border ${filters.online ? "border-accent" : "border-border"}`}
-          >
-            {check(filters.online)}
-            <span aria-hidden className="h-2 w-2 rounded-full bg-success" />
-            {t("servers.filterOnline")}
-            {count(facets.online)}
-          </button>
-          <div role="group" aria-label={t("serverPage.editor.languages")} className="flex shrink-0 overflow-hidden rounded-full border border-border">
-            {langOptions.map(([value, label], i) => {
-              const on = filters.lang === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={on}
-                  aria-label={`${t(label)}, ${facets.lang[value]}`}
-                  onClick={() => go({ ...filters, lang: value })}
-                  className={`${chip(on)} ${i ? "border-l border-border" : ""}`}
-                >
-                  {check(on)}
-                  {t(label)}
-                  {count(facets.lang[value])}
-                </button>
-              );
-            })}
-          </div>
-          <button
             ref={filtersBtnRef}
             type="button"
             aria-expanded={panelOpen}
@@ -319,6 +380,33 @@ export function ServerDirectoryFilters({ filters, facets, total }: Props) {
               <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1 font-mono text-[11px] text-accent-foreground">{panelCount}</span>
             ) : null}
           </button>
+          {/* Tri (19/10, variante A) : menu « Trier » + bouton qui inverse le sens, comme le launcher. */}
+          <div className="flex h-9 shrink-0 items-center overflow-hidden rounded-full border border-border">
+            <label htmlFor="servers-sort" className="pl-3 pr-1 text-[13px] text-muted">
+              {t("servers.sortLabel")}
+            </label>
+            <select
+              id="servers-sort"
+              value={filters.sort}
+              onChange={(e) => go({ ...filters, sort: e.target.value as ServerListFilters["sort"], order: "desc" })}
+              className="h-full cursor-pointer bg-transparent pr-2 text-sm font-medium text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+            >
+              {SERVER_SORTS.map((s) => (
+                <option key={s} value={s} className="bg-surface text-foreground">
+                  {t(SORT_LABEL[s])}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => go({ ...filters, order: filters.order === "asc" ? "desc" : "asc" })}
+              aria-label={t("servers.orderToggle", { order: t(ORDER_LABEL[filters.sort][filters.order === "asc" ? 1 : 0]) })}
+              className="inline-flex h-full items-center gap-1 border-l border-border px-2.5 text-[12.5px] font-medium text-accent hover:bg-surface-raised"
+            >
+              {filters.order === "asc" ? <ArrowUp className="h-4 w-4" aria-hidden /> : <ArrowDown className="h-4 w-4" aria-hidden />}
+              <span className="max-sm:hidden">{t(ORDER_LABEL[filters.sort][filters.order === "asc" ? 1 : 0])}</span>
+            </button>
+          </div>
         </div>
         {panelOpen ? (
           <>
@@ -330,6 +418,7 @@ export function ServerDirectoryFilters({ filters, facets, total }: Props) {
 
       {filters.type !== "all" ? <p className="text-xs text-muted">{t("servers.typeHelp")}</p> : null}
       {filters.sort === "trend" ? <p className="rounded-lg bg-surface-raised px-3 py-2 text-xs text-muted">{t("servers.trendNote")}</p> : null}
+      {filters.sort === "small" ? <p className="rounded-lg bg-surface-raised px-3 py-2 text-xs text-muted">{t("servers.smallNote")}</p> : null}
 
       <div className="flex min-h-7 flex-wrap items-center gap-1.5">
         <span className="mr-1 text-sm text-muted" aria-live="polite">
@@ -359,16 +448,28 @@ export function ServerDirectoryFilters({ filters, facets, total }: Props) {
 }
 
 // Etat vide quand des filtres excluent tout : nomme le filtre qui bloque et propose de le retirer.
-export function ServerFiltersEmpty({ filters, blocking }: { filters: ServerListFilters; blocking: { key: FilterKey; gain: number } | null }) {
-  const { t } = useI18n();
+export function ServerFiltersEmpty({
+  filters,
+  blocking,
+  customTags = [],
+  teams = [],
+}: {
+  filters: ServerListFilters;
+  blocking: { key: FilterKey; gain: number } | null;
+  customTags?: CustomTag[];
+  teams?: ServerFacets["teams"];
+}) {
+  const { t, locale } = useI18n();
   const router = useRouter();
-  const go = (next: ServerListFilters) => router.replace(`/servers${filtersToSearch(next)}`, { scroll: false });
+  const { start } = useDirectoryLoading();
+  const go = (next: ServerListFilters) => start(() => router.replace(`/servers${filtersToSearch(next)}`, { scroll: false }));
   const label = (key: FilterKey) => {
     if (key === "type") return t(filters.type === "modded" ? "servers.modded" : "servers.vanilla");
     if (key === "online") return t("servers.filterOnline");
     if (key === "lang") return t(`serverPage.languages.${filters.lang}`);
     if (key === "version") return filters.version === "other" ? t("servers.versionOther") : `${filters.version}.x`;
-    return t(`serverPage.tags.${key.slice(4)}`);
+    if (key === "team") return t("servers.teamChip", { team: teams.find((x) => x.slug === filters.team)?.name ?? filters.team });
+    return tagName(key.slice(4), locale, customTags) || key.slice(4);
   };
   return (
     <div role="status" className="panel mt-6 flex flex-col items-center gap-3 p-8 text-center text-muted">
@@ -385,7 +486,7 @@ export function ServerFiltersEmpty({ filters, blocking }: { filters: ServerListF
       <button
         type="button"
         className="text-sm text-accent underline underline-offset-4"
-        onClick={() => go({ ...filters, q: "", type: "all", online: false, lang: "all", tags: [], version: "all" })}
+        onClick={() => go({ ...filters, q: "", type: "all", online: false, lang: "all", tags: [], version: "all", team: "" })}
       >
         {t("servers.clearAll")}
       </button>

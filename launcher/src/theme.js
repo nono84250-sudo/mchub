@@ -23,9 +23,21 @@ function resolveThemeMode(theme) {
   return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
+// Reduire les animations (design 17/10, point 5) : "auto" suit le reglage Windows
+// (prefers-reduced-motion), "on"/"off" le forcent.
+const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+let lastMotionSetting = "auto";
+function applyMotion(setting) {
+  lastMotionSetting = setting || "auto";
+  const reduce = lastMotionSetting === "on" || (lastMotionSetting === "auto" && reducedMotionQuery.matches);
+  document.documentElement.classList.toggle("reduce-motion", reduce);
+}
+reducedMotionQuery.addEventListener("change", () => applyMotion(lastMotionSetting));
+
 function applyTheme(settings) {
   document.documentElement.dataset.theme = resolveThemeMode(settings.theme);
   document.documentElement.style.setProperty("--accent", settings.accentColor || ACCENT_PRESETS[0]);
+  applyMotion(settings.reduceMotion);
 }
 
 let systemThemeQuery = null;

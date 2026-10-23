@@ -4,6 +4,7 @@ import { createServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
 import { allSourceStates } from "@/lib/platformSettings";
 import { NewServerWizard } from "@/components/NewServerWizard";
+import { listMyTeams } from "@/lib/teams";
 
 export const metadata = { title: "Nouveau serveur — Omniscient" };
 
@@ -15,7 +16,14 @@ export default async function NewServerPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const [versions, sourceStates] = await Promise.all([getMinecraftVersions(), allSourceStates()]);
+  const [versions, sourceStates, teams] = await Promise.all([getMinecraftVersions(), allSourceStates(), listMyTeams(session.user.id)]);
 
-  return <NewServerWizard action={createServer} versions={versions} sourceStates={sourceStates} />;
+  return (
+    <NewServerWizard
+      action={createServer}
+      versions={versions}
+      sourceStates={sourceStates}
+      teams={teams.map((team) => ({ id: team.id, name: team.name }))}
+    />
+  );
 }

@@ -7,6 +7,8 @@ import { logout } from "@/lib/actions/auth";
 import { setLocale } from "@/lib/actions/locale";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { Locale } from "@/i18n/locales";
+import { UnreadBadge } from "@/components/UnreadBadge";
+import { TEAMS_READY } from "@/lib/teamRules";
 
 type ThemePreference = "system" | "dark" | "light";
 const THEME_STORAGE_KEY = "theme";
@@ -29,7 +31,7 @@ function applyTheme(pref: ThemePreference) {
 // pour rester coherent entre le site et la console. Langue et Apparence ne
 // sont proposees ici QUE connecte (voir Nav.tsx, qui garde les selecteurs
 // autonomes hors connexion, puisqu'il n'y a alors aucun "Mon espace").
-export function AccountMenu() {
+export function AccountMenu({ unread = 0 }: { unread?: number }) {
   const [open, setOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [themePref, setThemePref] = useState<ThemePreference>("system");
@@ -79,32 +81,31 @@ export function AccountMenu() {
         className="flex items-center gap-1 text-muted hover:text-foreground transition-colors"
       >
         {t("nav.mySpace")}
+        <UnreadBadge count={unread} />
         <CaretDown className="h-4 w-4" />
       </button>
 
       {open ? (
         <div className="absolute right-0 top-full mt-2 w-56 rounded-lg border border-border bg-surface p-1.5 shadow-lg">
-          <Link
-            href="/dashboard/parametres"
-            className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-raised"
-            onClick={() => setOpen(false)}
-          >
-            {t("nav.profile")}
-          </Link>
-          <Link
-            href="/dashboard"
-            className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-raised"
-            onClick={() => setOpen(false)}
-          >
-            {t("nav.dashboard")}
-          </Link>
-          <Link
-            href="/dashboard/amis"
-            className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-raised"
-            onClick={() => setOpen(false)}
-          >
-            {t("nav.friends")}
-          </Link>
+          {/* Lot 6 (18/10) : un seul nom par page, les memes que le launcher (plus de Profil
+              ni de Dashboard). */}
+          {[
+            { href: "/dashboard", label: t("nav.dashboard"), badge: 0 },
+            { href: "/dashboard/amis", label: t("nav.friends"), badge: 0 },
+            ...(TEAMS_READY ? [{ href: "/dashboard/team", label: t("dashboard.navTeam"), badge: 0 }] : []),
+            { href: "/dashboard/notifications", label: t("nav.notifications"), badge: unread },
+            { href: "/dashboard/parametres", label: t("nav.settings"), badge: 0 },
+          ].map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className="flex items-center justify-between rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-raised"
+              onClick={() => setOpen(false)}
+            >
+              {l.label}
+              <UnreadBadge count={l.badge} />
+            </Link>
+          ))}
 
           <div className="my-1.5 border-t border-border" />
 
