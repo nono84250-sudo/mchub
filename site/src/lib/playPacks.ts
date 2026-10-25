@@ -124,6 +124,43 @@ export async function preparePackVersions(projectRefs: string[]): Promise<{ proj
   return { projects, versions, loaderVersion };
 }
 
+// --- Recherche de mods pour le formulaire (25/10, preview validée par Rushi) -----------------
+// Le formulaire « Nouveau pack » cherche les mods Fabric de Modrinth au lieu d'une liste tapée à
+// la main. Seuls les noms courts (slug) partent ensuite dans `projects`, comme avant.
+export type ModChoice = { slug: string; title: string; author: string; description: string; icon: string | null; downloads: number; versions: string[] };
+
+const releaseVersions = (list: string[]) => list.filter(isRelease).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+export async function searchFabricMods(query: string, sort: "downloads" | "relevance" = "downloads"): Promise<ModChoice[]> {
+  const params = new URLSearchParams({
+    query: query.trim().slice(0, 80),
+    facets: JSON.stringify([["project_type:mod"], ["categories:fabric"]]),
+    limit: "20",
+    index: sort,
+  });
+  const { hits } = await mr<{ hits: { slug: string; title: string; author: string; description: string; icon_url: string | null; downloads: number; versions: string[] }[] }>(`/search?${params}`);
+  return hits.map((h) => ({ slug: h.slug.toLowerCase(), title: h.title, author: h.author, description: h.description, icon: h.icon_url, downloads: h.downloads, versions: releaseVersions(h.versions ?? []) }));
+}
+
+// Mods déjà dans un pack (formulaire de modification) : nom, icône et versions depuis leur slug.
+export async function describeMods(slugs: string[]): Promise<ModChoice[]> {
+  const refs = slugs.slice(0, MAX_PROJECTS);
+  if (!refs.length) return [];
+  const projects = await mr<(MrProject & { description: string; icon_url: string | null; downloads: number })[]>(`/projects?ids=${encodeURIComponent(JSON.stringify(refs))}`);
+  return projects.map((p) => ({ slug: p.slug.toLowerCase(), title: p.title, author: "", description: p.description, icon: p.icon_url, downloads: p.downloads, versions: releaseVersions(p.game_versions) }));
+}
+
+// Dépendances obligatoires de la dernière version Fabric d'un mod (affichage seulement : la
+// préparation des versions les recalcule de toute façon pour chaque version de Minecraft).
+export async function requiredDeps(slug: string): Promise<{ slug: string; title: string }[]> {
+  const versions = await mr<MrVersion[]>(`/project/${encodeURIComponent(slug)}/version?loaders=${encodeURIComponent('["fabric"]')}`);
+  const latest = [...versions].sort((a, b) => b.date_published.localeCompare(a.date_published))[0];
+  const ids = [...new Set((latest?.dependencies ?? []).filter((d) => d.dependency_type === "required" && d.project_id).map((d) => d.project_id as string))].slice(0, 10);
+  if (!ids.length) return [];
+  const projects = await mr<MrProject[]>(`/projects?ids=${encodeURIComponent(JSON.stringify(ids))}`);
+  return projects.map((p) => ({ slug: p.slug.toLowerCase(), title: p.title }));
+}
+
 type Row = Record<string, any>;
 const now = () => new Date().toISOString();
 

@@ -1,4 +1,5 @@
 import { AdminChrome } from "@/components/admin/AdminChrome";
+import { PackModPicker } from "@/components/admin/PackModPicker";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { listAdminPacks } from "@/lib/playPacks";
 import { getPlayBeta } from "@/lib/playWorlds";
@@ -68,10 +69,10 @@ export default async function PacksOfficiels({ searchParams }: PageProps<"/admin
         <label style={label}>Description vue par les joueurs (FR)<input name="descriptionFr" maxLength={200} defaultValue={p?.descriptionFr ?? ""} placeholder="Plus d'images par seconde, même sur un petit PC." style={field} /></label>
         <label style={label}>Description (EN)<input name="descriptionEn" maxLength={200} defaultValue={p?.descriptionEn ?? ""} placeholder="More frames per second, even on a small PC." style={field} /></label>
       </div>
-      <label style={label}>
-        Mods inclus (depuis Modrinth) : liens ou noms courts, un par ligne
-        <textarea name="projects" required rows={5} defaultValue={p ? parse<string[]>(p.modrinthProjects, []).join("\n") : ""} placeholder={"sodium\nlithium\nhttps://modrinth.com/mod/immediatelyfast"} style={{ ...field, fontFamily: "var(--font-mono, monospace)", resize: "vertical" }} />
-      </label>
+      <div style={label}>
+        Mods inclus (depuis Modrinth)
+        <PackModPicker initial={p ? parse<string[]>(p.modrinthProjects, []) : []} />
+      </div>
       <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>
         Fabric seulement. Les dépendances obligatoires (comme Fabric API) sont ajoutées toutes seules. À l&apos;enregistrement, toutes les versions de Minecraft où ces mods existent sont préparées : il faut ensuite les tester dans le launcher, puis les publier.
       </p>

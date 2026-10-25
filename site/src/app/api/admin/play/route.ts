@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       .replace(/^-|-$/g, "");
     const projects = parseProjectList(clean(form.get("projects"), 4000));
     if (!nameFr || !slug) return back(request, `error=${encodeURIComponent("Donne un nom au pack.")}`);
-    if (!projects.length) return back(request, `error=${encodeURIComponent("Ajoute au moins un mod Modrinth (lien ou nom court).")}`);
+    if (!projects.length) return back(request, `error=${encodeURIComponent("Ajoute au moins un mod Modrinth.")}`);
     try {
       const { id: savedId, counts } = await savePack({
         id,
