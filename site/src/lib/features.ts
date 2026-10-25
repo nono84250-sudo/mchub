@@ -1,8 +1,9 @@
+import { cache } from "react";
 import { revalidateTag, unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db, execSql } from "@/lib/db";
-import { launcherIdentityUuid, normalizeMinecraftUuid } from "@/lib/launcherAuth";
+import { isAuthorizedLauncherRequest, launcherIdentityUuid, normalizeMinecraftUuid } from "@/lib/launcherAuth";
 
 // Laboratoire (25/10, demande de Rushi) : un interrupteur par fonctionnalité, réglé dans
 // /admin/laboratoire, lu par le site ET le launcher. C'est TOUJOURS le site qui décide : le
@@ -224,12 +225,15 @@ export async function launcherViewer(request: Request): Promise<Viewer & { uuid:
 // l'admin ne suffit pas (25/10, demande de Rushi : pouvoir s'ajouter puis se retirer pour vérifier
 // que ça s'affiche puis disparaît). Le site n'a pas de canal bêta : « Bêta testeurs » n'y montre
 // rien de plus qu'aux testeurs.
-export async function siteViewer(): Promise<Viewer> {
+// Audit du 25/10 : une seule lecture par requête (cache de React, Nav + pages + actions), et
+// aucune lecture quand la liste des testeurs est vide.
+export const siteViewer = cache(async (): Promise<Viewer> => {
   const session = await auth().catch(() => null);
   if (!session?.user?.id) return { tester: false, betaChannel: false };
+  if (!(await lab()).testers.length) return { tester: false, betaChannel: false };
   const user = await db.orm.public.User.select("minecraftUuid").where({ id: session.user.id }).first().catch(() => null);
   return { tester: await isTesterUuid(user?.minecraftUuid ?? null), betaChannel: false };
-}
+});
 
 // État réel d'une fonctionnalité, pour tout le monde (badges globaux, ex. menu de l'admin).
 export async function featureState(id: string): Promise<FeatureState> {
@@ -249,10 +253,15 @@ export async function featureFor(id: string, viewer: Viewer): Promise<FeatureAcc
 // --- Verrous ------------------------------------------------------------------------------------
 // À appeler en tête de chaque route launcher d'une fonctionnalité : null si elle est visible
 // pour ce joueur, sinon la réponse 404 à renvoyer (comme si la route n'existait pas).
+// Audit du 25/10 : qui regarde n'est cherché que si ça change la réponse (« Test » et « Bêta
+// testeurs »), et jamais pour un appel sans la clé du launcher (pas d'appel à Mojang pour lui).
 export async function requireLauncherFeature(request: Request, id: string): Promise<NextResponse | null> {
-  const access = await featureFor(id, await launcherViewer(request));
-  if (access.visible) return null;
-  return NextResponse.json({ error: "Fonctionnalité indisponible.", code: "feature_off" }, { status: 404 });
+  const state = effectiveState(id, (await lab()).states);
+  const off = () => NextResponse.json({ error: "Fonctionnalité indisponible.", code: "feature_off" }, { status: 404 });
+  if (state === "all" || state === "beta") return null;
+  if (state === "hidden") return off();
+  const viewer = isAuthorizedLauncherRequest(request) ? await launcherViewer(request) : { tester: false, betaChannel: false };
+  return accessFor(state, viewer).visible ? null : off();
 }
 
 // Pages et actions du site : vrai si la fonctionnalité est visible pour le visiteur.

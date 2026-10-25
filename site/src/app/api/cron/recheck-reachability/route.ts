@@ -20,8 +20,9 @@ import { CONCURRENCY } from "@/lib/status-snapshot";
 // 21/10 (cache des fiches) : les resultats sont ecrits en paquets (une requete pour
 // WRITE_BATCH_SIZE serveurs, au lieu d'une par serveur), en SQL direct pour ne PAS changer
 // updatedAt (ce n'est pas une modification de la fiche), et seul le cache des joueurs est vide.
-// 5 parametres par serveur, D1 en accepte 100 par requete : 19 serveurs par paquet.
-const WRITE_BATCH_SIZE = 19;
+// 7 parametres par serveur (2 par colonne x 3, plus l'id du IN), D1 en accepte 100 par
+// requete : 12 serveurs par paquet (audit du 25/10 : 19 depassait la limite des 15 serveurs).
+const WRITE_BATCH_SIZE = 12;
 type PingResult = { id: string; playerCount: number | null; playerCapacity: number | null; at: string };
 
 async function writeResults(results: PingResult[]) {

@@ -6,6 +6,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { ownTeamIdOrNull } from "@/lib/teams";
+import { featureVisibleOnSite } from "@/lib/features";
 import { deleteR2ImageIfOwned, deleteAllR2Images, imagesUsedByAnotherOwner } from "@/lib/serverImages";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { slugify } from "@/lib/slug";
@@ -187,7 +188,7 @@ export async function createServer(_prevState: ServerActionState, formData: Form
     : undefined;
 
   // Team choisie a l'etape 1 (teams, 19/10) : seulement une team de ce compte, sinon aucune.
-  const teamId = await ownTeamIdOrNull(session.user.id, String(formData.get("teamId") ?? "") || null);
+  const teamId = (await featureVisibleOnSite("team")) ? await ownTeamIdOrNull(session.user.id, String(formData.get("teamId") ?? "") || null) : null;
 
   const server = await db.orm.public.Server.create({
     ...parsed,
@@ -385,7 +386,7 @@ export async function duplicateServer(serverId: string): Promise<ServerActionSta
     autoConnect: source.autoConnect,
     addToServerList: source.addToServerList,
     // Meme team que l'original (teams, 19/10), si c'est bien une team de ce compte.
-    ...((source as { teamId?: string | null }).teamId
+    ...((source as { teamId?: string | null }).teamId && (await featureVisibleOnSite("team"))
       ? { teamId: await ownTeamIdOrNull(session.user.id, (source as { teamId?: string | null }).teamId ?? null) }
       : {}),
     // Une fiche mise en pause reste en pause dans sa copie — sans ça, un

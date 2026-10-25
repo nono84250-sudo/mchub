@@ -8,6 +8,7 @@ import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { ExportDataSection } from "@/components/ExportDataSection";
 import { FriendPrivacyCard } from "@/components/FriendPrivacyCard";
 import { FRIEND_PRIVACY_READY, getFriendSettings } from "@/lib/friendPrivacy";
+import { featureVisibleOnSite } from "@/lib/features";
 
 export const metadata = { title: "Paramètres — Omniscient" };
 
@@ -23,7 +24,7 @@ export default async function ParametresPage() {
   const user = await db.orm.public.User.select("id", "name", "minecraftUsername").where({ id: session.user.id }).first();
   if (!user) redirect("/login");
   const { dict } = await getT();
-  const friendSettings = FRIEND_PRIVACY_READY ? await getFriendSettings(user.id) : null;
+  const friendSettings = FRIEND_PRIVACY_READY && (await featureVisibleOnSite("friends")) ? await getFriendSettings(user.id) : null;
 
   const initial = user.name.trim().charAt(0).toUpperCase() || "?";
 

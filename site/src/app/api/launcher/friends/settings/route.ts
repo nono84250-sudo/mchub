@@ -4,6 +4,7 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { FRIEND_PRIVACY_READY, getFriendSettings, isFriendPolicy, setFriendPolicy, setNewFriendCode } from "@/lib/friendPrivacy";
 import { withLauncherFeature } from "@/lib/features";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // « Qui peut m'ajouter en ami » pour le launcher (variante C, 18/10) : meme reglage que la page
 // Amis et Parametres du site. Meme controle d'identite que /api/launcher/friends : un joueur ne
@@ -50,5 +51,5 @@ async function handlePATCH(request: Request) {
   return NextResponse.json(await getFriendSettings(me.userId));
 }
 
-export const GET = withLauncherFeature("friends", handleGET);
-export const PATCH = withLauncherFeature("friends", handlePATCH);
+export const GET = withD1Busy(withLauncherFeature("friends", handleGET));
+export const PATCH = withD1Busy(withLauncherFeature("friends", handlePATCH));

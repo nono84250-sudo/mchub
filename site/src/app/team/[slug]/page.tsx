@@ -17,7 +17,7 @@ export const revalidate = 60;
 
 export async function generateMetadata({ params }: PageProps<"/team/[slug]">) {
   const { slug } = await params;
-  const found = await findTeamBySlug(slug);
+  const found = (await teamsPublic()) ? await findTeamBySlug(slug) : null;
   if (!found || !("team" in found)) return { title: "Team introuvable — Omniscient", robots: { index: false, follow: false } };
   return {
     title: `${found.team.name} — Omniscient`,

@@ -51,7 +51,9 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
   // bloc « Reessayer » ; le titre, la barre du haut et le pied de page restent.
   let data;
   try {
-    const [{ custom }, list, showTeams] = await Promise.all([getTagCatalog(), listPublicServersPage({ ...requested, page: pageParam }), teamsPublic()]);
+    // Teams cachées : le filtre ?team= est ignoré (il révélait les serveurs d'une team).
+    const showTeams = await teamsPublic();
+    const [{ custom }, list] = await Promise.all([getTagCatalog(), listPublicServersPage({ ...requested, team: showTeams ? requested.team : "", page: pageParam })]);
     // Laboratoire : sans « Ma team » ouverte à tous, ni team sur les cartes ni filtre Team.
     data = showTeams
       ? { customTags: custom, ...list }

@@ -27,7 +27,8 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
   const boundDelete = deleteServer.bind(null, server.id);
   const boundTogglePublished = toggleServerPublished.bind(null, server.id);
   const boundDuplicate = duplicateServer.bind(null, server.id);
-  const [versions, sourceStates, teams] = await Promise.all([getMinecraftVersions(), allSourceStates(), listMyTeams(session.user.id)]);
+  const showTeamPicker = TEAMS_READY && (await featureVisibleOnSite("team"));
+  const [versions, sourceStates, teams] = await Promise.all([getMinecraftVersions(), allSourceStates(), showTeamPicker ? listMyTeams(session.user.id) : Promise.resolve([])]);
   const currentTeamId = (server as { teamId?: string | null }).teamId ?? null;
 
   const defaultValues = {
@@ -95,7 +96,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
         </ServerForm>
       </div>
 
-      {TEAMS_READY && (await featureVisibleOnSite("team")) ? (
+      {showTeamPicker ? (
         <ServerTeamPicker
           serverId={server.id}
           teams={teams.map((team) => ({ id: team.id, name: team.name }))}

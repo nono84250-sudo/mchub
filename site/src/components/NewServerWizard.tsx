@@ -380,12 +380,3 @@ export function NewServerWizard({ action, versions, sourceStates, teams = [] }: 
 
 // Rond de selection a droite des cartes Public/Prive (maquette "02 · Onboarding") :
 // anneau epais de la couleur accent quand la carte est choisie, fin et neutre sinon.
-function RadioDot({ selected }: { selected: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="mt-px h-4 w-4 flex-shrink-0 rounded-full"
-      style={{ border: selected ? "5px solid var(--accent)" : "1.5px solid var(--border)" }}
-    />
-  );
-}
