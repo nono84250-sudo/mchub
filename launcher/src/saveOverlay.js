@@ -20,6 +20,9 @@ function createSaveOverlay({ lockNavigation, log } = {}) {
   let hideTimer = null;
   let pendingAnswer = null;
   let shownOnce = false;
+  // Audit du 25/10 : partie finie (destroy) → plus rien ne recrée la fenêtre (une fenêtre cachée
+  // empêchait le launcher de se fermer). warm() la rouvre au début de la partie suivante.
+  let closed = false;
   // Où se coller : la fenêtre du jeu (rectangle en pixels Windows, voir gameWindow.js), sinon
   // l'écran d'une fenêtre donnée (bouton « Tester »), sinon l'écran sous la souris.
   let anchorRect = null;
@@ -108,6 +111,7 @@ function createSaveOverlay({ lockNavigation, log } = {}) {
     }
   }
   async function showNow(state, { focus = false, hideAfter = 0, at = null } = {}) {
+    if (closed) return;
     ensure();
     await ready;
     if (!win || win.isDestroyed()) return;
@@ -142,6 +146,7 @@ function createSaveOverlay({ lockNavigation, log } = {}) {
   // Renvoie le nom, null si le joueur annule (Échap, Annuler), undefined s'il ne répond pas à temps.
   async function ask(state, { timeoutMs = 90_000 } = {}) {
     answer(null);
+    if (closed) return null;
     const result = new Promise((resolve) => {
       pendingAnswer = resolve;
     });
@@ -171,6 +176,7 @@ function createSaveOverlay({ lockNavigation, log } = {}) {
   }
 
   function destroy() {
+    closed = true;
     answer(null);
     clearTimeout(hideTimer);
     if (win && !win.isDestroyed()) win.destroy();
@@ -179,6 +185,7 @@ function createSaveOverlay({ lockNavigation, log } = {}) {
 
   // Début de partie : la fenêtre est créée tout de suite (cachée), puis seulement montrée et cachée.
   function warm() {
+    closed = false;
     ensure();
   }
 

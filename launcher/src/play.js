@@ -1920,6 +1920,7 @@
       return;
     }
     const r = await api.cloud.status({ force }).catch(() => null);
+    if (!worldsOn) return; // coupé pendant la demande (audit du 25/10)
     data.cloud = r?.ok ? r : null;
     if (r?.job) setJob(r.job);
     if (r?.djob && !data.djob) setDjob(r.djob);
@@ -2004,7 +2005,7 @@
     const allTotal = notIn.reduce((a, w) => a + sizeOf(w), 0) + used + pendingTracked;
     const over = allTotal > quota;
     const offerName = offer.name?.[L()] || offer.name?.fr || "";
-    const qTxt = fr ? `ton quota de ${moFmt(quota)} (offre ${offerName})` : `your ${moFmt(quota)} quota (${offerName} plan)`;
+    const qTxt = fr ? `ton quota de ${moFmt(quota)} (offre ${esc(offerName)})` : `your ${moFmt(quota)} quota (${esc(offerName)} plan)`;
     const draw = () => {
       const sel = notIn.filter((w) => pick.has(w.key));
       const addBytes = sel.reduce((a, w) => a + sizeOf(w), 0);

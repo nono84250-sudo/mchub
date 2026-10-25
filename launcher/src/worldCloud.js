@@ -34,14 +34,21 @@ const WAIT_MAX_MS = 6 * 60 * 60_000;
 
 function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, onUpdate, onDownload, ensureVersionForMeta, installVersion, device }) {
   const STATE_FILE = path.join(playMode.PLAY_ROOT, "cloud-queue.json");
-  // { syncedKeys: [clés choisies par le joueur], queue: [{ key, name, backupId, file, size, sha256 }] }
+  // { uuid, syncedKeys: [clés choisies par le joueur], queue: [{ key, name, backupId, file, size, sha256 }] }
   // locks : mondes dont ce PC tient le verrou sur le site (repris au redémarrage).
-  let state = { syncedKeys: [], queue: [], locks: [] };
-  try {
-    state = { syncedKeys: [], queue: [], locks: [], ...JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) };
-  } catch {
-    /* premier lancement */
-  }
+  // uuid (audit du 25/10) : le compte à qui appartient cet état. Avec un autre compte, l'état du
+  // premier est mis de côté (cloud-queue-<uuid>.json) : ses sauvegardes ne partent jamais dans le
+  // cloud d'un autre compte, et ses marques « dans le cloud » ne sont pas effacées.
+  const emptyState = () => ({ uuid: null, syncedKeys: [], queue: [], locks: [] });
+  const parkedFile = (uuid) => path.join(playMode.PLAY_ROOT, `cloud-queue-${String(uuid).replace(/[^\w-]/g, "")}.json`);
+  const readStateFile = (file) => {
+    try {
+      return { ...emptyState(), ...JSON.parse(fs.readFileSync(file, "utf8")) };
+    } catch {
+      return null;
+    }
+  };
+  let state = readStateFile(STATE_FILE) || emptyState();
   const saveState = () =>
     fsp
       .mkdir(path.dirname(STATE_FILE), { recursive: true })
@@ -53,7 +60,8 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
   let job = null; // { items: [{ key, name, size, sent, done, error }], total, sent, bps, paused, done, error }
   let manualPause = false;
   // Laboratoire (25/10) : « Mondes en ligne » coupé pour ce joueur → plus rien ne part (voir suspend).
-  let suspended = false;
+  // Audit du 25/10 : suspendu jusqu'au premier start() (le site n'a pas encore dit oui).
+  let suspended = true;
   let gameRunning = false;
   let running = false;
   let retryTimer = null;
@@ -103,6 +111,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
     return statusPending;
   }
   async function fetchStatus() {
+    bindAccount();
     const data = await api("GET", "/api/launcher/worlds");
     lastStatus = { at: Date.now(), data, uuid: currentUuid() };
     // Nombre max de versions en ligne par monde selon l'offre (table des offres du site).
@@ -302,6 +311,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
     state.syncedKeys = state.syncedKeys.filter((k) => k !== key);
     await playMode.clearBackupCloud?.(key).catch(() => {});
     const dropped = state.queue.filter((q) => q.key === key);
+    for (const q of dropped) q.removed = true; // l'envoi en cours ne se termine pas (voir uploadItem)
     state.queue = state.queue.filter((q) => q.key !== key);
     await saveState();
     for (const q of dropped) if (q.uploadId) api("POST", "/api/launcher/worlds/upload", { body: { action: "abort", id: q.uploadId } }).catch(() => {});
@@ -430,6 +440,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
   };
 
   function kick() {
+    bindAccount();
     if (retryTimer) {
       clearTimeout(retryTimer);
       retryTimer = null;
@@ -456,7 +467,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
         failures = 0;
         // Plus que N versions en ligne pour ce monde : la plus vieille sort du cloud (reste sur le PC).
         limitOnline(item.key).catch((error) => log("warn", `Cloud : limite des versions en ligne pas appliquée (${error.message})`));
-        state.queue.shift();
+        state.queue = state.queue.filter((q) => q !== item);
         await saveState();
         releaseLocks();
         if (view) {
@@ -472,7 +483,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
         log("warn", `Cloud : envoi de « ${item.name} » interrompu (${msg})`);
         // Erreurs définitives pour CE fichier : on passe au suivant.
         if (["gone", "tooBig", "sizeMismatch", "invalid"].includes(error.code)) {
-          state.queue.shift();
+          state.queue = state.queue.filter((q) => q !== item);
           await saveState();
           if (view) view.error = msg;
           emit();
@@ -482,7 +493,12 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
         if (error.code === "noUpload") {
           delete item.uploadId;
           await saveState();
-          continue;
+          // Une reprise tout de suite, puis avec un délai (audit du 25/10 : deux PC qui envoient le
+          // même monde se relançaient en boucle).
+          item.noUploadTries = (item.noUploadTries || 0) + 1;
+          if (item.noUploadTries <= 1) continue;
+          retryTimer = setTimeout(kick, RETRY_DELAYS_MS[Math.min(item.noUploadTries - 2, RETRY_DELAYS_MS.length - 1)]);
+          return;
         }
         // Plus d'offre cloud ou quota plein : on arrête et on le dit, sans boucler.
         if (error.code === "quotaFull") {
@@ -496,12 +512,14 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
           }
           log("warn", `Cloud : ${full}`);
           emit();
+          releaseLocks({ force: true });
           return;
         }
         if (error.code === "noCloud" || error.code === "session") {
           if (view) view.error = msg;
           if (job) job.error = msg;
           emit();
+          releaseLocks({ force: true });
           return;
         }
         // Coupure réseau, site occupé… : nouvel essai plus tard, depuis le dernier morceau reçu.
@@ -597,6 +615,8 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
       await handle.close();
     }
     if (stopSignal.aborted) throw stoppedError();
+    // Monde retiré du cloud pendant l'envoi : on n'assemble pas (il réapparaissait en ligne).
+    if (item.removed) throw Object.assign(new Error("Monde retiré du cloud pendant l'envoi."), { code: "gone" });
     const done = await api("POST", "/api/launcher/worlds/upload", {
       body: {
         action: "complete",
@@ -632,20 +652,23 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
     if (!res.ok || !res.body) throw new Error(`Téléchargement refusé (HTTP ${res.status})`);
     const hash = crypto.createHash("sha256");
     const { Readable, Transform } = require("node:stream");
-    await pipeline(
-      Readable.fromWeb(res.body),
-      new Transform({
-        transform(chunk, _enc, cb) {
-          hash.update(chunk);
-          onBytes?.(chunk.length);
-          cb(null, chunk);
-        },
-      }),
-      fs.createWriteStream(tmp),
-    );
-    if (hash.digest("hex") !== info.sha256) {
-      await fsp.rm(tmp, { force: true });
-      throw new Error("Le fichier téléchargé est abîmé : réessaie.");
+    try {
+      await pipeline(
+        Readable.fromWeb(res.body),
+        new Transform({
+          transform(chunk, _enc, cb) {
+            hash.update(chunk);
+            onBytes?.(chunk.length);
+            cb(null, chunk);
+          },
+        }),
+        fs.createWriteStream(tmp),
+      );
+      if (hash.digest("hex") !== info.sha256) throw new Error("Le fichier téléchargé est abîmé : réessaie.");
+    } catch (error) {
+      // Audit du 25/10 : un téléchargement raté ne laisse pas de fichier à moitié écrit.
+      await fsp.rm(tmp, { force: true }).catch(() => {});
+      throw error;
     }
     return { tmp, info };
   }
@@ -696,8 +719,41 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
   }
 
   // Au démarrage / à la connexion : reprend la file laissée par la dernière session.
+  // Compte changé depuis la dernière fois : on range l'état de l'ancien et on reprend celui du
+  // nouveau (vide la première fois). Renvoie vrai si l'état a changé.
+  function bindAccount() {
+    const uuid = currentUuid();
+    if (!uuid || state.uuid === uuid) return false;
+    if (!state.uuid) {
+      state.uuid = uuid;
+      saveState();
+      return false;
+    }
+    try {
+      fs.mkdirSync(playMode.PLAY_ROOT, { recursive: true });
+      fs.writeFileSync(parkedFile(state.uuid), JSON.stringify(state));
+    } catch (error) {
+      log("warn", `Cloud : état de l'autre compte pas mis de côté (${error.message})`);
+    }
+    stopCtl.abort();
+    stopCtl = new AbortController();
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    if (beatTimer) clearInterval(beatTimer);
+    beatTimer = null;
+    for (const t of waiters.values()) clearTimeout(t);
+    waiters.clear();
+    state = { ...(readStateFile(parkedFile(uuid)) || emptyState()), uuid };
+    job = null;
+    lastStatus = null;
+    saveState();
+    emit();
+    return true;
+  }
+
   function start() {
     suspended = false;
+    bindAccount();
     if (state.queue.length) {
       for (const q of state.queue) q.uploading = false;
       ensureJob();
@@ -781,10 +837,12 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
   // Verrou rendu quand le jeu est fermé ET que la sauvegarde de ce monde est arrivée dans le cloud
   // (l'autre PC récupère alors la bonne version).
   let pendingEnqueue = 0;
-  async function releaseLocks() {
-    if (gameRunning || pendingEnqueue > 0) return;
+  // `force` (audit du 25/10) : l'envoi s'est arrêté pour de bon (quota plein, plus d'offre) : le
+  // verrou est rendu même si des sauvegardes attendent, sinon les autres PC le voyaient ouvert ici.
+  async function releaseLocks({ force = false } = {}) {
+    if (gameRunning || pendingEnqueue > 0 || suspended) return;
     for (const key of [...state.locks]) {
-      if (state.queue.some((q) => q.key === key)) continue;
+      if (!force && state.queue.some((q) => q.key === key)) continue;
       try {
         await deviceApi("close", { worldKey: key });
         state.locks = state.locks.filter((k) => k !== key);
@@ -827,6 +885,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
       if (!waiters.has(key)) return;
       try {
         const r = await deviceApi("check", { worldKey: key, baseVersionId: baseOf(key) });
+        if (!waiters.has(key)) return; // annulé pendant la vérification
         const c = r.conflict;
         if (!c || c.kind === "played") {
           waiters.delete(key);

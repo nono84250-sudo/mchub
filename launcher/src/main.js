@@ -309,6 +309,7 @@ const REQUEST_TIMEOUT_MS = 8000;
 // fois cette marge depassee, un nouvel echange est demande en arriere-plan
 // (voir requestLauncherSession) et le jeton Mojang est envoye en repli pour
 // cet appel-ci (et les suivants) jusqu'a ce que le nouvel echange reussisse.
+let featuresSessionUuid = null;
 let launcherSession = null; // { uuid, token, expiresAt (ms) }
 let launcherSessionRequest = null;
 // UUID du joueur qui vient de se connecter avec le bouton Microsoft (pas une reprise de
@@ -354,8 +355,12 @@ function requestLauncherSession() {
       // Joueur deconnecte pendant l'echange : on ne garde pas sa session.
       if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
-      // Laboratoire : ce joueur est peut-être testeur, on relit ses fonctionnalités.
-      features.refresh();
+      // Laboratoire : ce joueur est peut-être testeur, on relit ses fonctionnalités (une fois par
+      // compte : le rafraîchissement des 10 min suffit ensuite, audit du 25/10).
+      if (featuresSessionUuid !== uuid) {
+        featuresSessionUuid = uuid;
+        features.refresh();
+      }
       logStore.pushLog({ level: "debug", source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
     } catch (error) {
       // Sans importance : les requetes continuent avec le jeton Mojang.
@@ -3417,7 +3422,9 @@ const rawWorldCloud = createWorldCloud({
 const worldCloud = new Proxy(rawWorldCloud, {
   get(target, prop) {
     const value = target[prop];
-    if (typeof value !== "function" || prop === "suspend") return value;
+    // setGameRunning ne fait que noter l'état du jeu (audit du 25/10) : toujours transmis, sinon il
+    // restait « en jeu » si l'interrupteur changeait pendant une partie.
+    if (typeof value !== "function" || prop === "suspend" || prop === "setGameRunning") return value;
     return (...args) => {
       if (features.visible("worlds")) return value.apply(target, args);
       return prop === "downloadJob" || prop === "lastStatus" || prop === "isTracked" ? null : Promise.resolve({ ok: false, code: "feature_off" });
@@ -3594,6 +3601,9 @@ ipcMain.handle("play:setBackupLimit", async (_event, _key, cfg) => {
 });
 // Une sauvegarde ou une restauration ne touche jamais un monde pendant que le jeu tourne.
 function playGameBusy() {
+  // Audit du 25/10 : pendant le déplacement du dossier des jeux, rien n'écrit dans les mondes
+  // (l'ancien dossier est vidé à la fin).
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
   return getRunningGame() || gameLaunchInProgress ? { ok: false, code: "gameRunning", error: "Ferme Minecraft d'abord : on ne touche pas à un monde ouvert." } : null;
 }
 // Sauvegarde en cours, montrée dans la pilule en haut à droite (play.js, retour de Rushi du 25/10).
@@ -3605,7 +3615,8 @@ ipcMain.handle("play:backupNow", async (_event, key, label) => {
   if (busy) return busy;
   sendSaveActivity({ key, label: label || null, phase: "start" });
   try {
-    const result = await playMode.backupWorld(key, { reason: "manual", label, force: true });
+    // Dans la file des sauvegardes (audit du 25/10) : jamais en même temps que celle de fin de partie.
+    const result = await liveSave.enqueue(() => playMode.backupWorld(key, { reason: "manual", label, force: true }));
     if (result.backup) worldCloud.queueBackup(key, result.backup);
     sendSaveActivity({ key, label: label || null, phase: result.backup ? "done" : "skip" });
     return result;
@@ -3630,7 +3641,7 @@ ipcMain.handle("play:restoreBackup", async (_event, key, backupId) => {
   const busy = playGameBusy();
   if (busy) return busy;
   try {
-    return await playMode.restoreBackup(key, backupId);
+    return await liveSave.enqueue(() => playMode.restoreBackup(key, backupId));
   } catch (error) {
     return playError(error);
   }

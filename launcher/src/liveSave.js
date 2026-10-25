@@ -294,6 +294,11 @@ function createLiveSave({ playMode, overlay, globalShortcut, onBackup, onActivit
       busy = false;
       return;
     }
+    // Jeu fermé pendant la recherche du monde (audit du 25/10) : sinon `busy` restait bloqué.
+    if (!game) {
+      busy = false;
+      return;
+    }
     if (!world || !world.backup) {
       busy = false;
       // Jamais en silence : on le dit dans la console. Monde introuvable : nouvel essai dans 2 min.
@@ -392,7 +397,7 @@ function createLiveSave({ playMode, overlay, globalShortcut, onBackup, onActivit
     if (RE_PAUSE_SAVE.test(text)) {
       game.lastPauseAt = now;
       for (const w of [...pauseWaiters]) w(now);
-      if (game.inWorld && !busy && (game.pending || now - game.lastSaveAt >= game.everyMs)) interval(true);
+      if (game.inWorld && !busy && (game.pending || now - game.lastSaveAt >= game.everyMs)) interval(true).catch((error) => warn(`Sauvegarde automatique : ${error instanceof Error ? error.message : error}`));
     }
     if (RE_WORLD_STOP.test(text) && game.inWorld) {
       info("Sortie du monde (journal du jeu) : sauvegarde du monde fermé.");
@@ -433,7 +438,7 @@ function createLiveSave({ playMode, overlay, globalShortcut, onBackup, onActivit
       if (game && !game.sawWorldLog && game.noticed == null) {
         playMode.openWorld(game.startedAt).then((w) => w && notice("session.lock")).catch(() => {});
       }
-      if (game && (game.inWorld || !game.sawWorldLog) && !busy && (game.pending || Date.now() - game.lastSaveAt >= game.everyMs)) interval(false);
+      if (game && (game.inWorld || !game.sawWorldLog) && !busy && (game.pending || Date.now() - game.lastSaveAt >= game.everyMs)) interval(false).catch((error) => warn(`Sauvegarde automatique : ${error instanceof Error ? error.message : error}`));
     }, 20_000);
     try {
       // Touches enregistrées seulement pendant la partie (elles sont prises à tout Windows).
@@ -488,7 +493,12 @@ function createLiveSave({ playMode, overlay, globalShortcut, onBackup, onActivit
   function testOverlay(at = null) {
     const t = T();
     info("Test du petit menu demandé.");
-    return overlay.show({ mode: "done", title: t.title, text: t.done, hint: t.hint }, { hideAfter: 4000, at: game ? null : at });
+    if (game) return overlay.show({ mode: "done", title: t.title, text: t.done, hint: t.hint }, { hideAfter: 4000 });
+    // Hors partie (audit du 25/10) : la fenêtre est refermée après le test, sinon cachée elle
+    // empêchait le launcher de se fermer.
+    overlay.warm?.();
+    setTimeout(() => !game && overlay.destroy(), 4600);
+    return overlay.show({ mode: "done", title: t.title, text: t.done, hint: t.hint }, { hideAfter: 4000, at });
   }
 
   return { start, stop, line, enqueue, manual, interval, testOverlay };

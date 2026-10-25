@@ -31,7 +31,7 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
 
   // Repli sans réponse du site : le dernier état reçu pour CE compte, sinon « Pour tous » seulement.
   function useSaved() {
-    const backup = saved && typeof saved.features === "object" && saved.uuid === (currentUuid() || null) ? saved.features : FALLBACK;
+    const backup = saved && saved.features && typeof saved.features === "object" && saved.uuid === (currentUuid() || null) ? saved.features : FALLBACK;
     if (JSON.stringify(backup) !== JSON.stringify(state)) {
       state = backup;
       onChange?.(state);
@@ -49,7 +49,7 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
     pending = (async () => {
       try {
         const data = await fetchJson(`${siteUrl}/api/launcher/features`, { background: true, headers: authHeaders() });
-        if (!data || typeof data.features !== "object") return state;
+        if (!data || !data.features || typeof data.features !== "object" || Array.isArray(data.features)) return state;
         const next = data.features;
         const changed = JSON.stringify(next) !== JSON.stringify(state);
         state = next;

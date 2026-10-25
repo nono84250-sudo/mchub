@@ -40,7 +40,11 @@ const EVERY_CHOICES = [5, 10, 15, 30, 60];
 const LOCAL_KEEP = DEFAULT_KEEP.count;
 
 // Ce que le réglage garde et supprime vraiment (même calcul dans play.js pour l'aperçu).
-function planBackups(list, cfg) {
+const validWorldKey = (key) => typeof key === "string" && /^[\w-]{8,64}$/.test(key);
+
+// `protectId` (audit du 25/10) : la sauvegarde qu'on est en train de restaurer n'est jamais retirée
+// par la sauvegarde « avant restauration » faite juste avant.
+function planBackups(list, cfg, protectId = null) {
   const keep = [];
   const drop = [];
   const lastRestore = list.find((b) => b.reason === "before-restore");
@@ -50,7 +54,7 @@ function planBackups(list, cfg) {
     const size = Number(b.sizeBytes) || 0;
     // Protégée (nommée, ou la dernière « avant restauration ») : jamais supprimée, mais elle compte
     // dans le nombre et la place (une limite de 10 = 10 sauvegardes au total sur le PC).
-    if ((cfg.named && b.label) || b === lastRestore) {
+    if ((cfg.named && b.label) || b === lastRestore || (protectId && b.id === protectId)) {
       keep.push(b);
       n++;
       used += size;
@@ -113,7 +117,13 @@ function createPlayMode({ gameRoot, appDataDir }) {
     await fsp.writeFile(`${STATE_FILE}.part`, JSON.stringify(state, null, 2));
     await fsp.rename(`${STATE_FILE}.part`, STATE_FILE);
   }
+  // Audit du 25/10 : une clé de monde ne sert dans un chemin que si elle a la forme attendue
+  // (jamais « .. » ni « __proto__ » venus de la fenêtre).
+  function assertKey(key) {
+    if (!validWorldKey(key)) throw new Error("Clé de monde invalide.");
+  }
   function worldState(key) {
+    assertKey(key);
     const s = loadState();
     if (!s.worlds[key]) s.worlds[key] = { backup: true };
     return s.worlds[key];
@@ -313,6 +323,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
   const skipWorldFile = (rel) => rel === "session.lock";
 
   function backupIndexFile(key) {
+    assertKey(key);
     return path.join(BACKUPS, key, "index.json");
   }
   async function readBackups(key) {
@@ -368,7 +379,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
       }
       let key = await readWorldKey(dir);
       // Monde copié à la main dans le jeu : même clé que l'original, on lui en donne une nouvelle.
-      if (!key || seen.has(key)) {
+      if (!validWorldKey(key) || seen.has(key)) {
         key = crypto.randomUUID();
         await writeWorldKey(dir, key).catch(() => {});
         changed = true;
@@ -518,7 +529,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
     return bad;
   }
 
-  async function backupWorld(key, { reason = "auto", label = null, force = false, live = false, onProgress } = {}) {
+  async function backupWorld(key, { reason = "auto", label = null, force = false, live = false, onProgress, protectId = null } = {}) {
     const found = await worldDir(key);
     if (!found) throw new Error("Monde introuvable.");
     const { world } = found;
@@ -589,7 +600,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
       cloud: null,
     };
     list.unshift(entry);
-    await pruneBackups(key, list);
+    await pruneBackups(key, list, protectId);
     return { ok: true, backup: entry };
   }
   // Réglages des sauvegardes : les mêmes pour TOUS les mondes (demande de Rushi, 25/10). L'ancien
@@ -600,8 +611,8 @@ function createPlayMode({ gameRoot, appDataDir }) {
   // Versions miroir (25/10) : les sauvegardes retirées par la limite du monde sont signalées au
   // cloud (worldCloud.dropPruned), qui les retire aussi en ligne, sauf les sauvegardes nommées.
   let pruneListener = null;
-  async function pruneBackups(key, list) {
-    const { keep, drop } = planBackups(list, keepConfig(key));
+  async function pruneBackups(key, list, protectId = null) {
+    const { keep, drop } = planBackups(list, keepConfig(key), protectId);
     for (const b of drop) await fsp.rm(path.join(BACKUPS, key, path.basename(b.file)), { force: true });
     await writeBackups(key, keep);
     if (drop.length) {
@@ -737,6 +748,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
   // Sauvegarde coupée : plus de nouvelles sauvegardes. Les anciennes restent, sauf si le joueur
   // a coché « Supprimer aussi les sauvegardes déjà faites ».
   async function setWorldBackup(key, on, { deleteExisting = false } = {}) {
+    assertKey(key);
     worldState(key).backup = !!on;
     await saveState();
     if (!on && deleteExisting) await fsp.rm(path.join(BACKUPS, key), { recursive: true, force: true });
@@ -745,11 +757,11 @@ function createPlayMode({ gameRoot, appDataDir }) {
 
   // Remplace le monde par une sauvegarde. Une sauvegarde « avant restauration » est faite
   // d'abord : la version actuelle n'est jamais perdue.
-  async function restoreFromZip(key, zipFile) {
+  async function restoreFromZip(key, zipFile, { protectId = null } = {}) {
     const found = await worldDir(key);
     if (!found) throw new Error("Monde introuvable.");
     const { dir, world } = found;
-    await backupWorld(key, { reason: "before-restore", force: true });
+    await backupWorld(key, { reason: "before-restore", force: true, protectId });
     const tmp = path.join(SAVES, `.omni-restore-${crypto.randomBytes(4).toString("hex")}`);
     const old = path.join(SAVES, `.omni-old-${crypto.randomBytes(4).toString("hex")}`);
     let meta = null;
@@ -842,7 +854,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
   async function restoreBackup(key, backupId) {
     const b = (await readBackups(key)).find((x) => x.id === backupId);
     if (!b) throw new Error("Sauvegarde introuvable.");
-    return restoreFromZip(key, backupFile(key, b));
+    return restoreFromZip(key, backupFile(key, b), { protectId: b.id });
   }
 
   // Après une partie : les mondes modifiés retiennent la version jouée, puis sont sauvegardés
