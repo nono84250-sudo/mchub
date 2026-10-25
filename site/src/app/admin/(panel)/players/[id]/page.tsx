@@ -9,6 +9,7 @@ import { TEAMS_READY } from "@/lib/teamRules";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { playerDetailHtml, type PlayerServerRow } from "@/app/admin/design/bind";
 import { countPlayerData, EXPORT_UNCHECKED_BY_DEFAULT, type ExportCategory } from "@/lib/playerExport";
+import { getUserOffer, listOffers } from "@/lib/playWorlds";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,9 @@ export default async function PlayerDetail({
   const exportCounts = admin.role === "admin" ? await countPlayerData(player.id) : null;
   // Teams (19/10) : bouton « Teams » reserve au role admin, comme l'export (la route le verifie aussi).
   const teams = admin.role === "admin" && TEAMS_READY ? await listMyTeams(player.id) : [];
+  // Mode Jouer (bêta, 24/10) : offre simulée, tant que le paiement n'existe pas (admin seulement,
+  // la route le verifie aussi). Sert a tester la synchro cloud et la page « Mes mondes ».
+  const play = admin.role === "admin" ? await Promise.all([getUserOffer(player.id), listOffers()]).catch(() => null) : null;
   return (
     <>
       <DesignScreen name="player-detail" html={html} />
@@ -115,6 +119,35 @@ export default async function PlayerDetail({
             userId={player.id}
             teams={teams.map((t) => ({ id: t.id, name: t.name, description: t.description, iconUrl: t.iconUrl, slug: t.slug }))}
           />
+        </SlotPortal>
+      ) : null}
+      {play ? (
+        <SlotPortal slotId="player-export-slot">
+          <form method="post" action="/api/admin/play" style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <input type="hidden" name="action" value="offer" />
+            <input type="hidden" name="userId" value={player.id} />
+            <label style={{ fontSize: 12.5, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              Offre Jouer (test)
+              <select
+                name="offerId"
+                defaultValue={play[0].id}
+                style={{ border: "1px solid var(--color-divider)", background: "var(--color-bg)", color: "var(--color-text)", borderRadius: "var(--radius-md)", padding: "6px 8px", fontSize: 13 }}
+              >
+                {play[1].map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name.fr}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              style={{ border: "1px solid var(--color-divider)", color: "var(--color-text)", background: "transparent", padding: "6px 12px", borderRadius: "var(--radius-md)", font: "500 12.5px var(--font-heading)", cursor: "pointer" }}
+            >
+              Appliquer
+            </button>
+            {query.offer === "ok" ? <span style={{ fontSize: 12.5, color: "var(--success)" }}>Offre simulée enregistrée.</span> : null}
+          </form>
         </SlotPortal>
       ) : null}
       {exportCounts ? (

@@ -44,7 +44,7 @@ const GAME_ROOT = path.join(require("./gamesLocation").GAMES_BASE, "minecraft");
 let runningGame = null;
 
 function getRunningGame() {
-  return runningGame ? { slug: runningGame.slug, gameDirectory: runningGame.gameDirectory } : null;
+  return runningGame ? { slug: runningGame.slug, gameDirectory: runningGame.gameDirectory, pid: runningGame.proc?.pid ?? null } : null;
 }
 
 // Ferme le jeu de force (le joueur a confirme). L'evenement "close" de MCLC fait le reste
@@ -97,6 +97,10 @@ async function launchMinecraft({
   customJvmArgs,
   onGameState,
   slug = null,
+  // Mode Jouer (24/10) : dossier du monde a ouvrir directement (Quick Play solo, 1.20+).
+  quickPlayWorld = null,
+  // Mode Jouer (24/10) : chaque morceau de la sortie du jeu, pour la sauvegarde en jeu (liveSave.js).
+  onGameLine = null,
 }) {
   await ensureJavaAvailable(javaPath);
 
@@ -111,7 +115,12 @@ async function launchMinecraft({
   // démarré — d'où le tag "game" plutôt que "launcher" pour les deux, ce que
   // l'utilisateur voit dans la console correspond à "les logs de Minecraft".
   launcher.on("debug", (e) => logStore.pushLog({ level: "debug", source: "game", message: String(e) }));
-  launcher.on("data", (e) => logStore.pushLog({ level: "info", source: "game", message: String(e) }));
+  launcher.on("data", (e) => {
+    logStore.pushLog({ level: "info", source: "game", message: String(e) });
+    try {
+      onGameLine?.(String(e));
+    } catch {}
+  });
   // Objet structure (pas juste un texte) pour que le renderer puisse calculer
   // un vrai pourcentage (barre de progression stylee dans la barre de
   // lancement rapide) plutot que d'afficher uniquement du texte.
@@ -178,6 +187,8 @@ async function launchMinecraft({
       };
     }
   }
+
+  if (!serverIp && quickPlayWorld) opts.quickPlay = { type: "singleplayer", identifier: quickPlayWorld };
 
   return new Promise((resolve, reject) => {
     let started = false;

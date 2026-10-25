@@ -1193,16 +1193,23 @@
      toute la largeur a droite du menu des sections. */
   #settings-panel.detail { max-width: 1280px; margin-inline: auto; container-type: inline-size; }
 
-  /* Accueil : colonne principale + colonne "A la une" a droite des 70rem. */
+  /* Accueil en deux colonnes (design A, 25/10) : « Jouer » + favoris a gauche, « Mes serveurs » et
+     « A la une » a droite des 52rem. Plus etroit, la colonne de droite passe dessous (jamais cachee). */
   .home-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .home-main { min-width: 0; }
-  .home-aside { display: none; flex-direction: column; gap: 28px; min-width: 0; }
+  .home-aside { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+  /* Dernier serveur et dernier monde cote a cote ; seule, la carte garde son bouton a droite. */
+  .home-halves { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .home-halves > .home-resume, .home-halves > .home-resume-empty { margin-bottom: 0; }
+  .home-halves:has(> :nth-child(2)) > .home-resume { flex-wrap: wrap; align-content: center; }
+  .home-halves:has(> :nth-child(2)) > .home-resume .join-btn.home-resume-play { flex: 1 0 100%; min-width: 0; padding: 10px 18px; }
+  .home-side-box .row-title-line { flex-wrap: wrap; row-gap: 4px; }
+  .home-side-box .row-body p { white-space: normal; overflow: visible; }
   .home-continue-card { min-height: clamp(170px, 18cqw, 240px); }
   .home-continue-txt h2 { font-size: clamp(20px, 2.2cqw, 26px); }
   @media (max-height: 760px) { .home-continue-card { min-height: 160px; } }
-  @container (min-width: 70rem) {
-    .home-layout.has-aside { grid-template-columns: minmax(0, 1fr) clamp(288px, 26cqw, 416px); }
-    .home-layout.has-aside .home-aside { display: flex; }
+  @container (min-width: 52rem) {
+    .home-layout.has-aside { grid-template-columns: minmax(0, 1fr) clamp(272px, 30cqw, 416px); }
   }
   .home-empty-card { border: 1px dashed var(--border); border-radius: 14px; padding: 16px 18px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .home-empty-card p { flex: 1; min-width: 14ch; margin: 0; color: var(--muted); font-size: 13px; }
@@ -2923,5 +2930,7 @@ body.boot-preview #home-panel { pointer-events: none; }
   <script src="refreshSettings.js"></script>
   <script src="windowControls.js"></script>
   <script src="renderer.js"></script>
+  <script src="play.js"></script>
+  <script src="tour.js"></script>
 </body>
 </html>

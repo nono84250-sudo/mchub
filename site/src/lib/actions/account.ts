@@ -7,6 +7,7 @@ import { deleteAllR2Images } from "@/lib/serverImages";
 import { markAccountDeleted } from "@/lib/users";
 import { normalizeMinecraftUuid } from "@/lib/launcherSession";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
+import { deleteAllCloudData } from "@/lib/playWorlds";
 
 // Suppression definitive du compte (droit a l'effacement RGPD), en libre-service depuis la
 // page Compte. Le cascade DB (ON DELETE CASCADE sur server/serverEvent/report/playerWarning/
@@ -29,6 +30,9 @@ export async function deleteAccount(confirmation: string): Promise<{ error: Dele
 
   const servers = await db.orm.public.Server.select("id", "bannerUrl", "iconUrl", "backgroundUrl", "pageConfig").where({ ownerId: user.id }).all();
   for (const server of servers) await deleteAllR2Images(server, server.id);
+  // Mode Jouer (24/10) : mondes sauvegardés en ligne (fichiers R2 et envois en cours). Les lignes
+  // cloudWorld/cloudWorldVersion partent ensuite avec le cascade de "user".
+  await deleteAllCloudData(user.id);
 
   if (user.minecraftUuid) {
     await execSql(`DELETE FROM notification WHERE recipientMinecraftUuid = ?`, [user.minecraftUuid]);

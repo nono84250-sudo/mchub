@@ -11,7 +11,8 @@ export function mailerReady(): boolean {
   return Boolean(process.env.GMAIL_APP_PASSWORD?.trim());
 }
 
-let transport: nodemailer.Transporter | null = null;
+// nodemailer 10 n'exporte plus le namespace `nodemailer.Transporter` : on reprend le type renvoye.
+let transport: ReturnType<typeof nodemailer.createTransport> | null = null;
 function getTransport() {
   transport ??= nodemailer.createTransport({
     host: "smtp.gmail.com",

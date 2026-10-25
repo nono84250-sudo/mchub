@@ -59,7 +59,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Trouve par l'audit du 2026-10-10 (§1.8), jamais corrige a l'epoque faute d'avoir ete
         // assigne a un agent — corrige ici le soir meme, en relisant le reste du dossier.
         if (token.id) {
-          const current = await readLockState(token.id);
+          const current = await readLockState(String(token.id));
           // Second audit du 14/10 (I4) : un compte supprime (plus de ligne "user") gardait son
           // jeton web jusqu'a 30 jours sur ses autres appareils. On le coupe comme un verrou.
           if (!current || current.lockedAt) {

@@ -69,6 +69,11 @@ const DEFAULTS = {
   logLevel: "info",
   openConsoleOnLaunch: false,
   keepLauncherOpenWhilePlaying: true,
+  // Parametres > Divers > Pendant la partie (demande de Rushi, 24/10) : le launcher se reduit quand
+  // le jeu demarre et revient quand Minecraft se ferme. Coche par defaut ; jamais en mode discret
+  // (voir shouldMinimizeWhilePlaying). Remplace keepLauncherOpenWhilePlaying, garde pour les
+  // anciens fichiers de reglages mais plus lu.
+  minimizeWhilePlaying: true,
   // Canal de mise a jour "beta" (versions pre-release de omniscient-launcher).
   // Applique au prochain demarrage : checkForUpdates() lit ce reglage a chaque
   // verification du bootstrap.
@@ -88,6 +93,9 @@ const DEFAULTS = {
   // Serveurs retirés du site (20/10) : slug -> date (ms) du dernier 404, pour ne pas redemander leur
   // fiche à chaque ouverture (voir servers:get dans main.js). Local seulement.
   removedServers: {},
+  // Mode Jouer (24/10) : petite notification par-dessus le jeu après une sauvegarde automatique
+  // (toutes les 30 min). F6 / Maj+F6 affichent toujours leur petit menu.
+  playSaveToast: true,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -176,6 +184,7 @@ function saveSettings(partial) {
   if (filtered.logLevel !== undefined) next.logLevel = ["error", "warn", "info", "debug"].includes(filtered.logLevel) ? filtered.logLevel : current.logLevel;
   if (filtered.openConsoleOnLaunch !== undefined) next.openConsoleOnLaunch = !!filtered.openConsoleOnLaunch;
   if (filtered.keepLauncherOpenWhilePlaying !== undefined) next.keepLauncherOpenWhilePlaying = !!filtered.keepLauncherOpenWhilePlaying;
+  if (filtered.minimizeWhilePlaying !== undefined) next.minimizeWhilePlaying = !!filtered.minimizeWhilePlaying;
   if (filtered.betaChannel !== undefined) {
     next.betaChannel = !!filtered.betaChannel;
     next.betaChannelChosen = true;
@@ -183,6 +192,7 @@ function saveSettings(partial) {
   if (filtered.betaChannelChosen !== undefined) next.betaChannelChosen = !!filtered.betaChannelChosen;
   if (filtered.discordPresence !== undefined) next.discordPresence = !!filtered.discordPresence;
   if (filtered.blockVideoAutoplay !== undefined) next.blockVideoAutoplay = !!filtered.blockVideoAutoplay;
+  if (filtered.playSaveToast !== undefined) next.playSaveToast = !!filtered.playSaveToast;
 
   writeSettingsFile(next);
   return next;
@@ -198,4 +208,14 @@ function resetSettings() {
   return { ...DEFAULTS };
 }
 
-module.exports = { loadSettings, saveSettings, resetSettings, clampGB };
+// Reduire le launcher pendant la partie (meme regle dans renderer.js et play.js, qui lisent les
+// reglages par IPC). Il revient tout seul a la fin du jeu, SAUF en mode discret (Rushi, 24/10) :
+// en stream, la fenetre ne doit pas reapparaitre au milieu de l'ecran ; on la rouvre a la main.
+function shouldMinimizeWhilePlaying(settings = loadSettings()) {
+  return settings.minimizeWhilePlaying !== false;
+}
+function shouldRestoreAfterPlaying(settings = loadSettings()) {
+  return shouldMinimizeWhilePlaying(settings) && !settings.discreetMode;
+}
+
+module.exports = { loadSettings, saveSettings, resetSettings, clampGB, shouldMinimizeWhilePlaying, shouldRestoreAfterPlaying };

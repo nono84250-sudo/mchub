@@ -10,6 +10,7 @@ import { getCurrentAdmin } from "@/app/admin/design/guard";
 import { getStaffRoleLabels } from "@/lib/platformSettings";
 import { countPendingTagGroups } from "@/lib/tagRequests";
 import { countPendingTeamRequests } from "@/lib/teams";
+import { getPlayBeta } from "@/lib/playWorlds";
 
 // Affiche un écran de la maquette "Omniscient Admin Dashboard" : même markup, même
 // style (feuille Nocturne), mêmes icônes (Phosphor). `html` remplace le modèle
@@ -39,6 +40,7 @@ const NAV_LINKS: Record<string, string> = {
   Contact: "/admin/contact",
   "Étiquettes": "/admin/etiquettes",
   Teams: "/admin/teams",
+  "Packs officiels": "/admin/packs-officiels",
 };
 
 // 2026-10-10 : /admin/parametres (identifiants du compte admin + interrupteurs des sources de
@@ -89,6 +91,19 @@ function addTeamRequestsNavItem(html: string, pending: number): string {
     ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--color-accent) 20%, transparent);color:var(--color-accent-100);">${pending}</span>`
     : "";
   const item = `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-users-three" style="font-size:17px;"></i><span style="flex:1">Teams</span>${badge}</div>`;
+  return html.split(marker).join(item + marker);
+}
+
+// 2026-10-24 : /admin/packs-officiels (packs du mode Jouer, voir lib/playPacks.ts) — meme methode,
+// inseree juste avant "Contact" (donc apres « Teams »). Badge « Bêta » tant que le reglage central
+// du mode Jouer est allume (le meme que dans le launcher et sur le site, voir getPlayBeta).
+function addPlayPacksNavItem(html: string, beta: boolean): string {
+  const marker =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-envelope" style="font-size:17px;"></i><span style="flex:1">Contact</span></div>';
+  const badge = beta
+    ? '<span style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--warn) 18%, transparent);color:var(--warn);">Bêta</span>'
+    : "";
+  const item = `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-cube" style="font-size:17px;"></i><span style="flex:1">Packs officiels</span>${badge}</div>`;
   return html.split(marker).join(item + marker);
 }
 
@@ -188,13 +203,14 @@ function markUserCard(html: string, admin: Awaited<ReturnType<typeof getCurrentA
 // composants client interactifs, injectes via un portail React plutot que du HTML statique —
 // voir le commentaire la-bas) sans dupliquer tout ce pipeline de transformation.
 export async function buildScreenContent({ name, html, markAll }: { name: keyof typeof SCREENS; html?: string; markAll?: boolean | "proposal" }): Promise<string> {
-  const [verificationPending, reportsOpen, admin, roleLabels, tagRequestsPending, teamRequestsPending] = await Promise.all([
+  const [verificationPending, reportsOpen, admin, roleLabels, tagRequestsPending, teamRequestsPending, playBeta] = await Promise.all([
     countPendingVerification(),
     countOpenBehaviorReports(),
     getCurrentAdmin(),
     getStaffRoleLabels(),
     countPendingTagGroups(),
     countPendingTeamRequests(),
+    getPlayBeta().catch(() => true),
   ]);
   // markNavBadges, addSettingsNavItem et addContactNavItem doivent tourner avant linkNav :
   // celui-ci transforme le <span style="flex:1"> du libelle en <a>, ce qui change sa balise
@@ -202,7 +218,7 @@ export async function buildScreenContent({ name, html, markAll }: { name: keyof 
   let content = markUserCard(
     markTopbarBell(
       removeTopbarSearch(
-        hideNavItems(reorderNav(linkNav(addTeamRequestsNavItem(addTagRequestsNavItem(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen }))), tagRequestsPending), teamRequestsPending)))),
+        hideNavItems(reorderNav(linkNav(addPlayPacksNavItem(addTeamRequestsNavItem(addTagRequestsNavItem(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen }))), tagRequestsPending), teamRequestsPending), playBeta)))),
       ),
     ),
     admin,

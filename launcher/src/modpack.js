@@ -1279,6 +1279,8 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
 module.exports = {
   installModpack,
   installLoader,
+  // Mode Jouer (24/10) : mods d'un pack officiel (playMode.js).
+  installFiles,
   prepareLaunchVersion,
   ensureVanillaVersion,
   hasVanillaFilesInstalled,

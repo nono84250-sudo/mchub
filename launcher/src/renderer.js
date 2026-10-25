@@ -1916,6 +1916,8 @@ function activityServerName(slug) {
   if (!slug) return "";
   if (activity.current?.slug === slug && activity.current.name) return activity.current.name;
   if (activity.lastPlayed?.slug === slug && activity.lastPlayed.name) return activity.lastPlayed.name;
+  // Mode Jouer (24/10) : « play:<id de version> » n'est pas un serveur, nom lisible fourni par play.js.
+  if (String(slug).startsWith("play:")) return window.playRunningLabel?.(slug) || "Minecraft";
   return knownServer(slug)?.name || slug;
 }
 
@@ -2310,7 +2312,11 @@ function renderActivity() {
   const state = activityState();
   const pill = document.getElementById("tasks-trigger");
   if (!pill) return;
-  const parts = activityPillParts(state);
+  let parts = activityPillParts(state);
+  // Mode Jouer (24/10) : la synchro des mondes avec le cloud (play.js) prend la pilule quand rien
+  // d'autre ne tourne, et s'affiche en tete du panneau.
+  const cloud = window.playCloudActivity?.() || null;
+  if (cloud && (cloud.over || !["install", "move", "start", "play", "fail"].includes(state.phase))) parts = cloud.parts;
   pill.className = `activity-pill${parts.cls ? ` ${parts.cls}` : ""}`;
   document.getElementById("activity-pill-icon").innerHTML = parts.icon;
   document.getElementById("activity-pill-text").textContent = parts.long;
@@ -2320,7 +2326,7 @@ function renderActivity() {
 
   // Le panneau n'est redessine que si son contenu change (sinon un clic en cours sur un de ses
   // boutons pourrait tomber sur un element remplace entre mousedown et click).
-  const panelHtml = activityPanelHtml(state);
+  const panelHtml = (cloud?.panelHtml || "") + activityPanelHtml(state);
   if (panelHtml !== activityRenderKey) {
     activityRenderKey = panelHtml;
     document.getElementById("activity-panel").innerHTML = panelHtml;
@@ -2625,7 +2631,8 @@ async function launchServer(server) {
     // Parametres > Debogage (voir renderDebugTab) — deux reglages qui
     // n'ont d'effet qu'au moment ou une partie demarre reellement.
     if (settings.openConsoleOnLaunch) window.mchub.logs.openConsole();
-    if (settings.keepLauncherOpenWhilePlaying === false) window.mchub.windowControls.minimize();
+    // Divers > Pendant la partie : reduit au demarrage, revient a la fin sauf en mode discret (main.js).
+    if (settings.minimizeWhilePlaying !== false) window.mchub.windowControls.minimize();
 
     if (firstLaunch) notifyIfAway(t("activity.notifyLaunchingTitle", { name: server.name }), t("activity.notifyLaunchingBody"));
     if (!gamePlaying) {
@@ -4576,22 +4583,28 @@ function paintHomeView({ settings, favoriteSlugs, myServersResult, continueResol
     busiest.find((s) => !shownSlugs.has(s.slug)) ||
     null;
 
+  // Accueil en deux colonnes (design A, preview validee par Rushi le 25/10) : a gauche ce qui sert
+  // a jouer (dernier serveur et dernier monde cote a cote, puis les favoris), a droite « Mes
+  // serveurs » et « A la une ». Toutes les infos restent visibles ; sur une fenetre etroite, la
+  // colonne de droite passe sous la gauche au lieu d'etre cachee. play.js ajoute la carte du
+  // dernier monde dans #home-halves.
+  const hasAside = Boolean(teamPick) || myServers.length > 0;
   homePanelEl.innerHTML = `
     <h2 style="margin-bottom: 18px;">${t("home.greeting", { name: escapeHtml(currentProfile ? currentProfile.name : "") })}</h2>
-    <div class="home-layout${teamPick ? " has-aside" : ""}">
+    <div class="home-layout${hasAside ? " has-aside" : ""}">
     <div class="home-main">
+    <div class="home-section">
+      <div class="home-section-header"><h3>${t("home.play")}</h3></div>
+      <div class="home-halves" id="home-halves">${continueServer ? homeContinueCardHtml(continueServer, continuePlayedAt) : homeResumeEmptyHtml()}</div>
+    </div>
     ${
-      continueServer
-        ? homeContinueCardHtml(continueServer, continuePlayedAt)
-        : `${homeResumeEmptyHtml()}${
-            whereServers.length > 0
-              ? `<div class="home-section">
-              <div class="home-section-header"><h3>${t("home.whereTitle")}</h3></div>
-              <p class="join-note" style="margin: 0 0 12px;">${t("home.whereSub")}</p>
-              <div class="server-list" id="home-where-list">${whereServers.map((s) => serverRowHtml(s, favoriteSlugs.includes(s.slug))).join("")}</div>
-            </div>`
-              : ""
-          }`
+      !continueServer && whereServers.length > 0
+        ? `<div class="home-section">
+            <div class="home-section-header"><h3>${t("home.whereTitle")}</h3></div>
+            <p class="join-note" style="margin: 0 0 12px;">${t("home.whereSub")}</p>
+            <div class="server-list" id="home-where-list">${whereServers.map((s) => serverRowHtml(s, favoriteSlugs.includes(s.slug))).join("")}</div>
+          </div>`
+        : ""
     }
     <div class="home-section">
       <div class="home-section-header">
@@ -4604,33 +4617,37 @@ function paintHomeView({ settings, favoriteSlugs, myServersResult, continueResol
           : `<div class="home-empty-card"><p>${t("favorites.empty")}</p><button type="button" class="btn-secondary" id="home-browse-btn">${t("home.browseServers")}</button></div>`
       }
     </div>
-    ${
-      myServers.length > 0
-        ? `<div class="home-section">
-            <div class="home-section-header">
-              <h3>${t("home.myServersTitle")}</h3>
-              <button type="button" class="home-see-all" data-target="instances">${t("home.seeAll")}</button>
-            </div>
-            <div class="server-list">${myServers.map(homeInstanceRowHtml).join("")}</div>
-          </div>`
-        : ""
-    }
     </div>
     ${
-      teamPick
+      hasAside
         ? `<aside class="home-aside">
-            <div class="home-section" style="margin-bottom: 0;">
-              <div class="home-section-header"><h3>${t("home.featuredTitle")}</h3></div>
-              <div class="home-pick" id="home-pick" data-slug="${escapeHtml(teamPick.slug)}" role="button" tabindex="0">
-                <div class="home-pick-banner">${teamPick.bannerUrl ? `<img src="${escapeHtml(teamPick.bannerUrl)}" alt="" />` : ""}</div>
-                <div class="home-pick-body">
-                  <span class="home-pick-tag">${t(dailyPick ? "home.dailyPick" : "home.teamPick")}</span>
-                  <h3>${escapeHtml(teamPick.name)}</h3>
-                  <p>${t(dailyPick ? "home.dailyPickDesc" : "home.teamPickDesc")}</p>
-                  <button type="button" class="btn-secondary">${t("home.viewPage")}</button>
-                </div>
-              </div>
-            </div>
+            ${
+              myServers.length > 0
+                ? `<div class="home-section home-side-box" style="margin-bottom: 0;">
+                    <div class="home-section-header">
+                      <h3>${t("home.myServersTitle")}</h3>
+                      <button type="button" class="home-see-all" data-target="instances">${t("home.seeAll")}</button>
+                    </div>
+                    <div class="server-list">${myServers.map(homeInstanceRowHtml).join("")}</div>
+                  </div>`
+                : ""
+            }
+            ${
+              teamPick
+                ? `<div class="home-section" style="margin-bottom: 0;">
+                    <div class="home-section-header"><h3>${t("home.featuredTitle")}</h3></div>
+                    <div class="home-pick" id="home-pick" data-slug="${escapeHtml(teamPick.slug)}" role="button" tabindex="0">
+                      <div class="home-pick-banner">${teamPick.bannerUrl ? `<img src="${escapeHtml(teamPick.bannerUrl)}" alt="" />` : ""}</div>
+                      <div class="home-pick-body">
+                        <span class="home-pick-tag">${t(dailyPick ? "home.dailyPick" : "home.teamPick")}</span>
+                        <h3>${escapeHtml(teamPick.name)}</h3>
+                        <p>${t(dailyPick ? "home.dailyPickDesc" : "home.teamPickDesc")}</p>
+                        <button type="button" class="btn-secondary">${t("home.viewPage")}</button>
+                      </div>
+                    </div>
+                  </div>`
+                : ""
+            }
           </aside>`
         : ""
     }
@@ -6145,13 +6162,6 @@ function renderDebugTab(contentEl, settings) {
         </span>
         <input type="checkbox" id="settings-open-on-launch" ${settings.openConsoleOnLaunch ? "checked" : ""} />
       </label>
-      <label class="settings-row" style="cursor: pointer;">
-        <span>
-          <span class="settings-row-label">${t("debug.keepOpen")}</span>
-          <p class="settings-row-desc">${t("debug.keepOpenDesc")}</p>
-        </span>
-        <input type="checkbox" id="settings-keep-open" ${settings.keepLauncherOpenWhilePlaying ? "checked" : ""} />
-      </label>
     </section>
 
     <section class="settings-section">
@@ -6227,9 +6237,6 @@ function renderDebugTab(contentEl, settings) {
 
   document.getElementById("settings-open-on-launch").addEventListener("change", (event) => {
     window.mchub.settings.set({ openConsoleOnLaunch: event.target.checked });
-  });
-  document.getElementById("settings-keep-open").addEventListener("change", (event) => {
-    window.mchub.settings.set({ keepLauncherOpenWhilePlaying: event.target.checked });
   });
 
   document.getElementById("settings-open-logs").addEventListener("click", () => window.mchub.logs.openLogsFolder());
@@ -6564,6 +6571,16 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
       ${betaPending ? `<p class="join-note">${t("settings.betaRestartNote")}</p><button type="button" class="join-btn" id="settings-beta-restart-btn">${t("language.restartButton")}</button>` : ""}
     </section>
     <section class="settings-section">
+      <h3 class="settings-section-title">${t("settings.playingSection")}</h3>
+      <div class="settings-row">
+        <span>
+          <label class="settings-row-label" for="settings-minimize-playing">${t("settings.minimizeWhilePlaying")}</label>
+          <p class="settings-row-desc">${t(settings.discreetMode ? "settings.minimizeWhilePlayingDiscreet" : "settings.minimizeWhilePlayingDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-minimize-playing" ${settings.minimizeWhilePlaying !== false ? "checked" : ""} />
+      </div>
+    </section>
+    <section class="settings-section">
       <h3 class="settings-section-title">${t("settings.discordSection")}</h3>
       <div class="settings-row">
         <span>
@@ -6611,6 +6628,10 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
   });
   document.getElementById("settings-beta-restart-btn")?.addEventListener("click", () => window.mchub.restartApp());
   // Enregistre avec les autres reglages ; main.js coupe ou rallume la presence Discord tout de suite.
+  document.getElementById("settings-minimize-playing").addEventListener("change", async (event) => {
+    settings.minimizeWhilePlaying = event.target.checked;
+    await window.mchub.settings.set({ minimizeWhilePlaying: event.target.checked });
+  });
   document.getElementById("settings-discord-presence").addEventListener("change", async (event) => {
     settings.discordPresence = event.target.checked;
     await window.mchub.settings.set({ discordPresence: event.target.checked });

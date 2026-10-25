@@ -196,7 +196,13 @@ const {
   prepareLaunchVersion,
   readInstalledState,
   listInstalledInstances,
+  installFiles,
 } = require("./modpack");
+const { createPlayMode, supportsQuickPlay } = require("./playMode");
+const { createWorldCloud } = require("./worldCloud");
+const { createSaveOverlay } = require("./saveOverlay");
+const { createLiveSave } = require("./liveSave");
+const { trackGameWindow } = require("./gameWindow");
 const { pingMinecraftServer } = require("./mcPing");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
@@ -415,6 +421,14 @@ function setSession(profile, authorization, { freshLogin = false } = {}) {
   clearServerCaches();
   pendingFreshLoginUuid = freshLogin ? profile.id : null;
   requestLauncherSession();
+  // Mode Jouer : reprend un envoi de mondes laissé en cours (worldCloud, défini plus bas).
+  setTimeout(() => {
+    try {
+      worldCloud.start();
+    } catch {
+      /* pas encore prêt au tout premier démarrage */
+    }
+  }, 5000);
   return profile;
 }
 
@@ -1520,7 +1534,7 @@ ipcMain.handle("presence:heartbeat", async (_event, opts) => {
     const uuid = currentSession.profile.id;
     // playingSlug (16/10, « Un ami y joue ») : le serveur du jeu lancé, dans le même appel que
     // d'habitude. Le site ne le garde que s'il est dans l'annuaire public (jamais un privé).
-    const payload = { minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, playingSlug: getRunningGame()?.slug ?? null };
+    const payload = { minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, playingSlug: publicPlayingSlug() };
     const post = (route, body) =>
       fetchJson(`${SITE_URL}/api/launcher/${route}`, {
         method: "POST",
@@ -1729,6 +1743,12 @@ function instanceBusy(slug) {
   if (gameLaunchInProgress) return "launching";
   if ([...installTasks.values()].some((t) => t.slug === slug && (t.status === "active" || t.status === "paused"))) return "installing";
   return null;
+}
+
+// Mode Jouer : le slug interne "play:<id>" n'est pas un serveur de l'annuaire, on ne l'envoie pas au site.
+function publicPlayingSlug() {
+  const slug = getRunningGame()?.slug ?? null;
+  return slug && String(slug).startsWith("play:") ? null : slug;
 }
 
 ipcMain.handle("game:status", () => {
@@ -2940,7 +2960,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
         if (!running) discordPresence.setBrowsingActivity();
         // Le launcher s'était caché pendant la partie (réglage « garder le launcher ouvert » décoché) :
         // il se réaffiche tout seul quand le jeu se ferme.
-        if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
+        if (!running && settingsStore.shouldRestoreAfterPlaying()) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
             if (win.isMinimized()) win.restore();
@@ -3103,7 +3123,7 @@ ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
           if (!win.isDestroyed()) win.webContents.send("game:state", running);
         }
         if (!running) discordPresence.setBrowsingActivity();
-        if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
+        if (!running && settingsStore.shouldRestoreAfterPlaying()) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
             if (win.isMinimized()) win.restore();
@@ -3141,6 +3161,513 @@ ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement hors ligne de "${slug}" : ${message}` });
     return { ok: false, error: message };
+  } finally {
+    gameLaunchInProgress = false;
+  }
+});
+
+// --- Mode « Jouer » (bêta, 24/10) ---------------------------------------------------------
+// Jouer à n'importe quelle version sans serveur, en vanilla ou avec un pack officiel, et garder
+// ses mondes sauvegardés. Tout le travail sur le disque est dans playMode.js ; ici : les appels
+// du renderer, le lancement (même verrou et même panneau de tâches que « Rejoindre ») et les
+// sauvegardes à la fermeture du jeu.
+const playMode = createPlayMode({ gameRoot: GAME_ROOT, appDataDir: app.getPath("appData") });
+
+// Packs officiels publiés (site) : gardés 10 min en mémoire et sur le disque, pour pouvoir
+// relancer une version avec pack même si le site est injoignable.
+const PLAY_PACKS_CACHE = path.join(playMode.PLAY_ROOT, "packs-cache.json");
+let playPacksCache = null;
+async function fetchPlayPacks({ force = false } = {}) {
+  if (!force && playPacksCache && Date.now() - playPacksCache.at < 10 * 60_000) return playPacksCache.data;
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/public/play/packs`, { headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` } });
+    playPacksCache = { at: Date.now(), data };
+    fsp.mkdir(playMode.PLAY_ROOT, { recursive: true }).then(() => fsp.writeFile(PLAY_PACKS_CACHE, JSON.stringify(data))).catch(() => {});
+    return data;
+  } catch (error) {
+    try {
+      const data = JSON.parse(await fsp.readFile(PLAY_PACKS_CACHE, "utf8"));
+      return { ...data, offline: true };
+    } catch {
+      // Pas de cache : le badge bêta reste affiché, aucun pack proposé (Vanilla seulement).
+      return { beta: true, packs: [], offline: true, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+}
+// Version publiée d'un pack, aplatie pour playMode.createVersion (packId, versionId, files…).
+function flattenPackVersion(pack, version) {
+  return {
+    packId: pack.id,
+    slug: pack.slug,
+    name: pack.name,
+    versionId: version.id,
+    loaderVersion: version.loaderVersion,
+    files: version.files,
+    updatedAt: version.updatedAt,
+  };
+}
+
+// Synchro cloud des mondes (Supporter ; voir worldCloud.js) : envoi en arrière-plan, en pause
+// pendant le jeu, reprise au prochain démarrage. L'état est poussé au renderer (« cloud:update »).
+// Monde téléchargé d'un autre PC : on retrouve son pack et sa version (meta.json du zip).
+async function ensureVersionForMeta(meta) {
+  const mc = meta?.minecraftVersion;
+  if (!mc) return null;
+  const versions = playMode.listVersions();
+  if (meta.pack) {
+    const local = versions.find((v) => v.minecraftVersion === mc && v.pack && (v.pack.packId === meta.pack.packId || v.pack.slug === meta.pack.slug));
+    if (local) return local.id;
+    const data = await fetchPlayPacks();
+    const p = (data.packs || []).find((x) => x.id === meta.pack.packId || x.slug === meta.pack.slug);
+    const v = p?.versions?.find((x) => x.minecraftVersion === mc);
+    if (p && v) return (await playMode.createVersion({ minecraftVersion: mc, pack: flattenPackVersion(p, v) })).id;
+  }
+  const vanilla = versions.find((v) => v.minecraftVersion === mc && !v.pack);
+  if (vanilla) return vanilla.id;
+  await playMode.listMinecraftVersions().catch(() => {});
+  return (await playMode.createVersion({ minecraftVersion: mc })).id;
+}
+// Plusieurs PC : identité de cet appareil pour le site (verrou « monde ouvert », version envoyée).
+// Nom = nom de l'ordinateur ; en dev, MCHUB_DEVICE_NAME le remplace, et un profil jetable
+// (MCHUB_USER_DATA_DIR) a son propre identifiant : de quoi simuler un 2e PC sur le même ordinateur.
+function loadDevice() {
+  const file = path.join(app.getPath("userData"), "device.json");
+  let id = null;
+  try {
+    id = JSON.parse(fs.readFileSync(file, "utf8")).id;
+  } catch {
+    /* premier lancement */
+  }
+  if (!/^[\w-]{8,64}$/.test(id || "")) {
+    id = require("node:crypto").randomUUID();
+    try {
+      fs.writeFileSync(file, JSON.stringify({ id }));
+    } catch {
+      /* dossier en lecture seule : identifiant de cette session seulement */
+    }
+  }
+  const name = ((isDev && process.env.MCHUB_DEVICE_NAME) || os.hostname() || "PC").slice(0, 60);
+  return { id, name };
+}
+// Version d'un monde téléchargé : installée en arrière-plan (Minecraft, Java, pack). Un « Jouer »
+// sur la même version attend la fin, pour ne jamais installer deux fois les mêmes fichiers.
+const versionInstalls = new Map();
+let downloadedCount = 0;
+function installVersionInBackground(versionId) {
+  if (versionInstalls.has(versionId)) return versionInstalls.get(versionId);
+  const run = (async () => {
+    const settings = settingsStore.loadSettings();
+    await playMode.prepareVersion(versionId, {
+      deps: { ensureVanillaVersion, ensureJavaForMajor: javaManager.ensureJavaForMajor, installLoader, prepareLaunchVersion, installFiles },
+      javaPreferred: settings.javaPath || undefined,
+    });
+  })().finally(() => versionInstalls.delete(versionId));
+  versionInstalls.set(versionId, run);
+  return run;
+}
+const worldCloud = createWorldCloud({
+  playMode,
+  siteUrl: SITE_URL,
+  authHeaders: launcherAuthHeaders,
+  currentUuid: () => currentSession?.profile?.id || null,
+  log: (level, message) => logStore.pushLog({ level, source: "launcher", message }),
+  onUpdate: (job) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("cloud:update", job);
+  },
+  onDownload: (djob) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("cloud:downloadUpdate", djob);
+    // Un monde de plus arrivé sur ce PC : la liste se met à jour (une fois par monde).
+    const arrived = djob ? djob.items.filter((i) => i.phase === "install" || i.done).length : 0;
+    if (arrived !== downloadedCount) {
+      downloadedCount = arrived;
+      if (arrived) for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+    }
+  },
+  ensureVersionForMeta,
+  installVersion: installVersionInBackground,
+  device: loadDevice(),
+});
+// Versions miroir : la limite d'un monde sur ce PC s'applique aussi à ses versions en ligne.
+playMode.onBackupsPruned((key, drop) => worldCloud.dropPruned(key, drop));
+// Sauvegarde pendant la partie (F6, Maj+F6, toutes les X min, sortie d'un monde) : voir liveSave.js.
+const liveSave = createLiveSave({
+  playMode,
+  overlay: createSaveOverlay({ lockNavigation: lockAppNavigation, log: (entry) => logStore.pushLog(entry) }),
+  globalShortcut,
+  onBackup: (key, backup) => {
+    worldCloud.queueBackup(key, backup);
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+  },
+  onActivity: sendSaveActivity,
+  log: (entry) => logStore.pushLog(entry),
+  getLocale: () => settingsStore.loadSettings().locale,
+  getToastEnabled: () => settingsStore.loadSettings().playSaveToast !== false,
+  getDiscreet: () => settingsStore.loadSettings().discreetMode === true,
+  trackWindow: trackGameWindow,
+});
+const cloudError = (error) => ({ ok: false, error: error instanceof Error ? error.message : String(error), code: error?.code });
+ipcMain.handle("cloud:status", async (_event, opts) => {
+  if (!currentSession) return { ok: false, code: "session" };
+  try {
+    return await worldCloud.status({ force: opts?.force === true });
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:testConnection", () => worldCloud.testConnection());
+ipcMain.handle("cloud:sync", async (_event, keys) => {
+  try {
+    return await worldCloud.sync(Array.isArray(keys) ? keys.filter((k) => typeof k === "string") : []);
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:remove", (_event, key) => worldCloud.remove(String(key || "")));
+ipcMain.handle("cloud:pause", () => worldCloud.pause());
+ipcMain.handle("cloud:resume", () => worldCloud.resume());
+ipcMain.handle("cloud:stop", () => worldCloud.stop());
+// « Versions en ligne » (25/10) : ☁ Envoyer / ✕ Retirer du cloud sur une sauvegarde.
+ipcMain.handle("cloud:sendBackup", (_e, key, backupId) => worldCloud.sendBackup(String(key || ""), String(backupId || "")));
+ipcMain.handle("cloud:uncloudBackup", (_e, key, backupId) => worldCloud.uncloudBackup(String(key || ""), String(backupId || "")));
+// Plusieurs PC (voir worldCloud.js) : vérification avant « Jouer », récupération de la dernière
+// version, attente qu'un monde soit fermé ailleurs, choix entre deux versions, téléchargements.
+const sendAll = (channel, payload) => {
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(channel, payload);
+};
+ipcMain.handle("cloud:beforePlay", async (_event, key, opts) => {
+  try {
+    return await worldCloud.beforePlay(String(key || ""), { force: opts?.force === true });
+  } catch (error) {
+    // Site injoignable : on ne bloque pas la partie (rien n'est écrasé : un split est détecté à l'envoi).
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Cloud : vérification avant de jouer impossible (${error.message})` });
+    return { ok: true, conflict: null, offline: true };
+  }
+});
+ipcMain.handle("cloud:fetchLatest", async (_event, key) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  try {
+    const out = await worldCloud.fetchLatest(String(key || ""));
+    sendAll("play:worldsChanged");
+    return out;
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:waitClosed", (_event, key) => {
+  const k = String(key || "");
+  return worldCloud.waitClosed(k, (result) => {
+    sendAll("cloud:waitDone", { key: k, ...result });
+    if (result.fetched) sendAll("play:worldsChanged");
+  });
+});
+ipcMain.handle("cloud:cancelWait", (_event, key) => {
+  worldCloud.cancelWait(String(key || ""));
+  return { ok: true };
+});
+ipcMain.handle("cloud:resolveSplit", async (_event, key, versionId) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  const out = await worldCloud.resolveSplit(String(key || ""), String(versionId || ""));
+  if (out.ok) sendAll("play:worldsChanged");
+  return out;
+});
+ipcMain.handle("cloud:downloadMany", async (_event, ids) => {
+  try {
+    return await worldCloud.downloadMany(Array.isArray(ids) ? ids.filter((x) => typeof x === "string") : []);
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:downloadJob", () => worldCloud.downloadJob());
+ipcMain.handle("cloud:download", async (_event, worldId) => {
+  if (playRunning) return { ok: false, error: "Quitte le jeu d'abord." };
+  const out = await worldCloud.download(String(worldId || ""));
+  if (out.ok) for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+  return out;
+});
+
+const playError = (error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) });
+
+ipcMain.handle("play:packs", async (_event, { force = false } = {}) => {
+  const data = await fetchPlayPacks({ force });
+  return { ok: true, ...data };
+});
+ipcMain.handle("play:mcVersions", async () => {
+  try {
+    return { ok: true, versions: await playMode.listMinecraftVersions() };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:listVersions", () => ({ ok: true, versions: playMode.listVersions() }));
+ipcMain.handle("play:createVersion", async (_event, { minecraftVersion, packId = null, name = "" } = {}) => {
+  try {
+    let pack = null;
+    if (packId) {
+      const data = await fetchPlayPacks();
+      const p = (data.packs || []).find((x) => x.id === packId);
+      const v = p?.versions?.find((x) => x.minecraftVersion === minecraftVersion);
+      if (!p || !v) return { ok: false, error: "Ce pack n'est pas encore prêt pour cette version." };
+      pack = flattenPackVersion(p, v);
+    }
+    return { ok: true, version: await playMode.createVersion({ minecraftVersion, pack, name }) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:renameVersion", async (_event, id, name) => ({ ok: await playMode.renameVersion(id, name) }));
+ipcMain.handle("play:removeVersion", async (_event, id) => {
+  if (playRunning?.versionId === id) return { ok: false, error: "Cette version est en train de tourner." };
+  return { ok: await playMode.removeVersion(id) };
+});
+ipcMain.handle("play:listWorlds", async () => {
+  try {
+    return { ok: true, worlds: await playMode.listWorlds(), running: playRunning ? { versionId: playRunning.versionId } : null };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:setWorldBackup", async (_event, key, on, opts) => {
+  try {
+    return await playMode.setWorldBackup(key, on, opts);
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:listBackups", async (_event, key) => ({ ok: true, backups: key ? await playMode.listBackups(key) : [], keep: playMode.keepConfig() }));
+// Limite des sauvegardes gardées sur ce PC, monde par monde (nombre ou taille). Dans la file des
+// sauvegardes : jamais pendant qu'une sauvegarde en jeu écrit la liste du même monde.
+ipcMain.handle("play:testOverlay", async (event) => {
+  await liveSave.testOverlay(BrowserWindow.fromWebContents(event.sender)?.getBounds() || null);
+  return { ok: true };
+});
+// Réglages des sauvegardes, les mêmes pour tous les mondes (25/10) : `key` n'est plus utilisé.
+ipcMain.handle("play:setBackupLimit", async (_event, _key, cfg) => {
+  if (!cfg || typeof cfg !== "object") return { ok: false, error: "Réglage invalide." };
+  try {
+    const out = await liveSave.enqueue(() => playMode.setKeepConfig(cfg));
+    // Moins de versions en ligne qu'avant : les plus vieilles sortent du cloud (restent sur le PC).
+    worldCloud.limitAllOnline().catch(() => {});
+    return out;
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+// Une sauvegarde ou une restauration ne touche jamais un monde pendant que le jeu tourne.
+function playGameBusy() {
+  return getRunningGame() || gameLaunchInProgress ? { ok: false, code: "gameRunning", error: "Ferme Minecraft d'abord : on ne touche pas à un monde ouvert." } : null;
+}
+// Sauvegarde en cours, montrée dans la pilule en haut à droite (play.js, retour de Rushi du 25/10).
+function sendSaveActivity(activity) {
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:saveActivity", activity);
+}
+ipcMain.handle("play:backupNow", async (_event, key, label) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  sendSaveActivity({ key, label: label || null, phase: "start" });
+  try {
+    const result = await playMode.backupWorld(key, { reason: "manual", label, force: true });
+    if (result.backup) worldCloud.queueBackup(key, result.backup);
+    sendSaveActivity({ key, label: label || null, phase: result.backup ? "done" : "skip" });
+    return result;
+  } catch (error) {
+    sendSaveActivity({ key, label: label || null, phase: "fail" });
+    return playError(error);
+  }
+});
+// Supprimer une sauvegarde à la main (confirmée en tapant « supprimer ») : sur ce PC, et aussi dans
+// le cloud (versions miroir), sauf la version à continuer, que le site garde.
+ipcMain.handle("play:deleteBackup", async (_event, key, backupId) => {
+  if (typeof key !== "string" || typeof backupId !== "string") return { ok: false, error: "Sauvegarde introuvable." };
+  try {
+    const b = await liveSave.enqueue(() => playMode.deleteBackup(key, backupId));
+    worldCloud.dropPruned(key, [b], { explicit: true });
+    return { ok: true };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:restoreBackup", async (_event, key, backupId) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  try {
+    return await playMode.restoreBackup(key, backupId);
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:scanImport", async (_event, dir) => {
+  try {
+    return { ok: true, ...(await playMode.scanImportable(dir || null)) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:pickImportDir", async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showOpenDialog(win, {
+    title: "Dossier de mondes Minecraft (saves)",
+    defaultPath: playMode.defaultMinecraftSaves(),
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+  return { ok: true, dir: result.filePaths[0] };
+});
+ipcMain.handle("play:import", async (_event, dir, folders) => {
+  try {
+    const imported = await playMode.importWorlds(dir || null, Array.isArray(folders) ? folders : []);
+    // Sauvegarde activée par défaut : une première sauvegarde de chaque copie.
+    for (const w of imported) {
+      playMode
+        .backupWorld(w.key, { reason: "import" })
+        .then((r) => r.backup && worldCloud.queueBackup(w.key, r.backup))
+        .catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Première sauvegarde de « ${w.name} » impossible : ${error.message}` }));
+    }
+    return { ok: true, imported };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:openWorldFolder", async (_event, key) => {
+  const found = key ? await playMode.worldDir(key) : null;
+  return shell.openPath(found ? found.dir : playMode.SAVES);
+});
+
+// Partie en cours lancée depuis Jouer : version et heure de départ (mondes modifiés ensuite).
+let playRunning = null;
+
+ipcMain.handle("play:launch", async (event, { versionId, worldKey = null } = {}) => {
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
+  if (!currentSession) return { ok: false, code: "signin", error: "Connecte-toi avec ton compte Microsoft pour jouer." };
+  if (gameLaunchInProgress || getRunningGame()) return { ok: false, code: "gameRunning", error: "Minecraft est déjà lancé." };
+  gameLaunchInProgress = true;
+  let task = null;
+  try {
+    let quickPlayWorld = null;
+    if (worldKey) {
+      // Toujours la version du monde (jamais une autre) : sinon « needVersion » / « chooseVersion »,
+      // et le launcher demande au joueur avant de lancer quoi que ce soit.
+      const chosen = await playMode.versionForWorld(worldKey, { pick: versionId || null });
+      versionId = chosen.versionId;
+      quickPlayWorld = chosen.world.folder;
+      // Restauration demandée sur le site : faite maintenant, avant d'ouvrir le monde.
+      await worldCloud.applyPendingRestore(worldKey).catch((error) =>
+        logStore.pushLog({ level: "warn", source: "launcher", message: `Restauration en attente non appliquée : ${error.message}` }),
+      );
+    }
+    const version = playMode.getVersion(versionId);
+    if (!version) return { ok: false, error: "Cette version n'existe plus dans Mes versions." };
+    const label = version.name || `${version.minecraftVersion}${version.pack ? ` · ${version.pack.name?.fr || version.pack.slug}` : ""}`;
+    task = createInstallTask(`play:${versionId}`, label, "launch");
+    broadcastTasks();
+    const onProgress = (status) => {
+      updateTaskFromProgress(task, status);
+      broadcastTasks();
+      event.sender.send("game:progress", status);
+    };
+    onProgress({ name: label, modded: !!version.pack });
+
+    // Pack : la liste des mods la plus récente publiée par l'équipe (sinon celle déjà connue).
+    if (version.pack) {
+      const data = await fetchPlayPacks();
+      const p = (data.packs || []).find((x) => x.id === version.pack.packId);
+      const v = p?.versions?.find((x) => x.id === version.pack.versionId || x.minecraftVersion === version.minecraftVersion);
+      if (p && v) await playMode.refreshPackFiles(versionId, flattenPackVersion(p, v));
+    }
+
+    // Version d'un monde téléchargé encore en cours d'installation : on attend qu'elle finisse.
+    if (versionInstalls.has(versionId)) {
+      onProgress({ text: "Installation de la version du monde…" });
+      await versionInstalls.get(versionId).catch(() => {});
+    }
+    const settings = settingsStore.loadSettings();
+    const prepared = await playMode.prepareVersion(versionId, {
+      deps: { ensureVanillaVersion, ensureJavaForMajor: javaManager.ensureJavaForMajor, installLoader, prepareLaunchVersion, installFiles },
+      onProgress,
+      signal: task.controller.signal,
+      waitIfPaused: taskWaitIfPaused(task),
+      javaPreferred: settings.javaPath || undefined,
+    });
+    task.status = "complete";
+    task.step = "start";
+    task.bytes = task.totalBytes || task.bytes;
+    broadcastTasks();
+    event.sender.send("game:progress", { step: "start" });
+
+    const startedAt = Date.now();
+    await launchMinecraft({
+      onGameState: (running, exitCode) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send("game:state", running, exitCode ?? null);
+        }
+        if (running) {
+          playRunning = { versionId, startedAt };
+          worldCloud.setGameRunning(true);
+          liveSave.start({ startedAt, pid: getRunningGame()?.pid, worldKey });
+          return;
+        }
+        // Avant de réafficher les fenêtres : ferme le petit menu en jeu et libère F6.
+        const liveDone = liveSave.stop();
+        discordPresence.setBrowsingActivity();
+        if (settingsStore.shouldRestoreAfterPlaying()) {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (win.isDestroyed()) continue;
+            if (win.isMinimized()) win.restore();
+            win.show();
+            win.focus();
+          }
+        }
+        // Jeu fermé : plus rien n'écrit dans les mondes, on peut les sauvegarder.
+        const ended = playRunning;
+        playRunning = null;
+        liveDone
+          .then(() => liveSave.enqueue(() => playMode.afterGame(ended?.versionId || versionId, ended?.startedAt || startedAt)))
+          .then((created) => {
+            for (const c of created) {
+              if (c.backup) worldCloud.queueBackup(c.key, c.backup);
+              else if (c.error) logStore.pushLog({ level: "warn", source: "launcher", message: `Sauvegarde du monde impossible : ${c.error}` });
+            }
+            for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+          })
+          .catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Sauvegarde après la partie impossible : ${error.message}` }))
+          .finally(() => worldCloud.setGameRunning(false));
+      },
+      authorization: currentSession.authorization,
+      version: prepared.minecraftVersion,
+      serverIp: null,
+      serverName: null,
+      autoConnect: false,
+      addToServerList: false,
+      onProgress,
+      memory: { min: `${settings.memoryMinGB}G`, max: `${settings.memoryMaxGB}G` },
+      javaPath: prepared.javaPath || settings.javaPath || undefined,
+      gameDirectory: prepared.gameDirectory,
+      customVersion: prepared.customVersion,
+      customJvmArgs: prepared.jvmArgs,
+      slug: `play:${versionId}`,
+      onGameLine: (text) => liveSave.line(text),
+      quickPlayWorld: quickPlayWorld && supportsQuickPlay(prepared.minecraftVersion) ? quickPlayWorld : null,
+    });
+    await playMode.touchVersion(versionId);
+    discordPresence.setPlayingActivity(`Minecraft ${prepared.minecraftVersion}`, version.pack?.name?.fr || null, { isPrivate: true });
+    return { ok: true, versionId };
+  } catch (error) {
+    const cancelled = error?.name === "AbortError";
+    // Lancement raté : le verrou « monde ouvert » pris avant (plusieurs PC) est rendu.
+    worldCloud.releaseLocks().catch(() => {});
+    if (task && (task.status === "active" || task.status === "paused")) {
+      task.status = cancelled ? "cancelled" : "error";
+      task.error = cancelled ? null : error instanceof Error ? error.message : "Erreur inconnue";
+      broadcastTasks();
+    }
+    if (cancelled) return { ok: false, cancelled: true };
+    if (error?.code === "needVersion" || error?.code === "chooseVersion") {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Jouer : ${error.message} Rien n'a été lancé.` });
+      return { ok: false, code: error.code, error: error.message, minecraftVersion: error.minecraftVersion || null, worldName: error.worldName || null };
+    }
+    logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement (Jouer) : ${error instanceof Error ? error.message : error}` });
+    return playError(error);
   } finally {
     gameLaunchInProgress = false;
   }

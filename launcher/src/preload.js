@@ -186,6 +186,74 @@ contextBridge.exposeInMainWorld("mchub", {
     changeSkin: (variant, fileBuffer) => ipcRenderer.invoke("account:changeSkin", { variant, fileBuffer }),
     resetSkin: () => ipcRenderer.invoke("account:resetSkin"),
   },
+  // Mode « Jouer » (bêta, 24/10) : versions sans serveur, mondes et leurs sauvegardes (playMode.js),
+  // synchro des mondes avec le cloud pour les Supporters (worldCloud.js).
+  play: {
+    packs: (opts) => ipcRenderer.invoke("play:packs", opts),
+    mcVersions: () => ipcRenderer.invoke("play:mcVersions"),
+    listVersions: () => ipcRenderer.invoke("play:listVersions"),
+    createVersion: (opts) => ipcRenderer.invoke("play:createVersion", opts),
+    renameVersion: (id, name) => ipcRenderer.invoke("play:renameVersion", id, name),
+    removeVersion: (id) => ipcRenderer.invoke("play:removeVersion", id),
+    launch: (opts) => ipcRenderer.invoke("play:launch", opts),
+    listWorlds: () => ipcRenderer.invoke("play:listWorlds"),
+    setWorldBackup: (key, on, opts) => ipcRenderer.invoke("play:setWorldBackup", key, on, opts),
+    listBackups: (key) => ipcRenderer.invoke("play:listBackups", key),
+    setBackupLimit: (key, cfg) => ipcRenderer.invoke("play:setBackupLimit", key, cfg),
+    testOverlay: () => ipcRenderer.invoke("play:testOverlay"),
+    backupNow: (key, label) => ipcRenderer.invoke("play:backupNow", key, label),
+    restoreBackup: (key, backupId) => ipcRenderer.invoke("play:restoreBackup", key, backupId),
+    deleteBackup: (key, backupId) => ipcRenderer.invoke("play:deleteBackup", key, backupId),
+    scanImport: (dir) => ipcRenderer.invoke("play:scanImport", dir),
+    pickImportDir: () => ipcRenderer.invoke("play:pickImportDir"),
+    importWorlds: (dir, folders) => ipcRenderer.invoke("play:import", dir, folders),
+    openWorldFolder: (key) => ipcRenderer.invoke("play:openWorldFolder", key),
+    onWorldsChanged: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on("play:worldsChanged", listener);
+      return () => ipcRenderer.removeListener("play:worldsChanged", listener);
+    },
+    onSaveActivity: (callback) => {
+      const listener = (_event, activity) => callback(activity);
+      ipcRenderer.on("play:saveActivity", listener);
+      return () => ipcRenderer.removeListener("play:saveActivity", listener);
+    },
+    cloud: {
+      status: (opts) => ipcRenderer.invoke("cloud:status", opts),
+      testConnection: () => ipcRenderer.invoke("cloud:testConnection"),
+      sync: (keys) => ipcRenderer.invoke("cloud:sync", keys),
+      remove: (key) => ipcRenderer.invoke("cloud:remove", key),
+      pause: () => ipcRenderer.invoke("cloud:pause"),
+      resume: () => ipcRenderer.invoke("cloud:resume"),
+      stop: () => ipcRenderer.invoke("cloud:stop"),
+      sendBackup: (key, backupId) => ipcRenderer.invoke("cloud:sendBackup", key, backupId),
+      uncloudBackup: (key, backupId) => ipcRenderer.invoke("cloud:uncloudBackup", key, backupId),
+      download: (worldId) => ipcRenderer.invoke("cloud:download", worldId),
+      // Plusieurs PC : avant « Jouer », conflits, choix entre deux versions, téléchargements.
+      beforePlay: (key, opts) => ipcRenderer.invoke("cloud:beforePlay", key, opts),
+      fetchLatest: (key) => ipcRenderer.invoke("cloud:fetchLatest", key),
+      waitClosed: (key) => ipcRenderer.invoke("cloud:waitClosed", key),
+      cancelWait: (key) => ipcRenderer.invoke("cloud:cancelWait", key),
+      resolveSplit: (key, versionId) => ipcRenderer.invoke("cloud:resolveSplit", key, versionId),
+      downloadMany: (ids) => ipcRenderer.invoke("cloud:downloadMany", ids),
+      downloadJob: () => ipcRenderer.invoke("cloud:downloadJob"),
+      onDownloadUpdate: (callback) => {
+        const listener = (_event, djob) => callback(djob);
+        ipcRenderer.on("cloud:downloadUpdate", listener);
+        return () => ipcRenderer.removeListener("cloud:downloadUpdate", listener);
+      },
+      onWaitDone: (callback) => {
+        const listener = (_event, result) => callback(result);
+        ipcRenderer.on("cloud:waitDone", listener);
+        return () => ipcRenderer.removeListener("cloud:waitDone", listener);
+      },
+      onUpdate: (callback) => {
+        const listener = (_event, job) => callback(job);
+        ipcRenderer.on("cloud:update", listener);
+        return () => ipcRenderer.removeListener("cloud:update", listener);
+      },
+    },
+  },
   java: {
     detect: () => ipcRenderer.invoke("java:detect"),
     install: (majors) => ipcRenderer.invoke("java:install", majors),
