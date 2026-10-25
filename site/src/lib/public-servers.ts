@@ -668,7 +668,7 @@ async function toPublicServerDetail(row: ServerDetailRow): Promise<PublicServerD
     modpackSource: parseModpackSource(row.modpackSource),
     playerCount: status.playerCount,
     playerCapacity: status.playerCapacity,
-    pinged: row.lastPingedAt != null,
+    pinged: status.pinged,
     recommendedRamGB: row.recommendedRamGB,
     createdAt: row.createdAt,
     viewCount: row.viewCount,

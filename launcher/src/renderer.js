@@ -4741,6 +4741,23 @@ function paintHomeView({ settings, favoriteSlugs, myServersResult, continueResol
 // son proprietaire. Avant d'effacer un slug, on verifie donc qu'il n'est pas dans « Mes
 // instances » (servers:mine) ; si cette liste est illisible (hors ligne, pas connecte), on
 // garde le slug plutot que de risquer de l'effacer a tort.
+// 25/10 : un serveur absent de l'annuaire (prive, en attente de validation) arrive ici sous forme
+// de FICHE : ses etiquettes et langues sont dans `page`, pas a la racine comme dans la liste.
+// Sans ceci, sa ligne affichait « Langue ? » et aucune etiquette alors que la fiche les a.
+function asListServer(server) {
+  if (!server || Array.isArray(server.languages) || !server.page) return server;
+  const page = server.page;
+  const mainTags = Array.isArray(page.tags) ? page.tags : [];
+  const extra = Array.isArray(page.extraTags) ? page.extraTags : [];
+  return {
+    ...server,
+    tags: [...new Set([...mainTags, ...extra])],
+    mainTags,
+    languages: Array.isArray(page.languages) ? page.languages : [],
+    modpackName: server.modpackName ?? server.curseforgeModpackName ?? null,
+  };
+}
+
 async function resolveServersBySlug(slugs) {
   const result = await fetchServerList();
   const allServers = result.ok ? result.servers : [];
@@ -4753,7 +4770,7 @@ async function resolveServersBySlug(slugs) {
       const found = allServers.find((s) => s.slug === slug);
       if (found) return found;
       const single = await window.mchub.getServer(slug);
-      if (single.ok) return single.server;
+      if (single.ok) return asListServer(single.server);
       if (single.notFound) {
         const owned = await myServers();
         if (!owned?.ok) return placeholder(slug);

@@ -46,7 +46,18 @@ type CachedStatus = {
 export type ServerStatus = {
   playerCount: number | null;
   playerCapacity: number | null;
+  // Contacte au moins une fois (sans reponse = « Hors ligne », sinon « Inconnu »).
+  pinged: boolean;
 };
+
+// 25/10 : resultat de la derniere mesure faite par cette instance, lu par getServerStatus quand il
+// attend la toute premiere mesure d'un serveur (jamais mesure = « Inconnu » sinon).
+const freshResults = new Map<string, { playerCount: number | null; playerCapacity: number | null }>();
+const awaitingFirst = new Set<string>();
+// Mesure en cours par serveur : un 2e affichage simultane (ex. titre + contenu de la fiche) attend
+// la meme mesure au lieu d'en relancer une.
+const pendingById = new Map<string, Promise<void>>();
+const FIRST_PING_WAIT_MS = 4500;
 
 export function isStatusStale(lastPingedAt: string | null): boolean {
   if (!lastPingedAt) return true;
@@ -89,6 +100,10 @@ async function refreshOne(id: string, ip: string): Promise<void> {
       if (!claimed) return;
 
       const result = await pingMinecraftServer(ip);
+      if (awaitingFirst.has(id)) {
+        freshResults.set(id, result ? { playerCount: result.online, playerCapacity: result.max } : { playerCount: null, playerCapacity: null });
+        setTimeout(() => freshResults.delete(id), 10_000);
+      }
       await db.orm.public.Server.where({ id }).update(
         result
           ? { playerCount: result.online, playerCapacity: result.max }
@@ -137,7 +152,13 @@ export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; l
     inFlight.add(s.id);
     recentlyScheduled.set(s.id, now);
   }
-  const work = Promise.all(todo.map((s) => refreshOne(s.id, s.ip))).then(() => undefined);
+  const work = Promise.all(
+    todo.map((s) => {
+      const one = refreshOne(s.id, s.ip).finally(() => pendingById.delete(s.id));
+      pendingById.set(s.id, one);
+      return one;
+    }),
+  ).then(() => undefined);
   try {
     after(() => work);
   } catch {
@@ -153,6 +174,17 @@ export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; l
  * après l'envoi de la page (elle apparaîtra à la visite suivante).
  */
 export async function getServerStatus(serverId: string, ip: string, cached: CachedStatus): Promise<ServerStatus> {
-  scheduleStatusRefresh([{ id: serverId, ip, lastPingedAt: cached.lastPingedAt }]);
-  return { playerCount: cached.playerCount, playerCapacity: cached.playerCapacity };
+  if (cached.lastPingedAt == null) awaitingFirst.add(serverId);
+  const work = scheduleStatusRefresh([{ id: serverId, ip, lastPingedAt: cached.lastPingedAt }]) ?? pendingById.get(serverId);
+  // 25/10 : serveur JAMAIS mesure (fiche privee, en attente...) : on attend sa premiere mesure au
+  // plus FIRST_PING_WAIT_MS, une seule fois, au lieu d'afficher « Inconnu » jusqu'a la visite
+  // suivante. Les autres affichages n'attendent jamais.
+  if (work && cached.lastPingedAt == null) {
+    const done = await Promise.race([work.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), FIRST_PING_WAIT_MS))]);
+    const fresh = done ? freshResults.get(serverId) : undefined;
+    awaitingFirst.delete(serverId);
+    if (fresh) return { ...fresh, pinged: true };
+  }
+  awaitingFirst.delete(serverId);
+  return { playerCount: cached.playerCount, playerCapacity: cached.playerCapacity, pinged: cached.lastPingedAt != null };
 }
