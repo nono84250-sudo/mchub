@@ -177,7 +177,8 @@ export async function clearLauncherMaintenance(): Promise<void> {
 // pour que debut et fin tombent a la minute pres.
 export const LAUNCHER_STATUS_TAG = "launcher-status";
 export type LauncherStatus = {
-  maintenance: { active: boolean; message: string | null };
+  // system/startsAt/endsAt (25/10) : affiches sur l'ecran de maintenance du launcher.
+  maintenance: { active: boolean; message: string | null; system?: string; startsAt?: string; endsAt?: string | null };
   // 25/10 : maintenance d'un systeme qui ne bloque pas le launcher (Site, CurseForge, Modrinth,
   // FTB) : le launcher affiche un bandeau "Perturbations". Ignore par les anciens launchers.
   disruption: { system: string; message: string; endsAt: string | null } | null;
@@ -191,7 +192,9 @@ const readMaintenanceCached = unstable_cache(async () => getLauncherMaintenance(
 export async function getLauncherStatus(): Promise<LauncherStatus> {
   const m = await readMaintenanceCached();
   if (!m || maintenancePhase(m) !== "active") return { maintenance: { active: false, message: null }, disruption: null };
-  if (maintenanceBlocksLauncher(m.system)) return { maintenance: { active: true, message: m.message }, disruption: null };
+  if (maintenanceBlocksLauncher(m.system)) {
+    return { maintenance: { active: true, message: m.message, system: m.system, startsAt: m.startsAt, endsAt: m.endsAt }, disruption: null };
+  }
   return { maintenance: { active: false, message: null }, disruption: { system: m.system, message: m.message, endsAt: m.endsAt } };
 }
 

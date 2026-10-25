@@ -3785,28 +3785,124 @@ let maintenanceBypassed = false;
 // Ecran plein (voir Design/Omniscient Launcher UI Mockups, "01a Maintenance") : bloque tout
 // le reste de l'appli jusqu'a un code valide. Reutilisable au demarrage (ensureNotInMaintenance)
 // et depuis le pop-up d'une notification "maintenance" deja en session.
-function showMaintenanceScreen(message) {
+// 25/10 : ecran refait (preview validee par Rushi). `info` = { system, startsAt, endsAt } renvoyes
+// par le site (absents sur un site plus ancien). L'ecran revérifie toutes les 30 s et se ferme
+// tout seul quand la maintenance est finie ; « Fermer le launcher » / ✕ ferment l'appli.
+function formatMaintenanceTime(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(window.i18n.getLocale() === "en" ? "en-GB" : "fr-FR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+function formatMaintenanceLeft(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  if (days > 0) return window.i18n.getLocale() === "en" ? `${days} d ${hours} h` : `${days} j ${hours} h`;
+  if (hours > 0) return `${hours} h ${String(mins).padStart(2, "0")}`;
+  return `${mins} min`;
+}
+function renderMaintenanceInfo(message, info) {
+  document.getElementById("maintenance-message").textContent = message || t("maintenance.defaultMessage");
+  const chip = document.getElementById("maintenance-chip");
+  chip.textContent = info?.system === "Launcher" ? t("maintenance.chipLauncher") : info?.system ? t("maintenance.chipAll") : "";
+  document.getElementById("maintenance-start").textContent = formatMaintenanceTime(info?.startsAt);
+  const endEl = document.getElementById("maintenance-end");
+  const leftEl = document.getElementById("maintenance-left");
+  const bar = document.getElementById("maintenance-bar");
+  if (info?.endsAt) {
+    endEl.textContent = formatMaintenanceTime(info.endsAt);
+    const start = Date.parse(info.startsAt || "") || Date.now();
+    const end = Date.parse(info.endsAt);
+    const left = end - Date.now();
+    leftEl.hidden = left <= 0;
+    leftEl.textContent = t("maintenance.timeLeft", { time: formatMaintenanceLeft(left) });
+    bar.hidden = false;
+    const total = Math.max(1, end - start);
+    document.getElementById("maintenance-bar-fill").style.width = `${Math.min(100, Math.max(2, ((Date.now() - start) / total) * 100))}%`;
+  } else {
+    endEl.textContent = t("maintenance.endUnknown");
+    leftEl.hidden = true;
+    bar.hidden = true;
+  }
+}
+
+function showMaintenanceScreen(message, info) {
   return new Promise((resolve) => {
     const overlay = document.getElementById("maintenance-overlay");
-    const input = document.getElementById("maintenance-code-input");
+    const cells = [...document.querySelectorAll("#maintenance-code input")];
+    const codeBox = document.getElementById("maintenance-code");
     const errorEl = document.getElementById("maintenance-code-error");
     const continueBtn = document.getElementById("maintenance-continue");
+    const staffToggle = document.getElementById("maintenance-staff-toggle");
+    const staffForm = document.getElementById("maintenance-staff");
+    const quitButtons = [document.getElementById("maintenance-quit"), document.getElementById("maintenance-close")];
 
-    document.getElementById("maintenance-message").textContent = message || t("maintenance.defaultMessage");
+    codeBox.setAttribute("aria-label", t("maintenance.codeLabel"));
+    renderMaintenanceInfo(message, info);
     errorEl.hidden = true;
-    input.value = "";
+    codeBox.classList.remove("bad");
+    cells.forEach((cell) => { cell.value = ""; });
+    staffForm.hidden = true;
+    staffToggle.hidden = false;
     overlay.hidden = false;
     document.body.classList.add("modal-blocking");
-    input.focus();
 
+    let checking = false;
+    const poll = setInterval(async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const status = await window.mchub.checkMaintenance({ background: true });
+        if (!status.active) {
+          cleanup();
+          resolve();
+          return;
+        }
+        renderMaintenanceInfo(status.message, status);
+      } finally {
+        checking = false;
+      }
+    }, 30000);
+
+    const onStaff = () => {
+      staffToggle.hidden = true;
+      staffForm.hidden = false;
+      cells[0].focus();
+    };
+    const onQuit = () => window.mchub.windowControls.close();
+    const onCellInput = (event) => {
+      const cell = event.target;
+      const index = cells.indexOf(cell);
+      // Coller le code entier dans la 1re case le repartit sur les 6.
+      const chars = cell.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (chars.length > 1) {
+        chars.slice(0, cells.length - index).split("").forEach((ch, i) => { cells[index + i].value = ch; });
+        cells[Math.min(cells.length - 1, index + chars.length - 1)].focus();
+        return;
+      }
+      cell.value = chars;
+      codeBox.classList.remove("bad");
+      if (chars && cells[index + 1]) cells[index + 1].focus();
+    };
+    const onCellKey = (event) => {
+      const index = cells.indexOf(event.target);
+      if (event.key === "Backspace" && !event.target.value && cells[index - 1]) cells[index - 1].focus();
+      if (event.key === "Enter") onSubmit();
+    };
     const cleanup = () => {
+      clearInterval(poll);
       overlay.hidden = true;
       document.body.classList.remove("modal-blocking");
       continueBtn.removeEventListener("click", onSubmit);
-      input.removeEventListener("keydown", onKey);
+      staffToggle.removeEventListener("click", onStaff);
+      quitButtons.forEach((btn) => btn.removeEventListener("click", onQuit));
+      cells.forEach((cell) => {
+        cell.removeEventListener("input", onCellInput);
+        cell.removeEventListener("keydown", onCellKey);
+      });
     };
     const onSubmit = async () => {
-      const code = input.value.trim();
+      const code = cells.map((cell) => cell.value).join("").trim();
       if (!code) return;
       continueBtn.disabled = true;
       const result = await window.mchub.verifyMaintenanceCode(code);
@@ -3819,12 +3915,17 @@ function showMaintenanceScreen(message) {
       }
       errorEl.textContent = t("maintenance.wrongCode");
       errorEl.hidden = false;
-    };
-    const onKey = (event) => {
-      if (event.key === "Enter") onSubmit();
+      codeBox.classList.remove("bad");
+      void codeBox.offsetWidth;
+      codeBox.classList.add("bad");
     };
     continueBtn.addEventListener("click", onSubmit);
-    input.addEventListener("keydown", onKey);
+    staffToggle.addEventListener("click", onStaff);
+    quitButtons.forEach((btn) => btn.addEventListener("click", onQuit));
+    cells.forEach((cell) => {
+      cell.addEventListener("input", onCellInput);
+      cell.addEventListener("keydown", onCellKey);
+    });
   });
 }
 
@@ -3835,7 +3936,7 @@ async function ensureNotInMaintenance(pendingCheck) {
   applyDisruption(status.disruption);
   if (!status.active) return;
   bootstrapEl.hidden = true;
-  await showMaintenanceScreen(status.message);
+  await showMaintenanceScreen(status.message, status);
 }
 
 // Re-verifiee periodiquement (voir scheduleRefresh plus bas) : une maintenance activee
@@ -3847,7 +3948,7 @@ async function checkMaintenanceLoop() {
   const status = await window.mchub.checkMaintenance({ background: true });
   applyDisruption(status.disruption);
   if (maintenanceBypassed) return;
-  if (status.active) await showMaintenanceScreen(status.message);
+  if (status.active) await showMaintenanceScreen(status.message, status);
 }
 
 // 25/10 : maintenance d'un seul systeme (Site, CurseForge, Modrinth, FTB) programmee dans
@@ -3875,11 +3976,11 @@ function pulseIsFresh() {
   return Date.now() - lastGroupedPulseAt < every * 2.5;
 }
 
-async function showMaintenanceFromPulse(message) {
+async function showMaintenanceFromPulse(message, info) {
   if (maintenanceBypassed || maintenanceScreenOpen) return;
   maintenanceScreenOpen = true;
   try {
-    await showMaintenanceScreen(message);
+    await showMaintenanceScreen(message, info);
   } finally {
     maintenanceScreenOpen = false;
   }
@@ -3901,7 +4002,7 @@ async function showNotificationPopup(notif) {
   // pour une maintenance, verifie si elle est reellement active et bloque si oui.
   if (isMaintenance && !result.confirmed) {
     const status = await window.mchub.checkMaintenance();
-    if (status.active) await showMaintenanceScreen(status.message);
+    if (status.active) await showMaintenanceScreen(status.message, status);
   }
 }
 
@@ -4343,7 +4444,7 @@ async function sendPresenceHeartbeat() {
   lastGroupedPulseAt = Date.now();
   if (result.notifications) await applyNotifications(result.notifications);
   applyDisruption(result.disruption);
-  if (result.maintenance?.active) showMaintenanceFromPulse(result.maintenance.message);
+  if (result.maintenance?.active) showMaintenanceFromPulse(result.maintenance.message, result.maintenance);
 }
 
 // Compte Omniscient supprime sur le site pendant que le launcher etait connecte (voir

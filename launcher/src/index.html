@@ -299,6 +299,44 @@
      que .friend-policy-banner (orange « occupe »). */
   .disruption-banner { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; margin-bottom: 16px; border-radius: 10px; font-size: 13px; background: color-mix(in srgb, var(--state-busy) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--state-busy) 40%, transparent); }
   .disruption-banner[hidden] { display: none; }
+  /* Ecran de maintenance (25/10) : plein ecran, au-dessus de tout, avec un halo orange « occupe ». */
+  .maint-screen { background: var(--background); z-index: 200; overflow-y: auto; padding: 40px 20px; }
+  .maint-screen::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(60% 50% at 50% 30%, color-mix(in srgb, var(--state-busy) 14%, transparent), transparent 70%); }
+  .maint-close { position: absolute; top: 12px; right: 12px; z-index: 1; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; font-size: 15px; display: grid; place-items: center; }
+  .maint-close:hover { color: var(--danger); border-color: var(--danger); }
+  .maint-panel { position: relative; width: 100%; max-width: 440px; margin: auto; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px; }
+  .maint-icon { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; color: var(--state-busy); background: color-mix(in srgb, var(--state-busy) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--state-busy) 45%, transparent); box-shadow: 0 0 0 8px color-mix(in srgb, var(--state-busy) 7%, transparent); animation: maint-pulse 2.6s ease-in-out infinite; }
+  .maint-icon svg { width: 32px; height: 32px; }
+  @keyframes maint-pulse { 50% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--state-busy) 4%, transparent); } }
+  .maint-chip { font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 4px 10px; border-radius: 99px; background: color-mix(in srgb, var(--state-busy) 14%, transparent); color: var(--state-busy); }
+  .maint-chip:empty { display: none; }
+  .maint-title { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.01em; color: var(--foreground); }
+  .maint-msg { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; max-width: 38ch; white-space: pre-line; }
+  .maint-times { width: 100%; display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+  .maint-times > div:not(.maint-bar) { padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; text-align: left; }
+  .maint-times > div:nth-child(2) { border-left: 1px solid var(--border); }
+  .maint-times span { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .maint-times strong { font-size: 14.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--foreground); }
+  .maint-times small { font-size: 12px; color: var(--state-busy); }
+  .maint-bar { grid-column: 1 / -1; height: 4px; background: var(--surface-raised); border-top: 1px solid var(--border); }
+  .maint-bar[hidden] { display: none; }
+  .maint-bar i { display: block; height: 100%; width: 0; background: var(--state-busy); }
+  .maint-auto { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .maint-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--state-busy); animation: maint-blink 1.6s ease-in-out infinite; }
+  @keyframes maint-blink { 50% { opacity: .3; } }
+  .maint-quit { font-family: inherit; font-size: 13px; font-weight: 500; border: 1px solid var(--border); border-radius: 10px; padding: 9px 18px; background: transparent; color: var(--foreground); cursor: pointer; }
+  .maint-quit:hover { background: var(--surface-raised); }
+  .maint-staff { width: 100%; margin-top: 6px; border-top: 1px solid var(--border); padding-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .maint-staff-toggle { font: inherit; font-size: 12.5px; background: none; border: 0; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .maint-staff-form { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .maint-staff-form[hidden] { display: none; }
+  .maint-code { display: flex; gap: 8px; justify-content: center; }
+  .maint-code input { width: 42px; height: 48px; text-align: center; font-family: inherit; font-size: 20px; font-weight: 600; text-transform: uppercase; color: var(--foreground); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+  .maint-code input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .maint-code.bad input { border-color: var(--danger); animation: maint-shake .3s; }
+  @keyframes maint-shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+  .maint-err { margin: 0; font-size: 12.5px; color: var(--danger); }
+  @media (prefers-reduced-motion: reduce) { .maint-icon, .maint-dot, .maint-code.bad input { animation: none; } }
   .disruption-text { color: var(--muted); margin-top: 2px; line-height: 1.45; }
   .guest-banner-text { flex: 1 1 260px; min-width: 0; }
   .guest-banner-text h3 { margin: 0 0 4px; font-size: 14px; color: var(--foreground); }
@@ -2593,17 +2631,30 @@ body.boot-preview #home-panel { pointer-events: none; }
     <p class="gate-message" id="gate-countdown" style="color: var(--muted); font-size: 12px;" hidden></p>
   </div>
 
-  <div class="modal-overlay" id="maintenance-overlay" hidden>
-    <div class="modal-box" style="text-align: center;">
-      <h3 data-i18n="maintenance.title">Maintenance en cours</h3>
-      <p class="join-note" id="maintenance-message" style="margin-bottom: 16px;"></p>
-      <div class="settings-field">
-        <label for="maintenance-code-input" class="field-label" data-i18n="maintenance.codeLabel">Code d'accès</label>
-        <input id="maintenance-code-input" class="settings-input" style="text-align: center; letter-spacing: .05em;" data-i18n-placeholder="maintenance.codePlaceholder" placeholder="Code" />
+  <!-- 25/10 : ecran plein refait (preview validee par Rushi, https://claude.ai/artifact/Mu1whvFmqzjDiykfFUmxuu). -->
+  <div class="modal-overlay maint-screen" id="maintenance-overlay" hidden>
+    <button type="button" class="maint-close" id="maintenance-close" data-i18n-title="maintenance.close" title="Fermer" aria-label="Fermer">✕</button>
+    <div class="maint-panel">
+      <div class="maint-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
+      <span class="maint-chip" id="maintenance-chip"></span>
+      <h1 class="maint-title" data-i18n="maintenance.title">Maintenance en cours</h1>
+      <p class="maint-msg" id="maintenance-message"></p>
+      <div class="maint-times">
+        <div><span data-i18n="maintenance.startLabel">Début</span><strong id="maintenance-start">—</strong></div>
+        <div><span data-i18n="maintenance.endLabel">Retour prévu</span><strong id="maintenance-end">—</strong><small id="maintenance-left" hidden></small></div>
+        <div class="maint-bar" id="maintenance-bar" hidden><i id="maintenance-bar-fill"></i></div>
       </div>
-      <p class="join-note" id="maintenance-code-error" role="alert" style="color: var(--danger);" hidden></p>
-      <div class="modal-actions">
-        <button id="maintenance-continue" class="join-btn" type="button" data-i18n="maintenance.continueBtn">Continuer</button>
+      <div class="maint-auto"><span class="maint-dot"></span><span data-i18n="maintenance.autoUnlock">Le launcher se débloque tout seul dès que c'est fini.</span></div>
+      <button type="button" class="maint-quit" id="maintenance-quit" data-i18n="maintenance.quit">Fermer le launcher</button>
+      <div class="maint-staff">
+        <button type="button" class="maint-staff-toggle" id="maintenance-staff-toggle" data-i18n="maintenance.staffToggle">Tu fais partie de l'équipe ? Entrer un code d'accès</button>
+        <div id="maintenance-staff" class="maint-staff-form" hidden>
+          <div class="maint-code" id="maintenance-code" role="group" aria-label="Code d'accès">
+            <input maxlength="1" autocomplete="off" spellcheck="false" aria-label="1" /><input maxlength="1" autocomplete="off" spellcheck="false" aria-label="2" /><input maxlength="1" autocomplete="off" spellcheck="false" aria-label="3" /><input maxlength="1" autocomplete="off" spellcheck="false" aria-label="4" /><input maxlength="1" autocomplete="off" spellcheck="false" aria-label="5" /><input maxlength="1" autocomplete="off" spellcheck="false" aria-label="6" />
+          </div>
+          <p class="maint-err" id="maintenance-code-error" role="alert" hidden></p>
+          <button id="maintenance-continue" class="join-btn" type="button" data-i18n="maintenance.continueBtn">Continuer</button>
+        </div>
       </div>
     </div>
   </div>

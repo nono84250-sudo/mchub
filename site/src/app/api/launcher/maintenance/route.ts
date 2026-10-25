@@ -18,6 +18,9 @@ async function handleGET(request: Request) {
   return NextResponse.json({
     active: maintenance.active,
     message: maintenance.message,
+    system: maintenance.system ?? null,
+    startsAt: maintenance.startsAt ?? null,
+    endsAt: maintenance.endsAt ?? null,
     disruption,
   });
 }
