@@ -10,9 +10,26 @@ import { useRouter } from "next/navigation";
 export function AutoRefresh({ intervalMs }: { intervalMs: number }) {
   const router = useRouter();
 
+  // Onglet en arrière-plan (20/10, /servers/hypixel redemandé en boucle dans les logs alors que
+  // personne ne regardait la page) : aucun rafraîchissement tant que l'onglet est caché, et un seul
+  // en revenant s'il date de plus de intervalMs. Chaque rafraîchissement relit la base.
   useEffect(() => {
-    const id = setInterval(() => router.refresh(), intervalMs);
-    return () => clearInterval(id);
+    let last = Date.now();
+    const refresh = () => {
+      last = Date.now();
+      router.refresh();
+    };
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, intervalMs);
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - last >= intervalMs) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [router, intervalMs]);
 
   return null;

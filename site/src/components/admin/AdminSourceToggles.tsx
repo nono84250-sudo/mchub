@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const LABELS: Record<string, string> = { curseforge: "CurseForge", modrinth: "Modrinth" };
+const LABELS: Record<string, string> = { curseforge: "CurseForge", modrinth: "Modrinth", ftb: "FTB" };
 
 // Interrupteurs des sources de modpacks. Désactiver une source la coupe pour tous
 // les joueurs immédiatement (recherche et installation) — dès que "Enregistrer" est

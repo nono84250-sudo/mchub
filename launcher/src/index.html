@@ -8,6 +8,24 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: http://localhost:* http://127.0.0.1:*; frame-src https://www.youtube-nocookie.com; object-src 'none'; base-uri 'none'; form-action 'none'" />
 <title>Omniscient Launcher</title>
 <style>
+  /* Police Inter partout (serie 2, idee 5) : fichiers locaux (fonts/, licence SIL OFL jointe),
+     aucune requete vers internet. Segoe UI reste en secours si le fichier ne charge pas. */
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 100 900;
+    src: url("fonts/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
+    unicode-range: U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+  }
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 100 900;
+    src: url("fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+    unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+  }
   :root {
     /* Systeme de design "Nocturne" (fourni par le client, meme palette que
        le site) : fond bleu-gris quasi neutre, accent blurple utilise en
@@ -46,9 +64,27 @@
     --danger: #e08a8a;
     --warn: #e0c28a;
     --success: #5fd3a0;
+    /* Notifications (audit 17/10, lot 1) : info (violet) et gel (bleu), avec une version lisible en
+       theme clair ; avant, le jaune #e8c547 et ces pastels etaient illisibles en clair. */
+    --notif-info: #9184d9;
+    /* Table des etats commune site + launcher (audit 17/10, lot 2) : presque plein en vrai orange,
+       hors ligne en gris (le rouge reste pour « Complet »), gele en bleu. --warn ne bouge pas. */
+    --state-busy: #f0a040;
+    --state-off: #8a8c9a;
+    --frozen: #8ac3e0;
+    --pending: #e0c28a;
+    --notif-frozen: var(--frozen);
     /* Elevation par defaut des cartes/rangees (passe 2026-10-11) : une ombre
        douce plutot qu'une bordure marquee — voir .row/.home-continue-card. */
     --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px -14px rgba(0, 0, 0, 0.55);
+    /* Design 17/10, point 5 : focus clavier jaune bien visible, et 4 arrondis seulement
+       (petit, moyen, grand, pilule) + une seule ombre pour tous les menus et panneaux. */
+    --focus-ring: #f0c94a;
+    --radius-s: 6px;
+    --radius-m: 8px;
+    --radius-l: 12px;
+    --radius-pill: 999px;
+    --shadow-pop: 0 12px 28px rgba(0, 0, 0, 0.35);
   }
 
   /* Theme clair : meme structure de tokens, valeurs inversees. Applique via
@@ -68,12 +104,38 @@
     --muted: color-mix(in srgb, var(--foreground) 65%, transparent);
     --muted2: color-mix(in srgb, var(--foreground) 62%, transparent);
     --danger: #c0453f;
-    --warn: #9a6a1f;
-    --success: #2f9e6e;
+    --warn: #8a5d16;
+    --success: #1f7a52;
+    --notif-info: #5b4bc4;
+    --state-busy: #a05a10;
+    --state-off: #64667a;
+    --frozen: #226a8c;
+    /* Clair aligne sur le site (lot 8, 18/10) : tous au-dessus de 4,5:1 sur #f3f3f6 et #fff. */
+    --pending: #7d5b0e;
+    --notif-frozen: var(--frozen);
+    --focus-ring: #b8860b;
+    --shadow-pop: 0 12px 28px rgba(20, 20, 30, 0.18);
   }
 
   * { box-sizing: border-box; }
+  /* Inter aussi dans les boutons et champs (Chromium ne leur fait pas heriter la police). */
+  button, input, select, textarea { font-family: inherit; }
   [hidden] { display: none !important; }
+  /* Focus clavier (design 17/10, point 5, L7-A) : un contour jaune net sur tout ce qu'on atteint
+     avec Tab. Seulement au clavier (:focus-visible), jamais au clic de souris. */
+  :where(button, a, select, summary, [role="button"], [tabindex]:not([tabindex="-1"]), input[type="checkbox"], input[type="radio"]):focus-visible {
+    outline: 2px solid var(--focus-ring) !important;
+    outline-offset: 2px;
+  }
+  /* Reduire les animations (Parametres > Apparence, point 5, L7-B) : coupe clignotements, reflets
+     et zooms. Classe posee par theme.js selon le reglage (ou celui de Windows). */
+  html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  html.reduce-motion .activity-ring, html.reduce-motion .bootstrap-spinner .arc { animation: none !important; }
   /* Poids differencie par niveau (passe 2026-10-11) : avant, h1/h2/h3
      partageaient tous 500, aucun rythme de lecture entre un titre d'ecran et
      un sous-titre. h3 reste a 500 ici car la plupart des usages reels (titres
@@ -87,7 +149,7 @@
     margin: 0;
     background: var(--background);
     color: var(--foreground);
-    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    font-family: "Inter", "Segoe UI", Arial, Helvetica, sans-serif;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -112,8 +174,21 @@
     flex: 0 0 auto;
     background: color-mix(in srgb, var(--foreground) 7%, var(--background));
     -webkit-app-region: drag;
-    padding-left: 12px;
+    padding-left: 0;
   }
+  /* Coin du logo (serie 2, variante D) : il suit la largeur de la barre laterale (56 px repliee,
+     196 px depliee), sans trait entre les deux. Sans barre laterale (demarrage, connexion), le
+     logo et le nom reprennent leur place normale. */
+  /* Audit 17/10, lot 1 : le losange reste toujours au meme endroit (centre sur les icones) et le
+     nom glisse au lieu de sauter pendant l'animation ; « Omniscient » commence sur la meme verticale
+     que les libelles de la barre (il etait 2 px trop a gauche). */
+  #titlebar-corner { flex: 0 0 auto; width: 56px; height: 100%; display: flex; align-items: center; justify-content: flex-start; padding-left: 20px; overflow: visible; transition: width 0.18s ease; }
+  #titlebar-corner .logo { gap: 0; }
+  /* Nom toujours affiche, menu replie ou deplie (version A choisie par Rushi le 18/10) : replie,
+     il deborde sur la barre du haut, de la meme couleur. */
+  #titlebar-corner .logo-name { display: inline-block; color: inherit; white-space: nowrap; margin-left: 13px; }
+  body.sidebar-expanded #titlebar-corner { width: 196px; }
+  body:not(.has-sidebar) #titlebar-corner { width: auto; padding: 0 12px; }
   #titlebar-drag { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
   #titlebar .logo { font-size: 13px; }
   #titlebar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
@@ -121,6 +196,8 @@
   /* Ecran de demarrage : statut Minecraft, notifications et boutons de
      fenetre n'ont aucun sens tant que rien n'est encore charge — masques le
      temps du bootstrap, le titre reprend toute la largeur et se centre. */
+  body.bootstrapping .search-trigger,
+  body.bootstrapping .discreet-toggle,
   body.bootstrapping .mc-status-menu,
   body.bootstrapping .notif-menu,
   body.bootstrapping #titlebar-controls {
@@ -168,7 +245,23 @@
     color: var(--muted);
     cursor: pointer;
   }
-  .sidebar-btn svg { width: 20px; height: 20px; }
+  .sidebar-btn svg { width: 20px; height: 20px; flex: 0 0 auto; }
+  /* Barre laterale depliable (serie 2, idee 1) : repliee = 56 px d'icones (comme avant), depliee =
+     196 px avec le nom de chaque page. Sous 900 px elle se replie seule ; depliee a la main, elle
+     passe alors par-dessus la page et se referme quand on choisit une page. */
+  #sidebar { transition: width 0.18s ease; z-index: 6; }
+  .sidebar-label { display: none; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar-toggle { margin-top: 4px; color: var(--muted); }
+  .sidebar-toggle svg { transition: transform 0.18s ease; }
+  #sidebar.expanded { width: 196px; align-items: stretch; padding: 14px 8px; }
+  #sidebar.expanded .sidebar-btn { width: auto; justify-content: flex-start; gap: 12px; padding: 0 9px; }
+  #sidebar.expanded .sidebar-label { display: inline; }
+  #sidebar.expanded .sidebar-toggle svg { transform: scaleX(-1); }
+  #sidebar.expanded #ms-account { align-self: stretch; }
+  #sidebar.expanded #ms-account .account-trigger { justify-content: flex-start; gap: 12px; padding: 0 9px; width: 100%; }
+  #sidebar.expanded .sidebar-btn.active::before { left: -8px; }
+  #sidebar.overlay { position: fixed; top: 36px; bottom: 0; left: 0; box-shadow: var(--shadow-pop); }
+  .sidebar-scrim { position: fixed; inset: 36px 0 0 0; background: rgba(0, 0, 0, 0.35); z-index: 5; }
   .sidebar-btn:hover { background: var(--surface-raised); color: var(--foreground); }
   /* Mode visiteur (2026-10-11) : #nav-settings (qui porte normalement le
      margin-top:auto poussant Parametres+avatar vers le bas) est cache par
@@ -177,10 +270,16 @@
      de prendre la place de l'avatar absent. Applique la meme poussee a
      #ms-account UNIQUEMENT quand #nav-settings est cache, pour ne pas
      affecter le mode connecte (qui garde son propre margin-top:auto). */
-  #nav-settings[hidden] + #ms-account { margin-top: auto; }
+  /* Depuis la page Aide (serie 2, idee 6), c'est #nav-help qui pousse le bas de la barre : une
+     deuxieme poussee ici partageait la place et laissait « ? » flotter au milieu en mode visiteur
+     (retour de Rushi 17/10). */
+  #nav-settings[hidden] + #ms-account { margin-top: 0; }
   /* Mode visiteur (2026-10-15) : bouton "Se connecter" au-dessus de Parametres dans
      #ms-account, pour qu'un visiteur puisse se connecter sans passer par "Jouer". */
   #ms-account:has(.signin-btn) { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  /* Barre depliee en mode visiteur (retour de Rushi 17/10) : « Se connecter » et « Parametres »
+     prennent toute la largeur comme les autres entrees, icone et texte sur la meme verticale. */
+  #sidebar.expanded #ms-account:has(.signin-btn) { align-items: stretch; }
   .sidebar-btn.signin-btn { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
   .sidebar-btn.signin-btn:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 26%, transparent); }
   /* Bandeau visiteur en haut de l'annuaire (2026-10-15) : voir updateGuestBanner() dans renderer.js. */
@@ -212,7 +311,12 @@
     background: none; color: var(--muted); font: inherit; font-size: 13px;
   }
   .guest-banner-later:hover { color: var(--foreground); background: var(--surface-raised); }
-  .sidebar-btn.active { background: var(--accent-fill); color: var(--accent-foreground); }
+  .sidebar-btn.active { background: var(--accent-fill); color: var(--accent-foreground); position: relative; }
+  /* Page active (design 17/10, point 5) : un trait d'accent colle au bord gauche de la barre. */
+  .sidebar-btn.active::before {
+    content: ""; position: absolute; left: -9px; top: 8px; bottom: 8px; width: 4px;
+    border-radius: 0 4px 4px 0; background: var(--accent);
+  }
 
   .settings-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; max-width: 280px; }
   .settings-input {
@@ -280,7 +384,8 @@
     cursor: pointer;
     transition: border-color 0.18s ease, background-color 0.18s ease;
   }
-  button.btn-secondary:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  /* Secondaires en gris discret (design 17/10, point 5) : seul le bouton principal est plein. */
+  button.btn-secondary:hover { border-color: color-mix(in srgb, var(--foreground) 30%, transparent); background: var(--surface-raised); }
   button.btn-secondary:disabled { color: var(--muted); cursor: default; }
   .ms-pending { color: var(--muted); }
   .ms-error { color: var(--danger); }
@@ -305,6 +410,10 @@
     justify-content: center;
   }
   .account-trigger:hover { background: var(--surface-raised); }
+  /* Pseudo dans la barre depliee (retour de Rushi 17/10) : couleur d'accent choisie dans
+     Parametres > Apparence, au lieu du noir par defaut d'un bouton. Meme couleur dans le menu. */
+  .account-trigger { color: var(--foreground); }
+  .account-trigger .sidebar-label { color: var(--accent); font-weight: 600; }
   .account-trigger .status-dot.online {
     position: absolute;
     right: -2px;
@@ -415,7 +524,7 @@
   .skin-body-row { display: flex; }
   .skin-part-wrap { position: relative; }
   .skin-part { position: absolute; inset: 0; background-repeat: no-repeat; image-rendering: pixelated; }
-  .account-dropdown-name { font-size: 14px; font-weight: 600; }
+  .account-dropdown-name { font-size: 14px; font-weight: 600; color: var(--accent); }
   .account-dropdown-note { margin: 0; font-size: 12px; text-align: center; }
   .account-dropdown-signout { width: 100%; }
 
@@ -482,7 +591,7 @@
   .row {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: var(--radius-l);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -497,9 +606,60 @@
     transform: translateY(-2px);
   }
   .row:focus-visible, .home-continue-card:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
+  /* Carte serveur a deux niveaux (design 17/10, point 5, L6-E) : le nom et l'essentiel d'abord,
+     le reste en petites puces, et un fin bandeau aux couleurs du serveur (sa banniere, sinon une
+     teinte tiree de son nom). */
+  .row.row-2l { position: relative; overflow: hidden; padding-top: 14px; }
+  .row.row-2l::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px;
+    background: var(--row-band, var(--accent));
+  }
+  /* Bande = etat du serveur (17/10, variante A) : zone de survol un peu plus haute que la bande
+     pour sa bulle, et le « ? » qui ouvre la legende des couleurs. */
+  .row-band-hit { position: absolute; left: 0; right: 0; top: 0; height: 8px; z-index: 1; cursor: help; }
+  .band-legend-anchor { position: relative; display: inline-flex; }
+  .band-help {
+    width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); background: none; color: var(--muted);
+    font: 700 11.5px inherit; font-family: inherit; cursor: pointer; display: inline-grid; place-items: center; padding: 0;
+  }
+  .band-help:hover, .band-help[aria-expanded="true"] { color: var(--foreground); border-color: var(--accent); }
+  .band-legend-pop {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: 280px; display: flex; flex-direction: column; gap: 6px;
+    padding: 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-pop); font-size: 12.5px; text-align: left;
+  }
+  .band-legend-pop .muted { color: var(--muted); }
+  .band-legend-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+  .band-legend-rows span { display: inline-flex; align-items: center; gap: 8px; }
+  .band-legend-rows i { width: 18px; height: 5px; border-radius: 3px; display: inline-block; flex: none; }
+  .row-chips { display: flex; align-items: center; gap: 5px; margin-top: 5px; min-width: 0; overflow: hidden; flex-wrap: nowrap; }
+  .chipx {
+    display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; white-space: nowrap;
+    font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: var(--radius-pill);
+    background: var(--surface-raised); color: var(--muted);
+  }
+  .chipx.online { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+  .chipx.offline { background: color-mix(in srgb, var(--state-off) 16%, transparent); color: var(--state-off); }
+  .chipx.offline .status-dot { background: var(--state-off); }
+  /* Inconnu (pas encore verifie) : rond en pointille, gris discret. */
+  .chipx.unknown { color: var(--muted); }
+  .status-dot.unknown { background: transparent; border: 1.5px dashed var(--muted); box-sizing: border-box; }
+  .chipx .status-dot { margin: 0; }
+  /* Serveur presque plein / plein (17/10, meme logique que le site) : orange des 80 %, rouge et
+     « Complet » a 100 %. Sur les puces, les libelles de joueurs et la jauge de la fiche. */
+  .chipx.busy { background: color-mix(in srgb, var(--state-busy) 18%, transparent); color: var(--state-busy); }
+  .chipx.full { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); font-weight: 600; }
+  .chipx.busy .status-dot, .players-fill.busy .status-dot { background: var(--state-busy); }
+  .chipx.full .status-dot, .players-fill.full .status-dot { background: var(--danger); }
+  .players-fill.busy { color: var(--state-busy); }
+  .players-fill.full { color: var(--danger); font-weight: 600; }
+  .players-gauge { height: 4px; border-radius: 999px; background: var(--surface-raised); overflow: hidden; margin-top: 6px; }
+  .players-gauge > i { display: block; height: 100%; border-radius: 999px; background: var(--success); }
+  .players-gauge.busy > i { background: var(--state-busy); }
+  .players-gauge.full > i { background: var(--danger); }
+  body.compact-list .row-chips { margin-top: 2px; }
 
   /* Liste compacte (Parametres > Apparence) : lignes plus basses, description
      masquee, pour voir plus de serveurs a la fois sans changer la structure. */
@@ -518,6 +678,40 @@
     flex: 0 0 auto;
   }
   .badge.modded { background: var(--accent-fill); color: var(--accent-foreground); border: none; }
+
+  /* Teams (19/10) : meme affichage que le site (« Par la team X », « Proposé par Omniscient »). */
+  .team-avatar {
+    display: inline-grid; place-items: center; flex: 0 0 auto; overflow: hidden;
+    border-radius: 22%; color: #fff; font-weight: 700; line-height: 1; vertical-align: middle;
+  }
+  .team-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .row-team {
+    display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden;
+    font-size: 11.5px; color: var(--muted); white-space: nowrap; flex: 0 1 auto;
+  }
+  .row-team b { font-weight: 500; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; }
+  /* Team cliquable (19/10, version C) : mene a la liste filtree sur elle. */
+  .row-team-btn { padding: 0; border: 0; background: none; font: inherit; font-weight: 500; color: var(--foreground); cursor: pointer; overflow: hidden; text-overflow: ellipsis; text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 2px; }
+  .row-team-btn:hover { color: var(--accent); text-decoration-color: currentColor; }
+  .team-filter-banner { display: flex; align-items: center; gap: 14px; margin-top: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); }
+  .team-filter-txt { flex: 1; min-width: 0; }
+  .team-filter-txt b { font-size: 15px; }
+  .team-filter-txt p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .team-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+  .team-name-btn, .team-claim-toggle {
+    display: inline-flex; align-items: center; gap: 6px; padding: 0; border: none; background: none;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .team-name-btn { color: var(--foreground); }
+  .team-name-btn:hover { color: var(--accent); }
+  .team-claim-toggle { color: var(--accent); }
+  .team-claim-toggle:hover { text-decoration: underline; }
+  .team-claim {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px; max-width: 560px; margin-top: 8px;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13px;
+  }
+  .team-claim > span { flex: 1 1 220px; min-width: 0; }
+  .team-claim-btn { padding: 6px 12px; font-size: 13px; }
 
   .owner-tag {
     font-size: 10.5px;
@@ -568,6 +762,62 @@
   .row-body { flex: 1 1 auto; min-width: 0; }
   .row-title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .row-title-line h3 { margin: 0; font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Version A des cartes (19/10) : nom seul sur sa ligne, « Nouveau » en coin de l'icone. */
+  .row-icon-wrap { position: relative; display: inline-flex; flex: none; }
+  /* « Mes serveurs », variante B (19/10) : pastille joueurs / etat sur la ligne d'infos. */
+  .instance-card-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+  /* Nom jamais coupe : la ligne passe a la suivante (badges, pastille) plutot que de le tronquer. */
+  .instance-card-title h3 { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; min-width: 0; }
+  .instance-players { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 11.5px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+  .instance-players.on { color: var(--success); }
+  .instance-players.busy { color: var(--state-busy); }
+  .instance-players.full { color: var(--danger, #e08a8a); }
+  .instance-players.off { color: var(--state-off); }
+  .instance-players.off .status-dot, .instance-players.busy .status-dot, .instance-players.full .status-dot { background: currentColor; }
+  .instance-players.unknown { color: var(--muted); }
+  /* Fiche disparue ou partielle (19/10). */
+  .detail-missing { max-width: 560px; margin: 24px 0; }
+  .detail-missing h2 { margin: 0 0 8px; }
+  .detail-missing p { margin: 0 0 14px; color: var(--muted); }
+  .detail-missing-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .detail-partial-note { margin: 10px 0; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; color: var(--pending); background: color-mix(in srgb, var(--pending) 12%, transparent); }
+  .row-new-corner {
+    position: absolute; top: -6px; left: -6px; padding: 1px 5px; border-radius: 5px;
+    font-size: 9.5px; font-weight: 700; line-height: 1.4; white-space: nowrap;
+    background: var(--accent); color: #fff; box-shadow: 0 0 0 2px var(--surface);
+  }
+  .row-chips .row-sep, .row-title-line .row-sep { color: var(--muted); flex: none; }
+  /* Disposition A du site (19/10) : la team se raccourcit avant le nom ; etiquettes principales
+     puis secondaires, cachees en entier ; joueurs et langue dans la colonne de droite. */
+  .row-title-line h3 { flex: 0 1 auto; min-width: 4em; }
+  .row-title-line .row-team { flex: 0 6 auto; }
+  .row-tags-line { flex-wrap: wrap; height: 21px; }
+  .row-tag.main { font-weight: 600; color: var(--foreground); background: color-mix(in srgb, var(--accent) 18%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+  .row-tag.sec { background: transparent; border: 1px solid var(--border); }
+  .row-tech { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+  .row-side { flex: none; width: 112px; align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 1px; padding-left: 10px; border-left: 1px solid var(--border); text-align: right; }
+  .row-side b { font-size: 20px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .row-side small { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .row-side .players-fill.full { color: var(--danger, #e08a8a); }
+  .row-side .players-fill.busy { color: var(--state-busy); }
+  .row-langs { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-top: 5px; }
+  /* Etiquette de langue, variante A (20/10, choisie par Rushi, meme style que le site) : le code
+     FR / EN, mais avec la taille d'un mot ecrit en entier. */
+  .lang-code, .row-langs .row-lang {
+    display: inline-block; min-width: 48px; padding: 0 0.6rem; border-radius: 0.4rem; text-align: center;
+    font: 700 13px/21px ui-monospace, Consolas, monospace; letter-spacing: .06em; text-transform: uppercase;
+    border: 1.5px solid var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+    white-space: nowrap;
+  }
+  .lang-code.none, .row-langs .row-lang.none {
+    border-style: dashed; border-color: var(--border); color: var(--muted); background: transparent;
+    font-family: inherit; font-weight: 500; letter-spacing: 0; text-transform: none;
+  }
+  /* Une seule langue : etiquette plus large (72 px), comme sur le site. */
+  .lang-code.solo, .row-langs .row-lang.solo { min-width: 72px; }
+  body.compact-list .row-langs .row-lang { font-size: 11.5px; line-height: 18px; min-width: 38px; padding: 0 7px; }
+  body.compact-list .row-side b { font-size: 15px; }
+  .row-chips .badge, .row-chips .owner-tag { flex: none; }
   .row-body p { margin: 2px 0 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* Page Recents (preview validee par Rushi le 14/10) : jour et heure de la derniere partie. */
   .row-played { flex: 0 0 auto; min-width: 104px; text-align: right; font-size: 12.5px; color: var(--foreground); white-space: nowrap; }
@@ -615,6 +865,12 @@
   /* Filtres des listes de serveurs (16/10, option C, preview validee par Rushi). */
   .sort-chip .count { opacity: 0.7; margin-left: 4px; }
   .list-sort-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+  /* Tri inversable (19/10, variante A) : menu « Trier » puis ↑↓ avec le sens, a droite de « Filtres ». */
+  .list-sort-group { display: inline-flex; align-items: center; gap: 4px; }
+  .list-sort-group:empty { display: none; }
+  .list-sort-dir { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .list-sort-dir small { font-size: 11.5px; font-weight: 600; }
+  .list-sort-dir:hover { border-color: var(--accent); }
   .list-sort {
     height: 32px; border: 1px solid var(--border); border-radius: 8px; padding: 0 8px;
     background: var(--surface); color: var(--foreground); font: inherit; font-size: 12.5px; cursor: pointer;
@@ -630,6 +886,20 @@
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; gap: 8px;
   }
   .list-filters-panel-title { font-size: 12.5px; font-weight: 600; }
+  /* Panneau « Filtres » complet (19/10, preview version C) : sections, Team avec recherche. */
+  .list-filters-panel { max-height: min(70vh, 560px); overflow-y: auto; }
+  .list-filters-section { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .list-filters-section:last-of-type { border-bottom: 0; }
+  .filters-team-search { height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-raised); color: var(--foreground); padding: 0 10px; font: inherit; font-size: 12.5px; }
+  .filters-team-list { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow-y: auto; }
+  .filters-team-item { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border: 0; border-radius: 7px; background: none; color: var(--foreground); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
+  .filters-team-item:hover { background: var(--surface-raised); }
+  .filters-team-item.active { background: var(--accent-fill); color: var(--accent-foreground); font-weight: 600; }
+  .filters-team-item > span:not(.team-avatar) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filters-team-item small { color: var(--muted); }
+  .filters-team-item.active small { color: inherit; }
+  .list-filters-panel-foot { display: flex; justify-content: flex-end; }
+  .list-filters-panel-foot:empty { display: none; }
   .list-filters-panel-title .muted { font-weight: 400; color: var(--muted); margin-left: 6px; }
   .list-filters-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
   .list-filters-active { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -642,6 +912,9 @@
   .filters-empty h3 { margin: 0 0 6px; color: var(--foreground); font-size: 15px; }
   .filters-empty p { margin: 0 0 12px; font-size: 13px; }
   .filters-empty-actions { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+  /* Liste injoignable (idee 2 du lancement, 19/10) : meme bloc que « aucun resultat », icone ambre. */
+  .list-error-state .empty-state-icon { color: var(--warn); }
+  .list-error-detail { display: block; margin-top: 10px; font-size: 11px; color: var(--muted); opacity: 0.8; word-break: break-word; }
   .badge.badge-new { border-color: var(--success); color: var(--success); }
   .row-tag, .row-lang {
     font-size: 10.5px; padding: 2px 7px; border-radius: 999px; white-space: nowrap; flex: 0 0 auto;
@@ -672,7 +945,7 @@
   .instance-badge.public { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
   .instance-badge.private { background: var(--accent-fill); color: var(--accent-foreground); }
   .instance-badge.paused { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
-  .instance-badge.frozen { background: color-mix(in srgb, #8ac3e0 16%, transparent); color: #8ac3e0; }
+  .instance-badge.frozen { background: color-mix(in srgb, var(--frozen) 16%, transparent); color: var(--frozen); }
   .instance-badge.verification-pending { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
   .instance-badge.verification-rejected { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
   .instance-badge.offline-available { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
@@ -709,6 +982,19 @@
   .instance-action:hover, .instance-action:focus-visible { border-color: var(--accent); }
   .instance-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .instance-action:disabled { opacity: 0.5; cursor: default; }
+  /* Menu « … » des cartes et des lignes (option C, 18/10) : Installer y marche meme pendant une partie. */
+  .instance-more { position: relative; display: inline-flex; }
+  .instance-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 210px; padding: 4px; display: flex; flex-direction: column; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); box-shadow: var(--shadow-pop); }
+  .instance-menu-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 0; border-radius: 7px; background: none; color: var(--foreground); font: inherit; font-size: 13px; text-align: left; cursor: pointer; white-space: nowrap; }
+  .instance-menu-item:hover, .instance-menu-item:focus-visible { background: var(--surface-raised); outline: none; }
+  .instance-menu-item:disabled { opacity: 0.45; cursor: default; }
+  .instance-menu-item svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .instance-menu-item span { display: flex; flex-direction: column; }
+  .instance-menu-item small { font-size: 11px; color: var(--muted); }
+  .row-more { align-self: center; }
+  .row-more-btn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; }
+  .row-more-btn:hover { color: var(--foreground); border-color: var(--accent); }
+  .palette-play.palette-install { background: var(--surface-raised); color: var(--accent); margin-right: 4px; }
   /* « Arrêter le jeu » (16/10) : remplace « Rejoindre » pendant une partie. */
   .instance-action.is-stop { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
   .instance-action.is-stop svg { fill: currentColor; stroke: none; }
@@ -747,8 +1033,6 @@
     background: var(--surface); color: var(--foreground); border: 1px solid var(--border); box-shadow: var(--elevation-1);
   }
   /* Barre du bas : carre rouge « Arrêter le jeu » a cote de « Minecraft en cours ». */
-  .playbar-stop-btn { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 9px 11px; }
-  .playbar-stop-btn svg { width: 14px; height: 14px; fill: currentColor; }
   /* Infobulle au survol, a la place du title natif (plus lent, et qui la doublerait). */
   .instance-action[data-tip]::after {
     content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 5;
@@ -824,6 +1108,68 @@
   .home-continue-txt p { margin: 0; font-size: 12.5px; color: var(--muted); }
   .home-continue-play { flex: none; }
 
+  /* Carte « Reprendre » (design 17/10, point 3) : compacte, le dernier serveur + un gros Jouer,
+     les favoris en puces juste en dessous (.home-fav-chips). */
+  .home-resume {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px 18px; margin-bottom: 22px;
+    border-radius: 14px; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+    background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 16%, var(--surface)), var(--surface));
+    box-shadow: var(--elevation-1); cursor: pointer;
+  }
+  .home-resume:hover { border-color: var(--accent); }
+  .home-resume:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .home-resume-icon {
+    flex: none; width: 56px; height: 56px; border-radius: 12px; overflow: hidden;
+    background: var(--accent-fill); color: var(--accent-foreground);
+    display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 20px;
+  }
+  .home-resume-icon img { width: 100%; height: 100%; object-fit: cover; }
+  .home-resume-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .home-resume-txt h2 { margin: 0; font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-resume-txt p { margin: 0; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .home-resume-when { font-size: 12px; color: var(--muted); }
+  .join-btn.home-resume-play {
+    flex: none; min-width: 150px; padding: 12px 22px; font-size: 15px; font-weight: 700;
+    background: var(--accent); border-color: var(--accent); color: var(--accent-foreground);
+  }
+  .join-btn.home-resume-play:hover:not(:disabled) { background: var(--accent-hover); }
+  .join-btn.home-resume-play.join-stop { background: none; color: var(--danger); border-color: var(--danger); }
+  .join-btn.home-resume-play.join-stop:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+  .join-btn.home-resume-play.join-progress { display: flex; flex-direction: column; align-items: stretch; gap: 6px; background: var(--surface-raised); color: var(--foreground); border-color: var(--border); font-size: 12.5px; text-align: left; }
+  .join-btn.home-resume-play.join-starting { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: color-mix(in srgb, var(--accent) 22%, var(--surface)); color: var(--foreground); }
+  .home-resume-empty {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+    padding: 18px; margin-bottom: 22px; border-radius: 14px; border: 1px dashed var(--border);
+  }
+  .home-resume-empty b { font-size: 15px; }
+  .home-resume-empty p { margin: 0; font-size: 13px; color: var(--muted); max-width: 520px; }
+  .home-fav-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .home-fav-chip {
+    display: inline-flex; align-items: center; gap: 8px; max-width: 260px;
+    padding: 5px 12px 5px 5px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--foreground);
+    font: inherit; font-size: 13px; box-shadow: var(--elevation-1);
+  }
+  .home-fav-chip:hover:not(:disabled) { border-color: var(--accent); }
+  .home-fav-chip:disabled { opacity: 0.55; cursor: progress; }
+  .home-fav-chip-icon {
+    flex: none; width: 24px; height: 24px; border-radius: 7px; overflow: hidden;
+    background: var(--accent-fill); color: var(--accent-foreground);
+    display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
+  }
+  .home-fav-chip-icon img { width: 100%; height: 100%; object-fit: cover; }
+  .home-fav-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-fav-chip-play { color: var(--accent-2); font-size: 11px; }
+  /* ▶ direct sur les lignes Favoris et Récents (point 3, L2-C) : lance sans ouvrir la fiche. */
+  .row-play {
+    flex: 0 0 auto; width: 34px; height: 30px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--accent-foreground);
+    font-size: 12px; display: flex; align-items: center; justify-content: center;
+  }
+  .row-play:hover:not(:disabled) { background: var(--accent-hover); }
+  .row-play:disabled { opacity: 0.5; cursor: progress; }
+
   .home-section { margin-bottom: 28px; }
   .home-section-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
   .home-section-header h3 { margin: 0; font-size: 15px; }
@@ -835,23 +1181,35 @@
   /* Trois largeurs de lecture centrees (au lieu des 640 px colles a gauche) :
      720 px pour les pages de lecture (Compte), 1120 px pour fiche/listes/Mes instances,
      1600 px pour les pages composees (Accueil, Parametres). Au-dela, la place en trop
-     devient une marge egale de chaque cote. La page Amis garde son .detail d'origine. */
+     devient une marge egale de chaque cote. Amis et Aide sont centrees aussi (demande de Rushi 17/10). */
   #account-panel.detail { max-width: 720px; margin-inline: auto; }
   /* Par id seul (audit 14/10, K4) : le renderer remplace la classe de Favoris/Recents
      (server-list) et de Mes instances (instances-view), la largeur max ne s'appliquait plus. */
-  #detail, #favorites-panel, #recent-panel, #my-instances-panel { max-width: 1120px; margin-inline: auto; }
-  #home-panel.detail, #settings-panel.detail { max-width: 1600px; margin-inline: auto; container-type: inline-size; }
+  #detail, #favorites-panel, #recent-panel, #my-instances-panel, #friends-panel { max-width: 1120px; margin-inline: auto; }
+  /* Aide (serie 2, idee 6) : colonne de lecture centree comme les autres pages. */
+  #help-panel.detail { max-width: 760px; margin-inline: auto; }
+  #home-panel.detail { max-width: 1600px; margin-inline: auto; container-type: inline-size; }
+  /* Parametres : bloc centre comme les autres pages (retour de Rushi 17/10), le contenu remplit
+     toute la largeur a droite du menu des sections. */
+  #settings-panel.detail { max-width: 1280px; margin-inline: auto; container-type: inline-size; }
 
-  /* Accueil : colonne principale + colonne "A la une" a droite des 70rem. */
+  /* Accueil en deux colonnes (design A, 25/10) : « Jouer » + favoris a gauche, « Mes serveurs » et
+     « A la une » a droite des 52rem. Plus etroit, la colonne de droite passe dessous (jamais cachee). */
   .home-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .home-main { min-width: 0; }
-  .home-aside { display: none; flex-direction: column; gap: 28px; min-width: 0; }
+  .home-aside { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+  /* Dernier serveur et dernier monde cote a cote ; seule, la carte garde son bouton a droite. */
+  .home-halves { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .home-halves > .home-resume, .home-halves > .home-resume-empty { margin-bottom: 0; }
+  .home-halves:has(> :nth-child(2)) > .home-resume { flex-wrap: wrap; align-content: center; }
+  .home-halves:has(> :nth-child(2)) > .home-resume .join-btn.home-resume-play { flex: 1 0 100%; min-width: 0; padding: 10px 18px; }
+  .home-side-box .row-title-line { flex-wrap: wrap; row-gap: 4px; }
+  .home-side-box .row-body p { white-space: normal; overflow: visible; }
   .home-continue-card { min-height: clamp(170px, 18cqw, 240px); }
   .home-continue-txt h2 { font-size: clamp(20px, 2.2cqw, 26px); }
   @media (max-height: 760px) { .home-continue-card { min-height: 160px; } }
-  @container (min-width: 70rem) {
-    .home-layout.has-aside { grid-template-columns: minmax(0, 1fr) clamp(288px, 26cqw, 416px); }
-    .home-layout.has-aside .home-aside { display: flex; }
+  @container (min-width: 52rem) {
+    .home-layout.has-aside { grid-template-columns: minmax(0, 1fr) clamp(272px, 30cqw, 416px); }
   }
   .home-empty-card { border: 1px dashed var(--border); border-radius: 14px; padding: 16px 18px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .home-empty-card p { flex: 1; min-width: 14ch; margin: 0; color: var(--muted); font-size: 13px; }
@@ -922,9 +1280,89 @@
     cursor: pointer;
     font-family: inherit;
   }
-  .settings-nav-btn:hover { color: var(--foreground); }
+  .settings-nav-btn:hover { color: var(--foreground); background: var(--surface-raised); }
   .settings-nav-btn.active { background: var(--surface-raised); color: var(--foreground); }
   .settings-content { flex: 1 1 auto; min-width: 0; max-width: 480px; padding-left: 28px; display: flex; flex-direction: column; gap: 20px; }
+  /* Parametres plein ecran (serie 2, idee 8, version A validee) : sections a gauche, une section a
+     la fois, ses reglages en cartes posees en colonnes (autant que la largeur le permet), une
+     recherche qui fouille toutes les sections. En petite fenetre, les sections passent en onglets
+     au-dessus et les cartes en une colonne. Les reglages s'enregistrent toujours tout de suite. */
+  .settings-main { flex: 1 1 auto; min-width: 0; padding-left: 28px; display: flex; flex-direction: column; gap: 14px; }
+  .settings-main .settings-content { padding-left: 0; max-width: none; }
+  .settings-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .settings-head h2 { margin: 0; flex: 1 1 auto; }
+  .settings-find {
+    display: flex; align-items: center; gap: 8px; width: 280px; max-width: 100%; padding: 7px 10px;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  }
+  .settings-find:focus-within { border-color: var(--accent); }
+  .settings-find svg { width: 15px; height: 15px; flex: none; }
+  .settings-find input { flex: 1; min-width: 0; border: 0; outline: none; background: none; color: var(--foreground); font: inherit; font-size: 13px; }
+  /* Un groupe = un titre + sa grille : les cartes remplissent toute la largeur (auto-fit, elles
+     s'etirent), meme hauteur sur une rangee, jamais de trou a droite ni entre deux groupes. */
+  .settings-cards { display: flex; flex-direction: column; gap: 18px; }
+  .settings-group { display: flex; flex-direction: column; gap: 8px; }
+  .settings-group-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; align-items: stretch; }
+  .settings-group-grid > .settings-section { padding: 14px 16px; gap: 12px; }
+  .settings-group-grid > .settings-section.settings-card-danger { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); }
+  .settings-group-grid > .settings-section.settings-card-flash { box-shadow: 0 0 0 2px var(--focus-ring); transition: box-shadow 0.2s; }
+  .settings-group-title { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  .settings-cards .settings-field { max-width: none; }
+  .settings-cards .join-note:empty { display: none; }
+  /* Dossier des jeux sur un autre disque (serie 2, idee 9). */
+  .games-folder-warn { margin: 6px 0 0; font-size: 12px; color: var(--warn); }
+  .games-disks { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .games-disk {
+    display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; width: 100%; padding: 10px 12px;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--foreground); font: inherit; text-align: left; cursor: pointer;
+  }
+  .games-disk:hover:not([disabled]) { border-color: var(--accent); }
+  .games-disk.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .games-disk[disabled] { opacity: 0.55; cursor: not-allowed; }
+  .games-disk-ico { width: 34px; height: 26px; border-radius: 5px; background: var(--surface-raised); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+  .games-disk-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .games-disk-col small { color: var(--muted); font-size: 11.5px; }
+  .games-cap { height: 6px; border-radius: 3px; background: var(--surface-raised); overflow: hidden; }
+  .games-cap i { display: block; height: 100%; background: var(--muted); }
+  .games-badge { font-size: 10.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+  .games-badge.ok { color: var(--success, #3fb27f); border-color: currentColor; }
+  .games-badge.warn { color: var(--warn); border-color: currentColor; }
+  .games-ft { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin-top: 4px; }
+  .games-ft > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); }
+  .games-ft small, .games-muted { color: var(--muted); font-size: 12px; }
+  .games-mono { font-family: ui-monospace, Consolas, Menlo, monospace; font-size: 11.5px; color: var(--muted); word-break: break-all; }
+  .games-line { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .games-list { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+  .games-check { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; font-size: 13px; }
+  .games-hint { color: var(--accent-2, var(--accent)); font-size: 12px; }
+  .games-bar { height: 8px; border-radius: 4px; background: var(--surface-raised); overflow: hidden; }
+  .games-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+  .games-steps { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .games-step { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+  .games-step .n { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; flex: none; background: var(--surface-raised); }
+  .games-step.done .n { background: var(--success, #3fb27f); color: #06261a; }
+  .games-step.cur { color: var(--foreground); font-weight: 600; }
+  .games-step.cur .n { background: var(--accent); color: #fff; }
+  .games-ok { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 8px; border: 1px solid var(--success, #3fb27f); }
+  #instance-tools-body:has(.games-disks, .games-ft, .games-bar, .games-ok) { display: flex; flex-direction: column; gap: 10px; }
+  /* Un choix en boutons (Niveau de log, Reduire les animations…) passe sous son libelle dans une carte. */
+  .settings-cards .settings-row:has(.segmented) { flex-direction: column; align-items: flex-start; }
+  .settings-cards .segmented { flex-wrap: wrap; }
+  .settings-search-results { display: flex; flex-direction: column; gap: 18px; }
+  .settings-search-count { font-size: 12.5px; color: var(--muted); }
+  .settings-search-tab > .settings-tab-title { font-size: 15px; margin: 0 0 8px; }
+  .settings-nores { display: flex; flex-direction: column; gap: 6px; padding: 18px; border-radius: 10px; border: 1px dashed var(--border); }
+  .settings-nores span { font-size: 13px; color: var(--muted); }
+  .settings-nores .btn-secondary { align-self: flex-start; margin-top: 4px; }
+  @container (max-width: 52rem) {
+    .settings-layout { flex-direction: column; gap: 12px; }
+    .settings-sidebar { position: static; width: auto; padding-right: 0; border-right: 0; border-bottom: 1px solid var(--border); align-self: stretch; }
+    .settings-nav { flex-direction: row; flex-wrap: wrap; }
+    .settings-nav-btn { padding: 7px 10px; border-radius: 8px 8px 0 0; }
+    .settings-nav-btn.active { box-shadow: inset 0 -2px 0 var(--accent); }
+    .settings-main { padding-left: 0; align-self: stretch; }
+    .settings-group-grid { grid-template-columns: minmax(0, 1fr); }
+  }
   .settings-section {
     display: flex;
     flex-direction: column;
@@ -1002,6 +1440,7 @@
     padding: 0;
   }
   .accent-swatch.active { box-shadow: 0 0 0 2px var(--background), 0 0 0 3.5px var(--foreground); }
+  .accent-swatch { display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); }
 
   .ram-bar-track { height: 6px; border-radius: 999px; background: var(--surface-raised); border: 1px solid var(--border); overflow: hidden; margin-top: 6px; }
   .ram-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent-hover), var(--accent)); }
@@ -1034,6 +1473,12 @@
   .lang-list-row.active { background: var(--surface-raised); }
   .lang-list-row:disabled { color: var(--muted); opacity: 0.6; cursor: default; }
   .lang-list-row:disabled .lang-soon { font-size: 11px; }
+  /* Fil d'Ariane (serie 2, idee 3) : remplace « ← Retour à la liste ». */
+  .detail-crumb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  .detail-crumb-back { border: 0; background: none; color: var(--accent-2); font: inherit; font-weight: 600; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+  .detail-crumb-back:hover { background: var(--surface-raised); }
+  .detail-crumb b { color: var(--foreground); font-weight: 600; }
+  .row.row-flash { border-color: var(--focus-ring); box-shadow: 0 0 0 2px var(--focus-ring); }
   .detail button.back {
     background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 0 16px 0;
   }
@@ -1071,8 +1516,21 @@
     border: 3px solid var(--background);
   }
   .detail-header { padding-left: 0; min-height: 34px; margin-bottom: 14px; }
+  /* Pastille d'etat a droite du nom (lot 3), memes mots et couleurs que la table du lot 2. */
+  .detail-state { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: var(--surface-raised); color: var(--muted); }
+  .detail-state-ok { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
+  .detail-state-busy { color: var(--state-busy); background: color-mix(in srgb, var(--state-busy) 16%, transparent); }
+  .detail-state-full { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+  .detail-state-off { color: var(--state-off); background: color-mix(in srgb, var(--state-off) 16%, transparent); }
   /* Icône du serveur à côté du titre (et non en surimpression sur la bannière). */
   .detail-icon.detail-icon-inline { position: static; width: 44px; height: 44px; border-radius: 12px; border: none; font-size: 18px; flex: 0 0 auto; }
+  /* En-tete variante A (19/10) : icone a gauche, colonne nom / team / etiquettes a droite. */
+  .detail-header.detail-header-col { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+  .detail-head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .detail-head-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-width: 0; }
+  .detail-head-text .team-byline { margin: 0; }
+  .detail-head-text .tag-row { margin: 0; }
+  .detail-icon-fit img { width: 100%; height: 100%; object-fit: cover; }
   .detail h2 { margin: 0 0 4px 0; }
   .detail .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
   .detail .desc { line-height: 1.6; margin-bottom: 20px; }
@@ -1097,20 +1555,29 @@
     color: var(--foreground);
   }
 
+  /* Bouton principal plein (design 17/10, point 5, L6-A) : Jouer / Rejoindre et l'action
+     principale d'une fenetre. Avant, tout etait en contour : Jouer pesait autant qu'un secondaire. */
   .join-btn {
-    background: transparent;
-    color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-on, #fff);
     border: 1px solid var(--accent);
-    border-radius: 8px;
+    border-radius: var(--radius-m);
     padding: 10px 18px;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     transition: background-color 0.15s ease;
   }
-  .join-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .join-btn:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
   .join-btn:disabled { cursor: not-allowed; opacity: 0.45; }
   .join-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  /* Bouton Rejoindre qui suit l'etat de la pilule (design 17/10, point 2) : progression des mods,
+     demarrage, puis « Arrêter · 12 min » en rouge pendant la partie, « Réessayer » apres un echec. */
+  .join-btn.join-progress, .join-btn.join-starting { cursor: default; opacity: 1; }
+  .detail-actions .join-btn.join-progress { display: flex; flex-direction: column; align-items: stretch; gap: 6px; background: var(--surface-raised); color: var(--foreground); border-color: var(--border); text-align: left; font-size: 12.5px; }
+  .detail-actions .join-btn.join-starting { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: color-mix(in srgb, var(--accent) 22%, var(--surface)); color: var(--foreground); }
+  .detail-actions .join-btn.join-stop { background: none; color: var(--danger); border-color: var(--danger); }
+  .detail-actions .join-btn.join-stop:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 14%, transparent); }
 
   /* Fiche personnalisable (16/10, disposition « deux colonnes ») : sections du proprietaire a
      gauche, colonne qui reste visible a droite (Rejoindre, Installer, Favori, Signaler, infos).
@@ -1138,6 +1605,9 @@
   /* Comme la preview validee : « Rejoindre » sur toute la largeur, puis Installer, Favori et
      Signaler cote a cote, chacun avec son libelle. */
   .detail-actions-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* Liste Multijoueur desactivee par le proprietaire (21/10) : une ligne discrete sous Jouer. */
+  .detail-list-note { display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+  .detail-list-note i { flex: 0 0 auto; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--warn); }
   .detail-actions-row .btn-secondary {
     flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     padding: 8px 10px; font-size: 13px; white-space: nowrap;
@@ -1200,6 +1670,9 @@
   .page-video-box .page-video { max-width: none; height: 100%; }
   .page-video-box iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
   .page-video-note { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+  /* Video centree dans sa carte (19/10, bug vu par Rushi : collee a gauche, vide a droite). */
+  .page-video, .page-video-box { margin-inline: auto; }
+  .page-video-note, .page-video-autonote { text-align: center; }
   .page-video-open { padding: 0; border: 0; background: none; font: inherit; color: var(--accent); cursor: pointer; }
   .page-video-open:hover { text-decoration: underline; }
   .page-video-autonote { margin: 4px 0 0; font-size: 11px; color: var(--muted); opacity: 0.5; }
@@ -1267,21 +1740,82 @@
   }
   .gate-message { font-size: 13px; max-width: 360px; }
 
-  .mc-status-menu { position: relative; -webkit-app-region: no-drag; margin-right: 8px; }
+  /* Barre du haut allegee (design 17/10, point 1) : pastille seule quand tout va bien (le detail
+     est dans le panneau), pastille + mot court seulement en cas de panne ou de ralentissement. */
+  .mc-status-menu { position: relative; -webkit-app-region: no-drag; margin-right: 4px; }
   .mc-status-trigger {
     display: flex;
     align-items: center;
-    gap: 6px;
-    background: var(--surface-raised);
+    justify-content: center;
+    gap: 7px;
+    min-width: 30px;
+    height: 30px;
+    background: none;
     color: var(--foreground);
-    border: 1px solid var(--border);
+    border: 1px solid transparent;
     border-radius: 999px;
-    padding: 5px 12px 5px 10px;
-    font-size: 12px;
+    padding: 0 8px;
+    font-size: 12.5px;
+    font-family: inherit;
     cursor: pointer;
   }
-  .mc-status-trigger:hover { border-color: var(--accent); }
+  .mc-status-trigger:hover { background: var(--surface-raised); }
+  .mc-status-trigger.down { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, var(--surface)); padding: 0 11px; }
+  .mc-status-trigger.slow { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); padding: 0 11px; }
   .mc-status-trigger .status-dot { margin: 0; }
+  /* Recherche globale Ctrl+K : loupe a droite (variante C, 17/10), meme hauteur que ses voisines
+     (cloche, pilule), fond visible au repos et raccourci « Ctrl K » affiche dedans (audit 17/10,
+     lot 1). Un clic ou Ctrl+K ouvre la recherche au milieu de l'ecran. */
+  .search-trigger {
+    -webkit-app-region: no-drag; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 30px; min-width: 30px; padding: 0 7px; margin: 0 6px 0 auto; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-raised); color: var(--muted); cursor: pointer;
+    font: 12px "Inter", "Segoe UI", Arial, sans-serif;
+  }
+  .search-trigger:hover { color: var(--foreground); border-color: color-mix(in srgb, var(--foreground) 25%, transparent); }
+  .search-trigger svg { width: 15px; height: 15px; flex: 0 0 auto; }
+  .search-trigger-text { display: none; }
+  .search-trigger kbd, .palette kbd {
+    font: 600 10.5px ui-monospace, Consolas, monospace; padding: 1px 5px; border-radius: 4px;
+    border: 1px solid var(--border); border-bottom-width: 2px; background: var(--background); color: var(--muted);
+  }
+  @media (max-width: 900px) { .search-trigger kbd { display: none; } }
+  .palette kbd { margin-left: auto; }
+  .palette-scrim { position: fixed; inset: 0; z-index: 90; background: rgba(4, 7, 14, 0.55); display: flex; justify-content: center; align-items: flex-start; padding-top: 72px; }
+  .palette { width: min(560px, 92vw); max-height: min(520px, calc(100vh - 110px)); display: flex; flex-direction: column; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-l); box-shadow: var(--shadow-pop); }
+  .palette-input { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .palette-input svg { width: 18px; height: 18px; color: var(--muted); flex: 0 0 auto; }
+  .palette-input input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--foreground); font: 15px "Inter", "Segoe UI", Arial, sans-serif; outline: none; }
+  .palette-list { overflow-y: auto; padding: 6px; display: flex; flex-direction: column; min-height: 0; }
+  .palette-group { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 8px 8px 4px; }
+  .palette-item { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 7px; border: 0; background: none; color: var(--foreground); font: inherit; font-size: 13px; text-align: left; width: 100%; cursor: pointer; }
+  .palette-item.sel { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
+  .palette-icon { width: 26px; height: 26px; border-radius: 6px; flex: none; display: grid; place-items: center; overflow: hidden; background: var(--surface-raised); color: var(--muted); font-size: 12px; font-weight: 600; }
+  .palette-icon img { width: 100%; height: 100%; object-fit: cover; }
+  .palette-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .palette-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .palette-text small { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .palette-item mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: inherit; border-radius: 2px; }
+  .palette-play { flex: none; padding: 3px 10px; border-radius: 6px; border: 0; background: var(--accent); color: var(--accent-on, #fff); font-size: 12px; cursor: pointer; }
+  .palette-foot { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11.5px; }
+  .palette-none { padding: 22px 14px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  .palette-none b { color: var(--foreground); }
+  /* Mode discret (point 6) : interrupteur discret dans la barre du haut. */
+  .discreet-toggle {
+    -webkit-app-region: no-drag; margin-right: 4px; height: 26px; padding: 0 10px; border-radius: var(--radius-pill);
+    border: 1px solid transparent; background: none; color: var(--muted); font: 500 12px "Inter", "Segoe UI", Arial, sans-serif; cursor: pointer; white-space: nowrap;
+  }
+  .discreet-toggle:hover { background: var(--surface-raised); color: var(--foreground); }
+  .discreet-toggle[aria-pressed="true"] { color: var(--foreground); border-color: #9184d9; background: color-mix(in srgb, #9184d9 22%, transparent); }
+  @media (max-width: 900px) { .discreet-toggle .discreet-word { display: none; } }
+  /* Ce qui est masque en mode discret : le texte disparait, un masque le remplace. */
+  html.discreet .sensitive { font-size: 0 !important; letter-spacing: 0; }
+  html.discreet .sensitive::after { content: attr(data-mask); font-size: 12px; color: var(--muted); font-family: "Inter", "Segoe UI", Arial, sans-serif; }
+  html.discreet .friends-item-name.sensitive::after { font-size: 13px; color: var(--foreground); }
+  html.discreet .notif-badge { display: none !important; }
+  html.discreet .notif-trigger { opacity: 0.4; }
+  html.discreet .copy-invite-link { display: none; }
+  .titlebar-sep { width: 1px; height: 18px; flex: 0 0 auto; margin: 0 4px 0 6px; background: var(--border); }
   .mc-status-panel {
     position: absolute;
     top: calc(100% + 8px);
@@ -1292,8 +1826,8 @@
     overflow-y: auto;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    border-radius: var(--radius-l);
+    box-shadow: var(--shadow-pop);
     z-index: 20;
   }
   .mc-status-panel .status-dot { width: 8px; height: 8px; margin: 0; }
@@ -1346,21 +1880,21 @@
 
   /* Cloche de notifications : alertes personnelles du joueur (reponse/
      resolution de signalement) — voir renderer.js/refreshNotifications. */
-  .notif-menu { position: relative; -webkit-app-region: no-drag; margin-right: 8px; }
+  .notif-menu { position: relative; -webkit-app-region: no-drag; margin-right: 0; }
   .notif-trigger {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: var(--surface-raised);
+    width: 30px;
+    height: 30px;
+    background: none;
     color: var(--muted);
-    border: 1px solid var(--border);
-    border-radius: 999px;
+    border: 1px solid transparent;
+    border-radius: 8px;
     cursor: pointer;
   }
-  .notif-trigger:hover { border-color: var(--accent); color: var(--foreground); }
+  .notif-trigger:hover { background: var(--surface-raised); color: var(--foreground); }
   .notif-trigger svg { width: 16px; height: 16px; }
   .notif-badge {
     position: absolute;
@@ -1382,7 +1916,8 @@
     right: 0;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-l);
+    box-shadow: var(--shadow-pop);
     width: 300px;
     max-height: 400px;
     display: flex;
@@ -1443,40 +1978,211 @@
      anneau de progression bleu pendant un telechargement, et ouvre la liste
      des taches actives/terminees au clic. Un seul flux pour "Installer" et
      "Rejoindre" — voir window.mchub.tasks/onTasksUpdate. */
-  .tasks-menu { position: relative; -webkit-app-region: no-drag; margin-right: 8px; }
-  .tasks-trigger {
-    position: relative;
-    display: flex;
+  /* Pilule d'etat (design 17/10, point 2) : remplace l'ancien indicateur de telechargements ET la
+     barre du bas. Un seul endroit pour tout : « Prêt », « Installation 42 % · 1 min », « Démarrage… »,
+     « En jeu · Serveur · 12 min », « Échec · Voir ». Arrêter vit uniquement dans le panneau, avec
+     confirmation. Sous 900 px, seuls un point et un mot court restent (.activity-pill-short). */
+  .tasks-menu { position: relative; -webkit-app-region: no-drag; margin-right: 4px; }
+  .activity-pill {
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
-    height: 32px;
-    padding: 0 8px;
+    gap: 7px;
+    height: 28px;
+    max-width: 340px;
+    padding: 0 12px 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
     background: var(--surface-raised);
     color: var(--muted);
-    border: 1px solid var(--border);
-    border-radius: 999px;
+    font: 500 12.5px "Inter", "Segoe UI", Arial, sans-serif;
+    white-space: nowrap;
     cursor: pointer;
   }
-  .tasks-trigger:hover { border-color: var(--accent); color: var(--foreground); }
-  .tasks-current-name { font-size: 11px; font-weight: 600; color: var(--foreground); white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
-  .tasks-speed { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .tasks-icon { position: relative; width: 18px; height: 18px; flex: 0 0 auto; }
-  .tasks-icon-arrow { position: absolute; inset: 0; width: 18px; height: 18px; padding: 2px; }
-  .tasks-icon-ring { position: absolute; inset: 0; width: 18px; height: 18px; transform: rotate(-90deg); }
-  .tasks-ring-track { fill: none; stroke: var(--border); stroke-width: 2.5; opacity: 0; }
-  .tasks-ring-fill {
-    fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round;
-    stroke-dasharray: 62.8; stroke-dashoffset: 62.8; opacity: 0;
-    transition: stroke-dashoffset 0.3s ease, opacity 0.2s ease;
+  .activity-pill:hover { border-color: var(--accent); color: var(--foreground); }
+  .activity-pill.hl { color: var(--foreground); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+  .activity-pill.err { color: var(--foreground); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, var(--surface)); }
+  .activity-pill-text { overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .activity-pill-short { display: none; font-variant-numeric: tabular-nums; }
+  .activity-pill-icon { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex: 0 0 auto; }
+  .activity-pill-icon svg { width: 14px; height: 14px; }
+  .activity-pill-icon .status-dot { margin: 0; width: 9px; height: 9px; }
+  .activity-ring {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2.5px solid var(--border); border-top-color: var(--accent); border-right-color: var(--accent);
+    animation: boot-spin 1.1s linear infinite;
   }
-  .tasks-trigger.has-active .tasks-ring-track, .tasks-trigger.has-active .tasks-ring-fill { opacity: 1; }
-  .tasks-trigger.has-active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+  @media (max-width: 900px) {
+    .activity-pill { max-width: 140px; }
+    .activity-pill-text { display: none; }
+    .activity-pill-short { display: inline; }
+  }
 
+  /* Panneau de la pilule : le haut depend de l'etat (voir activityPanelHtml), la liste des
+     telechargements (autres taches actives + terminees) reste en dessous. */
+  .activity-panel { display: flex; flex-direction: column; gap: 10px; padding: 14px 14px 12px; color: var(--foreground); font-size: 12.5px; }
+  .activity-panel:empty { display: none; }
+  .activity-panel h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .activity-panel .muted { color: var(--muted); font-size: 12px; }
+  .activity-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .activity-row.between { justify-content: space-between; }
+  .activity-bar { height: 6px; border-radius: 999px; background: var(--surface-raised); overflow: hidden; }
+  .activity-bar > i { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.3s ease; }
+  .activity-bar.indeterminate > i { width: 35% !important; animation: activity-slide 1.3s ease-in-out infinite; }
+  @keyframes activity-slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+  .activity-tip { color: var(--accent-2); font-size: 12px; }
+  .activity-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 7px; border: 1px solid var(--accent);
+    background: none; color: var(--accent-2); font: 600 12px "Inter", "Segoe UI", Arial, sans-serif; cursor: pointer;
+  }
+  .activity-btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .activity-btn.full { background: var(--accent); color: #fff; }
+  .activity-btn.full:hover { background: var(--accent-hover); }
+  .activity-btn.danger { border-color: var(--danger); color: var(--danger); }
+  .activity-btn.danger:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+  .activity-btn.danger-full { background: var(--danger); border-color: var(--danger); color: #2d0909; }
+  .activity-errbox { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--danger) 55%, transparent); background: color-mix(in srgb, var(--danger) 12%, var(--surface)); }
+  .activity-errbox b { color: var(--danger); font-size: 12.5px; }
+  /* Detail technique replie sous une erreur (lot 5 bis). */
+  .activity-tech summary { cursor: pointer; font-size: 11.5px; color: var(--muted); }
+  .activity-tech code { display: block; margin-top: 4px; max-height: 90px; overflow: auto; padding: 6px 8px; border-radius: 6px; background: var(--background); font: 11px ui-monospace, Consolas, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+  .activity-confirm { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .tasks-list-scroll.empty { display: none; }
+  /* « Prévenir le serveur » et message du proprietaire (design 17/10, point 6). */
+  .activity-list { margin: 0; padding-left: 18px; display: grid; gap: 2px; color: var(--foreground); }
+  .activity-okbox { padding: 10px; border-radius: var(--radius-m); border: 1px solid color-mix(in srgb, var(--success) 50%, transparent); background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); font-weight: 600; }
+  .owner-message {
+    display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: var(--radius-m); margin: 2px 0 8px;
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    font-size: 12.5px; color: var(--foreground); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .owner-message-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-2); }
+  /* Ma bibliotheque (planche L5-C) : onglets Favoris / Recents / Installes en haut de la page. */
+  .library-tabs { align-self: flex-start; display: inline-flex; gap: 2px; padding: 3px; margin: 10px 0 14px; border-radius: var(--radius-m); border: 1px solid var(--border); background: var(--surface); }
+  .library-tabs button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+  .library-tabs button:hover { color: var(--foreground); }
+  .library-tabs button[aria-selected="true"] { background: var(--accent-fill); color: var(--accent-foreground); }
+  /* Page Aide (serie 2, idee 6). */
+  .help-page { max-width: 760px; }
+  .help-search { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 14px 0 18px; border-radius: var(--radius-m); border: 1px solid var(--border); background: var(--surface); }
+  .help-search:focus-within { border-color: var(--accent); }
+  .help-search svg { width: 16px; height: 16px; color: var(--muted); flex: none; }
+  .help-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--foreground); font-size: 13.5px; outline: none; }
+  .help-faq { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 18px; }
+  .help-q { border-radius: var(--radius-m); border: 1px solid var(--border); background: var(--surface); }
+  .help-q > button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 0; background: none; color: var(--foreground); font-size: 13.5px; font-weight: 600; text-align: left; cursor: pointer; }
+  .help-q-icon { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; flex: none; background: var(--surface-raised); font-size: 12px; }
+  .help-q-chev { margin-left: auto; color: var(--muted); transition: transform 0.15s ease; }
+  .help-q.open .help-q-chev { transform: rotate(90deg); }
+  .help-a { padding: 0 12px 12px 46px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--muted); }
+  .help-a ol { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+  .help-a-actions, .help-stuck-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .help-stuck { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: var(--radius-m); border: 1px dashed var(--border); font-size: 13px; }
+  .help-stuck p { margin: 0; color: var(--muted); }
+  .help-version { display: flex; align-items: center; gap: 10px; margin-top: 12px; font: 12px ui-monospace, Consolas, monospace; color: var(--muted); }
+  .help-none { padding: 14px; border-radius: var(--radius-m); border: 1px dashed var(--border); font-size: 13px; color: var(--muted); }
+  .help-none b { display: block; color: var(--foreground); margin-bottom: 4px; }
+  /* Suppression en masse (serie 2, idee 7). */
+  .instances-header-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .bulk-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .bulk-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 10px; border-radius: var(--radius-m); border: 1px solid var(--border); background: var(--surface); }
+  .bulk-bar b { flex: 1; font-size: 13px; }
+  .instance-card.bulk-mode { cursor: pointer; position: relative; }
+  .instance-card.bulk-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .instance-card.bulk-disabled { opacity: 0.6; cursor: default; }
+  .bulk-reason { flex: none; align-self: center; font-size: 10.5px; padding: 2px 8px; border-radius: var(--radius-pill, 999px); background: var(--surface-raised); color: var(--muted); white-space: nowrap; }
+  .bulk-bar.bulk-none { justify-content: flex-start; }
+  /* Ma bibliotheque > Installes (lot 3) : taille de chaque serveur a droite de la ligne. */
+  .row-size { flex: none; align-self: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Case « Serveur retiré » (Installés, 23/10) : bande grise, bord en pointillés, pas de survol. */
+  .row.row-removed { --row-band: var(--state-off); border-style: dashed; cursor: default; }
+  .row.row-removed:hover { transform: none; border-color: var(--border); box-shadow: var(--elevation-1); }
+  .row-removed .server-icon { filter: grayscale(1); opacity: 0.6; }
+  .row-removed-body { flex: 1; min-width: 0; }
+  .row-removed-name { font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip-removed { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-weight: 600; }
+  .chip-removed-meta { background: color-mix(in srgb, var(--foreground) 7%, transparent); color: var(--muted); }
+  .row-removed-text { margin: 5px 0 0; font-size: 12px; color: var(--muted); }
+  .row-removed-delete {
+    flex: none; border: 1px solid color-mix(in srgb, var(--danger) 55%, transparent); background: none; color: var(--danger);
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 12px; border-radius: var(--radius-m); cursor: pointer; white-space: nowrap;
+  }
+  .row-removed-delete:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+  .row-removed-delete:disabled { opacity: 0.5; cursor: progress; }
+  .row-removed-delete:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .bulk-bar.bulk-none .muted { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+  .bulk-check { flex: none; width: 18px; height: 18px; border-radius: 4px; border: 2px solid var(--border); display: grid; place-items: center; font-size: 12px; color: #fff; align-self: center; }
+  .instance-card.bulk-selected .bulk-check { background: var(--accent); border-color: var(--accent); }
+  .bulk-list { margin: 0 0 8px; padding-left: 18px; max-height: 140px; overflow: auto; font-size: 12.5px; color: var(--muted); }
+  .bulk-keep { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; cursor: pointer; margin: 6px 0; }
+  /* Au-dessus des petits messages (.tools-toast, bottom 92 px) : les deux restent visibles. */
+  .undo-toast {
+    position: fixed; left: 50%; bottom: 140px; transform: translateX(-50%); z-index: 121;
+    max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 10px; font-size: 13px;
+    background: var(--surface); color: var(--foreground); border: 1px solid var(--border); box-shadow: var(--elevation-1);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .undo-toast .btn-secondary { padding: 4px 10px; }
+  .motion-options { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-m); overflow: hidden; margin-top: 8px; }
+  .motion-options button { border: 0; background: none; color: var(--foreground); font: inherit; font-size: 12.5px; padding: 7px 12px; cursor: pointer; }
+  .motion-options button.active { background: var(--accent); color: var(--accent-on, #fff); }
+  /* Etats vides (design 17/10, point 6) : une phrase, un seul bouton plein, different par page. */
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; padding: 36px 16px; }
+  .empty-state-icon { width: 48px; height: 48px; border-radius: var(--radius-l); display: grid; place-items: center; background: var(--surface-raised); color: var(--accent-2); }
+  .empty-state-icon svg { width: 22px; height: 22px; }
+  .empty-state h3 { margin: 4px 0 0; font-size: 16px; color: var(--foreground); }
+  .empty-state p { margin: 0; font-size: 13px; color: var(--muted); max-width: 40ch; }
+  .empty-state .join-btn { margin-top: 8px; }
+  .notif-empty-state { padding: 18px 12px; }
+  .notif-empty-state h3 { font-size: 14px; }
+  /* Assistant du premier lancement (point 6, L5-I) : trois gros choix, une seule fois. */
+  .wizard-options { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 14px 0 4px; }
+  .wizard-option {
+    width: 150px; padding: 14px 10px; border-radius: var(--radius-l); border: 1px solid var(--border); background: var(--surface);
+    color: var(--foreground); display: flex; flex-direction: column; gap: 6px; align-items: center; cursor: pointer; font: inherit; font-size: 13px;
+  }
+  .wizard-option[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+  .wizard-option .wiz-ico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: #fff; font-size: 18px; }
+  .wizard-option small { color: var(--muted); font-size: 11.5px; }
+  /* File d'attente des installations (serie 2, idee 4). */
+  .activity-section { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .activity-btn.sm { padding: 3px 8px; font-size: 11.5px; }
+  .queue-row { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 6px; border: 1px solid transparent; }
+  .queue-row.moved { border-color: var(--focus-ring); background: var(--surface-raised); }
+  .queue-n { width: 14px; text-align: right; font-weight: 600; color: var(--muted); flex: none; }
+  .queue-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-remove { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  .queue-remove:hover { background: var(--surface-raised); color: var(--foreground); }
+  .queue-empty { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 8px; border: 1px dashed var(--border); }
+  .activity-btn.ghost { border-color: transparent; color: var(--muted); padding-left: 4px; }
+  .activity-btn.ghost:hover { color: var(--foreground); background: none; }
+  /* Etapes visibles « étape 3 sur 6 » (design 17/10, point 4, L3-A). */
+  .activity-stepof { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .activity-steps { display: flex; flex-direction: column; gap: 5px; }
+  .activity-step { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+  .activity-step.done, .activity-step.cur { color: var(--foreground); }
+  .activity-step.cur { font-weight: 600; }
+  .activity-step-n {
+    flex: none; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 10px; font-weight: 700; background: var(--surface-raised); color: var(--muted);
+  }
+  .activity-step.done .activity-step-n { background: color-mix(in srgb, var(--success) 85%, transparent); color: #06261a; }
+  .activity-step.cur .activity-step-n { background: var(--accent); color: #fff; }
+  .activity-detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .activity-eta { font-size: 14px; font-variant-numeric: tabular-nums; }
+  .activity-check { cursor: pointer; }
+  .task-play { padding: 4px 10px; margin-left: 4px; }
+  /* Ecran avant la 1re installation (point 4, L3-H). */
+  #instance-tools-body .first-install-line { margin: 0 0 10px; font-size: 13px; color: var(--foreground); }
+  #instance-tools-body .first-install-line.ok { color: var(--success); }
+  #instance-tools-body .first-install-line.activity-tip { color: var(--accent-2); }
+  #instance-tools-body .first-install-note { margin: 14px 0 0; font-size: 12px; color: var(--muted); }
+  #instance-tools-body .activity-errbox { margin-bottom: 8px; }
   .tasks-panel {
     position: absolute; top: calc(100% + 8px); right: 0;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-    width: 320px; max-height: 420px; display: flex; flex-direction: column;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); z-index: 20; font-size: 12.5px; color: var(--muted);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-l);
+    width: 340px; max-height: min(480px, calc(100vh - 70px)); display: flex; flex-direction: column; overflow-y: auto;
+    box-shadow: var(--shadow-pop); z-index: 20; font-size: 12.5px; color: var(--muted);
   }
   .tasks-list-scroll { overflow-y: auto; padding: 8px; min-height: 0; }
   .tasks-panel .tasks-empty { padding: 20px 12px; text-align: center; }
@@ -1545,9 +2251,77 @@
   .modal-box p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
 
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  /* Fenetre de confirmation unique (audit 17/10, lot 4) : 3 tons, meme couleur pour le filet du
+     haut, l'icone et le bouton. ok = rien n'est perdu, warn = ca se refait mais ca derange,
+     danger = perdu ou difficile a refaire. */
+  .modal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .modal-head h3 { margin: 0; }
+  .modal-icon { width: 26px; height: 26px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; }
+  .modal-box.tone-ok { border-top-color: var(--accent); }
+  .modal-box.tone-ok .modal-icon { background: var(--accent); }
+  .modal-box.tone-warn { border-top-color: var(--state-busy); }
+  .modal-box.tone-warn .modal-icon { background: var(--state-busy); }
+  .modal-box.tone-danger { border-top-color: var(--danger); }
+  .modal-box.tone-danger .modal-icon { background: var(--danger); }
+  .join-btn.tone-warn { background: var(--state-busy); border-color: var(--state-busy); color: #1d1205; }
+  .join-btn.tone-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  /* Lot 5 : mods a ajouter a la main (rapport du test, aide guidee, badge). */
+  /* « Qui peut m'ajouter en ami » (variante C, 18/10). */
+  .friend-policy { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); margin-bottom: 14px; }
+  .settings-cards .friend-policy { margin: 0; padding: 0; border: 0; background: none; }
+  .settings-cards .friend-policy h3 { display: none; }
+  .friend-policy h3 { margin: 0; font-size: 14px; }
+  .friend-policy-opts { display: flex; flex-direction: column; gap: 6px; }
+  .friend-policy-opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; }
+  .friend-policy-opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .friend-policy-opt input { margin-top: 3px; accent-color: var(--accent); }
+  .friend-policy-opt b { font-size: 13px; font-weight: 600; }
+  .friend-policy-opt small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .friend-policy-rec { margin-left: 6px; font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .friend-code-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .friend-code { font: 600 16px ui-monospace, Consolas, monospace; letter-spacing: 0.08em; padding: 4px 10px; border-radius: 6px; background: var(--surface-raised); }
+  .friend-policy-note { margin: 0; font-size: 12px; color: var(--muted); }
+  #friends-panel { position: relative; }
+  .friends-gear { width: 34px; height: 34px; flex: none; align-self: center; margin-left: auto; display: grid; place-items: center; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
+  .friends-gear svg { width: 18px; height: 18px; }
+  .friends-gear:hover { color: var(--foreground); }
+  .friends-gear[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+  .friend-policy-pop { position: absolute; right: 0; top: 56px; z-index: 20; width: min(360px, 100%); box-shadow: var(--shadow-pop); border-radius: 12px; }
+  .friend-policy-pop .friend-policy { margin: 0; }
+  .friend-policy-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .friend-policy-close { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 2px 6px; border-radius: 6px; }
+  .friend-policy-close:hover { background: var(--surface-raised); color: var(--foreground); }
+  .friends-mycode { margin: 8px 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+  .friends-mycode code { font: 600 13px ui-monospace, Consolas, monospace; letter-spacing: 0.1em; color: var(--foreground); }
+  .friend-policy-banner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; font-size: 13px; background: color-mix(in srgb, var(--state-busy) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--state-busy) 40%, transparent); }
+  .manual-mods-progress { height: 6px; border-radius: 999px; background: var(--surface-raised); overflow: hidden; margin-top: 10px; }
+  .manual-mods-progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+  .manual-mods-progress i.done { background: var(--success); }
+  .manual-mods-progress-text { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+  .manual-mods-badge {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap;
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .selftest-warn-icon { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-weight: 700; font-size: 12px; color: var(--state-busy); background: color-mix(in srgb, var(--state-busy) 20%, transparent); flex: none; }
+  .selftest-box { margin-top: 12px; padding: 12px; border-radius: 8px; border: 1px solid var(--border); border-left: 3px solid var(--state-busy); background: color-mix(in srgb, var(--state-busy) 8%, var(--surface)); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  .selftest-box h4 { margin: 0; font-size: 14.5px; }
+  .selftest-box p { margin: 0; color: var(--foreground); font-size: 13px; }
+  .selftest-mods { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .selftest-mods li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 8px; border-radius: 6px; background: var(--surface); }
+  .selftest-mods li b { flex: 1; min-width: 120px; font-weight: 600; }
+  .selftest-tag { font-size: 11.5px; font-weight: 600; color: var(--state-busy); }
+  .selftest-tag.ok { color: var(--success); }
+  .selftest-box summary { cursor: pointer; color: var(--muted); }
+  .modal-box p.selftest-verdict { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13.5px; color: var(--foreground); }
+  .selftest-verdict.allow { background: color-mix(in srgb, var(--state-busy) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--state-busy) 45%, transparent); }
+  .selftest-verdict.go { background: color-mix(in srgb, var(--success) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--success) 45%, transparent); }
+  #selftest-modal-box { max-width: 520px; }
+  .modal-typed { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .modal-typed input { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--background); color: var(--foreground); font: inherit; }
+  .modal-typed input:focus { outline: none; border-color: var(--accent); }
   /* Mods qu'un modpack CurseForge interdit de telecharger (renderer.js, showManualModsModal) :
      preview validee par Rushi le 14/10. */
-  #manual-mods-overlay .modal-box { max-width: 520px; border-top-color: var(--warn); }
+  #manual-mods-overlay .modal-box { max-width: 520px; border-top-color: var(--accent); }
   .manual-mods-steps { margin: 12px 0 0; padding-left: 20px; font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
   .manual-mods-steps b { color: var(--foreground); font-weight: 500; }
   .manual-mods-list { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; max-height: 210px; overflow-y: auto; }
@@ -1564,6 +2338,14 @@
   #manual-mods-overlay .modal-actions { flex-wrap: wrap; }
   #manual-mods-overlay .modal-actions .push { margin-left: auto; }
   .modal-box p.manual-mods-note { margin-top: 12px; font-size: 12px; }
+  .modal-box p.manual-mods-note.ok { color: var(--success); font-weight: 600; }
+  /* Mods qui se cochent seuls (point 4, L3-F) et liste « Installés depuis Modrinth ». */
+  .manual-mod.received .manual-mod-name { color: var(--success); }
+  .manual-mod-chip.done { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, transparent); background: color-mix(in srgb, var(--success) 12%, transparent); }
+  .manual-mods-via { margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; max-height: 160px; overflow-y: auto; }
+  .modal-box p.manual-mods-section { margin: 0; padding: 8px 12px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .btn-ghost { background: none; border: 1px solid transparent; color: var(--muted); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .btn-ghost:hover { color: var(--foreground); border-color: var(--border); }
   /* Fenetre Reglages d'une instance (renderer.js, showInstanceSettingsModal) : pendant le
      chargement, le losange Omniscient qui pulse (variante B validee par Rushi, 2026-10-14). */
   .settings-loader, .settings-error {
@@ -1629,132 +2411,6 @@
   .report-category-card .rc-desc { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
   .report-category-card .rc-note { font-size: 11px; color: var(--accent); }
 
-  /* Barre de lancement rapide : favoris + gros bouton Jouer, inspiree des
-     launchers du genre (Lunar Client...). La progression de telechargement/
-     lancement s'affiche ICI (plus dans la fiche serveur) — un seul endroit
-     pour suivre un lancement, qu'il vienne du bouton "Rejoindre" d'une fiche
-     ou du bouton "Jouer" rapide. */
-  #playbar {
-    flex: 0 0 auto;
-    height: 52px;
-    display: flex;
-    align-items: center;
-    padding: 0 16px;
-    border-top: 1px solid var(--border);
-    background: color-mix(in srgb, black 6%, var(--background));
-  }
-  .playbar-row { display: flex; align-items: center; width: 100%; gap: 16px; }
-
-  .playbar-favorite-menu { position: relative; flex: 1 1 auto; min-width: 0; }
-  .playbar-fav-trigger {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    max-width: 280px;
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 6px 10px;
-    color: var(--foreground);
-    cursor: pointer;
-  }
-  .playbar-fav-trigger:hover { border-color: var(--accent); }
-  .playbar-fav-trigger:disabled { cursor: default; opacity: 0.7; }
-  .playbar-fav-trigger:disabled:hover { border-color: var(--border); }
-  .playbar-fav-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    text-align: left;
-    font-size: 13.5px;
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .playbar-fav-trigger svg.chevron { flex: 0 0 auto; width: 14px; height: 14px; color: var(--muted); }
-  .playbar-fav-panel {
-    position: absolute;
-    bottom: calc(100% + 10px);
-    left: 0;
-    width: 280px;
-    max-height: 260px;
-    overflow-y: auto;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-    z-index: 20;
-  }
-  .playbar-fav-empty { padding: 14px 10px; font-size: 12.5px; color: var(--muted); text-align: center; }
-  .playbar-fav-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 13px;
-  }
-  .playbar-fav-row:hover { background: var(--surface-raised); }
-  .playbar-fav-row-name { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
-  .playbar-fav-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .playbar-fav-row-tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--accent-2); font-weight: 700; }
-  .playbar-fav-remove { flex: 0 0 auto; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 6px; }
-  .playbar-fav-remove:hover { color: var(--danger); }
-  .playbar-fav-more {
-    justify-content: center;
-    color: var(--accent);
-    font-weight: 600;
-    border-top: 1px solid var(--border);
-    margin-top: 4px;
-    padding-top: 10px;
-  }
-
-  .playbar-play-btn {
-    flex: 0 0 auto;
-    background: transparent;
-    color: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 8px 20px;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-  }
-  .playbar-play-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
-  .playbar-play-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-  .playbar-play-btn.playing { opacity: 1; animation: playbar-pulse 1.6s ease-in-out infinite; cursor: progress; }
-  @keyframes playbar-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
-
-  #playbar-progress.playbar-row { flex-direction: column; align-items: stretch; gap: 6px; }
-  .playbar-progress-info { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
-  .playbar-progress-info span:last-child { color: var(--foreground); font-weight: 600; }
-  .playbar-progress-track {
-    position: relative;
-    height: 8px;
-    border-radius: 999px;
-    background: var(--surface-raised);
-    overflow: hidden;
-  }
-  .playbar-progress-fill {
-    position: absolute;
-    inset: 0;
-    width: 0%;
-    border-radius: 999px;
-    background-image: linear-gradient(90deg, var(--accent), var(--accent-hover), var(--accent));
-    background-size: 200% 100%;
-    animation: playbar-shimmer 1.4s linear infinite;
-    transition: width 0.3s ease;
-  }
-  .playbar-progress-fill.error { background-image: none; background: var(--danger); animation: none; }
-  @keyframes playbar-shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-
   /* Ecran de demarrage (maquette "Nocturne") : couvre la zone de contenu
      pendant les verifications reelles qui precedent l'affichage du portail
      (Java, reprise de session) — jamais un faux "checking for updates",
@@ -1780,6 +2436,8 @@
     position: relative; width: 220px; height: 4px; border-radius: 999px; overflow: hidden;
     background: var(--surface); border: 1px solid var(--border);
   }
+  /* Ecran de demarrage honnete (point 4) : barre qui tourne tant qu'on ne connait pas la duree. */
+  .bootstrap-progress-track.indeterminate #bootstrap-progress { width: 35% !important; animation: activity-slide 1.3s ease-in-out infinite; }
   #bootstrap-progress {
     position: absolute; inset: 0; width: 15%; border-radius: 999px;
     background: linear-gradient(90deg, var(--accent-hover), var(--accent)); transition: width 0.4s ease;
@@ -1787,39 +2445,62 @@
   #bootstrap-version { position: relative; font-size: 11px; color: var(--muted); letter-spacing: 0.02em; }
   @keyframes boot-spin { to { transform: rotate(360deg); } }
   @keyframes boot-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+/* Demarrage rapide (18/10) : l'accueil affiche le dernier etat connu pendant la reconnexion ;
+   ses boutons attendent qu'elle aboutisse (une fraction de seconde), rien ne change a l'oeil. */
+body.boot-preview #home-panel { pointer-events: none; }
 </style>
 </head>
 <body class="bootstrapping">
   <div id="titlebar">
     <div id="titlebar-drag">
-      <div class="logo"><span class="logo-mark"></span>Omniscient <span>Launcher</span></div>
+      <!-- Coin du logo (variante D, choisie par Rushi le 17/10) : meme largeur que la barre laterale,
+           replie = logo seul centre au-dessus des icones, deplie = logo + nom. -->
+      <div id="titlebar-corner"><div class="logo"><span class="logo-mark"></span><span class="logo-name">Omniscient</span></div></div>
+      <!-- Recherche globale Ctrl+K (serie 2, idee 2, planche L5-D) : voir openCommandPalette(). -->
+      <button type="button" class="search-trigger" id="search-trigger" data-i18n-title="search.iconTitle" title="Rechercher (Ctrl+K)" aria-label="Rechercher (Ctrl+K)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+        <span class="search-trigger-text" data-i18n="search.button">Rechercher…</span>
+        <kbd>Ctrl K</kbd>
+      </button>
     </div>
+    <div class="palette-scrim" id="palette" hidden>
+      <div class="palette" role="dialog" aria-modal="true" aria-labelledby="palette-input">
+        <div class="palette-input">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <input id="palette-input" type="text" autocomplete="off" spellcheck="false" data-i18n-placeholder="search.placeholder" />
+          <kbd data-i18n="search.escKey">Échap</kbd>
+        </div>
+        <div class="palette-list" id="palette-list" role="listbox"></div>
+        <div class="palette-foot"><span data-i18n="search.hintMove">↑↓ choisir</span><span data-i18n="search.hintEnter">Entrée ouvrir</span><span data-i18n="search.hintEsc">Échap fermer</span></div>
+      </div>
+    </div>
+    <!-- Mode discret (design 17/10, point 6) : cache adresses, codes d'invitation, pseudos des amis
+         et notifications pendant un live. Meme reglage que Parametres > Apparence. -->
+    <button class="discreet-toggle" id="discreet-toggle" type="button" aria-pressed="false"></button>
     <div class="mc-status-menu">
-      <button class="mc-status-trigger" id="mc-status-trigger" type="button">
+      <!-- Barre du haut allegee (design 17/10, point 1) : une simple pastille quand tout va bien,
+           un mot ne revient qu'en cas de panne (voir renderMcStatus). -->
+      <button class="mc-status-trigger" id="mc-status-trigger" type="button" data-i18n-title="titlebar.mcStatus">
         <span class="status-dot" id="mc-status-dot"></span>
-        <span data-i18n="titlebar.mcStatus">Statut des services</span>
+        <span class="mc-status-word" id="mc-status-word" hidden></span>
       </button>
       <div class="mc-status-panel" id="mc-status-panel" hidden>
         <div id="mc-status-list"></div>
       </div>
     </div>
     <div class="tasks-menu">
-      <button class="tasks-trigger" id="tasks-trigger" type="button" data-i18n-title="titlebar.tasks">
-        <span class="tasks-current-name" id="tasks-current-name" hidden></span>
-        <span class="tasks-speed" id="tasks-speed" hidden></span>
-        <span class="tasks-icon">
-          <svg class="tasks-icon-ring" viewBox="0 0 24 24">
-            <circle class="tasks-ring-track" cx="12" cy="12" r="10" />
-            <circle class="tasks-ring-fill" id="tasks-ring-fill" cx="12" cy="12" r="10" />
-          </svg>
-          <svg class="tasks-icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
-          </svg>
-        </span>
+      <!-- Pilule d'etat (design 17/10, point 2) : remplace l'indicateur de telechargements et la
+           barre du bas. Un seul endroit pour suivre installation, demarrage, partie et echec —
+           voir renderActivity() dans renderer.js. -->
+      <button class="activity-pill" id="tasks-trigger" type="button" aria-haspopup="dialog" aria-expanded="false">
+        <span class="activity-pill-icon" id="activity-pill-icon"></span>
+        <span class="activity-pill-text" id="activity-pill-text"></span>
+        <span class="activity-pill-short" id="activity-pill-short"></span>
       </button>
-      <div class="tasks-panel" id="tasks-panel" hidden>
+      <div class="tasks-panel" id="tasks-panel" role="dialog" hidden>
+        <div class="activity-panel" id="activity-panel"></div>
         <div class="tasks-list-scroll" id="tasks-list-scroll">
-          <div id="tasks-empty" class="tasks-empty" data-i18n="titlebar.tasksEmpty">Aucun téléchargement.</div>
+          <div id="tasks-empty" class="tasks-empty" hidden></div>
           <div id="tasks-active-section" hidden>
             <p class="tasks-section-label" data-i18n="titlebar.tasksActive">Actif</p>
             <div id="tasks-active-list"></div>
@@ -1852,6 +2533,7 @@
         </div>
       </div>
     </div>
+    <span class="titlebar-sep" aria-hidden="true"></span>
     <div id="titlebar-controls">
       <button id="win-min" class="titlebar-btn" data-i18n-title="titlebar.minimize">
         <svg viewBox="0 0 10 10"><rect x="0" y="4.5" width="10" height="1" fill="currentColor" /></svg>
@@ -1950,6 +2632,7 @@
       <h3 id="selftest-title"></h3>
       <p class="join-note" id="selftest-intro" style="margin-bottom: 14px;"></p>
       <div id="selftest-checklist" style="display: flex; flex-direction: column; gap: 10px;"></div>
+      <div id="selftest-report"></div>
       <p class="join-note" id="selftest-outcome" style="margin-top: 14px;" hidden></p>
       <p class="join-note" id="selftest-error" role="alert" style="color: var(--danger); margin-top: 10px;" hidden></p>
       <div class="modal-actions" id="selftest-actions"></div>
@@ -2014,9 +2697,16 @@
   </div>
 
   <div class="modal-overlay" id="modal-overlay" hidden>
-    <div class="modal-box">
-      <h3 id="modal-title"></h3>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-body">
+      <div class="modal-head">
+        <span class="modal-icon" id="modal-icon" hidden aria-hidden="true"></span>
+        <h3 id="modal-title"></h3>
+      </div>
       <p id="modal-body"></p>
+      <label class="modal-typed" id="modal-typed-row" hidden>
+        <span id="modal-typed-label"></span>
+        <input type="text" id="modal-typed-input" autocomplete="off" spellcheck="false" />
+      </label>
       <label class="gate-remember" id="modal-checkbox-row" hidden style="margin-top: 12px;">
         <input type="checkbox" id="modal-checkbox" />
         <span id="modal-checkbox-label"></span>
@@ -2041,8 +2731,11 @@
       <h3 id="manual-mods-title"></h3>
       <p id="manual-mods-body"></p>
       <ol class="manual-mods-steps" id="manual-mods-steps"></ol>
+      <div class="manual-mods-progress" id="manual-mods-progress" hidden><i></i></div>
+      <p class="manual-mods-progress-text" id="manual-mods-progress-text" hidden></p>
       <p class="manual-mods-modrinth" id="manual-mods-modrinth" hidden></p>
       <div class="manual-mods-list" id="manual-mods-list"></div>
+      <div class="manual-mods-via" id="manual-mods-via-modrinth" hidden></div>
       <div class="modal-actions" id="manual-mods-actions"></div>
       <p class="manual-mods-note" id="manual-mods-note"></p>
     </div>
@@ -2053,7 +2746,7 @@
       <button id="ram-choice-close" type="button" aria-label="Fermer" style="position: absolute; top: 10px; right: 12px; width: 30px; height: 30px; border: 0; background: transparent; color: var(--muted); font-size: 20px; cursor: pointer;">×</button>
       <h3 id="ram-choice-title"></h3>
       <p id="ram-choice-body" style="white-space: pre-line;"></p>
-      <p id="ram-choice-warning" hidden style="margin: 10px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: #e8c547; background: color-mix(in srgb, #e8c547 14%, transparent);"></p>
+      <p id="ram-choice-warning" hidden style="margin: 10px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent);"></p>
       <label class="gate-remember" style="margin-top: 12px;">
         <input type="checkbox" id="ram-choice-auto" />
         <span id="ram-choice-auto-label"></span>
@@ -2071,6 +2764,8 @@
 
   <div id="app" hidden style="flex: 1 1 auto; display: flex; min-height: 0;">
     <nav id="sidebar">
+      <!-- Barre laterale depliable (serie 2, idee 1, planche L5-A) : bouton en haut, au-dessus
+           d'Accueil ; les noms des pages sont ajoutes par renderer.js (applySidebarLabels). -->
       <button id="nav-home" class="sidebar-btn active" data-i18n-title="nav.home">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 10.5 12 3l9 7.5" /><path d="M5.5 9.5V20a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1V9.5" />
@@ -2082,12 +2777,15 @@
           <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
         </svg>
       </button>
-      <button id="nav-favorites" class="sidebar-btn" data-i18n-title="nav.favorites">
+      <!-- « Ma bibliothèque » (planche L5-C) : Favoris, Récents et Installés dans une seule page à
+           onglets, une icône de moins dans la barre. #nav-recent reste dans le DOM (caché) pour le code
+           qui le référence. -->
+      <button id="nav-favorites" class="sidebar-btn" data-i18n-title="nav.library">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          <path d="M4 19.5V5a2 2 0 0 1 2-2h3v18H6a2 2 0 0 1-2-1.5z" /><path d="M9 3h4v18H9" /><path d="m15 4.5 3.8-1 3.2 16-3.8 1z" />
         </svg>
       </button>
-      <button id="nav-recent" class="sidebar-btn" data-i18n-title="nav.recent">
+      <button id="nav-recent" class="sidebar-btn" data-i18n-title="nav.recent" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9" />
           <polyline points="12 7 12 12 16 14" />
@@ -2107,13 +2805,21 @@
           <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
       </button>
-      <button id="nav-settings" class="sidebar-btn" data-i18n-title="nav.settings" style="margin-top: auto;">
+      <!-- Page Aide (serie 2, idee 6, version A) : au-dessus de Parametres ; F1 l'ouvre aussi. -->
+      <button id="nav-help" class="sidebar-btn" type="button" data-i18n-title="nav.help" style="margin-top: auto;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14" /><path d="M12 17.5h.01" /></svg>
+      </button>
+      <button id="nav-settings" class="sidebar-btn" data-i18n-title="nav.settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       </button>
       <div id="ms-account"></div>
+      <!-- « >> » en bas de la barre (audit 17/10, lot 3) : depliee = « << Reduire ». -->
+      <button id="sidebar-toggle" class="sidebar-btn sidebar-toggle" type="button" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="chev-open" d="m6 6 6 6-6 6M12 6l6 6-6 6" /></svg>
+      </button>
     </nav>
     <div class="app-content" style="flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0;">
     <main>
@@ -2144,6 +2850,7 @@
             <option value="players" data-i18n="serverList.sortPlayers">Plus de joueurs</option>
             <option value="played" data-i18n="serverList.sortPlayed">Les plus joués</option>
             <option value="az" data-i18n="serverList.sortAz">A-Z</option>
+            <option value="small" data-i18n="serverList.sortSmall">Petits serveurs actifs</option>
           </select>
         </label>
         <button type="button" class="sort-chip active" id="list-refresh" data-i18n="serverList.refresh" style="margin-left: auto;">Actualiser</button>
@@ -2152,19 +2859,30 @@
       </div>
       <div id="list" class="server-list" hidden></div>
       <div id="detail" class="detail" hidden></div>
+      <div id="help-panel" class="detail help-page" hidden></div>
       <div id="settings-panel" class="detail" hidden>
         <div class="settings-layout">
           <div class="settings-sidebar">
-            <h2 data-i18n="settings.title" style="margin: 0 0 16px;">Paramètres</h2>
             <nav class="settings-nav">
             <button type="button" class="settings-nav-btn active" data-tab="appearance" data-i18n="settings.tabAppearance">Apparence</button>
             <button type="button" class="settings-nav-btn" data-tab="language" data-i18n="settings.tabLanguage">Langue</button>
             <button type="button" class="settings-nav-btn" data-tab="memory" data-i18n="settings.tabMemory">Mémoire</button>
             <button type="button" class="settings-nav-btn" data-tab="misc" data-i18n="settings.tabMisc">Divers</button>
+            <button type="button" class="settings-nav-btn" data-tab="privacy" data-i18n="settings.tabPrivacy">Confidentialité</button>
             <button type="button" class="settings-nav-btn" data-tab="debug" data-i18n="settings.tabDebug">Débogage</button>
             </nav>
           </div>
-          <div class="settings-content" id="settings-content"></div>
+          <div class="settings-main">
+            <div class="settings-head">
+              <h2 data-i18n="settings.title">Paramètres</h2>
+              <label class="settings-find">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input type="search" id="settings-find-input" data-i18n-placeholder="settings.findPlaceholder" placeholder="Chercher un réglage…" autocomplete="off" />
+              </label>
+            </div>
+            <div class="settings-content" id="settings-content"></div>
+            <div class="settings-search-results" id="settings-search-results" hidden></div>
+          </div>
         </div>
       </div>
       <div id="account-panel" class="detail" hidden></div>
@@ -2176,9 +2894,14 @@
         <div class="instances-header">
           <div>
             <h2 data-i18n="nav.friends">Amis</h2>
-            <p class="join-note" data-i18n="friends.header">Envoie une demande avec un pseudo Minecraft. Une fois acceptée, vous voyez chacun si l'autre est en ligne.</p>
+            <p class="join-note" data-i18n="friends.header">Envoie une demande avec un pseudo ou un code d'ami. Une fois acceptée, vous voyez chacun si l'autre est en ligne.</p>
           </div>
+          <!-- « Qui peut m'ajouter en ami » derriere un engrenage (preview validee par Rushi le 18/10) :
+               le panneau s'ouvre ici ; le reglage complet est aussi dans Parametres > Confidentialite. -->
+          <button type="button" class="friends-gear" id="friends-gear" aria-expanded="false" aria-controls="friends-policy-pop" data-i18n-title="friends.gearLabel" title="Réglages des amis"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg></button>
         </div>
+        <div class="friend-policy-pop" id="friends-policy-pop" role="dialog" aria-label="Réglages des amis" hidden></div>
+        <div id="friends-policy-slot"></div>
         <form class="friends-add-card" id="friends-add-form">
           <label class="friends-add-label" for="friends-add-input" data-i18n="friends.addTitle">Envoyer une demande d'ami</label>
           <div class="friends-add-row">
@@ -2192,44 +2915,22 @@
             />
             <button type="submit" class="join-btn" id="friends-add-submit" data-i18n="friends.addButton">Envoyer</button>
           </div>
+          <p class="friends-mycode" id="friends-mycode" hidden></p>
           <p class="friends-feedback" id="friends-feedback" hidden></p>
         </form>
         <div id="friends-list"></div>
       </div>
     </main>
 
-    <div id="playbar">
-    <div class="playbar-row" id="playbar-idle">
-      <div class="playbar-favorite-menu">
-        <button class="playbar-fav-trigger" id="playbar-fav-trigger" type="button" disabled>
-          <span id="playbar-fav-icon"></span>
-          <span class="playbar-fav-name" id="playbar-fav-name" data-i18n="playbar.addFavoritePrompt">Ajoute un serveur en favoris</span>
-          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
-        </button>
-        <div class="playbar-fav-panel" id="playbar-fav-panel" hidden></div>
-      </div>
-      <button class="playbar-play-btn" id="playbar-play" type="button" disabled data-i18n="playbar.play">▶ Jouer</button>
-      <button class="btn-danger playbar-stop-btn" id="playbar-stop" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg></button>
-    </div>
-    <div class="playbar-row" id="playbar-progress" hidden>
-      <div style="flex: 1 1 auto;">
-        <div class="playbar-progress-info">
-          <span id="playbar-progress-label">Lancement…</span>
-          <span id="playbar-progress-percent"></span>
-        </div>
-        <div class="playbar-progress-track">
-          <div class="playbar-progress-fill" id="playbar-progress-fill"></div>
-        </div>
-      </div>
-    </div>
-    </div>
     </div>
   </div>
 
   <script src="i18n.js"></script>
   <script src="theme.js"></script>
+  <script src="refreshSettings.js"></script>
   <script src="windowControls.js"></script>
   <script src="renderer.js"></script>
+  <script src="play.js"></script>
   <script src="tour.js"></script>
 </body>
 </html>

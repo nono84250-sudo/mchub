@@ -1,5 +1,5 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
-const { app, BrowserWindow, ipcMain, dialog, shell, session, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session, screen } = require("electron");
 
 // Verrou de navigation (audit 14/10, L1). Avant : un lien glisse sur la fenetre, ou un
 // window.open, chargeait une page distante DANS la fenetre du launcher, avec le preload, donc
@@ -43,10 +43,19 @@ function isLocalSender(event) {
   }
 }
 
+// Laboratoire (25/10) : chaque canal d'une fonctionnalité cachée répond « feature_off » sans
+// rien lancer (cloud:* = mondes en ligne, play:* = mode Jouer, friends:* = amis). Voir features.js.
+const FEATURE_IPC = [
+  ["cloud:", "worlds"],
+  ["play:", "play"],
+  ["friends:", "friends"],
+];
 const registerIpcHandler = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, listener) =>
   registerIpcHandler(channel, (event, ...args) => {
     if (!isLocalSender(event)) throw new Error("Appel refusé : origine non autorisée");
+    const gate = FEATURE_IPC.find(([prefix]) => channel.startsWith(prefix));
+    if (gate && !features.visible(gate[1])) return { ok: false, code: "feature_off" };
     return listener(event, ...args);
   });
 
@@ -55,6 +64,16 @@ ipcMain.handle = (channel, listener) =>
 // sur le meme GAME_ROOT, ecritures concurrentes sans verrou sur settings.json/accounts.bin,
 // double enregistrement du raccourci global de debug). Doit etre demande avant toute autre
 // initialisation (avant meme la creation de la premiere fenetre).
+// Icone de la barre des taches Windows (17/10, vu par Rushi : logo Electron en dev). Sans
+// AppUserModelId, Windows range la fenetre sous electron.exe et prend son icone ; avec le meme id
+// que electron-builder (build.appId), la fenetre garde l'icone Omniscient, en dev comme installe.
+// 18/10 : en npm start, l'id seul ne suffisait pas (toujours logo Electron, notifications
+// « Electron »). Windows tire le nom et l'icone des notifications d'un raccourci du menu Demarrer
+// portant cet id : l'installateur le cree, en dev voir ensureDevStartMenuShortcut. Id a part en dev
+// pour ne pas se melanger avec une version installee sur le meme PC.
+const APP_USER_MODEL_ID = app.isPackaged ? "app.omniscient.launcher" : "app.omniscient.launcher.dev";
+if (process.platform === "win32") app.setAppUserModelId(APP_USER_MODEL_ID);
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -82,6 +101,10 @@ app.on("open-url", (event, url) => {
 });
 
 const path = require("node:path");
+// Delais de rafraichissement (liste, fiches, presence) : un seul fichier de reglages, partage avec renderer.js.
+const REFRESH = require("./refreshSettings");
+// .ico sous Windows (plusieurs tailles, net dans la barre des taches), .png ailleurs.
+const WINDOW_ICON = path.join(__dirname, "..", "build", process.platform === "win32" ? "icon.ico" : "icon.png");
 const os = require("node:os");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
@@ -90,7 +113,8 @@ const logStore = require("./logStore");
 
 // Liens « Ouvrir dans le launcher » de la fiche serveur du site (16/10) :
 //   omniscient://server/<slug>  ouvre la fiche de ce serveur ;
-//   omniscient://join/<CODE>    rejoint un serveur prive par son code d'invitation, puis l'ouvre.
+//   omniscient://join/<CODE>    rejoint un serveur prive par son code d'invitation, puis l'ouvre ;
+//   omniscient://team/<slug>    ouvre la page Serveurs filtree sur cette team.
 // Rien d'autre n'est accepte : le lien vient d'une page web, donc seul un slug ou un code au
 // format attendu passe, et il ne fait qu'ouvrir une fiche (jamais lancer le jeu tout seul).
 // Le renderer recupere le lien en attente quand il est pret (app:takeServerLink) ; ensuite les
@@ -111,13 +135,15 @@ function parseServerLink(raw) {
   const value = url.pathname.replace(/^\/+|\/+$/g, "");
   if (url.hostname === "server" && /^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/.test(value)) return { kind: "server", value };
   if (url.hostname === "join" && /^[A-Za-z0-9]{4,16}$/.test(value)) return { kind: "join", value: value.toUpperCase() };
+  // omniscient://team/<slug> (19/10) : la page Serveurs filtree sur cette team.
+  if (url.hostname === "team" && /^[a-z0-9-]{1,80}$/.test(value)) return { kind: "team", value };
   return null;
 }
 
 function deliverServerLink(raw) {
   const link = parseServerLink(raw);
   if (!link) return;
-  logStore.pushLog({ level: "info", source: "launcher", message: `Lien du site : ${link.kind === "server" ? `fiche ${link.value}` : "code d'invitation"}` });
+  logStore.pushLog({ level: "info", source: "launcher", message: `Lien du site : ${link.kind === "server" ? `fiche ${link.value}` : link.kind === "team" ? `team ${link.value}` : "code d'invitation"}` });
   const win = BrowserWindow.getAllWindows()[0];
   if (serverLinkRendererReady && win && !win.isDestroyed()) win.webContents.send("app:serverLink", link);
   else pendingServerLink = link;
@@ -148,7 +174,10 @@ if (process.defaultApp && process.argv.length >= 2) {
 // impossible de "repartir de zero" en dev sans affecter la prod (et vice-versa).
 const isDev = !app.isPackaged;
 const defaultUserDataPath = app.getPath("userData");
-const dottedUserDataPath = path.join(path.dirname(defaultUserDataPath), isDev ? ".omniscient-launcher-dev" : ".omniscient-launcher");
+// MCHUB_USER_DATA_DIR (dev seulement) : profil jetable pour tester sans toucher au dossier dev
+// habituel (ex. deplacement du dossier des jeux, serie 2 idee 9).
+const dottedUserDataPath =
+  (isDev && process.env.MCHUB_USER_DATA_DIR) || path.join(path.dirname(defaultUserDataPath), isDev ? ".omniscient-launcher-dev" : ".omniscient-launcher");
 // Migration ponctuelle de l'ancien dossier par defaut d'Electron — uniquement en production :
 // seuls de vrais joueurs ont pu avoir des comptes/reglages enregistres dans ce dossier avant
 // l'introduction de la convention dotfile. En dev, un dossier par defaut trouve n'est que du
@@ -163,6 +192,8 @@ if (!isDev && !fs.existsSync(dottedUserDataPath) && fs.existsSync(defaultUserDat
 }
 app.setPath("userData", dottedUserDataPath);
 
+// Dossier des jeux (serie 2, idee 9) : a lire avant mcLaunch et javaManager.
+const gamesLocation = require("./gamesLocation");
 const msAuth = require("./msAuth");
 const { launchMinecraft, GAME_ROOT, getRunningGame, stopGame } = require("./mcLaunch");
 const {
@@ -174,7 +205,14 @@ const {
   prepareLaunchVersion,
   readInstalledState,
   listInstalledInstances,
+  installFiles,
 } = require("./modpack");
+const { createPlayMode, supportsQuickPlay } = require("./playMode");
+const { createWorldCloud } = require("./worldCloud");
+const { createSaveOverlay } = require("./saveOverlay");
+const { createLiveSave } = require("./liveSave");
+const { createFeatures } = require("./features");
+const { trackGameWindow } = require("./gameWindow");
 const { pingMinecraftServer } = require("./mcPing");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
@@ -247,6 +285,9 @@ const LAUNCHER_API_KEY = process.env.LAUNCHER_API_KEY || generatedEnv.LAUNCHER_A
 // Optionnel (voir discordPresence.js) : Rich Presence desactivee proprement
 // si absent, jamais une erreur bloquante comme LAUNCHER_API_KEY ci-dessus.
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || generatedEnv.DISCORD_CLIENT_ID;
+// Optionnel aussi (idee 3 du lancement, 19/10) : rapports d'erreurs Sentry, voir errorReports.js.
+const errorReports = require("./errorReports");
+errorReports.init({ dsn: process.env.SENTRY_DSN || generatedEnv.SENTRY_DSN, release: app.getVersion() });
 const REQUEST_TIMEOUT_MS = 8000;
 
 // En-tetes des routes /api/launcher/* qui agissent au nom du joueur connecte
@@ -268,6 +309,7 @@ const REQUEST_TIMEOUT_MS = 8000;
 // fois cette marge depassee, un nouvel echange est demande en arriere-plan
 // (voir requestLauncherSession) et le jeton Mojang est envoye en repli pour
 // cet appel-ci (et les suivants) jusqu'a ce que le nouvel echange reussisse.
+let featuresSessionUuid = null;
 let launcherSession = null; // { uuid, token, expiresAt (ms) }
 let launcherSessionRequest = null;
 // UUID du joueur qui vient de se connecter avec le bouton Microsoft (pas une reprise de
@@ -313,6 +355,12 @@ function requestLauncherSession() {
       // Joueur deconnecte pendant l'echange : on ne garde pas sa session.
       if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
+      // Laboratoire : ce joueur est peut-être testeur, on relit ses fonctionnalités (une fois par
+      // compte : le rafraîchissement des 10 min suffit ensuite, audit du 25/10).
+      if (featuresSessionUuid !== uuid) {
+        featuresSessionUuid = uuid;
+        features.refresh();
+      }
       logStore.pushLog({ level: "debug", source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
     } catch (error) {
       // Sans importance : les requetes continuent avec le jeton Mojang.
@@ -346,7 +394,7 @@ async function revokeLauncherSession() {
 function launcherAuthHeaders() {
   const sessionToken = usableLauncherSessionToken();
   if (sessionToken) {
-    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": sessionToken };
+    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": sessionToken, "X-Launcher-Version": app.getVersion() };
   }
   // Pas encore connecte (2026-10-11 : "Installer" peut maintenant s'utiliser
   // sans compte, voir server:install) — la cle du launcher seule suffit pour
@@ -356,10 +404,10 @@ function launcherAuthHeaders() {
   // etait lu sans garde, "Cannot read properties of null" des le premier
   // appel sans session (trouve en testant le bouton "Installer").
   if (!currentSession) {
-    return { Authorization: `Bearer ${LAUNCHER_API_KEY}` };
+    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Version": app.getVersion() };
   }
   requestLauncherSession();
-  return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Minecraft-Token": currentSession.authorization.access_token };
+  return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Minecraft-Token": currentSession.authorization.access_token, "X-Launcher-Version": app.getVersion() };
 }
 
 // Session du joueur connecté (compte Microsoft/Minecraft), en mémoire.
@@ -375,6 +423,15 @@ function setSession(profile, authorization, { freshLogin = false } = {}) {
   clearServerCaches();
   pendingFreshLoginUuid = freshLogin ? profile.id : null;
   requestLauncherSession();
+  // Mode Jouer : reprend un envoi de mondes laissé en cours (worldCloud, défini plus bas).
+  setTimeout(() => {
+    try {
+      // État relu d'abord : la synchro ne démarre jamais sur un état ancien.
+      features.refresh().then(() => features.visible("worlds") && worldCloud.start()).catch(() => {});
+    } catch {
+      /* pas encore prêt au tout premier démarrage */
+    }
+  }, 5000);
   return profile;
 }
 
@@ -444,6 +501,7 @@ async function withSessionRetry(send) {
   }
 }
 
+const SITE_BUSY_MESSAGE = "Le site Omniscient est très demandé : réessaie dans une minute.";
 // Site sature (audit 25/10) : quand la base du site deborde, il repond 503 avec { busy: true } et
 // Retry-After (ou 429 quand un frein par adresse saute). Jusqu'a siteBusyUntil, les appels de fond
 // periodiques (presence, amis des listes, notifications, maintenance, liste des serveurs) ne
@@ -472,26 +530,67 @@ function markSiteBusy(res) {
 }
 
 // `options.background` : appel de fond periodique, saute tant que le site est sature.
-async function fetchJson(url, { background = false, ...options } = {}) {
+// Laboratoire (25/10) : fonctionnalités visibles pour ce launcher, voir features.js.
+const features = createFeatures({
+  cacheDir: app.getPath("userData"),
+  siteUrl: SITE_URL,
+  authHeaders: () => launcherAuthHeaders(),
+  currentUuid: () => currentSession?.profile?.id || null,
+  fetchJson: (url, options) => fetchJson(url, options),
+  log: (message, level = "info") => logStore.pushLog({ level, source: "launcher", message }),
+  onChange: (state) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("features:changed", state);
+    try {
+      if (state.worlds?.visible && currentSession) worldCloud.start();
+      else if (!state.worlds?.visible) rawWorldCloud.suspend();
+    } catch {
+      /* worldCloud pas encore prêt : setSession s'en charge */
+    }
+  },
+});
+ipcMain.handle("features:get", () => features.all());
+// Écran de chargement (retour de Rushi du 25/10 : une icône surgissait 3 s après l'affichage) :
+// le menu attend les droits de CE compte. Compte mémorisé : on laisse d'abord sa reprise de
+// session aboutir (au plus 1,5 s), puis au plus 3,5 s en tout ; sinon le dernier état connu.
+ipcMain.handle("features:ready", async () => {
+  const start = Date.now();
+  let remembered = false;
+  try {
+    remembered = !!sessionStore.loadAccounts().activeId;
+  } catch {
+    /* pas de compte lisible : visiteur */
+  }
+  while (remembered && !currentSession && Date.now() - start < 1500) await new Promise((r) => setTimeout(r, 100));
+  return features.ready(Math.max(500, 3500 - (Date.now() - start)));
+});
+app.whenReady().then(() => features.start());
+
+async function fetchJson(url, { background = false, ...options } = {}, { withEtag = false } = {}) {
   // Jamais affiche au joueur : les appels de fond echouent en silence (voir renderer.js).
   if (background && Date.now() < siteBusyUntil) throw siteBusyError("Site Omniscient saturé : appel de fond reporté.");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
+    // 21/10 : « pas de changement » (le site a compare l'ETag envoye) : l'appelant garde ce qu'il a.
+    if (res.status === 304) return { notModified: true };
     if (!res.ok) {
       // Le site renvoie un message et parfois un code (ex. « frozen ») : on les garde.
       const body = await res.json().catch(() => null);
-      if (res.status === 429 || (res.status === 503 && body?.busy === true)) {
+      // Audit de charge du 19/10 (B5) + audit 25/10 : site saturé (503 « busy », ou 429 du frein
+      // par adresse) -> appels de fond en pause et message clair au lieu de « Réponse 500 ».
+      const busy = res.status === 429 || (res.status === 503 && (body?.busy === true || body?.code === "busy"));
+      if (busy) {
         markSiteBusy(res);
-        throw siteBusyError(body?.error, res.status);
+        throw siteBusyError(body?.error || SITE_BUSY_MESSAGE, res.status);
       }
-      const error = new Error(body?.error || `Réponse ${res.status} du site Omniscient`);
+      const error = new Error(res.status === 503 ? SITE_BUSY_MESSAGE : body?.error || `Réponse ${res.status} du site Omniscient`);
       error.status = res.status;
-      error.code = body?.code;
+      error.code = busy ? "busy" : body?.code;
       throw error;
     }
-    return await res.json();
+    const data = await res.json();
+    return withEtag ? { etag: res.headers.get("etag"), data } : data;
   } catch (error) {
     if (error.name === "AbortError") throw new Error("Le site Omniscient n'a pas répondu à temps.");
     throw error;
@@ -566,6 +665,43 @@ function ensureWindowVisible(win) {
   if (fitted.x !== b.x || fitted.y !== b.y || fitted.width !== b.width || fitted.height !== b.height) win.setBounds(fitted);
 }
 
+// Dev (npm start) sous Windows : la fenetre appartient a electron.exe, dont Windows prend le nom
+// et le logo. On donne a chaque fenetre l'id, l'icone et le nom d'Omniscient pour la barre des
+// taches. La version installee n'en a pas besoin (son .exe porte deja l'icone et le nom).
+function applyDevTaskbarIdentity(win) {
+  if (process.platform !== "win32" || app.isPackaged) return;
+  win.setAppDetails({
+    appId: APP_USER_MODEL_ID,
+    appIconPath: WINDOW_ICON,
+    appIconIndex: 0,
+    relaunchCommand: `"${process.execPath}" "${app.getAppPath()}"`,
+    relaunchDisplayName: "Omniscient Launcher (dev)",
+  });
+}
+
+// Raccourci « Omniscient Launcher (dev) » dans le menu Demarrer, recree seulement s'il manque ou a
+// change : sans lui, Windows affiche les notifications sous « Electron » avec son logo.
+function ensureDevStartMenuShortcut() {
+  if (process.platform !== "win32" || app.isPackaged) return;
+  const shortcutPath = path.join(app.getPath("appData"), "Microsoft", "Windows", "Start Menu", "Programs", "Omniscient Launcher (dev).lnk");
+  const options = {
+    target: process.execPath,
+    args: `"${app.getAppPath()}"`,
+    cwd: app.getAppPath(),
+    icon: WINDOW_ICON,
+    iconIndex: 0,
+    appUserModelId: APP_USER_MODEL_ID,
+    description: "Omniscient Launcher (version de dev, npm start)",
+  };
+  try {
+    const current = fs.existsSync(shortcutPath) ? shell.readShortcutLink(shortcutPath) : null;
+    if (current && current.target === options.target && current.args === options.args && current.icon === options.icon && current.appUserModelId === options.appUserModelId) return;
+    shell.writeShortcutLink(shortcutPath, current ? "replace" : "create", options);
+  } catch (error) {
+    logStore.pushLog({ source: "launcher", level: "warn", message: `Raccourci de dev du menu Démarrer non créé : ${error instanceof Error ? error.message : error}` });
+  }
+}
+
 const expandedWindows = new WeakSet();
 
 function createWindow() {
@@ -578,7 +714,7 @@ function createWindow() {
     resizable: false,
     backgroundColor: "#070c16",
     frame: false,
-    icon: path.join(__dirname, "..", "build", "icon.png"),
+    icon: WINDOW_ICON,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -586,6 +722,7 @@ function createWindow() {
       sandbox: true,
     },
   });
+  applyDevTaskbarIdentity(win);
   // Sans barre de titre native (frame: false), l'etat maximise/restaure
   // n'est visible nulle part ailleurs : le renderer doit le connaitre pour
   // afficher la bonne icone sur son propre bouton.
@@ -653,7 +790,7 @@ function createConsoleWindow() {
     minHeight: 360,
     backgroundColor: "#161826",
     frame: false,
-    icon: path.join(__dirname, "..", "build", "icon.png"),
+    icon: WINDOW_ICON,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -661,6 +798,7 @@ function createConsoleWindow() {
       sandbox: true,
     },
   });
+  applyDevTaskbarIdentity(consoleWindow);
 
   const sendMaximizedState = () => {
     if (!consoleWindow.isDestroyed()) consoleWindow.webContents.send("window:maximized-changed", consoleWindow.isMaximized());
@@ -821,7 +959,7 @@ ipcMain.handle("logs:copyLatest", () => {
 // dans l'explorateur pour etre joint facilement a un message de support.
 ipcMain.handle("diagnostics:exportReport", async () => {
   const settings = settingsStore.loadSettings();
-  const info = await diagnostics.getSystemInfo({ ...settings, gameRoot: GAME_ROOT, appVersion: app.getVersion() });
+  const info = { ...(await diagnostics.getSystemInfo({ ...settings, gameRoot: GAME_ROOT, appVersion: app.getVersion() })), ...(await gamesFolderInfo()) };
   let recentLog = "";
   try {
     recentLog = fs.readFileSync(logStore.todayLogPath(), "utf8").split("\n").slice(-200).join("\n");
@@ -837,6 +975,7 @@ ipcMain.handle("diagnostics:exportReport", async () => {
     `Java        : ${info.java || "non détecté"}`,
     `Mémoire     : ${info.memory}`,
     `GPU         : ${info.gpu || "inconnu"}`,
+    `Jeux        : ${info.gamesFolder}${info.gamesFree ? ` (${info.gamesFree} libres)` : ""}`,
     "",
     "--- Journal recent ---",
     recentLog,
@@ -847,9 +986,11 @@ ipcMain.handle("diagnostics:exportReport", async () => {
   return { ok: true, path: reportPath };
 });
 
-ipcMain.handle("diagnostics:getSystemInfo", () =>
-  diagnostics.getSystemInfo({ ...settingsStore.loadSettings(), gameRoot: GAME_ROOT, appVersion: app.getVersion() }),
-);
+// Infos systeme + dossier des jeux et sa place libre (serie 2, idee 9).
+ipcMain.handle("diagnostics:getSystemInfo", async () => ({
+  ...(await diagnostics.getSystemInfo({ ...settingsStore.loadSettings(), gameRoot: GAME_ROOT, appVersion: app.getVersion() })),
+  ...(await gamesFolderInfo()),
+}));
 ipcMain.handle("diagnostics:getCacheSizeBytes", () => diagnostics.getCacheSizeBytes());
 // Refuses pendant une partie, un lancement ou une installation (audit 25/10) : versions/,
 // libraries/ et assets/ sont partages par tous les serveurs, les effacer a ce moment-la casse le
@@ -879,7 +1020,7 @@ ipcMain.handle("diagnostics:clearCache", () => {
 // Une panne réseau n'est jamais gardée. Vidé quand le joueur agit (rejoindre, quitter,
 // Actualiser, test de publication, changement de compte) : voir clearServerCaches. Le lancement
 // et l'installation lisent toujours le site en direct.
-const SERVER_CACHE_MS = 60_000;
+const SERVER_CACHE_MS = REFRESH.SERVER_DETAIL_CACHE_MS;
 const SERVER_MISS_CACHE_MS = 30_000;
 // Liste d'amis lue pour les listes de serveurs (« Un ami y joue », appel de fond) : gardée
 // 5 minutes (audit 25/10, charge du site). La page Amis, elle, reste à une minute.
@@ -887,10 +1028,12 @@ const FRIENDS_BACKGROUND_CACHE_MS = 5 * 60_000;
 const serverCache = new Map();
 // Demandes en cours : deux pages qui veulent la même fiche au même moment n'en font qu'une.
 const serverInFlight = new Map();
+// Derniere liste de l'annuaire et son ETag (voir fetchServerListFromSite).
+let lastServerList = null;
 
-async function cachedFetch(key, load, { maxAgeMs = SERVER_CACHE_MS } = {}) {
+async function cachedFetch(key, load, ttlMs = SERVER_CACHE_MS) {
   const hit = serverCache.get(key);
-  if (hit && Date.now() - hit.at < (hit.error ? SERVER_MISS_CACHE_MS : maxAgeMs)) {
+  if (hit && Date.now() - hit.at < (hit.error ? SERVER_MISS_CACHE_MS : ttlMs)) {
     if (hit.error) throw hit.error;
     return hit.data;
   }
@@ -924,6 +1067,7 @@ let serverCacheGeneration = 0;
 
 function clearServerCaches() {
   serverCacheGeneration++;
+  lastServerList = null;
   serverCache.clear();
   serverInFlight.clear();
 }
@@ -933,21 +1077,113 @@ ipcMain.handle("servers:clearCache", () => {
   return { ok: true };
 });
 
+// 21/10 (cache des fiches) : le site repond 304 « pas de changement » si la liste n'a pas bouge
+// depuis la derniere recue (lastServerList, avec son empreinte ETag) : on garde alors celle-ci,
+// sans la retelecharger. Gardee en memoire REFRESH.LIST_CACHE_MS (3 min) ; « Actualiser » vide tout.
+async function fetchServerListFromSite({ background = false } = {}) {
+  const previous = lastServerList;
+  const res = await fetchJson(`${SITE_URL}/api/public/servers`, { background, ...(previous?.etag ? { headers: { "If-None-Match": previous.etag } } : {}) }, { withEtag: true });
+  if (res.notModified && previous) return previous.data;
+  if (res.notModified) return fetchJson(`${SITE_URL}/api/public/servers`, { background });
+  lastServerList = res.etag ? { etag: res.etag, data: res.data } : null;
+  return res.data;
+}
+
 ipcMain.handle("servers:list", async (_event, opts) => {
   try {
-    const data = await cachedFetch("list", () => fetchJson(`${SITE_URL}/api/public/servers`, { background: !!opts?.background }));
+    const data = await cachedFetch("list", () => fetchServerListFromSite({ background: !!opts?.background }), REFRESH.LIST_CACHE_MS);
+    forgetRemovedServers(data.servers);
     return { ok: true, servers: data.servers };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
 
+// Serveurs du joueur absents de l'annuaire public (privé, en pause, en attente de vérification),
+// retenus via « Mes serveurs » ou après un premier 404 : leur fiche publique est demandée avec la
+// preuve du propriétaire (voir servers:get), la route propriétaire restant le secours.
+const ownerOnlySlugs = new Set();
+
+async function fetchOwnerServer(slug) {
+  const data = await cachedFetch(`owner:${currentSession.profile.id}:${slug}`, () =>
+    fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
+      headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+    }),
+  );
+  const { ip: _ip, ...server } = data.server || {};
+  // Cette route ne renvoie pas le slug : sans lui, « Jouer » partait avec un slug
+  // undefined (GET /api/launcher/servers/undefined vu dans les logs du 14/10).
+  return data.server ? { ...server, slug } : null;
+}
+
+// « Petit serveur du jour » (19/10, variante A validee par Rushi) : choisi par le site, un par jour
+// (heure de Bruxelles). server peut etre null ; le renderer retombe alors sur l'ancien choix.
+ipcMain.handle("servers:featured", async () => {
+  try {
+    const data = await cachedFetch("featured", () => fetchJson(`${SITE_URL}/api/launcher/servers/featured`, { headers: launcherAuthHeaders() }));
+    return { ok: true, server: data.server || null, launches7d: data.launches7d ?? null, fillPercent: data.fillPercent ?? null, automatic: data.automatic !== false };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+// Serveur retiré du site (20/10, Bubule Land en 404 à chaque ouverture de Ma bibliothèque : son
+// instance est encore sur le disque, donc l'onglet Installés redemandait sa fiche à chaque fois).
+// Un vrai 404 (joueur connecté, route propriétaire essayée aussi) est retenu dans
+// settings.removedServers et la fiche n'est redemandée qu'une fois toutes les 12 h. Le serveur
+// redevient normal dès qu'il revient dans l'annuaire. Les fichiers de l'instance ne sont jamais touchés.
+// 23/10 (Rushi : « pas de demandes à la con au site ») : une fois par jour au plus, et sans
+// session le 404 public est retenu en mémoire jusqu'à la fermeture du launcher (pas enregistré :
+// le serveur privé d'un propriétaire déconnecté ne doit pas passer pour retiré au démarrage suivant).
+const REMOVED_SERVER_RECHECK_MS = 24 * 60 * 60 * 1000;
+const SLUG_KEY_RE = /^[a-z0-9-]{1,80}$/;
+const guestRemovedSlugs = new Set();
+
+function isRecentlyRemoved(slug) {
+  if (!currentSession && guestRemovedSlugs.has(slug)) return true;
+  const at = settingsStore.loadSettings().removedServers?.[slug];
+  return typeof at === "number" && Date.now() - at < REMOVED_SERVER_RECHECK_MS;
+}
+
+// Retiré du site d'après un vrai 404 déjà vu (enregistré, ou en mémoire sans session) : seule
+// condition pour que « Supprimer les fichiers » accepte aussi le marqueur d'un serveur vanilla.
+function isKnownRemoved(slug) {
+  return guestRemovedSlugs.has(slug) || typeof settingsStore.loadSettings().removedServers?.[slug] === "number";
+}
+
+function markRemovedServer(slug, removed) {
+  if (typeof slug !== "string" || !SLUG_KEY_RE.test(slug)) return;
+  const current = settingsStore.loadSettings().removedServers || {};
+  if (!removed && !Object.prototype.hasOwnProperty.call(current, slug)) return;
+  const next = { ...current };
+  if (removed) next[slug] = Date.now();
+  else delete next[slug];
+  settingsStore.saveSettings({ removedServers: next });
+}
+
+function forgetRemovedServers(servers) {
+  const removed = settingsStore.loadSettings().removedServers || {};
+  for (const server of servers || []) {
+    if (server?.slug && Object.prototype.hasOwnProperty.call(removed, server.slug)) markRemovedServer(server.slug, false);
+  }
+}
+
 ipcMain.handle("servers:get", async (_event, slug) => {
+  if (isRecentlyRemoved(slug)) return { ok: false, error: "Serveur retiré", frozen: false, notFound: true, removed: true };
+  // Fiche complete d'un de SES serveurs pas encore dans l'annuaire (19/10, Hypixel « en attente »
+  // vu vide par Rushi) : la route propriétaire ne renvoie que de quoi lancer (ni bannière, ni
+  // description, ni page). La fiche publique est donc demandée avec la preuve du propriétaire
+  // (jeton de session) ; la route propriétaire ne sert plus que de secours, marquée « partielle ».
+  const asOwner = Boolean(currentSession && ownerOnlySlugs.has(slug));
   try {
     // Serveur privé rejoint : le code d'invitation est nécessaire pour voir la fiche.
-    const data = await cachedFetch(`public:${slug}`, () =>
-      fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, { headers: inviteHeaders(slug) }),
+    const data = await cachedFetch(asOwner ? `public-owner:${currentSession.profile.id}:${slug}` : `public:${slug}`, () =>
+      fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, {
+        headers: asOwner ? { ...launcherAuthHeaders(), ...inviteHeaders(slug) } : inviteHeaders(slug),
+      }),
     );
+    markRemovedServer(slug, false);
+    guestRemovedSlugs.delete(slug);
     return { ok: true, server: data.server };
   } catch (publicError) {
     let error = publicError;
@@ -958,15 +1194,13 @@ ipcMain.handle("servers:get", async (_event, slug) => {
     // le lancement ; l'IP est retirée, comme dans la fiche publique.
     if (publicError?.status === 404 && publicError?.code !== "frozen" && currentSession) {
       try {
-        const data = await cachedFetch(`owner:${currentSession.profile.id}:${slug}`, () =>
-          fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
-            headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
-          }),
-        );
-        const { ip: _ip, ...server } = data.server || {};
-        // Cette route ne renvoie pas le slug : sans lui, « Jouer » partait avec un slug
-        // undefined (GET /api/launcher/servers/undefined vu dans les logs du 14/10).
-        if (data.server) return { ok: true, server: { ...server, slug } };
+        const server = await fetchOwnerServer(slug);
+        if (server) {
+          ownerOnlySlugs.add(slug);
+          markRemovedServer(slug, false);
+          // partial : le renderer explique pourquoi la fiche est incomplète au lieu d'une page vide.
+          return { ok: true, server: { ...server, partial: true } };
+        }
       } catch (ownerError) {
         error = ownerError;
       }
@@ -974,6 +1208,10 @@ ipcMain.handle("servers:get", async (_event, slug) => {
     // Serveur gelé : signalé pour afficher « gelé » plutôt que « introuvable ». notFound
     // distingue un vrai 404 (fiche supprimée, voir resolveServersBySlug côté renderer) d'une
     // panne réseau/timeout, qu'il ne faut surtout pas confondre avec une suppression.
+    if (error?.status === 404 && error?.code !== "frozen") {
+      if (currentSession) markRemovedServer(slug, true);
+      else guestRemovedSlugs.add(slug);
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Erreur inconnue",
@@ -1024,6 +1262,17 @@ ipcMain.handle("servers:mine", async () => {
         ),
       );
       logStore.pushLog({ level: "debug", source: "launcher", message: `Mes instances : ${fresh.servers?.length ?? 0} serveur(s) chargé(s)` });
+      // Ses serveurs qui ne sont pas dans l'annuaire public : fiche ouverte directement par la
+      // route propriétaire (voir ownerOnlySlugs plus haut).
+      for (const owned of fresh.servers || []) {
+        // Gelé : jamais ici, la route publique dit « gelé » et la fiche l'affiche comme tel.
+        if (owned?.slug && !owned.frozenAt && (!owned.published || owned.isPrivate || owned.verificationStatus !== "approved")) {
+          ownerOnlySlugs.add(owned.slug);
+        } else if (owned?.slug && ownerOnlySlugs.delete(owned.slug)) {
+          // Redevenu public (republié, validé) : sa fiche publique en cache est peut-être un 404.
+          serverCache.delete(`public:${owned.slug}`);
+        }
+      }
       return fresh;
     });
     return { ok: true, servers: data.servers };
@@ -1058,6 +1307,15 @@ ipcMain.handle("servers:openManage", (_event, serverId) => {
   if (typeof serverId === "string" && serverId) shell.openExternal(`${SITE_URL}/manage/${encodeURIComponent(serverId)}`);
 });
 
+// Teams (19/10) : le renderer ne donne qu'un type et un slug (verifie ici), jamais une adresse.
+//   team  : page de la team (/team/<slug>) ;
+//   claim : page Contact avec le sujet « C'est mon serveur » et la fiche deja indiquee.
+ipcMain.handle("site:openTeamLink", (_event, kind, slug) => {
+  if (typeof slug !== "string" || !/^[a-z0-9-]{1,80}$/.test(slug)) return;
+  if (kind === "team") shell.openExternal(`${SITE_URL}/team/${slug}`);
+  else if (kind === "claim") shell.openExternal(`${SITE_URL}/contact?sujet=claim&serveur=${slug}`);
+});
+
 // Parametres > Divers > A propos (exige par les regles Discord pour developpeurs : la politique
 // de confidentialite doit etre accessible depuis l'application). Adresses fixes du site en ligne,
 // pas SITE_URL : en developpement, SITE_URL pointe sur localhost, ou ces pages peuvent manquer.
@@ -1067,6 +1325,10 @@ const LEGAL_URLS = {
   privacy: "https://omniscientlauncher.com/confidentialite",
 };
 ipcMain.handle("app:openLegal", (_event, page) => {
+  // « Récupérer mes données » (Mon compte, 23/10) : la page Paramètres du site, où le bouton existe
+  // déjà (même logique que « Supprimer mon compte », qui vit sur le site). SITE_URL pour suivre
+  // le site local pendant les tests.
+  if (page === "myData") return shell.openExternal(`${SITE_URL}/dashboard/parametres#mes-donnees`);
   const url = Object.hasOwn(LEGAL_URLS, page) ? LEGAL_URLS[page] : null;
   if (url) shell.openExternal(url);
 });
@@ -1133,6 +1395,8 @@ function modpackErrorFields(error) {
   if (error?.code !== "manual_mods" || !Array.isArray(error.manualMods)) return {};
   return {
     code: "manual_mods",
+    // Noms des mods bloques retrouves sur Modrinth (liste « Installés depuis Modrinth », point 4).
+    fromModrinthMods: Array.isArray(error.fromModrinthMods) ? error.fromModrinthMods.slice(0, 200).map((name) => String(name).slice(0, 120)) : [],
     manualMods: error.manualMods.slice(0, 200).map((mod) => ({
       fileId: mod.fileId,
       modName: mod.modName || null,
@@ -1148,6 +1412,16 @@ function modpackErrorFields(error) {
 // Page CurseForge d'un mod bloque : uniquement https://www.curseforge.com. Le lien vient de
 // modpack.js (page exacte du fichier donnee par le site, sinon page du projet par son id). Plus
 // de recherche par nom (14/10, Rushi) : plusieurs mods peuvent porter le meme nom.
+// Lien de page de mod accepte seulement vers https://www.curseforge.com (lot 5, rapport au site).
+function safeModPageUrl(pageUrl) {
+  try {
+    const parsed = new URL(String(pageUrl || ""));
+    return parsed.protocol === "https:" && parsed.hostname === "www.curseforge.com" ? parsed.href.slice(0, 300) : null;
+  } catch {
+    return null;
+  }
+}
+
 ipcMain.handle("modpack:openModPage", (_event, pageUrl) => {
   try {
     const parsed = new URL(pageUrl);
@@ -1267,7 +1541,9 @@ ipcMain.handle("friends:add", async (_event, minecraftUsername) => {
     await fetchJson(`${SITE_URL}/api/launcher/friends`, {
       method: "POST",
       headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, targetUsername: minecraftUsername }),
+      // `query` = pseudo OU code d'ami (reglage « Qui peut m'ajouter », 18/10) ; targetUsername garde
+      // pour un site plus ancien.
+      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, targetUsername: minecraftUsername, query: minecraftUsername }),
     });
     clearFriendsCache();
     return { ok: true };
@@ -1275,6 +1551,40 @@ ipcMain.handle("friends:add", async (_event, minecraftUsername) => {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
+// « Qui peut m'ajouter en ami » (variante C, 18/10) : meme reglage que sur le site (page Amis et
+// Parametres > Confidentialite). friendPolicy = "all" | "code" | "none", friendCode = « K7Q-9XM ».
+ipcMain.handle("friends:getSettings", async () => {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  try {
+    const uuid = currentSession.profile.id;
+    const data = await fetchJson(`${SITE_URL}/api/launcher/friends/settings?minecraftUuid=${encodeURIComponent(uuid)}`, { headers: launcherAuthHeaders() });
+    return { ok: true, friendPolicy: data.friendPolicy || "code", friendCode: data.friendCode || null };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+async function patchFriendSettings(body) {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  try {
+    const uuid = currentSession.profile.id;
+    const data = await fetchJson(`${SITE_URL}/api/launcher/friends/settings`, {
+      method: "PATCH",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid, ...body }),
+    });
+    return { ok: true, friendPolicy: data.friendPolicy || "code", friendCode: data.friendCode || null };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+}
+
+ipcMain.handle("friends:setPolicy", (_event, policy) => {
+  if (!["all", "code", "none"].includes(policy)) return { ok: false, error: "Réglage inconnu." };
+  return patchFriendSettings({ friendPolicy: policy });
+});
+ipcMain.handle("friends:newCode", () => patchFriendSettings({ regenerateCode: true }));
+
 // Accepter une demande recue (seul le destinataire peut, verifie cote site).
 ipcMain.handle("friends:accept", async (_event, friendUserId) => {
   if (!currentSession) {
@@ -1311,25 +1621,41 @@ ipcMain.handle("friends:remove", async (_event, friendUserId) => {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
-// Heartbeat de presence (voir lib/presence.ts cote site) : toutes les 2 min
-// (PRESENCE_HEARTBEAT_INTERVAL_MS dans renderer.js), toujours un appel de fond (mis en pause
-// quand le site est sature, voir siteBusyUntil). Echec silencieux cote renderer (voir
-// sendPresenceHeartbeat la-bas) : un heartbeat rate ne fait que retarder un peu le passage
-// "hors ligne" d'un ami, jamais a signaler au joueur.
-ipcMain.handle("presence:heartbeat", async () => {
+// Heartbeat de presence (voir lib/presence.ts cote site) : greffe sur le cycle de 60s existant
+// du launcher (REFRESH_INTERVAL_MS/scheduleRefresh dans renderer.js), jamais un intervalle a
+// part. Echec silencieux cote renderer (voir sendPresenceHeartbeat la-bas) : un heartbeat rate
+// ne fait que retarder un peu le passage "hors ligne" d'un ami, jamais a signaler au joueur.
+// Idee 2 du lancement (19/10) : ce meme appel passe par /api/launcher/pulse, qui renvoie en plus
+// l'etat de maintenance (lu en cache cote site) et, si withNotifications, les notifications.
+// Le renderer evite ainsi deux appels separes. Site pas encore a jour (404) : ancienne route
+// /api/launcher/presence, retenue pour toute la session.
+let pulseUnsupported = false;
+ipcMain.handle("presence:heartbeat", async (_event, opts) => {
   if (!currentSession) {
     return { ok: false, error: "Pas de compte Microsoft connecté." };
   }
   try {
     const uuid = currentSession.profile.id;
-    const result = await fetchJson(`${SITE_URL}/api/launcher/presence`, {
-      method: "POST",
-      background: true,
-      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
-      // playingSlug (16/10, « Un ami y joue ») : le serveur du jeu lancé, dans le même appel que
-      // d'habitude. Le site ne le garde que s'il est dans l'annuaire public (jamais un privé).
-      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, playingSlug: getRunningGame()?.slug ?? null }),
-    });
+    // playingSlug (16/10, « Un ami y joue ») : le serveur du jeu lancé, dans le même appel que
+    // d'habitude. Le site ne le garde que s'il est dans l'annuaire public (jamais un privé).
+    const payload = { minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, playingSlug: publicPlayingSlug() };
+    const post = (route, body) =>
+      fetchJson(`${SITE_URL}/api/launcher/${route}`, {
+        method: "POST",
+        background: true,
+        headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    let result = null;
+    if (!pulseUnsupported) {
+      try {
+        result = await post("pulse", { ...payload, withNotifications: opts?.withNotifications === true });
+      } catch (error) {
+        if (error.status !== 404) throw error;
+        pulseUnsupported = true;
+      }
+    }
+    if (!result) result = await post("presence", payload);
     // Compte Omniscient supprime par le joueur (sur le site) alors que le launcher etait encore
     // connecte : le site ne le recree pas tout seul. On deconnecte et on oublie ce compte, pour
     // que seule une vraie connexion Microsoft le recree (freshLogin, voir setSession).
@@ -1347,6 +1673,14 @@ ipcMain.handle("presence:heartbeat", async () => {
       await clearMicrosoftLoginStorage();
       return { ok: true, accountDeleted: true };
     }
+    if (result?.maintenance) {
+      return {
+        ok: true,
+        grouped: true,
+        maintenance: { active: !!result.maintenance.active, message: result.maintenance.message || "" },
+        notifications: Array.isArray(result.notifications) ? result.notifications : undefined,
+      };
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -1356,6 +1690,7 @@ ipcMain.handle("presence:heartbeat", async () => {
 // Pour construire le lien d'invitation (copie dans le presse-papier depuis
 // "Mes instances") sans dupliquer la logique SITE_URL cote renderer.
 ipcMain.handle("app:getSiteUrl", () => SITE_URL);
+ipcMain.handle("app:reportError", (_event, info) => errorReports.reportRendererError(info));
 ipcMain.handle("app:restart", () => {
   app.relaunch();
   app.exit(0);
@@ -1518,10 +1853,17 @@ async function removableEntries(instanceDir, keepPersonal) {
 
 // slug null : n'importe quel serveur (Reparer / Vider le cache, fichiers partages).
 function instanceBusy(slug) {
+  if (gamesMove.active) return "moving";
   if (getRunningGame()) return "running";
   if (gameLaunchInProgress) return "launching";
   if ([...installTasks.values()].some((t) => (slug === null || t.slug === slug) && (t.status === "active" || t.status === "paused"))) return "installing";
   return null;
+}
+
+// Mode Jouer : le slug interne "play:<id>" n'est pas un serveur de l'annuaire, on ne l'envoie pas au site.
+function publicPlayingSlug() {
+  const slug = getRunningGame()?.slug ?? null;
+  return slug && String(slug).startsWith("play:") ? null : slug;
 }
 
 ipcMain.handle("game:status", () => {
@@ -1571,6 +1913,18 @@ ipcMain.handle("instances:openLogsFolder", async (_event, slug) => {
   }
 });
 
+// Taille sur le disque de chaque serveur installe (Ma bibliotheque > Installes, lot 3). Lue en
+// arriere-plan apres l'affichage de la liste.
+ipcMain.handle("instances:sizes", async (_event, slugs) => {
+  const out = {};
+  if (!Array.isArray(slugs)) return out;
+  for (const slug of slugs.slice(0, 200)) {
+    if (typeof slug !== "string" || !/^[a-z0-9-]{1,80}$/i.test(slug)) continue;
+    out[slug] = await pathSize(path.join(GAME_ROOT, "instances", slug));
+  }
+  return out;
+});
+
 ipcMain.handle("instances:filesInfo", async (_event, slug) => {
   try {
     const { instanceDir, modded } = await instanceDirs(slug);
@@ -1594,6 +1948,14 @@ ipcMain.handle("instances:deleteFiles", async (_event, slug, { keepPersonal = tr
     const busy = instanceBusy(slug);
     if (busy) return { ok: false, code: busy };
     const { instanceDir, modded } = await instanceDirs(slug);
+    // Serveur vanilla retiré du site (23/10) : son dossier n'a que le marqueur « prêt » ; le retirer
+    // suffit pour qu'il quitte Ma bibliothèque. Jamais pour un serveur encore en ligne.
+    if (!modded && isKnownRemoved(slug)) {
+      await fsp.rm(path.join(instanceDir, ".omniscient-ready.json"), { force: true });
+      await fsp.rmdir(instanceDir).catch(() => {});
+      logStore.pushLog({ source: "launcher", message: `Serveur retiré "${slug}" : marqueur vanilla supprimé.` });
+      return { ok: true, freedBytes: 0 };
+    }
     if (!modded) return { ok: false, code: "vanilla" };
     const entries = await removableEntries(instanceDir, keepPersonal);
     let freedBytes = 0;
@@ -1607,6 +1969,92 @@ ipcMain.handle("instances:deleteFiles", async (_event, slug, { keepPersonal = tr
   } catch (error) {
     logStore.pushLog({ level: "error", source: "launcher", message: `Suppression des fichiers de "${slug}" échouée : ${error instanceof Error ? error.message : error}` });
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// --- Suppression en masse avec corbeille et Annuler (serie 2, idee 7, version A) ---------------
+// Les fichiers de chaque instance cochee partent d'abord dans GAME_ROOT/.corbeille/<lot>/<slug>
+// (simple deplacement sur le meme disque : instantane, et « Annuler » les remet en place). Passe
+// le delai d'Annuler, le lot part dans la corbeille de Windows (encore recuperable tant qu'on ne
+// la vide pas). Un lot oublie (launcher ferme pendant le delai) y part au demarrage suivant.
+const TRASH_ROOT = path.join(GAME_ROOT, ".corbeille");
+
+ipcMain.handle("instances:trashFiles", async (_event, slugs, { keepPersonal = true } = {}) => {
+  if (!Array.isArray(slugs) || !slugs.length) return { ok: false, error: "Rien à supprimer." };
+  const batch = `lot-${Date.now()}`;
+  const done = [];
+  const refused = [];
+  let freedBytes = 0;
+  const runningSlug = getRunningGame()?.slug || null;
+  for (const slug of slugs.slice(0, 200)) {
+    try {
+      if (slug === runningSlug) {
+        refused.push({ slug, code: "running" });
+        continue;
+      }
+      if ([...installTasks.values()].some((t) => t.slug === slug && (t.status === "active" || t.status === "paused" || t.status === "queued"))) {
+        refused.push({ slug, code: "installing" });
+        continue;
+      }
+      const { instanceDir, modded } = await instanceDirs(slug);
+      if (!modded) {
+        refused.push({ slug, code: "vanilla" });
+        continue;
+      }
+      const target = path.join(TRASH_ROOT, batch, slug);
+      await fsp.mkdir(target, { recursive: true });
+      for (const entry of await removableEntries(instanceDir, keepPersonal)) {
+        await fsp.rename(path.join(instanceDir, entry.name), path.join(target, entry.name));
+        freedBytes += entry.bytes;
+      }
+      done.push(slug);
+    } catch (error) {
+      refused.push({ slug, code: "error", error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  clearServerCaches();
+  logStore.pushLog({ source: "launcher", message: `Suppression en masse : ${done.length} instance(s) mises de côté (${Math.round(freedBytes / 1024 / 1024)} Mo), lot ${batch}.` });
+  return { ok: true, batch, done, refused, freedBytes };
+});
+
+ipcMain.handle("instances:undoTrash", async (_event, batch) => {
+  if (typeof batch !== "string" || !/^lot-\d+$/.test(batch)) return { ok: false };
+  const batchDir = path.join(TRASH_ROOT, batch);
+  const slugs = await fsp.readdir(batchDir).catch(() => []);
+  for (const slug of slugs) {
+    const { instanceDir } = await instanceDirs(slug);
+    const from = path.join(batchDir, slug);
+    for (const name of await fsp.readdir(from).catch(() => [])) {
+      // Un fichier recree entre-temps (nouvelle installation) n'est jamais ecrase.
+      await fsp.rename(path.join(from, name), path.join(instanceDir, name)).catch(() => {});
+    }
+  }
+  await fsp.rm(batchDir, { recursive: true, force: true }).catch(() => {});
+  clearServerCaches();
+  logStore.pushLog({ source: "launcher", message: `Suppression annulée : lot ${batch} remis en place.` });
+  return { ok: true, slugs };
+});
+
+async function finalizeTrashBatch(batch) {
+  const batchDir = path.join(TRASH_ROOT, batch);
+  try {
+    await shell.trashItem(batchDir);
+  } catch {
+    // Corbeille Windows indisponible (disque reseau, corbeille desactivee) : suppression simple.
+    await fsp.rm(batchDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+ipcMain.handle("instances:finalizeTrash", async (_event, batch) => {
+  if (typeof batch !== "string" || !/^lot-\d+$/.test(batch)) return { ok: false };
+  await finalizeTrashBatch(batch);
+  return { ok: true };
+});
+
+// Lots restes de la derniere session (launcher ferme pendant le delai d'Annuler).
+app.whenReady().then(async () => {
+  for (const batch of await fsp.readdir(TRASH_ROOT).catch(() => [])) {
+    if (/^lot-\d+$/.test(batch)) await finalizeTrashBatch(batch);
   }
 });
 
@@ -1651,6 +2099,56 @@ ipcMain.handle("reports:submit", async (_event, { slug, category, issue, behavio
         proofUrl: proofUrl || null,
         clientVersion: attachDiagnostics ? clientVersion || null : null,
         launcherVersion: attachDiagnostics ? app.getVersion() : null,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+// « Prévenir le serveur » (design 17/10, point 6) : rapport d'echec d'installation/lancement envoye
+// au proprietaire, seulement apres le clic du joueur sur « Envoyer » ou « Prévenir le serveur ».
+// Audit du 19/10 (L-B1) : plus aucune ligne du journal (il contenait le chat du jeu, l'adresse
+// d'autres serveurs, parfois prives, et le nom de la session Windows). Ne partent que le type
+// d'erreur, une phrase lisible, un court detail nettoye (mod concerne, message d'erreur) et les
+// versions. Jamais l'e-mail ni le compte Microsoft : seul l'UUID Minecraft sert a compter les
+// joueurs touches (verifie par le site).
+function scrubReportText(text) {
+  let out = String(text || "");
+  // Tout ce qui suivrait un message du chat (« [CHAT] <Joueur> ... ») : jamais envoye.
+  out = out.replace(/\[CHAT\][^\n]*/gi, "[chat]");
+  const home = os.homedir();
+  if (home) {
+    for (const form of [home, home.replace(/\\/g, "/"), encodeURI(home.replace(/\\/g, "/"))]) {
+      out = out.replace(new RegExp(form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "~");
+    }
+  }
+  return out
+    // Filet de securite : tout autre dossier de session Windows (C:\Users\<nom>).
+    .replace(/[A-Za-z]:[\\/]+Users[\\/]+[^\\/"'<>\n]+/gi, "~")
+    // Adresses de serveurs : IP (avec ou sans port), nom d'hote suivi d'un port.
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, "[adresse]")
+    .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)+:\d{2,5}\b/gi, "[adresse]")
+    .replace(/Connecting to [^\n,]+,\s*\d+/gi, "Connecting to [adresse]")
+    .slice(0, 300);
+}
+
+ipcMain.handle("servers:reportInstallProblem", async (_event, { slug, kind, summary, detail, minecraftVersion } = {}) => {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  if (typeof slug !== "string" || !slug) return { ok: false, error: "Serveur inconnu." };
+  try {
+    const res = await fetch(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/install-problem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+      body: JSON.stringify({
+        reporterMinecraftUuid: currentSession.profile.id,
+        kind,
+        summary: scrubReportText(summary).slice(0, 200),
+        detail: detail ? scrubReportText(detail) || null : null,
+        launcherVersion: app.getVersion(),
+        minecraftVersion: typeof minecraftVersion === "string" ? minecraftVersion.slice(0, 40) : null,
       }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1821,6 +2319,7 @@ ipcMain.handle("auth:signOut", async () => {
   }
   await revokeLauncherSession();
   currentSession = null;
+  features.refresh();
   await clearMicrosoftLoginStorage();
   return { ok: true };
 });
@@ -1937,6 +2436,45 @@ ipcMain.handle("account:resetSkin", async () => {
 // Boutons de la barre de titre custom (fenêtre sans cadre natif, voir
 // createWindow) — chaque handler agit sur la fenêtre de l'appelant, jamais
 // une fenêtre codée en dur, au cas où plusieurs fenêtres existeraient.
+// Clic sur une notification Windows (« prêt à jouer », point 4) : ramene la fenetre devant.
+ipcMain.handle("window:focus", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
+// Place libre sur le disque du dossier du jeu (ecran avant la 1re installation, point 4).
+ipcMain.handle("system:diskFree", async () => {
+  try {
+    await fsp.mkdir(GAME_ROOT, { recursive: true });
+    const stats = await fsp.statfs(GAME_ROOT);
+    return { ok: true, freeBytes: Number(stats.bavail) * Number(stats.bsize) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// Mods a ajouter a la main (point 4, L3-F) : quels fichiers attendus sont deja arrives dans le
+// dossier Telechargements. Seule la presence d'un fichier de ce nom est regardee ici (pour cocher
+// la ligne) ; « Réessayer » verifie ensuite taille et empreinte avant de s'en servir.
+ipcMain.handle("modpack:findInDownloads", async (_event, fileNames) => {
+  if (!Array.isArray(fileNames)) return [];
+  const wanted = new Set(fileNames.filter((name) => typeof name === "string" && name && name === path.basename(name)).slice(0, 200));
+  const found = [];
+  for (const dir of manualModsSearchDirs()) {
+    let names;
+    try {
+      names = await fsp.readdir(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) if (wanted.has(name)) found.push(name);
+  }
+  return [...new Set(found)];
+});
+
 ipcMain.handle("window:minimize", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
@@ -2170,7 +2708,19 @@ function serializeTask(task) {
     id: task.id,
     slug: task.slug,
     name: task.name,
-    status: task.status, // "active" | "paused" | "complete" | "error" | "cancelled"
+    status: task.status, // "queued" | "active" | "paused" | "complete" | "error" | "cancelled"
+    // Place dans la file d'attente des installations (1 = la prochaine), 0 hors file.
+    queuePosition: installQueue.indexOf(task.id) + 1,
+    // "launch" (Rejoindre), "install" (bouton Installer) ou "selftest" — la pilule ne propose
+    // « Lancer le jeu quand c'est fini » que pour une simple installation.
+    kind: task.kind,
+    // Etapes visibles du panneau de la pilule (design 17/10, point 4).
+    step: task.step,
+    modded: task.modded,
+    blocked: task.blocked,
+    origins: task.origins || null,
+    modsDone: task.modsDone,
+    modsTotal: task.modsTotal,
     text: task.text,
     bytes: task.bytes,
     totalBytes: task.totalBytes,
@@ -2179,6 +2729,48 @@ function serializeTask(task) {
   };
 }
 
+// File d'attente des installations (serie 2, idee 4, version A validee) : les boutons « Installer »
+// passent un par un, dans l'ordre des clics. « Passer en premier » place un serveur juste apres
+// celui en cours (qui continue), ✕ le retire de la file. « Rejoindre » n'attend pas dans cette file.
+const installQueue = [];
+let installRunning = null;
+
+function waitForInstallTurn(task) {
+  if (!installRunning) {
+    installRunning = task.id;
+    return Promise.resolve();
+  }
+  task.status = "queued";
+  installQueue.push(task.id);
+  return new Promise((resolve, reject) => {
+    task.queueResolve = resolve;
+    task.queueReject = reject;
+  });
+}
+
+function releaseInstallTurn(task) {
+  if (installRunning !== task.id) return;
+  installRunning = null;
+  const nextId = installQueue.shift();
+  const next = nextId ? installTasks.get(nextId) : null;
+  if (next) {
+    installRunning = next.id;
+    next.status = "active";
+    next.lastTickAt = Date.now();
+    next.queueResolve?.();
+  }
+  broadcastTasks();
+}
+
+ipcMain.handle("tasks:moveFirst", (_event, id) => {
+  const at = installQueue.indexOf(id);
+  if (at < 0) return { ok: false };
+  installQueue.splice(at, 1);
+  installQueue.unshift(id);
+  broadcastTasks();
+  return { ok: true };
+});
+
 function broadcastTasks() {
   const tasks = [...installTasks.values()].map(serializeTask);
   for (const win of BrowserWindow.getAllWindows()) {
@@ -2186,11 +2778,17 @@ function broadcastTasks() {
   }
 }
 
-function createInstallTask(slug, name) {
+function createInstallTask(slug, name, kind = "launch") {
   const task = {
     id: nextTaskId++,
     slug,
     name: name || slug,
+    kind,
+    step: "prepare",
+    modded: null,
+    blocked: null,
+    modsDone: 0,
+    modsTotal: 0,
     status: "active",
     text: "",
     bytes: 0,
@@ -2214,6 +2812,16 @@ function createInstallTask(slug, name) {
 // installFiles dans modpack.js, qui appellent onProgress a chaque morceau.
 function updateTaskFromProgress(task, status) {
   if (status.text) task.text = status.text;
+  if (status.step) task.step = status.step;
+  if (typeof status.modded === "boolean") task.modded = status.modded;
+  if (status.name) task.name = status.name;
+  if (status.blocked) task.blocked = status.blocked;
+  // Pack FTB (21/10) : nombre de mods venus de CurseForge / Modrinth / serveurs FTB (modpack.js).
+  if (status.origins) task.origins = status.origins;
+  if (status.type === "mods" && typeof status.task === "number") {
+    task.modsDone = status.task;
+    task.modsTotal = status.total || task.modsTotal;
+  }
   if (typeof status.bytes === "number") {
     const now = Date.now();
     const elapsed = now - task.lastTickAt;
@@ -2260,6 +2868,17 @@ ipcMain.handle("tasks:resume", (_event, id) => {
 ipcMain.handle("tasks:cancel", (_event, id) => {
   const task = installTasks.get(id);
   if (!task) return { ok: false };
+  // Encore dans la file : il suffit de l'en retirer (rien n'a commence).
+  const queued = installQueue.indexOf(id);
+  if (queued >= 0) {
+    installQueue.splice(queued, 1);
+    task.status = "cancelled";
+    const abort = new Error("Annulé");
+    abort.name = "AbortError";
+    task.queueReject?.(abort);
+    broadcastTasks();
+    return { ok: true };
+  }
   task.controller.abort();
   // Si la tache etait en pause, il faut aussi la lever : sinon le worker
   // reste bloque a attendre une reprise qui ne viendra jamais, sans jamais
@@ -2302,6 +2921,8 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
         headers: inviteHeaders(slug),
       });
   const server = data.server;
+  // Nom et type du serveur pour le panneau de la pilule (etapes moddé / vanilla).
+  onProgress({ name: server.name, modded: server.type === "modded" && Boolean(server.curseforgeModpackId) });
   const settings = settingsStore.loadSettings();
   // `memoryOverride` sert un lancement "juste cette fois" avec la RAM
   // recommandee du serveur (voir applyRecommendedRamIfNeeded cote
@@ -2344,6 +2965,7 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
   let gameJava = modded?.javaPath;
   if (!gameJava) {
     try {
+      onProgress({ step: "java" });
       const vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
       gameJava = await javaManager.ensureJavaForMajor(vanilla.javaVersion?.majorVersion ?? 8, {
         preferredPath: settings.javaPath || undefined,
@@ -2377,16 +2999,19 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
 // peuvent tourner en parallele pour des serveurs differents, affichees comme
 // autant de taches dans le panneau — voir installTasks ci-dessus.
 ipcMain.handle("server:install", async (event, slug, displayName) => {
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
+  const already = [...installTasks.values()].find((t) => t.slug === slug && (t.status === "active" || t.status === "paused" || t.status === "queued"));
   if (!isValidInstanceSlug(slug)) return { ok: false, error: "Serveur invalide." };
-  const already = [...installTasks.values()].find((t) => t.slug === slug && (t.status === "active" || t.status === "paused"));
   if (already) {
     return { ok: false, error: "Une installation est déjà en cours pour ce serveur.", taskId: already.id };
   }
 
-  const task = createInstallTask(slug, displayName);
+  const task = createInstallTask(slug, displayName, "install");
   broadcastTasks();
   logStore.pushLog({ source: "launcher", message: `Demande d'installation pour "${slug}"` });
   try {
+    await waitForInstallTurn(task);
+    broadcastTasks();
     const onProgress = (status) => {
       updateTaskFromProgress(task, status);
       broadcastTasks();
@@ -2407,10 +3032,13 @@ ipcMain.handle("server:install", async (event, slug, displayName) => {
     }
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec de l'installation de "${slug}" : ${task.error}` });
     return { ok: false, error: task.error, frozen: error?.code === "frozen", ...modpackErrorFields(error) };
+  } finally {
+    releaseInstallTurn(task);
   }
 });
 
 ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
   if (!isValidInstanceSlug(slug)) return { ok: false, error: "Serveur invalide." };
   if (!currentSession) {
     return { ok: false, error: "Connecte-toi avec ton compte Microsoft avant de rejoindre un serveur." };
@@ -2427,7 +3055,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   // aussi (voir prepareServerFiles), donc apparait dans le meme panneau — la tache
   // se termine des que les fichiers sont prets, avant launchMinecraft() (qui, lui,
   // reste suivi par la barre de progression existante, pas une tache de telechargement).
-  const task = createInstallTask(slug, null);
+  const task = createInstallTask(slug, null, "launch");
   broadcastTasks();
 
   logStore.pushLog({ source: "launcher", message: `Demande de lancement pour "${slug}"` });
@@ -2445,20 +3073,23 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     });
     task.name = server.name;
     task.status = "complete";
+    task.step = "start";
     task.bytes = task.totalBytes || task.bytes;
     broadcastTasks();
+    // Derniere etape du panneau : « Vérification et démarrage » (bibliotheques, assets, ouverture).
+    event.sender.send("game:progress", { step: "start" });
 
     await launchMinecraft({
       // Jeu lance / ferme : les fenetres ralentissent leurs interrogations pendant la partie.
-      onGameState: (running) => {
+      onGameState: (running, exitCode) => {
         for (const win of BrowserWindow.getAllWindows()) {
-          if (!win.isDestroyed()) win.webContents.send("game:state", running);
+          if (!win.isDestroyed()) win.webContents.send("game:state", running, exitCode ?? null);
         }
         // Jeu ferme : Discord revient sur « Parcourt les serveurs » (audit 14/10, K3).
         if (!running) discordPresence.setBrowsingActivity();
         // Le launcher s'était caché pendant la partie (réglage « garder le launcher ouvert » décoché) :
         // il se réaffiche tout seul quand le jeu se ferme.
-        if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
+        if (!running && settingsStore.shouldRestoreAfterPlaying()) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
             if (win.isMinimized()) win.restore();
@@ -2472,6 +3103,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       serverIp: server.ip,
       serverName: server.name,
       autoConnect: server.autoConnect,
+      addToServerList: server.addToServerList !== false,
       onProgress,
       memory: { min: `${memoryMinGB}G`, max: `${memoryMaxGB}G` },
       // Serveur moddé : le Java demandé par sa version de Minecraft (Forge plante
@@ -2519,13 +3151,14 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
 // Partage gameLaunchInProgress avec game:launch : les deux lancent reellement Minecraft, un
 // seul a la fois quel que soit le chemin.
 ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
   if (!isValidInstanceSlug(slug)) return { ok: false, error: "Serveur invalide." };
   if (gameLaunchInProgress) {
     return { ok: false, error: "Un lancement du jeu est déjà en cours." };
   }
   gameLaunchInProgress = true;
 
-  const task = createInstallTask(slug, null);
+  const task = createInstallTask(slug, null, "launch");
   broadcastTasks();
   logStore.pushLog({ source: "launcher", message: `Demande de lancement hors ligne pour "${slug}"` });
 
@@ -2620,7 +3253,7 @@ ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
           if (!win.isDestroyed()) win.webContents.send("game:state", running);
         }
         if (!running) discordPresence.setBrowsingActivity();
-        if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
+        if (!running && settingsStore.shouldRestoreAfterPlaying()) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
             if (win.isMinimized()) win.restore();
@@ -2663,6 +3296,532 @@ ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
   }
 });
 
+// --- Mode « Jouer » (bêta, 24/10) ---------------------------------------------------------
+// Jouer à n'importe quelle version sans serveur, en vanilla ou avec un pack officiel, et garder
+// ses mondes sauvegardés. Tout le travail sur le disque est dans playMode.js ; ici : les appels
+// du renderer, le lancement (même verrou et même panneau de tâches que « Rejoindre ») et les
+// sauvegardes à la fermeture du jeu.
+const playMode = createPlayMode({ gameRoot: GAME_ROOT, appDataDir: app.getPath("appData") });
+
+// Packs officiels publiés (site) : gardés 10 min en mémoire et sur le disque, pour pouvoir
+// relancer une version avec pack même si le site est injoignable.
+const PLAY_PACKS_CACHE = path.join(playMode.PLAY_ROOT, "packs-cache.json");
+let playPacksCache = null;
+async function fetchPlayPacks({ force = false } = {}) {
+  if (!force && playPacksCache && Date.now() - playPacksCache.at < 10 * 60_000) return playPacksCache.data;
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/public/play/packs`, { headers: launcherAuthHeaders() });
+    playPacksCache = { at: Date.now(), data };
+    fsp.mkdir(playMode.PLAY_ROOT, { recursive: true }).then(() => fsp.writeFile(PLAY_PACKS_CACHE, JSON.stringify(data))).catch(() => {});
+    return data;
+  } catch (error) {
+    try {
+      const data = JSON.parse(await fsp.readFile(PLAY_PACKS_CACHE, "utf8"));
+      return { ...data, offline: true };
+    } catch {
+      // Pas de cache : le badge bêta reste affiché, aucun pack proposé (Vanilla seulement).
+      return { beta: true, packs: [], offline: true, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+}
+// Version publiée d'un pack, aplatie pour playMode.createVersion (packId, versionId, files…).
+function flattenPackVersion(pack, version) {
+  return {
+    packId: pack.id,
+    slug: pack.slug,
+    name: pack.name,
+    versionId: version.id,
+    loaderVersion: version.loaderVersion,
+    files: version.files,
+    updatedAt: version.updatedAt,
+  };
+}
+
+// Synchro cloud des mondes (Supporter ; voir worldCloud.js) : envoi en arrière-plan, en pause
+// pendant le jeu, reprise au prochain démarrage. L'état est poussé au renderer (« cloud:update »).
+// Monde téléchargé d'un autre PC : on retrouve son pack et sa version (meta.json du zip).
+async function ensureVersionForMeta(meta) {
+  const mc = meta?.minecraftVersion;
+  if (!mc) return null;
+  const versions = playMode.listVersions();
+  if (meta.pack) {
+    const local = versions.find((v) => v.minecraftVersion === mc && v.pack && (v.pack.packId === meta.pack.packId || v.pack.slug === meta.pack.slug));
+    if (local) return local.id;
+    const data = await fetchPlayPacks();
+    const p = (data.packs || []).find((x) => x.id === meta.pack.packId || x.slug === meta.pack.slug);
+    const v = p?.versions?.find((x) => x.minecraftVersion === mc);
+    if (p && v) return (await playMode.createVersion({ minecraftVersion: mc, pack: flattenPackVersion(p, v) })).id;
+  }
+  const vanilla = versions.find((v) => v.minecraftVersion === mc && !v.pack);
+  if (vanilla) return vanilla.id;
+  await playMode.listMinecraftVersions().catch(() => {});
+  return (await playMode.createVersion({ minecraftVersion: mc })).id;
+}
+// Plusieurs PC : identité de cet appareil pour le site (verrou « monde ouvert », version envoyée).
+// Nom = nom de l'ordinateur ; en dev, MCHUB_DEVICE_NAME le remplace, et un profil jetable
+// (MCHUB_USER_DATA_DIR) a son propre identifiant : de quoi simuler un 2e PC sur le même ordinateur.
+function loadDevice() {
+  const file = path.join(app.getPath("userData"), "device.json");
+  let id = null;
+  try {
+    id = JSON.parse(fs.readFileSync(file, "utf8")).id;
+  } catch {
+    /* premier lancement */
+  }
+  if (!/^[\w-]{8,64}$/.test(id || "")) {
+    id = require("node:crypto").randomUUID();
+    try {
+      fs.writeFileSync(file, JSON.stringify({ id }));
+    } catch {
+      /* dossier en lecture seule : identifiant de cette session seulement */
+    }
+  }
+  const name = ((isDev && process.env.MCHUB_DEVICE_NAME) || os.hostname() || "PC").slice(0, 60);
+  return { id, name };
+}
+// Version d'un monde téléchargé : installée en arrière-plan (Minecraft, Java, pack). Un « Jouer »
+// sur la même version attend la fin, pour ne jamais installer deux fois les mêmes fichiers.
+const versionInstalls = new Map();
+let downloadedCount = 0;
+function installVersionInBackground(versionId) {
+  if (versionInstalls.has(versionId)) return versionInstalls.get(versionId);
+  const run = (async () => {
+    const settings = settingsStore.loadSettings();
+    await playMode.prepareVersion(versionId, {
+      deps: { ensureVanillaVersion, ensureJavaForMajor: javaManager.ensureJavaForMajor, installLoader, prepareLaunchVersion, installFiles },
+      javaPreferred: settings.javaPath || undefined,
+    });
+  })().finally(() => versionInstalls.delete(versionId));
+  versionInstalls.set(versionId, run);
+  return run;
+}
+const rawWorldCloud = createWorldCloud({
+  playMode,
+  siteUrl: SITE_URL,
+  authHeaders: launcherAuthHeaders,
+  currentUuid: () => currentSession?.profile?.id || null,
+  log: (level, message) => logStore.pushLog({ level, source: "launcher", message }),
+  onUpdate: (job) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("cloud:update", job);
+  },
+  onDownload: (djob) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("cloud:downloadUpdate", djob);
+    // Un monde de plus arrivé sur ce PC : la liste se met à jour (une fois par monde).
+    const arrived = djob ? djob.items.filter((i) => i.phase === "install" || i.done).length : 0;
+    if (arrived !== downloadedCount) {
+      downloadedCount = arrived;
+      if (arrived) for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+    }
+  },
+  ensureVersionForMeta,
+  installVersion: installVersionInBackground,
+  device: loadDevice(),
+});
+// Laboratoire (25/10) : « Mondes en ligne » coupé pour ce joueur = aucune méthode de la synchro ne
+// tourne (aucun appel au site, aucun minuteur, aucun téléchargement), d'où qu'elle soit appelée.
+const worldCloud = new Proxy(rawWorldCloud, {
+  get(target, prop) {
+    const value = target[prop];
+    // setGameRunning ne fait que noter l'état du jeu (audit du 25/10) : toujours transmis, sinon il
+    // restait « en jeu » si l'interrupteur changeait pendant une partie.
+    if (typeof value !== "function" || prop === "suspend" || prop === "setGameRunning") return value;
+    return (...args) => {
+      if (features.visible("worlds")) return value.apply(target, args);
+      return prop === "downloadJob" || prop === "lastStatus" || prop === "isTracked" ? null : Promise.resolve({ ok: false, code: "feature_off" });
+    };
+  },
+});
+// Versions miroir : la limite d'un monde sur ce PC s'applique aussi à ses versions en ligne.
+playMode.onBackupsPruned((key, drop) => worldCloud.dropPruned(key, drop));
+// Sauvegarde pendant la partie (F6, Maj+F6, toutes les X min, sortie d'un monde) : voir liveSave.js.
+const liveSave = createLiveSave({
+  playMode,
+  overlay: createSaveOverlay({ lockNavigation: lockAppNavigation, log: (entry) => logStore.pushLog(entry) }),
+  globalShortcut,
+  onBackup: (key, backup) => {
+    worldCloud.queueBackup(key, backup);
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+  },
+  onActivity: sendSaveActivity,
+  log: (entry) => logStore.pushLog(entry),
+  getLocale: () => settingsStore.loadSettings().locale,
+  getToastEnabled: () => settingsStore.loadSettings().playSaveToast !== false,
+  getDiscreet: () => settingsStore.loadSettings().discreetMode === true,
+  trackWindow: trackGameWindow,
+});
+const cloudError = (error) => ({ ok: false, error: error instanceof Error ? error.message : String(error), code: error?.code });
+ipcMain.handle("cloud:status", async (_event, opts) => {
+  if (!currentSession) return { ok: false, code: "session" };
+  try {
+    return await worldCloud.status({ force: opts?.force === true });
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:testConnection", () => worldCloud.testConnection());
+ipcMain.handle("cloud:sync", async (_event, keys) => {
+  try {
+    return await worldCloud.sync(Array.isArray(keys) ? keys.filter((k) => typeof k === "string") : []);
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:remove", (_event, key) => worldCloud.remove(String(key || "")));
+ipcMain.handle("cloud:pause", () => worldCloud.pause());
+ipcMain.handle("cloud:resume", () => worldCloud.resume());
+ipcMain.handle("cloud:stop", () => worldCloud.stop());
+// « Versions en ligne » (25/10) : ☁ Envoyer / ✕ Retirer du cloud sur une sauvegarde.
+ipcMain.handle("cloud:sendBackup", (_e, key, backupId) => worldCloud.sendBackup(String(key || ""), String(backupId || "")));
+ipcMain.handle("cloud:uncloudBackup", (_e, key, backupId) => worldCloud.uncloudBackup(String(key || ""), String(backupId || "")));
+// Plusieurs PC (voir worldCloud.js) : vérification avant « Jouer », récupération de la dernière
+// version, attente qu'un monde soit fermé ailleurs, choix entre deux versions, téléchargements.
+const sendAll = (channel, payload) => {
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(channel, payload);
+};
+ipcMain.handle("cloud:beforePlay", async (_event, key, opts) => {
+  try {
+    return await worldCloud.beforePlay(String(key || ""), { force: opts?.force === true });
+  } catch (error) {
+    // Site injoignable : on ne bloque pas la partie (rien n'est écrasé : un split est détecté à l'envoi).
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Cloud : vérification avant de jouer impossible (${error.message})` });
+    return { ok: true, conflict: null, offline: true };
+  }
+});
+ipcMain.handle("cloud:fetchLatest", async (_event, key) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  try {
+    const out = await worldCloud.fetchLatest(String(key || ""));
+    sendAll("play:worldsChanged");
+    return out;
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:waitClosed", (_event, key) => {
+  const k = String(key || "");
+  return worldCloud.waitClosed(k, (result) => {
+    sendAll("cloud:waitDone", { key: k, ...result });
+    if (result.fetched) sendAll("play:worldsChanged");
+  });
+});
+ipcMain.handle("cloud:cancelWait", (_event, key) => {
+  worldCloud.cancelWait(String(key || ""));
+  return { ok: true };
+});
+ipcMain.handle("cloud:resolveSplit", async (_event, key, versionId) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  const out = await worldCloud.resolveSplit(String(key || ""), String(versionId || ""));
+  if (out.ok) sendAll("play:worldsChanged");
+  return out;
+});
+ipcMain.handle("cloud:downloadMany", async (_event, ids) => {
+  try {
+    return await worldCloud.downloadMany(Array.isArray(ids) ? ids.filter((x) => typeof x === "string") : []);
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:downloadJob", () => worldCloud.downloadJob());
+ipcMain.handle("cloud:download", async (_event, worldId) => {
+  if (playRunning) return { ok: false, error: "Quitte le jeu d'abord." };
+  const out = await worldCloud.download(String(worldId || ""));
+  if (out.ok) for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+  return out;
+});
+
+const playError = (error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) });
+
+ipcMain.handle("play:packs", async (_event, { force = false } = {}) => {
+  const data = await fetchPlayPacks({ force });
+  return { ok: true, ...data };
+});
+ipcMain.handle("play:mcVersions", async () => {
+  try {
+    return { ok: true, versions: await playMode.listMinecraftVersions() };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:listVersions", () => ({ ok: true, versions: playMode.listVersions() }));
+ipcMain.handle("play:createVersion", async (_event, { minecraftVersion, packId = null, name = "" } = {}) => {
+  try {
+    let pack = null;
+    if (packId) {
+      const data = await fetchPlayPacks();
+      const p = (data.packs || []).find((x) => x.id === packId);
+      const v = p?.versions?.find((x) => x.minecraftVersion === minecraftVersion);
+      if (!p || !v) return { ok: false, error: "Ce pack n'est pas encore prêt pour cette version." };
+      pack = flattenPackVersion(p, v);
+    }
+    return { ok: true, version: await playMode.createVersion({ minecraftVersion, pack, name }) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:renameVersion", async (_event, id, name) => ({ ok: await playMode.renameVersion(id, name) }));
+ipcMain.handle("play:removeVersion", async (_event, id) => {
+  if (playRunning?.versionId === id) return { ok: false, error: "Cette version est en train de tourner." };
+  return { ok: await playMode.removeVersion(id) };
+});
+ipcMain.handle("play:listWorlds", async () => {
+  try {
+    return { ok: true, worlds: await playMode.listWorlds(), running: playRunning ? { versionId: playRunning.versionId } : null };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:setWorldBackup", async (_event, key, on, opts) => {
+  try {
+    return await playMode.setWorldBackup(key, on, opts);
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:listBackups", async (_event, key) => ({ ok: true, backups: key ? await playMode.listBackups(key) : [], keep: playMode.keepConfig() }));
+// Limite des sauvegardes gardées sur ce PC, monde par monde (nombre ou taille). Dans la file des
+// sauvegardes : jamais pendant qu'une sauvegarde en jeu écrit la liste du même monde.
+ipcMain.handle("play:testOverlay", async (event) => {
+  await liveSave.testOverlay(BrowserWindow.fromWebContents(event.sender)?.getBounds() || null);
+  return { ok: true };
+});
+// Réglages des sauvegardes, les mêmes pour tous les mondes (25/10) : `key` n'est plus utilisé.
+ipcMain.handle("play:setBackupLimit", async (_event, _key, cfg) => {
+  if (!cfg || typeof cfg !== "object") return { ok: false, error: "Réglage invalide." };
+  try {
+    const out = await liveSave.enqueue(() => playMode.setKeepConfig(cfg));
+    // Partiel : les versions en trop sortent du cloud (restent sur le PC) ; Toutes : celles qui
+    // manquent en ligne partent.
+    worldCloud.applySettings().catch(() => {});
+    return out;
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+// Une sauvegarde ou une restauration ne touche jamais un monde pendant que le jeu tourne.
+function playGameBusy() {
+  // Audit du 25/10 : pendant le déplacement du dossier des jeux, rien n'écrit dans les mondes
+  // (l'ancien dossier est vidé à la fin).
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
+  return getRunningGame() || gameLaunchInProgress ? { ok: false, code: "gameRunning", error: "Ferme Minecraft d'abord : on ne touche pas à un monde ouvert." } : null;
+}
+// Sauvegarde en cours, montrée dans la pilule en haut à droite (play.js, retour de Rushi du 25/10).
+function sendSaveActivity(activity) {
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:saveActivity", activity);
+}
+ipcMain.handle("play:backupNow", async (_event, key, label) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  sendSaveActivity({ key, label: label || null, phase: "start" });
+  try {
+    // Dans la file des sauvegardes (audit du 25/10) : jamais en même temps que celle de fin de partie.
+    const result = await liveSave.enqueue(() => playMode.backupWorld(key, { reason: "manual", label, force: true }));
+    if (result.backup) worldCloud.queueBackup(key, result.backup);
+    sendSaveActivity({ key, label: label || null, phase: result.backup ? "done" : "skip" });
+    return result;
+  } catch (error) {
+    sendSaveActivity({ key, label: label || null, phase: "fail" });
+    return playError(error);
+  }
+});
+// Supprimer une sauvegarde à la main (confirmée en tapant « supprimer ») : sur ce PC, et aussi dans
+// le cloud (versions miroir), sauf la version à continuer, que le site garde.
+ipcMain.handle("play:deleteBackup", async (_event, key, backupId) => {
+  if (typeof key !== "string" || typeof backupId !== "string") return { ok: false, error: "Sauvegarde introuvable." };
+  try {
+    const b = await liveSave.enqueue(() => playMode.deleteBackup(key, backupId));
+    worldCloud.dropPruned(key, [b], { explicit: true });
+    return { ok: true };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:restoreBackup", async (_event, key, backupId) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  try {
+    return await liveSave.enqueue(() => playMode.restoreBackup(key, backupId));
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:scanImport", async (_event, dir) => {
+  try {
+    return { ok: true, ...(await playMode.scanImportable(dir || null)) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:pickImportDir", async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showOpenDialog(win, {
+    title: "Dossier de mondes Minecraft (saves)",
+    defaultPath: playMode.defaultMinecraftSaves(),
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+  return { ok: true, dir: result.filePaths[0] };
+});
+ipcMain.handle("play:import", async (_event, dir, folders) => {
+  try {
+    const imported = await playMode.importWorlds(dir || null, Array.isArray(folders) ? folders : []);
+    // Sauvegarde activée par défaut : une première sauvegarde de chaque copie.
+    for (const w of imported) {
+      playMode
+        .backupWorld(w.key, { reason: "import" })
+        .then((r) => r.backup && worldCloud.queueBackup(w.key, r.backup))
+        .catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Première sauvegarde de « ${w.name} » impossible : ${error.message}` }));
+    }
+    return { ok: true, imported };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:openWorldFolder", async (_event, key) => {
+  const found = key ? await playMode.worldDir(key) : null;
+  return shell.openPath(found ? found.dir : playMode.SAVES);
+});
+
+// Partie en cours lancée depuis Jouer : version et heure de départ (mondes modifiés ensuite).
+let playRunning = null;
+
+ipcMain.handle("play:launch", async (event, { versionId, worldKey = null } = {}) => {
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
+  if (!currentSession) return { ok: false, code: "signin", error: "Connecte-toi avec ton compte Microsoft pour jouer." };
+  if (gameLaunchInProgress || getRunningGame()) return { ok: false, code: "gameRunning", error: "Minecraft est déjà lancé." };
+  gameLaunchInProgress = true;
+  let task = null;
+  try {
+    let quickPlayWorld = null;
+    if (worldKey) {
+      // Toujours la version du monde (jamais une autre) : sinon « needVersion » / « chooseVersion »,
+      // et le launcher demande au joueur avant de lancer quoi que ce soit.
+      const chosen = await playMode.versionForWorld(worldKey, { pick: versionId || null });
+      versionId = chosen.versionId;
+      quickPlayWorld = chosen.world.folder;
+      // Restauration demandée sur le site : faite maintenant, avant d'ouvrir le monde.
+      await worldCloud.applyPendingRestore(worldKey).catch((error) =>
+        logStore.pushLog({ level: "warn", source: "launcher", message: `Restauration en attente non appliquée : ${error.message}` }),
+      );
+    }
+    const version = playMode.getVersion(versionId);
+    if (!version) return { ok: false, error: "Cette version n'existe plus dans Mes versions." };
+    const label = version.name || `${version.minecraftVersion}${version.pack ? ` · ${version.pack.name?.fr || version.pack.slug}` : ""}`;
+    task = createInstallTask(`play:${versionId}`, label, "launch");
+    broadcastTasks();
+    const onProgress = (status) => {
+      updateTaskFromProgress(task, status);
+      broadcastTasks();
+      event.sender.send("game:progress", status);
+    };
+    onProgress({ name: label, modded: !!version.pack });
+
+    // Pack : la liste des mods la plus récente publiée par l'équipe (sinon celle déjà connue).
+    if (version.pack) {
+      const data = await fetchPlayPacks();
+      const p = (data.packs || []).find((x) => x.id === version.pack.packId);
+      const v = p?.versions?.find((x) => x.id === version.pack.versionId || x.minecraftVersion === version.minecraftVersion);
+      if (p && v) await playMode.refreshPackFiles(versionId, flattenPackVersion(p, v));
+    }
+
+    // Version d'un monde téléchargé encore en cours d'installation : on attend qu'elle finisse.
+    if (versionInstalls.has(versionId)) {
+      onProgress({ text: "Installation de la version du monde…" });
+      await versionInstalls.get(versionId).catch(() => {});
+    }
+    const settings = settingsStore.loadSettings();
+    const prepared = await playMode.prepareVersion(versionId, {
+      deps: { ensureVanillaVersion, ensureJavaForMajor: javaManager.ensureJavaForMajor, installLoader, prepareLaunchVersion, installFiles },
+      onProgress,
+      signal: task.controller.signal,
+      waitIfPaused: taskWaitIfPaused(task),
+      javaPreferred: settings.javaPath || undefined,
+    });
+    task.status = "complete";
+    task.step = "start";
+    task.bytes = task.totalBytes || task.bytes;
+    broadcastTasks();
+    event.sender.send("game:progress", { step: "start" });
+
+    const startedAt = Date.now();
+    await launchMinecraft({
+      onGameState: (running, exitCode) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send("game:state", running, exitCode ?? null);
+        }
+        if (running) {
+          playRunning = { versionId, startedAt };
+          worldCloud.setGameRunning(true);
+          if (features.visible("liveSave")) liveSave.start({ startedAt, pid: getRunningGame()?.pid, worldKey });
+          return;
+        }
+        // Avant de réafficher les fenêtres : ferme le petit menu en jeu et libère F6.
+        const liveDone = liveSave.stop();
+        discordPresence.setBrowsingActivity();
+        if (settingsStore.shouldRestoreAfterPlaying()) {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (win.isDestroyed()) continue;
+            if (win.isMinimized()) win.restore();
+            win.show();
+            win.focus();
+          }
+        }
+        // Jeu fermé : plus rien n'écrit dans les mondes, on peut les sauvegarder.
+        const ended = playRunning;
+        playRunning = null;
+        liveDone
+          .then(() => liveSave.enqueue(() => playMode.afterGame(ended?.versionId || versionId, ended?.startedAt || startedAt)))
+          .then((created) => {
+            for (const c of created) {
+              if (c.backup) worldCloud.queueBackup(c.key, c.backup);
+              else if (c.error) logStore.pushLog({ level: "warn", source: "launcher", message: `Sauvegarde du monde impossible : ${c.error}` });
+            }
+            for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+          })
+          .catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Sauvegarde après la partie impossible : ${error.message}` }))
+          .finally(() => worldCloud.setGameRunning(false));
+      },
+      authorization: currentSession.authorization,
+      version: prepared.minecraftVersion,
+      serverIp: null,
+      serverName: null,
+      autoConnect: false,
+      addToServerList: false,
+      onProgress,
+      memory: { min: `${settings.memoryMinGB}G`, max: `${settings.memoryMaxGB}G` },
+      javaPath: prepared.javaPath || settings.javaPath || undefined,
+      gameDirectory: prepared.gameDirectory,
+      customVersion: prepared.customVersion,
+      customJvmArgs: prepared.jvmArgs,
+      slug: `play:${versionId}`,
+      onGameLine: (text) => liveSave.line(text),
+      quickPlayWorld: quickPlayWorld && supportsQuickPlay(prepared.minecraftVersion) ? quickPlayWorld : null,
+    });
+    await playMode.touchVersion(versionId);
+    discordPresence.setPlayingActivity(`Minecraft ${prepared.minecraftVersion}`, version.pack?.name?.fr || null, { isPrivate: true });
+    return { ok: true, versionId };
+  } catch (error) {
+    const cancelled = error?.name === "AbortError";
+    // Lancement raté : le verrou « monde ouvert » pris avant (plusieurs PC) est rendu.
+    worldCloud.releaseLocks().catch(() => {});
+    if (task && (task.status === "active" || task.status === "paused")) {
+      task.status = cancelled ? "cancelled" : "error";
+      task.error = cancelled ? null : error instanceof Error ? error.message : "Erreur inconnue";
+      broadcastTasks();
+    }
+    if (cancelled) return { ok: false, cancelled: true };
+    if (error?.code === "needVersion" || error?.code === "chooseVersion") {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Jouer : ${error.message} Rien n'a été lancé.` });
+      return { ok: false, code: error.code, error: error.message, minecraftVersion: error.minecraftVersion || null, worldName: error.worldName || null };
+    }
+    logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement (Jouer) : ${error instanceof Error ? error.message : error}` });
+    return playError(error);
+  } finally {
+    gameLaunchInProgress = false;
+  }
+});
+
 // "Tester pour publication" (Mes instances) : auto-test que le PROPRIETAIRE lance lui-meme
 // avant de pouvoir publier son serveur (voir le nouveau flux cote site, selfTestPassedAt).
 // Reutilise les memes briques que game:launch (ping, installModpack, launchMinecraft) —
@@ -2691,8 +3850,44 @@ ipcMain.handle("selftest:abort", async () => {
   if (!selfTestInProgress) return { ok: false, code: "not_running" };
   selfTestAbortRequested = true;
   selfTestTask?.controller.abort();
+  // Aide guidee ouverte pendant le test (lot 5) : l'annulation la referme comme « Plus tard ».
+  if (selfTestManualAnswer) {
+    const answer = selfTestManualAnswer;
+    selfTestManualAnswer = null;
+    answer("close");
+  }
   return { ok: true };
 });
+
+// Lot 5 (audit 17/10, choix de Rushi le 18/10 : « aide puis lancement ») : quand seuls des mods
+// bloques manquent, le test ouvre l'aide guidee pour le proprietaire. S'il ajoute les mods, le
+// test continue et lance le jeu ; sinon « Jeu démarré » reste « non testé » et la publication
+// reste possible avec l'avertissement. false = pas d'aide ni de lancement pendant le test.
+const SELFTEST_GUIDE_THEN_LAUNCH = true;
+let selfTestManualAnswer = null;
+ipcMain.handle("selftest:manualModsAnswer", (_event, answer) => {
+  const resolve = selfTestManualAnswer;
+  selfTestManualAnswer = null;
+  resolve?.(answer === "retry" ? "retry" : "close");
+  return { ok: true };
+});
+function askOwnerForManualMods(sender, fields) {
+  return new Promise((resolve) => {
+    // Filet : fenetre rechargee ou fermee sans reponse -> on continue comme « Plus tard ».
+    const timer = setTimeout(() => {
+      if (selfTestManualAnswer) {
+        selfTestManualAnswer = null;
+        resolve("close");
+      }
+    }, 20 * 60 * 1000);
+    selfTestManualAnswer = (answer) => {
+      clearTimeout(timer);
+      resolve(answer);
+    };
+    if (sender.isDestroyed()) return selfTestManualAnswer("close");
+    sender.send("selftest:manualMods", fields);
+  });
+}
 
 ipcMain.handle("selftest:run", async (event, slug) => {
   if (!isValidInstanceSlug(slug)) return { ok: false, error: "Serveur invalide." };
@@ -2708,7 +3903,7 @@ ipcMain.handle("selftest:run", async (event, slug) => {
 
   // Meme registre de taches que "Installer"/"Rejoindre" (2026-10-11) : le telechargement du
   // check #2 doit apparaitre dans le meme panneau, pas rester invisible pendant qu'il tourne.
-  const task = createInstallTask(slug, null);
+  const task = createInstallTask(slug, null, "selftest");
   selfTestTask = task;
   broadcastTasks();
   const onProgress = (status) => {
@@ -2720,6 +3915,9 @@ ipcMain.handle("selftest:run", async (event, slug) => {
   const report = (step, status, detail) => event.sender.send("selftest:progress", { step, status, detail });
   const checks = { reachable: false, modpackInstalled: false, gameStarted: false };
   let detectedVersion = null;
+  // Lot 5 : mods a ajouter a la main (tous « bloques ») — le test passe avec un avertissement.
+  let manualModsReport = null;
+  let fromModrinthMods = [];
 
   // Si le test a été annulé, marque le check en cours comme échoué/annulé et conclut
   // immédiatement — les checks suivants, jamais atteints, restent "pending" côté UI et
@@ -2778,27 +3976,50 @@ ipcMain.handle("selftest:run", async (event, slug) => {
     report("modpack", "running");
     let modded = null;
     let vanilla = null;
+    const runModpackInstall = () =>
+      installModpack({
+        config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: launcherAuthHeaders() },
+        slug,
+        gameRoot: GAME_ROOT,
+        javaPath: settings.javaPath || undefined,
+        resolveJava: (major, onJavaProgress) =>
+          javaManager.ensureJavaForMajor(major, { preferredPath: settings.javaPath || undefined, onProgress: onJavaProgress }),
+        onProgress,
+        signal: task.controller.signal,
+        waitIfPaused: taskWaitIfPaused(task),
+        manualSearchDirs: manualModsSearchDirs(),
+        onWarning: (message) => logStore.pushLog({ level: "warn", source: "launcher", message }),
+      });
     try {
       if (server.type === "modded" && server.curseforgeModpackId) {
-        modded = await installModpack({
-          config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: launcherAuthHeaders() },
-          slug,
-          gameRoot: GAME_ROOT,
-          javaPath: settings.javaPath || undefined,
-          resolveJava: (major, onJavaProgress) =>
-            javaManager.ensureJavaForMajor(major, { preferredPath: settings.javaPath || undefined, onProgress: onJavaProgress }),
-          onProgress,
-          signal: task.controller.signal,
-          waitIfPaused: taskWaitIfPaused(task),
-          manualSearchDirs: manualModsSearchDirs(),
-          onWarning: (message) => logStore.pushLog({ level: "warn", source: "launcher", message }),
-        });
+        modded = await runModpackInstall();
+        fromModrinthMods = modded?.fromModrinthMods || [];
       } else {
         vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
       }
     } catch (error) {
-      // Mods bloques : la liste est montree au proprietaire sous le controle (14/10).
-      report("modpack", "fail", { error: error instanceof Error ? error.message : String(error), ...modpackErrorFields(error) });
+      const fields = modpackErrorFields(error);
+      const onlyBlocked = fields.code === "manual_mods" && fields.manualMods.length > 0 && fields.manualMods.every((mod) => mod.reason === "blocked");
+      if (onlyBlocked) {
+        // Lot 5 : ce n'est plus un echec. Les joueurs seront guides pas a pas pour ces mods.
+        manualModsReport = fields.manualMods;
+        fromModrinthMods = fields.fromModrinthMods || [];
+        checks.modpackInstalled = true;
+        report("modpack", "warn", fields);
+        if (SELFTEST_GUIDE_THEN_LAUNCH && !selfTestAbortRequested) {
+          const answer = await askOwnerForManualMods(event.sender, fields);
+          if (answer === "retry") {
+            try {
+              modded = await runModpackInstall();
+            } catch (retryError) {
+              logStore.pushLog({ source: "launcher", message: `Auto-test : mods encore manquants apres l'aide (${retryError instanceof Error ? retryError.message : retryError})` });
+            }
+          }
+        }
+      } else {
+        // Fichier retire de CurseForge ou autre erreur : vrai echec (liste montree sous le controle).
+        report("modpack", "fail", { error: error instanceof Error ? error.message : String(error), ...fields });
+      }
     }
     // Moddé : le téléchargement du modpack (mods inclus) est entièrement fini à cet instant — on
     // peut juger ce check tout de suite, sans attendre le lancement. Bug trouvé le 2026-10-13 (test
@@ -2807,9 +4028,9 @@ ipcMain.handle("selftest:run", async (event, slug) => {
     // (aucun rapport avec le modpack testé), et le succès de CE lancement de secours écrasait
     // l'échec pourtant réel du check modpack plus bas. Le vanilla, lui, reste décidé par le
     // lancement (ensureVanillaVersion ne télécharge que JSON+jar, pas bibliothèques/assets).
-    if (server.type === "modded" && server.curseforgeModpackId && modded) {
+    if (server.type === "modded" && server.curseforgeModpackId && modded && !manualModsReport) {
       checks.modpackInstalled = true;
-      report("modpack", "pass");
+      report("modpack", "pass", { fromModrinthMods });
     }
     if (bailIfAborted("gameStarted")) return { ok: true, checks, detectedVersion, allPassed: false, aborted: true };
 
@@ -2828,9 +4049,11 @@ ipcMain.handle("selftest:run", async (event, slug) => {
         task.error = "Modpack incomplet";
         broadcastTasks();
       }
-      report("gameStarted", "skipped", { incompletePack: true });
-      logStore.pushLog({ source: "launcher", message: `Auto-test de publication terminé pour "${slug}" : échoué (modpack incomplet)` });
-      return { ok: true, checks, detectedVersion, allPassed: false };
+      report("gameStarted", "skipped", { incompletePack: !manualModsReport, manualModsSkipped: !!manualModsReport });
+      // Seuls des mods a ajouter a la main manquent : publication possible avec l'avertissement.
+      const canPublish = !!manualModsReport && checks.reachable;
+      logStore.pushLog({ source: "launcher", message: `Auto-test de publication terminé pour "${slug}" : ${canPublish ? "publiable avec avertissement (mods à ajouter à la main)" : "échoué (modpack incomplet)"}` });
+      return { ok: true, checks, detectedVersion, allPassed: false, canPublish, manualMods: manualModsReport, fromModrinthMods };
     }
     report("gameStarted", "running");
     let gameJava = modded?.javaPath;
@@ -2866,6 +4089,7 @@ ipcMain.handle("selftest:run", async (event, slug) => {
         serverIp: server.ip,
         serverName: server.name,
         autoConnect: server.autoConnect,
+        addToServerList: server.addToServerList !== false,
         onProgress,
         memory: { min: `${settings.memoryMinGB}G`, max: `${settings.memoryMaxGB}G` },
         javaPath: gameJava || settings.javaPath || undefined,
@@ -2890,7 +4114,7 @@ ipcMain.handle("selftest:run", async (event, slug) => {
 
     const allPassed = checks.reachable && checks.modpackInstalled && checks.gameStarted;
     logStore.pushLog({ source: "launcher", message: `Auto-test de publication terminé pour "${slug}" : ${allPassed ? "réussi" : "échoué"}` });
-    return { ok: true, checks, detectedVersion, allPassed };
+    return { ok: true, checks, detectedVersion, allPassed, canPublish: allPassed, manualMods: manualModsReport, fromModrinthMods };
   } catch (error) {
     // Echec avant que l'etape 2 n'ait eu l'occasion de marquer la tache "complete"
     // (ex. fetchJson initial echoue) : evite de la laisser "active" pour toujours.
@@ -2913,12 +4137,20 @@ ipcMain.handle("selftest:run", async (event, slug) => {
 // Rapporte un test 100% réussi au site (voir /api/launcher/servers/[slug]/self-test) — seule la
 // fiche le stocke (selfTestPassedAt) et seulement si les 3 contrôles sont vrais ; le site
 // re-vérifie aussi côté serveur (jamais confiance au client seul pour débloquer la publication).
-ipcMain.handle("selftest:report", async (_event, { slug, checks, detectedVersion }) => {
+ipcMain.handle("selftest:report", async (_event, { slug, checks, detectedVersion, manualMods }) => {
   try {
+    // Lot 5 : mods a ajouter a la main, pour le badge « X mods à ajouter » de la fiche.
+    const list = Array.isArray(manualMods)
+      ? manualMods.slice(0, 200).map((mod) => ({
+          modName: mod?.modName ? String(mod.modName).slice(0, 120) : null,
+          fileName: mod?.fileName ? String(mod.fileName).slice(0, 200) : null,
+          pageUrl: safeModPageUrl(mod?.pageUrl),
+        }))
+      : [];
     const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/self-test`, {
       method: "POST",
       headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ checks, detectedVersion }),
+      body: JSON.stringify({ checks, detectedVersion, manualMods: list }),
     });
     // 2026-10-11 : un test reussi envoie maintenant directement la fiche en file d'attente
     // (isPrivate passe a false cote site, voir self-test/route.ts) — sans vider le cache,
@@ -2946,6 +4178,7 @@ app.whenReady().then(async () => {
   logStore.setMinFileLevel(settingsStore.loadSettings().logLevel);
   logStore.pruneOldLogs();
   logStore.pushLog({ source: "launcher", message: `Démarrage d'Omniscient Launcher ${app.getVersion()}` });
+  ensureDevStartMenuShortcut();
   createWindow();
   const startupSettings = settingsStore.loadSettings();
   discordPresence.init(DISCORD_CLIENT_ID, {
@@ -2977,4 +4210,186 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+// --- Dossier des jeux sur un autre disque (serie 2, idee 9, version validee) --------------------
+// Tout le dossier des jeux (instances, mondes, mods, Java, cache) part en entier : copier, verifier,
+// basculer (pointeur dans userData + redemarrage du launcher), puis effacer l'ancien au demarrage
+// suivant. Voir gamesLocation.js. Pendant le deplacement, rien ne peut s'installer ni se lancer.
+const GAMES_MOVE_BUSY = "Déplacement de tes jeux en cours : attends la fin pour jouer ou installer.";
+const gamesMove = { active: false, cancel: false, progress: null };
+let gamesJustMoved = null;
+let gamesSizeCache = null;
+
+function formatGB(bytes) {
+  return `${(bytes / 1024 ** 3).toFixed(1).replace(".", ",")} Go`;
+}
+
+async function gamesFolderInfo() {
+  const free = await gamesLocation.freeBytesOf(gamesLocation.GAMES_BASE).catch(() => null);
+  return { gamesFolder: gamesLocation.GAMES_BASE, gamesFree: free ? formatGB(free.free) : "" };
+}
+
+function broadcastGamesMove(payload) {
+  gamesMove.progress = payload;
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send("games:moveProgress", payload);
+  }
+}
+
+function gamesBusyReason() {
+  if (getRunningGame() || gameLaunchInProgress) return "gameRunning";
+  if ([...installTasks.values()].some((t) => t.status === "active" || t.status === "paused" || t.status === "queued")) return "installing";
+  return null;
+}
+
+ipcMain.handle("games:info", async () => {
+  const journal = gamesLocation.readJournal();
+  const interrupted = journal && journal.stage !== "switched" && !gamesMove.active ? journal : null;
+  return {
+    base: gamesLocation.GAMES_BASE,
+    drive: gamesLocation.driveOf(gamesLocation.GAMES_BASE),
+    isDefault: gamesLocation.samePath(gamesLocation.GAMES_BASE, gamesLocation.USER_DATA),
+    missingRoot: gamesLocation.MISSING_ROOT,
+    interrupted: interrupted ? { to: interrupted.to, toDrive: gamesLocation.driveOf(interrupted.to), copiedBytes: interrupted.copiedBytes || 0, totalBytes: interrupted.totalBytes || 0 } : null,
+    justMoved: gamesJustMoved,
+    moving: gamesMove.active ? gamesMove.progress : null,
+  };
+});
+
+ipcMain.handle("games:size", async (_event, { refresh = false } = {}) => {
+  if (!gamesSizeCache || refresh) {
+    const { files, bytes } = await gamesLocation.listFiles(gamesLocation.GAMES_BASE);
+    gamesSizeCache = { bytes, files: files.length };
+  }
+  return gamesSizeCache;
+});
+
+ipcMain.handle("games:drives", async () => {
+  const drives = await gamesLocation.listDrives();
+  const current = gamesLocation.driveOf(gamesLocation.GAMES_BASE);
+  return drives.map((drive) => ({ ...drive, current: drive.drive === current, target: gamesLocation.targetForDrive(drive.drive) }));
+});
+
+ipcMain.handle("games:openFolder", () => shell.openPath(gamesLocation.GAMES_BASE));
+
+ipcMain.handle("games:move", async (_event, { drive, deleteOld = true, resume = false } = {}) => {
+  if (gamesMove.active) return { ok: false, code: "moving" };
+  const from = gamesLocation.GAMES_BASE;
+  const journal = gamesLocation.readJournal();
+  const to = resume && journal ? journal.to : gamesLocation.targetForDrive(drive);
+  if (!to) return { ok: false, code: "badDrive" };
+  if (gamesLocation.samePath(to, from)) return { ok: false, code: "sameDrive" };
+  if (gamesLocation.isInside(to, from) || gamesLocation.isInside(from, to)) return { ok: false, code: "nested" };
+  const busy = gamesBusyReason();
+  if (busy) return { ok: false, code: busy };
+
+  const toIsHome = gamesLocation.samePath(to, gamesLocation.USER_DATA);
+  const ours = toIsHome || fs.existsSync(path.join(to, gamesLocation.MARKER));
+  if (!ours && fs.existsSync(to) && (await fsp.readdir(to).catch(() => [])).length) return { ok: false, code: "targetNotEmpty", target: to };
+
+  gamesMove.active = true;
+  gamesMove.cancel = false;
+  const keepDelete = resume && journal ? journal.deleteOld !== false : deleteOld !== false;
+  try {
+    broadcastGamesMove({ stage: "scan", doneBytes: 0, totalBytes: 0, to, drive: gamesLocation.driveOf(to) });
+    const { files, bytes } = await gamesLocation.listFiles(from);
+    // Place necessaire : ce qui n'est pas deja copie (reprise) + 300 Mo de marge.
+    let already = 0;
+    if (ours) {
+      for (const file of files) {
+        const stat = await fsp.stat(path.join(to, file.rel)).catch(() => null);
+        if (stat && stat.size === file.size) already += file.size;
+      }
+    }
+    const space = await gamesLocation.freeBytesOf(to);
+    const need = bytes - already + 300 * 1024 ** 2;
+    if (space.free < need) return { ok: false, code: "noSpace", needBytes: need, freeBytes: space.free };
+
+    await fsp.mkdir(to, { recursive: true });
+    if (!toIsHome) await fsp.writeFile(path.join(to, gamesLocation.MARKER), "Dossier des jeux d'Omniscient Launcher. Ne pas supprimer ce fichier.\n");
+    gamesLocation.writeJournal({ from, to, deleteOld: keepDelete, stage: "copy", totalBytes: bytes, startedAt: new Date().toISOString() });
+    logStore.pushLog({ source: "launcher", message: `Déplacement des jeux : ${from} -> ${to} (${formatGB(bytes)})` });
+
+    let lastJournal = 0;
+    await gamesLocation.copyAndVerify({
+      from,
+      to,
+      files,
+      totalBytes: bytes,
+      isCancelled: () => gamesMove.cancel,
+      onProgress: (progress) => {
+        broadcastGamesMove({ ...progress, to, drive: gamesLocation.driveOf(to) });
+        if (Date.now() - lastJournal > 3000) {
+          lastJournal = Date.now();
+          gamesLocation.writeJournal({ from, to, deleteOld: keepDelete, stage: progress.stage, totalBytes: bytes, copiedBytes: progress.doneBytes });
+        }
+      },
+    });
+    // Bascule : le pointeur designe le nouveau dossier ; l'ancien sera efface au redemarrage.
+    gamesLocation.writeJournal({ from, to, deleteOld: keepDelete, stage: "switched", totalBytes: bytes, copiedBytes: bytes });
+    gamesLocation.setPointer(to);
+    logStore.pushLog({ source: "launcher", message: `Déplacement des jeux vérifié, bascule vers ${to}` });
+    broadcastGamesMove({ stage: "switched", doneBytes: bytes, totalBytes: bytes, to, drive: gamesLocation.driveOf(to) });
+    return { ok: true, to, drive: gamesLocation.driveOf(to) };
+  } catch (error) {
+    if (error?.code === "cancelled") {
+      // Annuler est sans risque : on n'a jamais touche a l'ancien dossier ; la copie a moitie
+      // faite est effacee (sauf vers userData, ou elle peut se meler a d'anciens fichiers).
+      if (!toIsHome) await gamesLocation.removeGamesFrom(to).catch(() => {});
+      gamesLocation.clearJournal();
+      logStore.pushLog({ source: "launcher", message: "Déplacement des jeux annulé" });
+      return { ok: false, code: "cancelled" };
+    }
+    const code = error?.code === "ENOSPC" ? "noSpace" : ["ENOENT", "EIO", "ENODEV", "EBUSY", "EPERM", "EACCES", "UNKNOWN"].includes(error?.code) && !fs.existsSync(to) ? "targetLost" : "failed";
+    logStore.pushLog({ level: "error", source: "launcher", message: `Échec du déplacement des jeux : ${error instanceof Error ? error.message : String(error)}` });
+    return { ok: false, code, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    gamesMove.active = false;
+    gamesSizeCache = null;
+  }
+});
+
+ipcMain.handle("games:cancelMove", () => {
+  if (gamesMove.active) gamesMove.cancel = true;
+  return { ok: true };
+});
+
+// Deplacement interrompu (launcher ferme, coupure) : « Annuler et rester ici » efface la copie a
+// moitie faite. « Reprendre » repasse par games:move avec resume.
+ipcMain.handle("games:abandonInterrupted", async () => {
+  const journal = gamesLocation.readJournal();
+  if (!journal || journal.stage === "switched" || gamesMove.active) return { ok: false };
+  if (!gamesLocation.samePath(journal.to, gamesLocation.USER_DATA) && !gamesLocation.samePath(journal.to, gamesLocation.GAMES_BASE)) {
+    await gamesLocation.removeGamesFrom(journal.to).catch(() => {});
+  }
+  gamesLocation.clearJournal();
+  return { ok: true };
+});
+
+ipcMain.handle("games:ackMoved", () => {
+  gamesJustMoved = null;
+});
+
+ipcMain.handle("games:restart", () => {
+  app.relaunch();
+  app.exit(0);
+});
+
+// Au demarrage : fin d'un deplacement bascule (effacer l'ancien dossier si demande).
+app.whenReady().then(async () => {
+  const journal = gamesLocation.readJournal();
+  if (!journal || journal.stage !== "switched") return;
+  if (!gamesLocation.samePath(gamesLocation.GAMES_BASE, journal.to)) return; // nouveau dossier introuvable : on garde tout
+  let deleted = false;
+  if (journal.deleteOld !== false && !gamesLocation.samePath(journal.from, journal.to)) {
+    try {
+      deleted = await gamesLocation.removeGamesFrom(journal.from);
+    } catch (error) {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Ancien dossier des jeux pas entièrement effacé : ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+  gamesLocation.clearJournal();
+  gamesJustMoved = { to: journal.to, drive: gamesLocation.driveOf(journal.to), fromDrive: gamesLocation.driveOf(journal.from), freedBytes: deleted ? journal.totalBytes || 0 : 0 };
+  logStore.pushLog({ source: "launcher", message: `Jeux maintenant dans ${journal.to}${deleted ? ", ancien dossier effacé" : ""}` });
 });

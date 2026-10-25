@@ -2,6 +2,16 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("mchub", {
   getSiteUrl: () => ipcRenderer.invoke("app:getSiteUrl"),
+  // Laboratoire (25/10) : { <id>: { visible, beta } } d'après le site, voir features.js.
+  getFeatures: () => ipcRenderer.invoke("features:get"),
+  featuresReady: () => ipcRenderer.invoke("features:ready"),
+  onFeaturesChanged: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("features:changed", listener);
+    return () => ipcRenderer.removeListener("features:changed", listener);
+  },
+  // Idee 3 du lancement (19/10) : erreur de l'interface vers Sentry (voir errorReports.js).
+  reportError: (info) => ipcRenderer.invoke("app:reportError", info).catch(() => {}),
   restartApp: () => ipcRenderer.invoke("app:restart"),
   // Parametres > Divers > A propos : "terms" ou "privacy" seulement (liste fixe cote main.js).
   openLegalPage: (page) => ipcRenderer.invoke("app:openLegal", page),
@@ -12,8 +22,11 @@ contextBridge.exposeInMainWorld("mchub", {
   listServers: (opts) => ipcRenderer.invoke("servers:list", opts),
   clearServerCache: () => ipcRenderer.invoke("servers:clearCache"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
+  getFeaturedServer: () => ipcRenderer.invoke("servers:featured"),
   // Fiche personnalisable (16/10) : reseaux et video, re-verifies cote main.js avant ouverture.
   openServerPageLink: (kind, value) => ipcRenderer.invoke("servers:openPageLink", kind, value),
+  // Teams (19/10) : page de team ou « C'est mon serveur » (Contact) sur le site.
+  openTeamLink: (kind, slug) => ipcRenderer.invoke("site:openTeamLink", kind, slug),
   // Liens omniscient:// du site (bouton « Ouvrir dans le launcher ») : celui recu avant que la
   // page soit prete, puis les suivants au fil de l'eau. Voir parseServerLink cote main.js.
   takeServerLink: () => ipcRenderer.invoke("app:takeServerLink"),
@@ -47,11 +60,15 @@ contextBridge.exposeInMainWorld("mchub", {
     add: (minecraftUsername) => ipcRenderer.invoke("friends:add", minecraftUsername),
     accept: (friendUserId) => ipcRenderer.invoke("friends:accept", friendUserId),
     remove: (friendUserId) => ipcRenderer.invoke("friends:remove", friendUserId),
+    getSettings: () => ipcRenderer.invoke("friends:getSettings"),
+    setPolicy: (policy) => ipcRenderer.invoke("friends:setPolicy", policy),
+    newCode: () => ipcRenderer.invoke("friends:newCode"),
   },
-  // Heartbeat de presence, toutes les 2 min (PRESENCE_HEARTBEAT_INTERVAL_MS en bas de
-  // renderer.js). Toujours un appel de fond pour main.js.
-  sendPresenceHeartbeat: () => ipcRenderer.invoke("presence:heartbeat"),
+  // Heartbeat de presence, greffe sur le meme cycle de 60s que silentRefreshList
+  // (REFRESH_INTERVAL_MS/scheduleRefresh en bas de renderer.js) — jamais un intervalle a part.
+  sendPresenceHeartbeat: (opts) => ipcRenderer.invoke("presence:heartbeat", opts),
   submitReport: (report) => ipcRenderer.invoke("reports:submit", report),
+  reportInstallProblem: (payload) => ipcRenderer.invoke("servers:reportInstallProblem", payload),
   listNotifications: (opts) => ipcRenderer.invoke("notifications:list", opts),
   markNotificationsRead: () => ipcRenderer.invoke("notifications:markRead"),
   deleteNotification: (id) => ipcRenderer.invoke("notifications:delete", id),
@@ -85,6 +102,7 @@ contextBridge.exposeInMainWorld("mchub", {
     pause: (id) => ipcRenderer.invoke("tasks:pause", id),
     resume: (id) => ipcRenderer.invoke("tasks:resume", id),
     cancel: (id) => ipcRenderer.invoke("tasks:cancel", id),
+    moveFirst: (id) => ipcRenderer.invoke("tasks:moveFirst", id),
     clearCompleted: () => ipcRenderer.invoke("tasks:clearCompleted"),
   },
   onTasksUpdate: (callback) => {
@@ -95,6 +113,13 @@ contextBridge.exposeInMainWorld("mchub", {
   runSelfTest: (slug) => ipcRenderer.invoke("selftest:run", slug),
   abortSelfTest: () => ipcRenderer.invoke("selftest:abort"),
   reportSelfTest: (payload) => ipcRenderer.invoke("selftest:report", payload),
+  // Lot 5 : aide guidee pour le proprietaire pendant le test (mods a ajouter a la main).
+  onSelfTestManualMods: (callback) => {
+    const listener = (_event, fields) => callback(fields);
+    ipcRenderer.on("selftest:manualMods", listener);
+    return () => ipcRenderer.removeListener("selftest:manualMods", listener);
+  },
+  answerSelfTestManualMods: (answer) => ipcRenderer.invoke("selftest:manualModsAnswer", answer),
   onSelfTestProgress: (callback) => {
     const listener = (_event, progress) => callback(progress);
     ipcRenderer.on("selftest:progress", listener);
@@ -102,6 +127,7 @@ contextBridge.exposeInMainWorld("mchub", {
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke("window:minimize"),
+    focus: () => ipcRenderer.invoke("window:focus"),
     toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
     close: () => ipcRenderer.invoke("window:close"),
     isMaximized: () => ipcRenderer.invoke("window:isMaximized"),
@@ -121,16 +147,39 @@ contextBridge.exposeInMainWorld("mchub", {
   getServicesStatus: (force) => ipcRenderer.invoke("status:getServicesStatus", !!force),
   getConnection: (force) => ipcRenderer.invoke("status:getConnection", !!force),
   onConnectionProgress: (callback) => ipcRenderer.on("status:connectionProgress", (_event, progress) => callback(progress)),
-  onGameState: (callback) => ipcRenderer.on("game:state", (_event, running) => callback(running)),
+  onGameState: (callback) => ipcRenderer.on("game:state", (_event, running, exitCode) => callback(running, exitCode)),
+  diskFree: () => ipcRenderer.invoke("system:diskFree"),
+  findModsInDownloads: (fileNames) => ipcRenderer.invoke("modpack:findInDownloads", fileNames),
   // Menu « ⋯ » des cartes d'instance + « Arrêter le jeu » (16/10) — voir main.js.
   getGameStatus: () => ipcRenderer.invoke("game:status"),
   stopGame: () => ipcRenderer.invoke("game:stop"),
+  // Dossier des jeux sur un autre disque (serie 2, idee 9).
+  games: {
+    info: () => ipcRenderer.invoke("games:info"),
+    size: (options) => ipcRenderer.invoke("games:size", options),
+    drives: () => ipcRenderer.invoke("games:drives"),
+    move: (options) => ipcRenderer.invoke("games:move", options),
+    cancelMove: () => ipcRenderer.invoke("games:cancelMove"),
+    abandonInterrupted: () => ipcRenderer.invoke("games:abandonInterrupted"),
+    restart: () => ipcRenderer.invoke("games:restart"),
+    ackMoved: () => ipcRenderer.invoke("games:ackMoved"),
+    openFolder: () => ipcRenderer.invoke("games:openFolder"),
+    onProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on("games:moveProgress", listener);
+      return () => ipcRenderer.removeListener("games:moveProgress", listener);
+    },
+  },
   instances: {
     openFolder: (slug) => ipcRenderer.invoke("instances:openFolder", slug),
     readLog: (slug) => ipcRenderer.invoke("instances:readLog", slug),
     openLogsFolder: (slug) => ipcRenderer.invoke("instances:openLogsFolder", slug),
     filesInfo: (slug) => ipcRenderer.invoke("instances:filesInfo", slug),
+    sizes: (slugs) => ipcRenderer.invoke("instances:sizes", slugs),
     deleteFiles: (slug, options) => ipcRenderer.invoke("instances:deleteFiles", slug, options),
+    trashFiles: (slugs, options) => ipcRenderer.invoke("instances:trashFiles", slugs, options),
+    undoTrash: (batch) => ipcRenderer.invoke("instances:undoTrash", batch),
+    finalizeTrash: (batch) => ipcRenderer.invoke("instances:finalizeTrash", batch),
   },
   updates: {
     check: () => ipcRenderer.invoke("update:check"),
@@ -146,6 +195,74 @@ contextBridge.exposeInMainWorld("mchub", {
     remove: (id) => ipcRenderer.invoke("account:remove", id),
     changeSkin: (variant, fileBuffer) => ipcRenderer.invoke("account:changeSkin", { variant, fileBuffer }),
     resetSkin: () => ipcRenderer.invoke("account:resetSkin"),
+  },
+  // Mode « Jouer » (bêta, 24/10) : versions sans serveur, mondes et leurs sauvegardes (playMode.js),
+  // synchro des mondes avec le cloud pour les Supporters (worldCloud.js).
+  play: {
+    packs: (opts) => ipcRenderer.invoke("play:packs", opts),
+    mcVersions: () => ipcRenderer.invoke("play:mcVersions"),
+    listVersions: () => ipcRenderer.invoke("play:listVersions"),
+    createVersion: (opts) => ipcRenderer.invoke("play:createVersion", opts),
+    renameVersion: (id, name) => ipcRenderer.invoke("play:renameVersion", id, name),
+    removeVersion: (id) => ipcRenderer.invoke("play:removeVersion", id),
+    launch: (opts) => ipcRenderer.invoke("play:launch", opts),
+    listWorlds: () => ipcRenderer.invoke("play:listWorlds"),
+    setWorldBackup: (key, on, opts) => ipcRenderer.invoke("play:setWorldBackup", key, on, opts),
+    listBackups: (key) => ipcRenderer.invoke("play:listBackups", key),
+    setBackupLimit: (key, cfg) => ipcRenderer.invoke("play:setBackupLimit", key, cfg),
+    testOverlay: () => ipcRenderer.invoke("play:testOverlay"),
+    backupNow: (key, label) => ipcRenderer.invoke("play:backupNow", key, label),
+    restoreBackup: (key, backupId) => ipcRenderer.invoke("play:restoreBackup", key, backupId),
+    deleteBackup: (key, backupId) => ipcRenderer.invoke("play:deleteBackup", key, backupId),
+    scanImport: (dir) => ipcRenderer.invoke("play:scanImport", dir),
+    pickImportDir: () => ipcRenderer.invoke("play:pickImportDir"),
+    importWorlds: (dir, folders) => ipcRenderer.invoke("play:import", dir, folders),
+    openWorldFolder: (key) => ipcRenderer.invoke("play:openWorldFolder", key),
+    onWorldsChanged: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on("play:worldsChanged", listener);
+      return () => ipcRenderer.removeListener("play:worldsChanged", listener);
+    },
+    onSaveActivity: (callback) => {
+      const listener = (_event, activity) => callback(activity);
+      ipcRenderer.on("play:saveActivity", listener);
+      return () => ipcRenderer.removeListener("play:saveActivity", listener);
+    },
+    cloud: {
+      status: (opts) => ipcRenderer.invoke("cloud:status", opts),
+      testConnection: () => ipcRenderer.invoke("cloud:testConnection"),
+      sync: (keys) => ipcRenderer.invoke("cloud:sync", keys),
+      remove: (key) => ipcRenderer.invoke("cloud:remove", key),
+      pause: () => ipcRenderer.invoke("cloud:pause"),
+      resume: () => ipcRenderer.invoke("cloud:resume"),
+      stop: () => ipcRenderer.invoke("cloud:stop"),
+      sendBackup: (key, backupId) => ipcRenderer.invoke("cloud:sendBackup", key, backupId),
+      uncloudBackup: (key, backupId) => ipcRenderer.invoke("cloud:uncloudBackup", key, backupId),
+      download: (worldId) => ipcRenderer.invoke("cloud:download", worldId),
+      // Plusieurs PC : avant « Jouer », conflits, choix entre deux versions, téléchargements.
+      beforePlay: (key, opts) => ipcRenderer.invoke("cloud:beforePlay", key, opts),
+      fetchLatest: (key) => ipcRenderer.invoke("cloud:fetchLatest", key),
+      waitClosed: (key) => ipcRenderer.invoke("cloud:waitClosed", key),
+      cancelWait: (key) => ipcRenderer.invoke("cloud:cancelWait", key),
+      resolveSplit: (key, versionId) => ipcRenderer.invoke("cloud:resolveSplit", key, versionId),
+      downloadMany: (ids) => ipcRenderer.invoke("cloud:downloadMany", ids),
+      downloadJob: () => ipcRenderer.invoke("cloud:downloadJob"),
+      onDownloadUpdate: (callback) => {
+        const listener = (_event, djob) => callback(djob);
+        ipcRenderer.on("cloud:downloadUpdate", listener);
+        return () => ipcRenderer.removeListener("cloud:downloadUpdate", listener);
+      },
+      onWaitDone: (callback) => {
+        const listener = (_event, result) => callback(result);
+        ipcRenderer.on("cloud:waitDone", listener);
+        return () => ipcRenderer.removeListener("cloud:waitDone", listener);
+      },
+      onUpdate: (callback) => {
+        const listener = (_event, job) => callback(job);
+        ipcRenderer.on("cloud:update", listener);
+        return () => ipcRenderer.removeListener("cloud:update", listener);
+      },
+    },
   },
   java: {
     detect: () => ipcRenderer.invoke("java:detect"),

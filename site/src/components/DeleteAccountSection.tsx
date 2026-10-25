@@ -66,6 +66,14 @@ export function DeleteAccountSection() {
           role="dialog"
           aria-modal="true"
           aria-label={t("account.deleteDialogLabel")}
+          // Lot 4 (18/10) : Echap annule, comme toutes les fenetres de confirmation.
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && !pending) {
+              setOpen(false);
+              setConfirmText("");
+              setError(null);
+            }
+          }}
         >
           <div className="w-full max-w-sm rounded-lg bg-surface p-5" style={{ border: "1px solid var(--border)" }}>
             <p className="text-sm font-semibold" style={{ color: "var(--danger)" }}>

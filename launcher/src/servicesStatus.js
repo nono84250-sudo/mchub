@@ -62,6 +62,15 @@ const GROUPS = [
       { id: "curseforgeCdn", url: "https://edge.forgecdn.net/", method: "HEAD" },
     ],
   },
+  // FTB (21/10) : liste des fichiers des packs FTB et leurs propres fichiers (voir modpack.js).
+  {
+    id: "ftb",
+    name: "FTB",
+    services: [
+      { id: "ftbApi", url: "https://api.feed-the-beast.com/v1/modpacks/public/modpack/all", method: "GET" },
+      { id: "ftbFiles", url: "https://files.feed-the-beast.com/", method: "HEAD" },
+    ],
+  },
 ];
 
 async function checkOne(service) {
@@ -89,6 +98,21 @@ async function checkOne(service) {
   }
 }
 
+// Un seul essai lent ou rate ne suffit plus a mettre le point en orange/rouge (bug signale par
+// Rushi le 18/10) : le premier appel paie la resolution DNS et la poignee de main TLS, souvent
+// pendant que tout le launcher demarre. On refait donc un essai un instant plus tard et on garde
+// le meilleur des deux.
+const STATE_RANK = { ok: 0, degraded: 1, offline: 2 };
+async function checkWithRetry(service) {
+  const first = await checkOne(service);
+  if (first.state === "ok") return first;
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  const second = await checkOne(service);
+  if (STATE_RANK[second.state] < STATE_RANK[first.state]) return second;
+  if (second.state === first.state && (second.latencyMs ?? Infinity) < (first.latencyMs ?? Infinity)) return second;
+  return first;
+}
+
 // [{ id, name, services: [{ id, state: "ok"|"degraded"|"offline", latencyMs }] }]
 // — les libelles des services sont dans i18n (serviceStatus.svc.<id>).
 async function checkServicesStatus() {
@@ -96,7 +120,7 @@ async function checkServicesStatus() {
     GROUPS.map(async (group) => ({
       id: group.id,
       name: group.name,
-      services: await Promise.all(group.services.map(checkOne)),
+      services: await Promise.all(group.services.map(checkWithRetry)),
     })),
   );
 }

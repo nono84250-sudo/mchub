@@ -59,7 +59,22 @@ export const PAGE_TAGS = [
   "economy", "hardcore", "skyblock", "factions", "bedwars", "prison", "towny", "smp", "anarchy", "events",
   "quests", "dungeons", "building", "redstone", "farming", "exploration", "competitive", "chill", "whitelist", "bedrock",
 ] as const;
-export type PageTag = (typeof PAGE_TAGS)[number];
+export type BuiltinPageTag = (typeof PAGE_TAGS)[number];
+// Etiquettes ajoutees par l'equipe (demandes d'etiquettes, 16/10 : table customTag, voir
+// lib/tagCatalog.ts) : identifiant toujours en "c-...", jamais confondu avec une etiquette en dur.
+// Ici on ne verifie que la forme ; l'existence est verifiee a l'enregistrement (actions/serverPage.ts)
+// et une etiquette inconnue n'est simplement pas affichee.
+export type CustomTagId = `c-${string}`;
+export type PageTag = BuiltinPageTag | CustomTagId;
+const CUSTOM_TAG_ID = /^c-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isCustomTagId(v: unknown): v is CustomTagId {
+  return typeof v === "string" && v.length <= 40 && CUSTOM_TAG_ID.test(v);
+}
+
+export function isPageTag(v: unknown): v is PageTag {
+  return (PAGE_TAGS as readonly string[]).includes(v as string) || isCustomTagId(v);
+}
 
 export const PAGE_LANGUAGES = ["fr", "en"] as const;
 export type PageLanguage = (typeof PAGE_LANGUAGES)[number];
@@ -70,10 +85,10 @@ export const PAGE_SECTIONS = ["about", "gallery", "video", "rules", "social"] as
 export type PageSection = (typeof PAGE_SECTIONS)[number];
 
 // Lecteur YouTube integre et lancement automatique : coupes le 16/10 (YouTube demandait de se
-// connecter, « pas un robot »). Le code reste en place ; repasser a true pour les reactiver.
-export const VIDEO_EMBED_ENABLED = false;
+// connecter, « pas un robot »), rallumes le 18/10 : le test de Rushi montre que le lecteur marche. false pour les couper.
+export const VIDEO_EMBED_ENABLED = true;
 
-export const PAGE_LIMITS = { about: 2000, rules: 8, ruleLength: 120, caption: 40, tags: 3, extraTags: 8, gallery: 3, url: 200 } as const;
+export const PAGE_LIMITS = { about: 2000, rules: 8, ruleLength: 120, caption: 40, tags: 3, extraTags: 8, gallery: 3, url: 200, installMessage: 300 } as const;
 
 export type GalleryItem = { url: string; caption: string };
 
@@ -92,6 +107,9 @@ export type ServerPageConfig = {
   rules: string[];
   youtubeUrl: string | null;
   tiktokUrl: string | null;
+  // Message aux joueurs pendant l'installation (design du launcher 17/10, point 6) : affiche par le
+  // launcher avant la 1re installation et pendant le telechargement. Vide = rien n'est affiche.
+  installMessage: string;
 };
 
 export const DEFAULT_PAGE_CONFIG: ServerPageConfig = {
@@ -109,6 +127,7 @@ export const DEFAULT_PAGE_CONFIG: ServerPageConfig = {
   rules: [],
   youtubeUrl: null,
   tiktokUrl: null,
+  installMessage: "",
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -173,7 +192,7 @@ export function normalizePageConfig(input: unknown): ServerPageConfig {
   const rawAccent = typeof input.accent === "string" ? input.accent.toLowerCase() : null;
   const accent = rawAccent && Object.hasOwn(PAGE_ACCENTS, rawAccent) ? (rawAccent as PageAccent) : isCustomAccent(rawAccent) ? rawAccent : null;
   const pickTags = (v: unknown) =>
-    Array.isArray(v) ? [...new Set(v.filter((t): t is PageTag => (PAGE_TAGS as readonly string[]).includes(t as string)))] : [];
+    Array.isArray(v) ? [...new Set(v.filter(isPageTag))] : [];
   const tags = pickTags(input.tags).slice(0, PAGE_LIMITS.tags);
   const extraTags = pickTags(input.extraTags).filter((t) => !tags.includes(t)).slice(0, PAGE_LIMITS.extraTags);
   const languages = [
@@ -212,6 +231,7 @@ export function normalizePageConfig(input: unknown): ServerPageConfig {
     rules,
     youtubeUrl: link("youtube", input.youtubeUrl),
     tiktokUrl: link("tiktok", input.tiktokUrl),
+    installMessage: cleanText(input.installMessage, PAGE_LIMITS.installMessage, true),
   };
 }
 
@@ -226,12 +246,18 @@ export function parsePageConfig(raw: string | null | undefined): ServerPageConfi
 
 // Ce que l'editeur envoie : la config, plus les champs qui vivent dans leurs propres colonnes,
 // et le lien video tel que saisi (on n'en garde que l'identifiant).
+// Nom, description, banniere et icone : dans Ma fiche depuis le 19/10 (carte « Identite »,
+// variante A choisie par Rushi), au lieu de Parametres. Facultatif : un ancien envoi sans ces
+// champs garde ceux en base.
+export type PageIdentityInput = { name: string; description: string; bannerUrl: string; iconUrl: string };
+
 export type PageEditorInput = {
   config: ServerPageConfig;
   videoUrl: string;
   discordUrl: string;
   websiteUrl: string;
   backgroundUrl: string;
+  identity?: PageIdentityInput;
 };
 
 export type PageFieldError = "video" | "discord" | "website" | "youtube" | "tiktok";

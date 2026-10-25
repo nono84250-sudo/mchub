@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Pause, Play, Copy, Trash, ArrowSquareOut } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
+import { useConfirm, type ConfirmOptions } from "@/components/ConfirmDialog";
 
 // Boutons d'action de "Paramètres" (voir maquette "05 · Settings") — avec confirmation avant toute
 // action destructive/impactante (l'utilisateur a signale que le formulaire
@@ -14,6 +15,7 @@ import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
 // poids visuel que les actions courantes juste au-dessus.
 export function ManageActions({
   slug,
+  serverName,
   published,
   isPrivate,
   frozen,
@@ -23,6 +25,8 @@ export function ManageActions({
   onDelete,
 }: {
   slug: string;
+  // Nom du serveur : dans le titre des confirmations, et a recopier pour supprimer.
+  serverName: string;
   published: boolean;
   // 2026-10-10 : une fiche privee n'a pas de fiche publique a afficher, meme si "published"
   // est a true (toute fiche privee le reste par defaut, voir lib/actions/servers.ts) — sans
@@ -42,9 +46,11 @@ export function ManageActions({
   const { t } = useI18n();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
+  const name = serverName;
 
-  async function run(key: string, message: string, action: () => Promise<{ error: string } | undefined | void>) {
-    if (!window.confirm(message)) return;
+  async function run(key: string, ask: ConfirmOptions, action: () => Promise<{ error: string } | undefined | void>) {
+    if (!(await confirm(ask))) return;
     setPending(key);
     setError(null);
     try {
@@ -70,6 +76,7 @@ export function ManageActions({
 
   return (
     <div className="flex flex-col gap-4">
+      {dialog}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
         <span
@@ -108,7 +115,13 @@ export function ManageActions({
             type="button"
             disabled={pending !== null}
             onClick={() =>
-              run("toggle", published ? t("manage.confirmToggleOff") : t("manage.confirmToggleOn"), onTogglePublished)
+              run(
+                "toggle",
+                published
+                  ? { tone: "warn", title: t("manage.confirmPauseTitle", { name }), body: t("manage.confirmPauseBody"), confirmLabel: t("manage.confirmPauseBtn") }
+                  : { tone: "ok", title: t("manage.confirmRepublishTitle", { name }), body: t("manage.confirmRepublishBody"), confirmLabel: t("manage.confirmRepublishBtn") },
+                onTogglePublished,
+              )
             }
             className="btn-secondary text-sm"
           >
@@ -127,7 +140,13 @@ export function ManageActions({
         <button
           type="button"
           disabled={pending !== null || frozen}
-          onClick={() => run("duplicate", t("manage.confirmDuplicate"), onDuplicate)}
+          onClick={() =>
+            run(
+              "duplicate",
+              { tone: "ok", title: t("manage.confirmDuplicateTitle", { name }), body: t("manage.confirmDuplicateBody"), confirmLabel: t("manage.confirmDuplicateBtn") },
+              onDuplicate,
+            )
+          }
           className="btn-secondary text-sm"
         >
           <Copy className="h-4 w-4" />
@@ -146,7 +165,20 @@ export function ManageActions({
         <button
           type="button"
           disabled={pending !== null}
-          onClick={() => run("delete", t("manage.confirmDelete"), onDelete)}
+          onClick={() =>
+            run(
+              "delete",
+              {
+                tone: "danger",
+                title: t("manage.confirmDeleteTitle", { name }),
+                body: t("manage.confirmDeleteBody"),
+                confirmLabel: t("manage.confirmDeleteBtn"),
+                // Choix de Rushi (18/10) : le bouton reste grise tant que le nom exact n'est pas tape.
+                typeToConfirm: name,
+              },
+              onDelete,
+            )
+          }
           className="btn-secondary btn-secondary-danger text-sm flex-shrink-0"
         >
           <Trash className="h-4 w-4" />

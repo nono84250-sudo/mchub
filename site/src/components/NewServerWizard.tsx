@@ -8,14 +8,24 @@ import { ImageDropzone } from "@/components/ImageDropzone";
 import { ModpackPicker, type ModpackValue } from "@/components/ModpackPicker";
 import { MinecraftVersionField } from "@/components/MinecraftVersionField";
 import { DEFAULT_MODPACK_CHANNEL, DEFAULT_MODPACK_SOURCE, type ModpackSource } from "@/lib/modpack-types";
-import { supportsAutoConnect } from "@/lib/minecraft-version-constants";
+import { ServerListOptions } from "@/components/ServerListOptions";
 import { LogoMark } from "@/components/LogoMark";
 import { useI18n } from "@/i18n/I18nProvider";
+import { SERVER_TEMPLATES, type ServerTemplateId } from "@/lib/serverTemplates";
+import { fallbackBanner } from "@/lib/fallbackBanner";
+
+const TEMPLATE_KEYS: Record<ServerTemplateId, { title: string; sub: string; desc: string }> = {
+  survival: { title: "wizard.tplSurvival", sub: "wizard.tplSurvivalSub", desc: "wizard.tplSurvivalDesc" },
+  rpg: { title: "wizard.tplRpg", sub: "wizard.tplRpgSub", desc: "wizard.tplRpgDesc" },
+  cobblemon: { title: "wizard.tplCobblemon", sub: "wizard.tplCobblemonSub", desc: "wizard.tplCobblemonDesc" },
+};
 
 type Props = {
   action: (prevState: ServerActionState, formData: FormData) => ServerActionState | Promise<ServerActionState>;
   versions: string[];
   sourceStates?: Record<ModpackSource, boolean>;
+  // Teams du compte (teams, 19/10) : liste « Team » de l'etape 1, « Aucune team » par defaut.
+  teams?: { id: string; name: string }[];
 };
 
 // Assistant en 3 etapes pour la publication (maquette "Nocturne" — la
@@ -24,7 +34,7 @@ type Props = {
 // les 3 etapes : les champs des etapes precedentes restent montes (juste
 // masques en CSS) pour que leurs valeurs fassent partie de la soumission
 // finale, plutot que de dupliquer un state parallele pour chaque champ.
-export function NewServerWizard({ action, versions, sourceStates }: Props) {
+export function NewServerWizard({ action, versions, sourceStates, teams = [] }: Props) {
   const { t, locale } = useI18n();
   const STEPS = [
     { label: t("wizard.stepBasics") },
@@ -46,6 +56,21 @@ export function NewServerWizard({ action, versions, sourceStates }: Props) {
   const [minecraftVersion, setMinecraftVersion] = useState("");
   const [recommendedRamGB, setRecommendedRamGB] = useState("");
   const [autoConnect, setAutoConnect] = useState(true);
+  const [addToServerList, setAddToServerList] = useState(true);
+  // Modele de fiche (design 2026-10-17, point 7) : preremplit description, type et RAM ;
+  // ses etiquettes partent avec le champ cache « template » (voir createServer).
+  const [template, setTemplate] = useState<ServerTemplateId | null>(null);
+  const pickTemplate = (id: ServerTemplateId) => {
+    const next = template === id ? null : id;
+    setTemplate(next);
+    if (!next) return;
+    const tpl = SERVER_TEMPLATES[next];
+    setType(tpl.type);
+    setRecommendedRamGB(String(tpl.ramGB));
+    // Ne remplace jamais une description deja ecrite a la main.
+    const known = (Object.keys(SERVER_TEMPLATES) as ServerTemplateId[]).map((k) => t(TEMPLATE_KEYS[k].desc));
+    if (!description.trim() || known.includes(description)) setDescription(t(TEMPLATE_KEYS[next].desc));
+  };
 
   // Modpack choisi dans <ModpackPicker> (recherche CurseForge ou saisie
   // manuelle) : l'assistant n'a besoin que de l'identifiant, pour ne pas
@@ -109,6 +134,31 @@ export function NewServerWizard({ action, versions, sourceStates }: Props) {
           <p className="text-sm text-muted">{t("wizard.basicsSubtitle")}</p>
         </div>
 
+        <div className="flex flex-col gap-2">
+          <span className="field-label">{t("wizard.templatesTitle")}</span>
+          <input type="hidden" name="template" value={template ?? ""} />
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            {(Object.keys(SERVER_TEMPLATES) as ServerTemplateId[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={template === id}
+                onClick={() => pickTemplate(id)}
+                className={`overflow-hidden rounded-xl border bg-surface text-left transition-colors ${
+                  template === id ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-border hover:border-accent"
+                }`}
+              >
+                <span className="block h-[54px]" style={{ background: fallbackBanner(t(TEMPLATE_KEYS[id].title)) }} />
+                <span className="block px-2.5 py-2">
+                  <b className="block text-[13.5px] font-semibold text-foreground">{t(TEMPLATE_KEYS[id].title)}</b>
+                  <small className="text-xs text-muted">{t(TEMPLATE_KEYS[id].sub)}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted">{t("wizard.templatesHint")}</p>
+        </div>
+
         <div className="flex flex-col gap-1.5">
           <label htmlFor="name" className="field-label">{t("serverForm.name")}</label>
           <input
@@ -132,6 +182,21 @@ export function NewServerWizard({ action, versions, sourceStates }: Props) {
           <ImageDropzone name="iconUrl" field="icon" label={t("serverForm.iconUrl")} hint={t("serverForm.iconHint")} placeholder="" icon={Cube} />
           <ImageDropzone name="backgroundUrl" field="background" label={t("serverForm.backgroundUrl")} hint={t("serverForm.backgroundHint")} placeholder={t("serverForm.dropBackground")} icon={ImageSquare} />
         </div>
+
+        {/* Team du serveur (choix de Rushi du 19/10) : la meme liste que dans Paramètres et que les
+            interrupteurs de « Ma team ». Verifiee par createServer (team de ce compte seulement). */}
+        {teams.length ? (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="teamId" className="field-label">{t("team.serverTeamLabel")}</label>
+            <select id="teamId" name="teamId" defaultValue="" className="field-input w-fit min-w-[220px]">
+              <option value="">{t("team.noTeam")}</option>
+              {teams.map((team) => (
+                <option key={team.id} value={team.id}>{team.name}</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted">{t("team.serverTeamHint")}</p>
+          </div>
+        ) : null}
 
         <div className="flex flex-col gap-2">
           <span className="field-label">{t("serverForm.visibility")}</span>
@@ -241,25 +306,13 @@ export function NewServerWizard({ action, versions, sourceStates }: Props) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          {/* FormData.get() renvoie la PREMIERE entree du meme nom en ordre DOM : la case doit
-              venir avant le hidden de repli (bug trouve par l'audit du 2026-10-10). */}
-          <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              name="autoConnect"
-              value="true"
-              checked={autoConnect}
-              onChange={(e) => setAutoConnect(e.target.checked)}
-            />
-            {t("serverForm.autoConnect")}
-          </label>
-          <input type="hidden" name="autoConnect" value="false" />
-          <p className="text-xs text-muted">{t("serverForm.autoConnectHelp")}</p>
-          {autoConnect && effectiveVersion && !supportsAutoConnect(effectiveVersion) ? (
-            <p className="text-xs text-warn">{t("serverForm.autoConnectVersionWarning")}</p>
-          ) : null}
-        </div>
+        <ServerListOptions
+          addToServerList={addToServerList}
+          onAddToServerListChange={setAddToServerList}
+          autoConnect={autoConnect}
+          onAutoConnectChange={setAutoConnect}
+          minecraftVersion={effectiveVersion}
+        />
 
         <div className="mt-2 flex justify-end gap-2.5">
           <button type="button" onClick={back} className="btn-secondary">
@@ -327,12 +380,3 @@ export function NewServerWizard({ action, versions, sourceStates }: Props) {
 
 // Rond de selection a droite des cartes Public/Prive (maquette "02 · Onboarding") :
 // anneau epais de la couleur accent quand la carte est choisie, fin et neutre sinon.
-function RadioDot({ selected }: { selected: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="mt-px h-4 w-4 flex-shrink-0 rounded-full"
-      style={{ border: selected ? "5px solid var(--accent)" : "1.5px solid var(--border)" }}
-    />
-  );
-}

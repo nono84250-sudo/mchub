@@ -7,9 +7,11 @@ import { D1BusyError, db } from "@/lib/db";
 import { SERVERS_CACHE_TAG, isVisibleRow, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getModpackInstallFile } from "@/lib/curseforge";
 import { getModrinthModpackInstallFile } from "@/lib/modrinth";
+import { getFtbModpackInstallFile } from "@/lib/ftb";
+import { parseModpackSource } from "@/lib/modpack-types";
 import { withD1Busy } from "@/lib/d1Busy";
 
-// Fichier du modpack d'un serveur moddé (CurseForge ou Modrinth), pour que le
+// Fichier du modpack d'un serveur moddé (CurseForge, Modrinth ou FTB), pour que le
 // launcher l'installe (voir launcher/src/modpack.js). La cle CurseForge reste
 // ici : le launcher ne recoit que le lien de telechargement du fichier.
 async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/modpack">) {
@@ -52,7 +54,8 @@ async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/serv
     return NextResponse.json({ error: "Ce serveur n'a pas de modpack." }, { status: 404 });
   }
   // Interrupteur admin : une source coupée n'est plus servie (voir platformSettings.ts).
-  const sourceOff = await sourceDisabledResponse(server.modpackSource === "modrinth" ? "modrinth" : "curseforge");
+  const source = parseModpackSource(server.modpackSource);
+  const sourceOff = await sourceDisabledResponse(source);
   if (sourceOff) return sourceOff;
 
   try {
@@ -60,10 +63,16 @@ async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/serv
     // modrinth.ts) : l'auteur du modpack peut la changer a tout moment, le
     // serveur doit suivre automatiquement, sans que son proprietaire n'ait a
     // revenir corriger quoi que ce soit dans ses parametres.
-    const { modpack, file } =
-      server.modpackSource === "modrinth"
+    // FTB (21/10) : pas d'archive, `ftb` donne le pack et la version dont le launcher lit lui-meme
+    // la liste des fichiers (voir lib/ftb.ts). downloadUrl reste null : un ancien launcher qui ne
+    // connait pas FTB s'arrete proprement sur « pas de lien de téléchargement ».
+    const resolved =
+      source === "modrinth"
         ? await getModrinthModpackInstallFile(server.curseforgeModpackId, { minecraftVersion: server.minecraftVersion }, server.modpackChannel)
-        : await getModpackInstallFile(server.curseforgeModpackId, { name: server.curseforgeModpackName }, server.modpackChannel);
+        : source === "ftb"
+          ? await getFtbModpackInstallFile(server.curseforgeModpackId, { minecraftVersion: server.minecraftVersion }, server.modpackChannel)
+          : await getModpackInstallFile(server.curseforgeModpackId, { name: server.curseforgeModpackName }, server.modpackChannel);
+    const { modpack, file } = resolved;
 
     // Met a jour l'affichage (fiche publique, Parametres) avec la version
     // reellement resolue, seulement quand elle a change — evite une ecriture
@@ -73,7 +82,13 @@ async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/serv
       revalidateTag(SERVERS_CACHE_TAG, { expire: 0 });
     }
 
-    return NextResponse.json({ source: server.modpackSource, modpack, file, minecraftVersion: server.minecraftVersion });
+    return NextResponse.json({
+      source,
+      modpack,
+      file,
+      minecraftVersion: server.minecraftVersion,
+      ...("ftb" in resolved ? { ftb: resolved.ftb } : {}),
+    });
   } catch (error) {
     if (error instanceof CurseforgeNotConfiguredError) {
       return NextResponse.json({ error: error.message, code: "not_configured" }, { status: 503 });

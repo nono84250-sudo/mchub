@@ -4,8 +4,26 @@
 <meta charset="UTF-8" />
 <!-- CSP en balise : voir le commentaire de index.html (audit 14/10, L1). -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'" />
-<title>Debug console — Omniscient Launcher</title>
+<title>Console de débogage — Omniscient Launcher</title>
 <style>
+  /* Police Inter partout (serie 2, idee 5) : fichiers locaux (fonts/, licence SIL OFL jointe),
+     aucune requete vers internet. Segoe UI reste en secours si le fichier ne charge pas. */
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 100 900;
+    src: url("fonts/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
+    unicode-range: U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+  }
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 100 900;
+    src: url("fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+    unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+  }
   /* Jetons/reset repris de index.html (voir son commentaire) — dupliques ici
      car cette fenetre est chargee independamment, sans feuille de style
      partagee entre les deux pages du launcher. */
@@ -47,7 +65,7 @@
     margin: 0;
     background: var(--background);
     color: var(--foreground);
-    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    font-family: "Inter", "Segoe UI", Arial, Helvetica, sans-serif;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -117,12 +135,12 @@
   .log-row.level-warn .log-level { color: var(--warn); }
   .log-row.level-info .log-level { color: var(--accent-hover); }
   .log-row.level-debug .log-level { color: var(--muted2); }
-  #console-empty { color: var(--muted); padding: 24px 4px; font-family: "Segoe UI", Arial, sans-serif; }
+  #console-empty { color: var(--muted); padding: 24px 4px; font-family: "Inter", "Segoe UI", Arial, sans-serif; }
 </style>
 </head>
 <body>
   <div id="titlebar">
-    <span class="logo" data-i18n="debugConsole.title">Debug console · Omniscient Launcher</span>
+    <span class="logo" data-i18n="debugConsole.title">Console de débogage · Omniscient Launcher</span>
     <div id="titlebar-controls">
       <button id="win-min" class="titlebar-btn" data-i18n-title="titlebar.minimize">
         <svg viewBox="0 0 10 10"><rect x="0" y="4.5" width="10" height="1" fill="currentColor" /></svg>
@@ -146,13 +164,15 @@
     <span class="toolbar-sep"></span>
     <button type="button" class="filter-chip" data-level="error"><span data-i18n="debugConsole.errors">Errors</span> <span class="count" id="count-error">0</span></button>
     <button type="button" class="filter-chip" data-level="warn"><span data-i18n="debugConsole.warnings">Warnings</span> <span class="count" id="count-warn">0</span></button>
-    <input type="text" id="console-search" data-i18n-placeholder="debugConsole.filterPlaceholder" placeholder="Filter output…" />
+    <input type="text" id="console-search" data-i18n-placeholder="debugConsole.filterPlaceholder" placeholder="Filtrer les journaux…" />
     <button type="button" class="icon-btn" id="console-pause" data-i18n-title="debugConsole.pause">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
     </button>
     <button type="button" class="icon-btn" id="console-clear" data-i18n-title="debugConsole.clear">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
     </button>
+    <!-- TEMPORAIRE (18/10) : test du nom et du logo des notifications Windows. A retirer avec son bloc dans debug-console.js. -->
+    <button type="button" class="filter-chip" id="console-test-notif">Test notif</button>
     <button type="button" class="icon-btn" id="console-copy" data-i18n-title="debugConsole.copy">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
     </button>

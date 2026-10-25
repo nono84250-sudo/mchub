@@ -52,6 +52,8 @@ module.exports = {
   // Optionnel (voir discordPresence.js) : Rich Presence desactive proprement
   // si absent, jamais bloquant pour le build.
   DISCORD_CLIENT_ID: ${JSON.stringify(process.env.DISCORD_CLIENT_ID || "")},
+  // Optionnel (idee 3 du lancement, voir errorReports.js) : rapports d'erreurs coupes si absent.
+  SENTRY_DSN: ${JSON.stringify(process.env.SENTRY_DSN || "")},
 };
 `;
 

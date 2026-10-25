@@ -7,6 +7,7 @@ import {
   DEFAULT_MODPACK_CHANNEL,
   DEFAULT_MODPACK_SOURCE,
   MODPACK_SOURCES,
+  MODPACK_SOURCE_LABELS,
   type ModpackChannel,
   type ModpackSearchResult,
   type ModpackSource,
@@ -29,9 +30,15 @@ export type ModpackValue = {
 
 type Chosen = ModpackValue & { iconUrl: string | null; verified: boolean };
 
-const SOURCE_LABELS: Record<ModpackSource, string> = { curseforge: "CurseForge", modrinth: "Modrinth" };
+const SOURCE_LABELS = MODPACK_SOURCE_LABELS;
 
-// Choix du modpack d'un serveur moddé (CurseForge ou Modrinth) — partagé entre
+const SOURCE_HINT_KEYS: Record<ModpackSource, string> = {
+  curseforge: "wizard.modpackCurseforgeHint",
+  modrinth: "wizard.modpackModrinthHint",
+  ftb: "wizard.modpackFtbHint",
+};
+
+// Choix du modpack d'un serveur moddé (CurseForge, Modrinth ou FTB) — partagé entre
 // l'assistant de création et la page Paramètres. Recherche dans la source
 // choisie, avec repli en saisie manuelle si elle est indisponible (clé
 // CurseForge absente, API en panne) : jamais bloquant pour un serveur moddé.
@@ -170,7 +177,7 @@ export function ModpackPicker({
         </p>
       ) : (
         <p className="mb-1 text-xs text-muted2">
-          {source === "modrinth" ? t("wizard.modpackModrinthHint") : t("wizard.modpackCurseforgeHint")}
+          {t(SOURCE_HINT_KEYS[source])}
         </p>
       )}
 

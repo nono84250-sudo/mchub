@@ -36,14 +36,15 @@ function mojangJvmArgs(vanilla) {
 // telecharges ici au premier lancement, puis reutilises. Les serveurs moddes
 // (modpack CurseForge, NeoForge/Forge, Fabric) y ont chacun leur instance dans
 // instances/<slug> (voir modpack.js) ; seul Quilt n'est pas encore gere.
-const GAME_ROOT = path.join(app.getPath("userData"), "minecraft");
+// Dans le dossier des jeux, deplacable sur un autre disque (serie 2, idee 9, gamesLocation.js).
+const GAME_ROOT = path.join(require("./gamesLocation").GAMES_BASE, "minecraft");
 
 // Partie en cours (16/10, bouton « Arrêter le jeu ») : le processus Java et le serveur
 // (slug) qu'il joue. Un seul Minecraft a la fois (voir gameLaunchInProgress dans main.js).
 let runningGame = null;
 
 function getRunningGame() {
-  return runningGame ? { slug: runningGame.slug, gameDirectory: runningGame.gameDirectory } : null;
+  return runningGame ? { slug: runningGame.slug, gameDirectory: runningGame.gameDirectory, pid: runningGame.proc?.pid ?? null } : null;
 }
 
 // Ferme le jeu de force (le joueur a confirme). L'evenement "close" de MCLC fait le reste
@@ -87,6 +88,7 @@ async function launchMinecraft({
   serverIp,
   serverName,
   autoConnect = true,
+  addToServerList = true,
   onProgress,
   memory,
   javaPath,
@@ -95,6 +97,10 @@ async function launchMinecraft({
   customJvmArgs,
   onGameState,
   slug = null,
+  // Mode Jouer (24/10) : dossier du monde a ouvrir directement (Quick Play solo, 1.20+).
+  quickPlayWorld = null,
+  // Mode Jouer (24/10) : chaque morceau de la sortie du jeu, pour la sauvegarde en jeu (liveSave.js).
+  onGameLine = null,
 }) {
   await ensureJavaAvailable(javaPath);
   // Adresse du serveur masquee dans tout ce qui sera journalise a partir d'ici (lignes du
@@ -112,7 +118,12 @@ async function launchMinecraft({
   // démarré — d'où le tag "game" plutôt que "launcher" pour les deux, ce que
   // l'utilisateur voit dans la console correspond à "les logs de Minecraft".
   launcher.on("debug", (e) => logStore.pushLog({ level: "debug", source: "game", message: String(e) }));
-  launcher.on("data", (e) => logStore.pushLog({ level: "info", source: "game", message: String(e) }));
+  launcher.on("data", (e) => {
+    logStore.pushLog({ level: "info", source: "game", message: String(e) });
+    try {
+      onGameLine?.(String(e));
+    } catch {}
+  });
   // Objet structure (pas juste un texte) pour que le renderer puisse calculer
   // un vrai pourcentage (barre de progression stylee dans la barre de
   // lancement rapide) plutot que d'afficher uniquement du texte.
@@ -156,18 +167,22 @@ async function launchMinecraft({
     // Le lancement rapide connecte le joueur mais n'ajoute rien a la liste
     // Multijoueur : sans ca, apres une deconnexion il ne peut plus revenir sans
     // tout relancer. Ne doit jamais empecher le lancement.
-    try {
-      if (await addServerToList(gameDirectory || GAME_ROOT, { name: serverName, ip: serverIp })) {
-        logStore.pushLog({ source: "launcher", message: `« ${serverName || logStore.maskAddress(serverIp)} » ajouté à la liste Multijoueur.` });
+    // Desactive par le proprietaire (serverForm.addToServerList, 21/10) : l'adresse n'est pas
+    // ecrite ; la connexion directe ci-dessous est alors forcee, seul moyen d'entrer.
+    if (addToServerList) {
+      try {
+        if (await addServerToList(gameDirectory || GAME_ROOT, { name: serverName, ip: serverIp })) {
+          logStore.pushLog({ source: "launcher", message: `« ${serverName || logStore.maskAddress(serverIp)} » ajouté à la liste Multijoueur.` });
+        }
+      } catch (error) {
+        logStore.pushLog({ level: "warn", source: "launcher", message: `Liste Multijoueur non mise à jour : ${error instanceof Error ? error.message : error}` });
       }
-    } catch (error) {
-      logStore.pushLog({ level: "warn", source: "launcher", message: `Liste Multijoueur non mise à jour : ${error instanceof Error ? error.message : error}` });
     }
 
     // Decoche par le proprietaire (serverForm.autoConnect, voir site/src/components/
-    // ServerForm.tsx) : l'IP reste quand meme ajoutee a la liste Multijoueur ci-dessus, seule la
-    // connexion directe (Quick Play, Minecraft 1.20+ uniquement) est sautee.
-    if (autoConnect) {
+    // ServerForm.tsx) : l'IP reste ajoutee a la liste Multijoueur ci-dessus (si addToServerList),
+    // seule la connexion directe (Quick Play, Minecraft 1.20+ uniquement) est sautee.
+    if (autoConnect || !addToServerList) {
       const [host, port] = serverIp.split(":");
       opts.quickPlay = {
         type: "multiplayer",
@@ -175,6 +190,8 @@ async function launchMinecraft({
       };
     }
   }
+
+  if (!serverIp && quickPlayWorld) opts.quickPlay = { type: "singleplayer", identifier: quickPlayWorld };
 
   return new Promise((resolve, reject) => {
     let started = false;
@@ -185,7 +202,8 @@ async function launchMinecraft({
       // demarre — jamais eu de presence "en jeu" a annuler dans ce cas.
       if (started) runningGame = null;
       if (started) discordPresence.setBrowsingActivity();
-      if (started) onGameState?.(false);
+      // Code de sortie transmis : un plantage au demarrage s'affiche comme un echec clair (point 4).
+      if (started) onGameState?.(false, code);
       if (!started) reject(new Error(`Le jeu s'est fermé avant de démarrer (code ${code}).`));
     });
     onProgress?.({ text: "Lancement du jeu…" });

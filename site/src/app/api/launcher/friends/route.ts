@@ -4,7 +4,9 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
 import { listFriendsOverview, sendFriendRequest } from "@/lib/friends";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { withD1Busy } from "@/lib/d1Busy";
+import { withLauncherFeature } from "@/lib/features";
 
 // Liste d'amis + statut en ligne/hors ligne, plus les demandes reçues et envoyées (page "Amis"
 // du launcher). Le statut en ligne n'est renvoyé que pour les amis acceptés (voir
@@ -49,7 +51,9 @@ async function handlePOST(request: Request) {
 
   const body = (await request.json().catch(() => null)) ?? {};
   const minecraftUuid = typeof body.minecraftUuid === "string" ? body.minecraftUuid : null;
-  const targetUsername = typeof body.targetUsername === "string" ? body.targetUsername.trim() : "";
+  // `query` (18/10) : pseudo OU code d'ami ; `targetUsername` garde pour l'ancien launcher.
+  const targetUsername =
+    typeof body.query === "string" ? body.query.trim() : typeof body.targetUsername === "string" ? body.targetUsername.trim() : "";
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
   }
@@ -65,10 +69,11 @@ async function handlePOST(request: Request) {
 
   // Action volontaire du joueur : recree son compte s'il l'avait supprime.
   const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: true });
-  if (user) await sendFriendRequest(user.id, targetUsername);
+  // 20 demandes par heure et par compte (meme palier que le site) : au-dela, meme reponse, rien n'est envoye.
+  if (user && !checkRateLimit(`friends-write-hour:${user.id}`, 20, 60 * 60_000).limited) await sendFriendRequest(user.id, targetUsername);
 
   return NextResponse.json({ ok: true });
 }
 
-export const GET = withD1Busy(handleGET);
-export const POST = withD1Busy(handlePOST);
+export const GET = withD1Busy(withLauncherFeature("friends", handleGET));
+export const POST = withD1Busy(withLauncherFeature("friends", handlePOST));
