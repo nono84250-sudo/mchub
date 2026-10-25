@@ -713,6 +713,7 @@ const DICTIONARIES = {
       codePlaceholder: "Code",
       continueBtn: "Continuer",
       wrongCode: "Code incorrect.",
+      disruptionTitle: "Perturbations : {system} en maintenance",
     },
     favorites: {
       empty: "Aucun favori pour l'instant — clique sur l'étoile d'un serveur pour l'ajouter ici.",
@@ -1917,6 +1918,7 @@ const DICTIONARIES = {
       codePlaceholder: "Code",
       continueBtn: "Continue",
       wrongCode: "Wrong code.",
+      disruptionTitle: "Disruption: {system} under maintenance",
     },
     favorites: {
       header: "The servers you starred, ready to launch.",

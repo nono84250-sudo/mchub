@@ -138,7 +138,10 @@ function linkNav(html: string): string {
 // sans que ce soit volontaire.
 // 2026-10-14 : "Players" retiree aussi (remise dans le menu, demande de Rushi) — la liste des
 // joueurs mene a la fiche joueur, qui porte le bouton « Récupérer les données du joueur ».
-const HIDDEN_NAV_LABELS = ["Overview", "Notifications", "News", "Packs curés", "Administration", "Amis"];
+// 2026-10-25 : "Notifications" retiree aussi (remise dans le menu, demande de Rushi) pour
+// pouvoir activer le mode maintenance du launcher. "News" reste cachee : c'est maintenant
+// l'onglet « Actualités » de Notifications.
+const HIDDEN_NAV_LABELS = ["Overview", "News", "Packs curés", "Administration", "Amis"];
 
 function hideNavItems(html: string): string {
   let result = html;

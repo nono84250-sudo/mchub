@@ -1678,6 +1678,7 @@ ipcMain.handle("presence:heartbeat", async (_event, opts) => {
         ok: true,
         grouped: true,
         maintenance: { active: !!result.maintenance.active, message: result.maintenance.message || "" },
+        disruption: result.disruption || null,
         notifications: Array.isArray(result.notifications) ? result.notifications : undefined,
       };
     }
@@ -1710,7 +1711,7 @@ ipcMain.handle("maintenance:check", async (_event, opts) => {
       headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` },
       background: !!opts?.background,
     });
-    return { ok: true, active: !!data.active, message: data.message || "" };
+    return { ok: true, active: !!data.active, message: data.message || "", disruption: data.disruption || null };
   } catch (error) {
     // Site injoignable : ne bloque jamais le launcher pour ca, seule une vraie reponse
     // "active: true" du site doit bloquer. On garde une trace pour distinguer ce cas d'une

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { adminForAction } from "@/lib/adminServers";
+import { notifyNewsPublished } from "@/lib/newsNotify";
 
 // Creation d'un article (panel admin /admin/news/nouveau).
 export async function POST(request: Request) {
@@ -12,11 +13,12 @@ export async function POST(request: Request) {
   const published = form.get("published") === "on";
   if (!title || !body) return NextResponse.json({ error: "Titre et texte requis." }, { status: 400 });
 
-  const article = await db.orm.public.News.create({
+  await db.orm.public.News.create({
     title,
     body,
     published,
     publishedAt: published ? new Date().toISOString() : null,
   });
-  return NextResponse.redirect(new URL(`/admin/news/${article.id}`, request.url), 303);
+  if (published && form.get("notify") === "on") await notifyNewsPublished(title);
+  return NextResponse.redirect(new URL("/admin/notifications?tab=news&saved=1", request.url), 303);
 }

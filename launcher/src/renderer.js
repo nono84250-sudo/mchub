@@ -3832,6 +3832,7 @@ function showMaintenanceScreen(message) {
 // passe sans le code (voir platformSettings.ts cote site, activateLauncherMaintenance).
 async function ensureNotInMaintenance(pendingCheck) {
   const status = await (pendingCheck || window.mchub.checkMaintenance());
+  applyDisruption(status.disruption);
   if (!status.active) return;
   bootstrapEl.hidden = true;
   await showMaintenanceScreen(status.message);
@@ -3842,9 +3843,23 @@ async function ensureNotInMaintenance(pendingCheck) {
 // pas seulement au demarrage. maintenanceBypassed evite de rebloquer la meme session
 // une fois le bon code entre.
 async function checkMaintenanceLoop() {
-  if (maintenanceBypassed || pulseIsFresh()) return;
+  if (pulseIsFresh()) return;
   const status = await window.mchub.checkMaintenance({ background: true });
+  applyDisruption(status.disruption);
+  if (maintenanceBypassed) return;
   if (status.active) await showMaintenanceScreen(status.message);
+}
+
+// 25/10 : maintenance d'un seul systeme (Site, CurseForge, Modrinth, FTB) programmee dans
+// /admin/notifications : le launcher reste utilisable, un bandeau previent des perturbations.
+// Seuls « Tout » et « Launcher » bloquent (ecran de maintenance ci-dessus).
+const disruptionBannerEl = document.getElementById("disruption-banner");
+function applyDisruption(disruption) {
+  if (!disruptionBannerEl) return;
+  disruptionBannerEl.hidden = !disruption;
+  if (!disruption) return;
+  document.getElementById("disruption-title").textContent = t("maintenance.disruptionTitle", { system: disruption.system });
+  document.getElementById("disruption-text").textContent = disruption.message || "";
 }
 
 // Idee 2 du lancement (19/10) : le signal de presence (sendPresenceHeartbeat, chaque minute)
@@ -4327,6 +4342,7 @@ async function sendPresenceHeartbeat() {
   if (!result?.ok || !result.grouped || !signedIn) return;
   lastGroupedPulseAt = Date.now();
   if (result.notifications) await applyNotifications(result.notifications);
+  applyDisruption(result.disruption);
   if (result.maintenance?.active) showMaintenanceFromPulse(result.maintenance.message);
 }
 

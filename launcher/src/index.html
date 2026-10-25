@@ -295,6 +295,11 @@
     border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   }
   .guest-banner[hidden] { display: none; }
+  /* 25/10 : maintenance d'un seul systeme (voir applyDisruption dans renderer.js) — memes couleurs
+     que .friend-policy-banner (orange « occupe »). */
+  .disruption-banner { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; margin-bottom: 16px; border-radius: 10px; font-size: 13px; background: color-mix(in srgb, var(--state-busy) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--state-busy) 40%, transparent); }
+  .disruption-banner[hidden] { display: none; }
+  .disruption-text { color: var(--muted); margin-top: 2px; line-height: 1.45; }
   .guest-banner-text { flex: 1 1 260px; min-width: 0; }
   .guest-banner-text h3 { margin: 0 0 4px; font-size: 14px; color: var(--foreground); }
   .guest-banner-text p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
@@ -2823,6 +2828,10 @@ body.boot-preview #home-panel { pointer-events: none; }
     </nav>
     <div class="app-content" style="flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0;">
     <main>
+      <div id="disruption-banner" class="disruption-banner" role="status" hidden>
+        <span aria-hidden="true">⚠</span>
+        <div style="min-width: 0;"><strong id="disruption-title"></strong><div id="disruption-text" class="disruption-text"></div></div>
+      </div>
       <div id="guest-banner" class="guest-banner" hidden>
         <div class="guest-banner-text">
           <h3 data-i18n="guest.bannerTitle">Tu navigues en visiteur</h3>

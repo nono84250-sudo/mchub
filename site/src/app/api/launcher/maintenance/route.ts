@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
-import { getLauncherMaintenance, getLauncherStatus } from "@/lib/platformSettings";
+import { getLauncherMaintenance, getLauncherStatus, maintenanceBlocksLauncher, maintenancePhase } from "@/lib/platformSettings";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { withD1Busy } from "@/lib/d1Busy";
 
@@ -14,10 +14,11 @@ async function handleGET(request: Request) {
   if (limited) return limited;
   // Lecture en cache (idee 2 du lancement, 19/10) : le launcher non connecte interroge cette
   // route toutes les 2 minutes, le meme etat pour tout le monde.
-  const { maintenance } = await getLauncherStatus();
+  const { maintenance, disruption } = await getLauncherStatus();
   return NextResponse.json({
     active: maintenance.active,
     message: maintenance.message,
+    disruption,
   });
 }
 
@@ -34,7 +35,8 @@ async function handlePOST(request: Request) {
   const body = (await request.json().catch(() => null)) as { code?: string } | null;
   const code = String(body?.code ?? "").trim().toUpperCase();
   const maintenance = await getLauncherMaintenance();
-  const ok = !!maintenance?.active && code.length > 0 && code === maintenance.code;
+  const active = !!maintenance && maintenancePhase(maintenance) === "active" && maintenanceBlocksLauncher(maintenance.system);
+  const ok = !!maintenance && active && code.length > 0 && code === maintenance.code;
   return NextResponse.json({ ok });
 }
 

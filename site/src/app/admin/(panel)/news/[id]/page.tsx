@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { DesignScreen } from "@/components/admin/DesignScreen";
 import { requireAdmin } from "@/app/admin/design/guard";
@@ -8,8 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function NewsEdit({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
-  // 2026-10-12 : page desactivee temporairement (perimetre admin reduit), voir administration/page.tsx.
-  redirect("/admin/servers");
+  // 2026-10-12 : desactivee ; reactivee le 25/10 (les News sont l'onglet « Actualités » de Notifications).
   const { id } = await params;
   const article = await db.orm.public.News.select("id", "title", "body", "published").where({ id }).first();
   if (!article) notFound();

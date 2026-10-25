@@ -58,12 +58,15 @@ export type SiteBanner = { type: "announcement" | "maintenance" | "alert" | "pro
 // 30 s de l'annuaire). Mise en cache 45 s, partagee entre visiteurs et instances, au lieu d'une
 // lecture de la base par page vue ; videe tout de suite quand un admin la change ou la retire.
 const SITE_BANNER_TAG = "site-banner";
-export const getSiteBanner = unstable_cache(
-  async (): Promise<SiteBanner> => {
+// 25/10 : "until" (optionnel) = fin prevue d'une maintenance : passee cette heure, la banniere
+// ne s'affiche plus, sans attendre qu'un admin la retire.
+export type StoredSiteBanner = NonNullable<SiteBanner> & { until?: string | null };
+const readSiteBanner = unstable_cache(
+  async (): Promise<StoredSiteBanner | null> => {
     const row = await db.orm.public.PlatformSetting.select("value").where({ key: BANNER_KEY }).first();
     if (!row) return null;
     try {
-      return JSON.parse(row.value) as SiteBanner;
+      return JSON.parse(row.value) as StoredSiteBanner;
     } catch {
       return null;
     }
@@ -72,47 +75,94 @@ export const getSiteBanner = unstable_cache(
   { revalidate: 45, tags: [SITE_BANNER_TAG] },
 );
 
-export async function setSiteBanner(banner: SiteBanner): Promise<void> {
+export async function getSiteBanner(): Promise<SiteBanner> {
+  const banner = await readSiteBanner();
+  if (!banner) return null;
+  if (banner.until && Date.parse(banner.until) <= Date.now()) return null;
+  return { type: banner.type, text: banner.text };
+}
+
+export async function setSiteBanner(banner: SiteBanner, until: string | null = null): Promise<void> {
   if (banner === null) {
     await db.orm.public.PlatformSetting.where({ key: BANNER_KEY }).delete();
   } else {
     await execSql(
       'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"',
-      [BANNER_KEY, JSON.stringify(banner), new Date().toISOString()],
+      [BANNER_KEY, JSON.stringify({ ...banner, until }), new Date().toISOString()],
     );
   }
   revalidateTag(SITE_BANNER_TAG, { expire: 0 });
 }
 
-// Mode maintenance du launcher (panel admin, voir /admin/notifications) : bloque l'ecran
-// d'accueil du launcher pour tout le monde, sauf qui tape le code genere ici. Le code n'est
-// JAMAIS renvoye par une route cote launcher (voir /api/launcher/maintenance) — seul /admin
-// peut le lire, pour que l'admin le communique lui-meme (vocalement, message prive...).
+// Mode maintenance (panel admin, voir /admin/notifications). 25/10 : programmable (debut, fin
+// ou pas de fin) et liee a un systeme. Seuls "Tout" et "Launcher" bloquent le launcher avec un
+// code ; les autres systemes laissent le launcher ouvert et signalent seulement une perturbation.
+// L'etat (a venir / en cours / terminee) se deduit des heures a chaque lecture : rien a
+// declencher a l'heure dite, donc pas besoin du cron-worker. Le code n'est JAMAIS renvoye par une
+// route cote launcher (voir /api/launcher/maintenance) — seul /admin peut le lire.
 const MAINTENANCE_KEY = "launcher.maintenance";
-export type LauncherMaintenance = { active: boolean; code: string; message: string } | null;
+export const MAINTENANCE_SYSTEMS = ["Tout", "Launcher", "Site", "CurseForge", "Modrinth", "FTB"] as const;
+export type MaintenanceSystem = (typeof MAINTENANCE_SYSTEMS)[number];
+export const maintenanceBlocksLauncher = (system: string) => system === "Tout" || system === "Launcher";
+export type LauncherMaintenance = {
+  code: string;
+  message: string;
+  system: MaintenanceSystem;
+  startsAt: string;
+  endsAt: string | null;
+};
+export type MaintenancePhase = "scheduled" | "active" | "ended";
 
-export async function getLauncherMaintenance(): Promise<LauncherMaintenance> {
+export function maintenancePhase(m: LauncherMaintenance, now = Date.now()): MaintenancePhase {
+  if (Date.parse(m.startsAt) > now) return "scheduled";
+  if (m.endsAt && Date.parse(m.endsAt) <= now) return "ended";
+  return "active";
+}
+
+export async function getLauncherMaintenance(): Promise<LauncherMaintenance | null> {
   const row = await db.orm.public.PlatformSetting.select("value").where({ key: MAINTENANCE_KEY }).first();
   if (!row) return null;
   try {
-    return JSON.parse(row.value) as LauncherMaintenance;
+    const raw = JSON.parse(row.value) as Partial<LauncherMaintenance> & { active?: boolean };
+    if (!raw.code) return null;
+    // Ancien format (avant le 25/10) : { active, code, message } = en cours, bloque, sans fin.
+    return {
+      code: raw.code,
+      message: raw.message ?? "",
+      system: (raw.system ?? "Tout") as MaintenanceSystem,
+      startsAt: raw.startsAt ?? new Date(0).toISOString(),
+      endsAt: raw.endsAt ?? null,
+    };
   } catch {
     return null;
   }
 }
 
-// Genere un nouveau code a chaque activation : un ancien code communique par erreur ne doit
-// plus marcher la fois suivante.
-export async function activateLauncherMaintenance(message: string): Promise<string> {
+// Genere un nouveau code a chaque maintenance : un ancien code communique par erreur ne doit
+// plus marcher la fois suivante. Une seule maintenance a la fois : remplace la precedente.
+export async function scheduleMaintenance(input: { message: string; system: MaintenanceSystem; startsAt: Date; endsAt: Date | null }): Promise<string> {
   // Tirage cryptographique (audit 25/10) : Math.random n'est pas fait pour un code d'acces.
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
+  const value: LauncherMaintenance = {
+    code,
+    message: input.message,
+    system: input.system,
+    startsAt: input.startsAt.toISOString(),
+    endsAt: input.endsAt ? input.endsAt.toISOString() : null,
+  };
   await execSql(
     'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"',
-    [MAINTENANCE_KEY, JSON.stringify({ active: true, code, message }), new Date().toISOString()],
+    [MAINTENANCE_KEY, JSON.stringify(value), new Date().toISOString()],
   );
   revalidateTag(LAUNCHER_STATUS_TAG, { expire: 0 });
   return code;
+}
+
+// Garde pour les diffusions programmees d'avant le 25/10 (voir scheduledBroadcasts.ts) :
+// maintenance de tout, tout de suite, sans fin.
+export async function activateLauncherMaintenance(message: string): Promise<string> {
+  return scheduleMaintenance({ message, system: "Tout", startsAt: new Date(), endsAt: null });
 }
 
 export async function clearLauncherMaintenance(): Promise<void> {
@@ -123,18 +173,27 @@ export async function clearLauncherMaintenance(): Promise<void> {
 // Idee 2 du lancement (19/10) : etat lu par CHAQUE launcher a chaque signal (une fois par minute,
 // voir /api/launcher/pulse). Meme ligne pour tout le monde : mise en cache 30 s, partagee, au lieu
 // d'une lecture de la base par launcher. Videe tout de suite quand l'admin change la maintenance.
-// Ne contient jamais le code de maintenance.
+// Ne contient jamais le code de maintenance. La phase est recalculee a chaque appel (hors cache)
+// pour que debut et fin tombent a la minute pres.
 export const LAUNCHER_STATUS_TAG = "launcher-status";
-export type LauncherStatus = { maintenance: { active: boolean; message: string | null } };
+export type LauncherStatus = {
+  maintenance: { active: boolean; message: string | null };
+  // 25/10 : maintenance d'un systeme qui ne bloque pas le launcher (Site, CurseForge, Modrinth,
+  // FTB) : le launcher affiche un bandeau "Perturbations". Ignore par les anciens launchers.
+  disruption: { system: string; message: string; endsAt: string | null } | null;
+};
 
-export const getLauncherStatus = unstable_cache(
-  async (): Promise<LauncherStatus> => {
-    const maintenance = await getLauncherMaintenance();
-    return { maintenance: { active: !!maintenance?.active, message: maintenance?.message ?? null } };
-  },
-  ["launcher-status"],
-  { revalidate: 30, tags: [LAUNCHER_STATUS_TAG] },
-);
+const readMaintenanceCached = unstable_cache(async () => getLauncherMaintenance(), ["launcher-status"], {
+  revalidate: 30,
+  tags: [LAUNCHER_STATUS_TAG],
+});
+
+export async function getLauncherStatus(): Promise<LauncherStatus> {
+  const m = await readMaintenanceCached();
+  if (!m || maintenancePhase(m) !== "active") return { maintenance: { active: false, message: null }, disruption: null };
+  if (maintenanceBlocksLauncher(m.system)) return { maintenance: { active: true, message: m.message }, disruption: null };
+  return { maintenance: { active: false, message: null }, disruption: { system: m.system, message: m.message, endsAt: m.endsAt } };
+}
 
 // Libellés affichés pour les deux rôles staff (admin/modérateur) — le nom change, pas les
 // permissions (toujours juste les deux rôles existants, voir adminAuth.ts). Reutilise

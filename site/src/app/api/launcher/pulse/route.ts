@@ -51,5 +51,5 @@ export const POST = withD1Busy(async (request: Request) => {
     getLauncherStatus(),
     body.withNotifications === true ? listNotificationsForRecipient(minecraftUuid) : Promise.resolve(undefined),
   ]);
-  return NextResponse.json({ ok: true, maintenance: status.maintenance, ...(notifications ? { notifications } : {}) });
+  return NextResponse.json({ ok: true, maintenance: status.maintenance, disruption: status.disruption, ...(notifications ? { notifications } : {}) });
 });

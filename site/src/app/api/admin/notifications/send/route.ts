@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { adminForAction } from "@/lib/adminServers";
 import { broadcastNotification, resolveAudienceRecipients, type NotificationType } from "@/lib/notifications";
-import { setSiteBanner, activateLauncherMaintenance } from "@/lib/platformSettings";
+import { setSiteBanner, scheduleMaintenance, MAINTENANCE_SYSTEMS, type MaintenanceSystem } from "@/lib/platformSettings";
+import { buildMaintenanceNotice } from "@/lib/maintenanceNotice";
 import { createScheduledBroadcast } from "@/lib/scheduledBroadcasts";
 import { adminLocalToUtc, formatAdminTime } from "@/lib/timezone";
 import { rateLimitResponse } from "@/lib/rateLimit";
@@ -26,17 +27,14 @@ export async function POST(request: Request) {
   const type = TYPES[typeKey];
   const audience = String(form.get("audience") ?? "");
   const text = String(form.get("text") ?? "").trim().slice(0, 1000);
-  // "Systeme concerne" n'existe que pour la maintenance (voir bind.ts) : un texte libre, pas un
-  // vrai mecanisme qui bloque quoi que ce soit — juste affiche en tete du message.
-  const system = String(form.get("system") ?? "").trim().slice(0, 60);
   const banner = form.get("banner") === "on";
-  const blockLauncher = form.get("blockLauncher") === "on" && typeKey === "maintenance";
   const when = String(form.get("when") ?? "now");
 
   if (!type) return NextResponse.json({ error: "Type de message inconnu." }, { status: 400 });
   if (audience !== "everyone" && audience !== "owners") return NextResponse.json({ error: "Audience inconnue." }, { status: 400 });
+  if (typeKey === "maintenance") return sendMaintenance(request, form, { audience, text, banner, when });
   if (text.length < 3) return NextResponse.json({ error: "Écrivez un message (3 caractères minimum)." }, { status: 400 });
-  const message = typeKey === "maintenance" && system ? `[${system}] ${text}` : text;
+  const message = text;
 
   if (when === "schedule") {
     const dateStr = String(form.get("scheduledDate") ?? "");
@@ -49,10 +47,10 @@ export async function POST(request: Request) {
     await createScheduledBroadcast({
       type: typeKey as "announcement" | "maintenance" | "alert" | "promotion",
       audience,
-      system: system || null,
+      system: null,
       text,
       banner,
-      blockLauncher,
+      blockLauncher: false,
       scheduledAt,
     });
     // Previent tout de suite que c'est programme (le message reel n'arrive qu'a l'heure dite,
@@ -75,7 +73,54 @@ export async function POST(request: Request) {
   const sent = await broadcastNotification({ recipientMinecraftUuids: recipients, type, serverName: "—", message });
 
   if (banner) await setSiteBanner({ type: typeKey as "announcement" | "maintenance" | "alert" | "promotion", text: message });
-  if (blockLauncher) await activateLauncherMaintenance(message);
 
+  return NextResponse.redirect(new URL(`/admin/notifications?sent=${sent}`, request.url), 303);
+}
+
+// 25/10 (demande de Rushi) : la maintenance passe par ce formulaire. Systeme + debut (maintenant ou
+// programme) + fin (date et heure, ou pas de fin). Les joueurs sont prevenus TOUT DE SUITE ; le
+// blocage commence a l'heure de debut et s'arrete seul a l'heure de fin (phase calculee a la
+// lecture, voir maintenancePhase), sans cron. Seuls "Tout" et "Launcher" bloquent le launcher.
+async function sendMaintenance(
+  request: Request,
+  form: FormData,
+  input: { audience: "everyone" | "owners"; text: string; banner: boolean; when: string },
+) {
+  const system = String(form.get("system") ?? "");
+  if (!MAINTENANCE_SYSTEMS.includes(system as MaintenanceSystem)) {
+    return NextResponse.json({ error: "Choisissez le système concerné." }, { status: 400 });
+  }
+  const now = input.when !== "schedule";
+  let startsAt = new Date();
+  if (!now) {
+    const dateStr = String(form.get("scheduledDate") ?? "");
+    const timeStr = String(form.get("scheduledTime") ?? "");
+    if (!dateStr || !timeStr) return NextResponse.json({ error: "Choisissez la date et l'heure de début." }, { status: 400 });
+    startsAt = adminLocalToUtc(dateStr, timeStr);
+    if (startsAt.getTime() <= Date.now()) return NextResponse.json({ error: "Le début doit être dans le futur." }, { status: 400 });
+  }
+  let endsAt: Date | null = null;
+  if (form.get("endMode") === "end") {
+    const dateStr = String(form.get("endDate") ?? "");
+    const timeStr = String(form.get("endTime") ?? "");
+    if (!dateStr || !timeStr) return NextResponse.json({ error: "Choisissez la date et l'heure de fin, ou « Pas de fin prévue »." }, { status: 400 });
+    endsAt = adminLocalToUtc(dateStr, timeStr);
+    if (endsAt.getTime() <= startsAt.getTime()) return NextResponse.json({ error: "La fin doit être après le début." }, { status: 400 });
+  }
+
+  const notice = buildMaintenanceNotice({ system, startsAt, endsAt, now, extra: input.text });
+  await scheduleMaintenance({ message: notice, system: system as MaintenanceSystem, startsAt, endsAt });
+
+  const recipients = await resolveAudienceRecipients(input.audience);
+  const sent = recipients.length
+    ? await broadcastNotification({
+        recipientMinecraftUuids: recipients,
+        type: "broadcast_maintenance",
+        serverName: "—",
+        message: notice,
+        eventAt: startsAt.toISOString(),
+      })
+    : 0;
+  if (input.banner) await setSiteBanner({ type: "maintenance", text: notice }, endsAt ? endsAt.toISOString() : null);
   return NextResponse.redirect(new URL(`/admin/notifications?sent=${sent}`, request.url), 303);
 }

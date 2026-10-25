@@ -692,71 +692,133 @@ function playerNotesSectionHtml(data: { id: string; name: string; notes: AdminNo
 // audiences (Tout le monde, Proprietaires de serveur — "Un joueur" existe deja depuis la fiche
 // joueur, pas la peine de le dupliquer ici), envoi immediat, pas de brouillon ni de
 // programmation.
+// Onglets « Messages » / « Actualités » (25/10 : les News sont rangees dans Notifications, demande
+// de Rushi). Liens simples : chaque onglet est sa propre page, sans JavaScript.
+function notificationsTabsHtml(active: "messages" | "news", newsCount: number): string {
+  const tab = (href: string, label: string, on: boolean, count: number | null) =>
+    `<a href="${href}" style="display:inline-flex;align-items:center;gap:8px;padding:9px 12px;font-size:13.5px;text-decoration:none;border-bottom:2px solid ${on ? "var(--color-accent)" : "transparent"};color:${on ? "var(--color-text)" : "var(--muted)"};">${label}` +
+    (count !== null ? `<span style="font-size:11px;padding:1px 7px;border-radius:999px;background:var(--raised);color:var(--muted);">${fmt(count)}</span>` : "") +
+    `</a>`;
+  return (
+    `<div style="display:flex;gap:4px;border-bottom:1px solid var(--color-divider);">` +
+    tab("/admin/notifications", "Messages", active === "messages", null) +
+    tab("/admin/notifications?tab=news", "Actualités", active === "news", newsCount) +
+    `</div>`
+  );
+}
+
+const NOTIFICATIONS_SUBTITLE = "Send a message to players, server owners or a single account.</p></div>";
+
+function notificationsHeader(html: string, active: "messages" | "news", newsCount: number): string {
+  html = replaceOnce(html, ">Notifications / New message</span>", ">Notifications</span>");
+  const at = html.indexOf(NOTIFICATIONS_SUBTITLE);
+  if (at < 0) return html;
+  const headerStart = html.lastIndexOf('<div style="display:flex;align-items:flex-end;', at);
+  const headerEnd = balancedEnd(html, headerStart, "div");
+  if (headerStart < 0 || headerEnd < 0) return html;
+  const header = html
+    .slice(headerStart, headerEnd)
+    .replace("Send a message to players, server owners or a single account.", "Messages aux joueurs, maintenance et articles d'actualité.");
+  return html.slice(0, headerStart) + header + notificationsTabsHtml(active, newsCount) + html.slice(headerEnd);
+}
+
+// Composer de message diffuse — portee reduite par rapport a la maquette (voir la route
+// /api/admin/notifications/send) : un seul canal reel (boite de reception du launcher), deux
+// audiences (Tout le monde, Proprietaires de serveur — "Un joueur" existe deja depuis la fiche
+// joueur, pas la peine de le dupliquer ici).
+// 25/10 (demande de Rushi) : plus de bloc « Activer la maintenance » a part. Type Maintenance =
+// systeme + debut (maintenant ou programme) + fin (date et heure, ou pas de fin). Seuls « Tout »
+// et « Launcher » bloquent le launcher avec un code ; le code s'affiche dans « Maintenance » une
+// fois qu'elle a commence.
 export function notificationsHtml(data: {
   sentCount: number | null;
   scheduledConfirmed: boolean;
   activeBanner: { type: string; text: string } | null;
-  maintenance: { active: boolean; code: string; message: string } | null;
+  maintenance: { code: string; message: string; system: string; startsAt: string; endsAt: string | null; phase: "scheduled" | "active" | "ended" } | null;
   pendingScheduled: { id: string; type: string; audience: string; text: string; scheduledAt: string; blockLauncher: boolean }[];
+  newsCount: number;
 }): string {
-  let html = SCREENS.notifications;
-  html = replaceOnce(html, ">Notifications / New message</span>", ">Notifications</span>");
+  let html = notificationsHeader(SCREENS.notifications, "messages", data.newsCount);
 
-  const sentBanner = data.sentCount !== null
-    ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Message envoyé à ${fmt(data.sentCount)} compte(s).</div>`
-    : data.scheduledConfirmed
-      ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Message programmé.</div>`
-      : "";
+  const ok = (text: string) =>
+    `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>${text}</div>`;
+  const sentBanner = data.sentCount !== null ? ok(`Message envoyé à ${fmt(data.sentCount)} compte(s).`) : data.scheduledConfirmed ? ok("Message programmé.") : "";
   const activeBannerNotice = data.activeBanner
     ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;">` +
       `<i class="ph ph-browser" style="font-size:16px;color:var(--muted)"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Bannière active : ${escapeHtml(data.activeBanner.text)}</span>` +
       `<form method="post" action="/api/admin/notifications/banner/clear"><button type="submit" style="${BUTTON}">Retirer</button></form></div>`
     : "";
 
-  // Mode maintenance du launcher : bloque l'ecran d'accueil pour tout le monde, sauf code.
-  const maintenanceBox = data.maintenance?.active
-    ? `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--warn);background:color-mix(in srgb, var(--warn) 8%, transparent);font-size:13px;">` +
-      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:var(--warn)"></i><strong>Maintenance du launcher active</strong></div>` +
-      `<span style="color:var(--muted);">${escapeHtml(data.maintenance.message)}</span>` +
-      `<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--muted);">Code d'accès :</span><code style="font:600 16px ui-monospace,Menlo,monospace;letter-spacing:.08em;padding:4px 10px;border-radius:var(--radius-md);background:var(--color-bg);border:1px solid var(--color-divider);">${escapeHtml(data.maintenance.code)}</code></div>` +
-      `<form method="post" action="/api/admin/notifications/maintenance/clear"><button type="submit" style="${BUTTON}">Désactiver la maintenance</button></form>` +
-      `</div>`
-    : `<form method="post" action="/api/admin/notifications/maintenance/activate" style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;">` +
-      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:var(--muted)"></i><strong>Mode maintenance du launcher</strong></div>` +
-      `<span style="color:var(--muted);">Bloque l'écran d'accueil du launcher pour tout le monde, sauf qui a le code généré ici.</span>` +
-      `<textarea class="input" name="message" required minlength="3" maxlength="500" placeholder="Message affiché pendant la maintenance" style="min-height:60px;font-size:13px;"></textarea>` +
-      `<button type="submit" style="${BUTTON}width:fit-content;">Activer la maintenance</button>` +
-      `</form>`;
-
   const field = "display:flex;flex-direction:column;gap:6px;min-width:0;";
   const label = "font-size:12px;color:var(--muted)";
+  const box = "display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);";
+  const systems = ["Tout", "Launcher", "Site", "CurseForge", "Modrinth", "FTB"];
+  // Bascule sans rechargement entre « message » et « maintenance » (memes attributs inline que
+  // ownerMessageHtml) : montre les champs de maintenance et renomme les boutons.
+  const onType =
+    "var m=this.value==='maintenance',f=this.form;f.querySelectorAll('[data-maint]').forEach(function(e){e.hidden=!m});" +
+    "f.querySelector('[data-now]').textContent=m?'Commencer maintenant':'Envoyer maintenant';" +
+    "f.querySelector('[data-when-label]').textContent=m?'Début de la maintenance si tu la programmes (heure de Belgique)':'Programmer (heure de Belgique, la tienne) — laisser vide pour un envoi immédiat';" +
+    "f.querySelector('[data-text-label]').textContent=m?'Message en plus (facultatif)':'Message'";
+  const onEnd = "this.form.querySelector('[data-end-row]').hidden=this.value!=='end'";
+  const maintenanceFields =
+    `<div data-maint hidden style="display:flex;flex-direction:column;gap:16px;">` +
+    `<label style="${field}"><span style="${label}">Système concerné</span><select name="system" class="input" style="height:36px;">` +
+    systems.map((s) => `<option value="${s}">${s}${s === "Tout" || s === "Launcher" ? " · bloque le launcher" : ""}</option>`).join("") +
+    `</select></label>` +
+    `<div style="${box}font-size:13px;color:var(--muted);">` +
+    `<span><strong style="color:var(--color-text);">Tout</strong> et <strong style="color:var(--color-text);">Launcher</strong> bloquent le launcher : écran « Maintenance en cours » pour tout le monde (même ceux déjà connectés, dans la minute), sauf avec le code. Le code s'affiche à droite quand la maintenance commence.</span>` +
+    `<span>Les autres systèmes laissent le launcher ouvert : il affiche un bandeau « Perturbations ».</span>` +
+    `<span>Les joueurs reçoivent tout de suite : « ⚠ Maintenance … le 27/10 à 15h00. Durée prévue : 3 h. » (ou « Durée indéterminée »).</span></div>` +
+    `<div style="${box}"><span style="${label}">Fin de la maintenance</span>` +
+    `<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="radio" name="endMode" value="end" onchange="${onEnd}" style="accent-color:var(--color-accent);margin:0;">Jusqu'à une date et une heure (débloque tout seul)</label>` +
+    `<div data-end-row hidden style="display:flex;gap:10px;"><input type="date" name="endDate" class="input" style="height:36px;flex:1;"><input type="time" name="endTime" class="input" style="height:36px;flex:1;"></div>` +
+    `<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="radio" name="endMode" value="none" checked onchange="${onEnd}" style="accent-color:var(--color-accent);margin:0;">Pas de fin prévue (durée indéterminée, tu la termines toi-même)</label>` +
+    `</div></div>`;
+
   const body =
     sentBanner +
     activeBannerNotice +
-    maintenanceBox +
     `<form method="post" action="/api/admin/notifications/send" style="display:flex;flex-direction:column;gap:16px;">` +
-    `<label style="${field}"><span style="${label}">Type</span><select name="type" class="input" style="height:36px;" required>` +
+    `<label style="${field}"><span style="${label}">Type</span><select name="type" class="input" style="height:36px;" required onchange="${onType}">` +
     `<option value="announcement">Annonce</option><option value="maintenance">Maintenance</option><option value="alert">Alerte</option><option value="promotion">Promotion</option></select></label>` +
     `<label style="${field}"><span style="${label}">Audience</span><select name="audience" class="input" style="height:36px;" required>` +
     `<option value="everyone">Tout le monde</option><option value="owners">Propriétaires de serveur</option></select></label>` +
-    `<label style="${field}"><span style="${label}">Système concerné (si Maintenance)</span><select name="system" class="input" style="height:36px;">` +
-    `<option value="">—</option><option value="Site">Site</option><option value="Launcher">Launcher</option><option value="CurseForge">CurseForge</option><option value="Modrinth">Modrinth</option><option value="FTB">FTB</option><option value="Tout">Tout</option></select></label>` +
-    `<label style="${field}"><span style="${label}">Message</span><textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:110px;font-size:13.5px;"></textarea></label>` +
+    maintenanceFields +
+    `<label style="${field}"><span style="${label}" data-text-label>Message</span><textarea class="input" name="text" maxlength="1000" style="min-height:110px;font-size:13.5px;"></textarea></label>` +
     `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;"><input type="checkbox" name="banner" style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Aussi afficher en bannière sur le site (remplace la bannière active)</label>` +
-    `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;"><input type="checkbox" name="blockLauncher" style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Activer le mode maintenance du launcher à cette heure (si Type = Maintenance)</label>` +
-    `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);">` +
-    `<span style="${label}">Programmer (heure de Belgique, la tienne) — laisser vide pour un envoi immédiat</span>` +
+    `<div style="${box}">` +
+    `<span style="${label}" data-when-label>Programmer (heure de Belgique, la tienne) — laisser vide pour un envoi immédiat</span>` +
     `<div style="display:flex;gap:10px;">` +
     `<input type="date" name="scheduledDate" class="input" style="height:36px;flex:1;">` +
     `<input type="time" name="scheduledTime" class="input" style="height:36px;flex:1;">` +
     `</div></div>` +
     `<div style="display:flex;justify-content:flex-end;gap:10px;">` +
-    `<button type="submit" name="when" value="now" style="${CONFIRM}">Envoyer maintenant</button>` +
+    `<button type="submit" name="when" value="now" data-now style="${CONFIRM}">Envoyer maintenant</button>` +
     `<button type="submit" name="when" value="schedule" style="${BUTTON}">Programmer</button>` +
     `</div>` +
     `</form>`;
 
   html = replaceSectionBody(html, ">Compose</h2>", body);
+
+  // Colonne de droite, 1er bloc : la maintenance (a venir ou en cours) avec son code.
+  const m = data.maintenance && data.maintenance.phase !== "ended" ? data.maintenance : null;
+  const blocks = m ? m.system === "Tout" || m.system === "Launcher" : false;
+  const maintenanceBody = m
+    ? `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid ${m.phase === "active" ? "var(--warn)" : "var(--color-divider)"};background:${m.phase === "active" ? "color-mix(in srgb, var(--warn) 8%, transparent)" : "var(--color-bg)"};font-size:13px;">` +
+      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:${m.phase === "active" ? "var(--warn)" : "var(--muted)"}"></i><strong>${m.phase === "active" ? "En cours" : "Programmée"} · ${escapeHtml(m.system)}${blocks ? " · bloque le launcher" : ""}</strong></div>` +
+      `<span style="color:var(--muted);">${escapeHtml(m.message)}</span>` +
+      `<span style="color:var(--muted);">Début : ${formatAdminTime(m.startsAt)}<br>Fin : ${m.endsAt ? formatAdminTime(m.endsAt) : "pas de fin prévue"}</span>` +
+      (blocks
+        ? m.phase === "active"
+          ? `<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--muted);">Code d'accès :</span><code style="font:600 16px ui-monospace,Menlo,monospace;letter-spacing:.08em;padding:4px 10px;border-radius:var(--radius-md);background:var(--color-bg);border:1px solid var(--color-divider);">${escapeHtml(m.code)}</code></div>`
+          : `<span style="color:var(--muted);">Le code d'accès s'affichera ici au début.</span>`
+        : "") +
+      `<form method="post" action="/api/admin/notifications/maintenance/clear"><button type="submit" style="${BUTTON}">${m.phase === "active" ? "Terminer la maintenance" : "Annuler la maintenance"}</button></form>` +
+      `</div>`
+    : `<span style="color:var(--muted);font-size:13px;">Aucune maintenance en cours ou programmée.</span>`;
+  html = replaceSectionBody(html, ">Launcher preview</h2>", maintenanceBody);
+  html = replaceOnce(html, ">Launcher preview</h2>", ">Maintenance</h2>");
 
   const TYPE_LABELS: Record<string, string> = { announcement: "Annonce", maintenance: "Maintenance", alert: "Alerte", promotion: "Promotion" };
   const AUDIENCE_LABELS: Record<string, string> = { everyone: "Tout le monde", owners: "Propriétaires de serveur" };
@@ -775,9 +837,8 @@ export function notificationsHtml(data: {
         )
         .join("")
     : `<span style="color:var(--muted);font-size:13px;">Aucun message programmé.</span>`;
-  html = replaceSectionBody(html, ">Launcher preview</h2>", pendingBody);
-  html = replaceOnce(html, ">Launcher preview</h2>", ">Programmés</h2>");
-  html = markSectionNotBuilt(html, ">Recent</h2>", "nb");
+  html = replaceOnce(html, '>Recent</h2><div style="margin-left:auto;display:flex;align-items:center;gap:8px;"><a href="#" style="font-size:12.5px;">History</a></div>', '>Programmés</h2><div style="margin-left:auto;display:flex;align-items:center;gap:8px;"></div>');
+  html = replaceSectionBody(html, ">Programmés</h2>", pendingBody);
   return html;
 }
 
@@ -1408,19 +1469,26 @@ function newsRowHtml(n: NewsRow): string {
   );
 }
 
-export function newsHtml(data: { rows: NewsRow[] }): string {
-  const chrome = SCREENS.news;
+// 25/10 : affichee comme onglet « Actualités » du panneau Notifications (meme menu, meme en-tete),
+// plus comme panneau News a part.
+export function newsHtml(data: { rows: NewsRow[]; saved?: boolean }): string {
+  const chrome = replaceOnce(SCREENS.notifications, ">Notifications / New message</span>", ">Notifications / Actualités</span>");
   const mainStart = chrome.indexOf("<main");
   const html = chrome.slice(0, mainStart);
+  const title =
+    `<div style="display:flex;flex-direction:column;gap:4px;min-width:0;"><h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:24px;letter-spacing:-.01em;">Notifications</h1>` +
+    `<p style="margin:0;font-size:13.5px;color:var(--muted);">Messages aux joueurs, maintenance et articles d'actualité.</p></div>`;
   const header =
-    `<div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;">` +
-    `<div style="display:flex;flex-direction:column;gap:4px;min-width:0;"><h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:24px;letter-spacing:-.01em;">News</h1>` +
-    `<p style="margin:0;font-size:13.5px;color:var(--muted);">Articles affichés sur la page « Actualités » du tableau de bord, une fois publiés.</p></div>` +
+    `<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">` +
+    `<p style="margin:0;font-size:13.5px;color:var(--muted);">Articles affichés sur la page « Actualités » du tableau de bord, une fois publiés.</p>` +
     `<div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><a href="/admin/news/nouveau" style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;text-decoration:none;"><i class="ph ph-plus" style="font-size:14.5px;"></i>Nouvel article</a></div></div>`;
+  const saved = data.saved
+    ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Article enregistré.</div>`
+    : "";
   const list = data.rows.length
     ? `<section style="display:flex;flex-direction:column;gap:16px;padding:12px 8px 4px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;"><div style="overflow-x:auto;"><div style="display:grid;min-width:640px;grid-template-columns:minmax(0,2.4fr) 120px 110px 170px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Titre</span><span>Statut</span><span>Date</span><span>Actions</span></div>${data.rows.map(newsRowHtml).join("")}</div></div></section>`
-    : `<section style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:40px 22px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;min-height:160px;"><i class="ph ph-newspaper" style="font-size:22px;color:var(--muted2);"></i><p style="margin:0;font-size:13px;color:var(--muted);">Aucun article pour le moment.</p></section>`;
-  return html + `<main style="flex:1;min-width:0;padding:28px 32px 40px;display:flex;flex-direction:column;gap:22px;">${header}${list}</main></div></div>`;
+    : `<section style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:40px 22px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;min-height:160px;"><i class="ph ph-newspaper" style="font-size:22px;color:var(--muted2);"></i><p style="margin:0;font-size:13px;color:var(--muted);">Aucun article pour le moment.</p><p style="margin:0;font-size:13px;color:var(--muted);">Écris le premier avec « Nouvel article ».</p></section>`;
+  return html + `<main style="flex:1;min-width:0;padding:28px 32px 40px;display:flex;flex-direction:column;gap:22px;">${title}${notificationsTabsHtml("news", data.rows.length)}${header}${saved}${list}</main></div></div>`;
 }
 
 // Editeur (creation et edition) : titre + texte brut (pas d'editeur riche) + case Publie.
@@ -1433,7 +1501,7 @@ export function newsEditorHtml(data: { id: string | null; title: string; body: s
   html = replaceOnce(
     html,
     ">News / New article</span>",
-    data.id ? ">News / Modifier</span>" : ">News / Nouvel article</span>",
+    data.id ? ">Notifications / Actualités / Modifier</span>" : ">Notifications / Actualités / Nouvel article</span>",
   );
   const action = data.id ? `/api/admin/news/${escapeHtml(data.id)}` : "/api/admin/news";
   const field = "display:flex;flex-direction:column;gap:6px;min-width:0;";
@@ -1446,7 +1514,11 @@ export function newsEditorHtml(data: { id: string | null; title: string; body: s
     `<label style="${field}"><span style="${label}">Titre</span><input class="input" name="title" required minlength="1" maxlength="200" value="${escapeHtml(data.title)}" style="height:36px;font-size:13.5px;"></label>` +
     `<label style="${field}"><span style="${label}">Texte</span><textarea class="input" name="body" required minlength="1" maxlength="20000" style="min-height:260px;font-size:13.5px;line-height:1.6;">${escapeHtml(data.body)}</textarea></label>` +
     `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;width:fit-content;"><input type="checkbox" name="published" ${data.published ? "checked" : ""} style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Publié</label>` +
-    `<div style="display:flex;gap:10px;"><button type="submit" style="${CONFIRM}">Enregistrer</button><a href="/admin/news" style="${CANCEL}">Annuler</a></div>` +
+    // 25/10 : prevenir les joueurs dans le launcher, seulement la 1re fois que l'article est publie.
+    (data.published
+      ? ""
+      : `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;width:fit-content;"><input type="checkbox" name="notify" checked style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Prévenir les joueurs dans le launcher à la publication</label>`) +
+    `<div style="display:flex;gap:10px;"><button type="submit" style="${CONFIRM}">Enregistrer</button><a href="/admin/notifications?tab=news" style="${CANCEL}">Annuler</a></div>` +
     `</form>` +
     deleteForm;
   return (
