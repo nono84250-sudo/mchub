@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { execSql, withD1Busy } from "@/lib/db";
+import { execSql } from "@/lib/db";
+import { withD1Busy } from "@/lib/d1Busy";
 import { playLauncherUser } from "@/lib/playLauncher";
 import { addCloudVersion, getUserOffer, pruneCloud } from "@/lib/playWorlds";
 import {

@@ -1,4 +1,4 @@
-import { execSql } from "@/lib/db";
+import { D1_MAX_PARAMS, execSql } from "@/lib/db";
 import { ONLINE_WINDOW_SECONDS } from "@/lib/refreshSettings";
 
 // Heartbeat de presence envoye par le launcher (voir /api/launcher/presence), greffe sur son
@@ -65,14 +65,18 @@ export type PresenceStatus = { online: boolean; playingSlug: string | null };
 export async function getOnlineStatuses(userIds: string[]): Promise<Map<string, PresenceStatus>> {
   const statuses = new Map<string, PresenceStatus>();
   if (userIds.length === 0) return statuses;
-  const placeholders = userIds.map(() => "?").join(", ");
-  const rows = (await execSql(
-    `SELECT "userId", "lastSeenAt", "playingSlug" FROM "userPresence" WHERE "userId" IN (${placeholders})`,
-    userIds,
-  )) as { userId: string; lastSeenAt: string; playingSlug: string | null }[];
-  for (const row of rows) {
-    const online = isOnline(row.lastSeenAt);
-    statuses.set(row.userId, { online, playingSlug: online ? row.playingSlug ?? null : null });
+  // Par lots de D1_MAX_PARAMS : D1 refuse plus de 100 parametres par requete.
+  for (let i = 0; i < userIds.length; i += D1_MAX_PARAMS) {
+    const chunk = userIds.slice(i, i + D1_MAX_PARAMS);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = (await execSql(
+      `SELECT "userId", "lastSeenAt", "playingSlug" FROM "userPresence" WHERE "userId" IN (${placeholders})`,
+      chunk,
+    )) as { userId: string; lastSeenAt: string; playingSlug: string | null }[];
+    for (const row of rows) {
+      const online = isOnline(row.lastSeenAt);
+      statuses.set(row.userId, { online, playingSlug: online ? row.playingSlug ?? null : null });
+    }
   }
   return statuses;
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { withD1Busy } from "@/lib/db";
+import { withD1Busy } from "@/lib/d1Busy";
 import { findCloudVersion, findCloudWorld } from "@/lib/playWorlds";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { presignDownload } from "@/lib/worldStorage";

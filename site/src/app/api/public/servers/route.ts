@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { listPublicServers } from "@/lib/public-servers";
 import { getTagCatalog } from "@/lib/tagRequests";
 import { rateLimitResponse } from "@/lib/rateLimit";
-import { withD1Busy } from "@/lib/db";
+import { withD1Busy } from "@/lib/d1Busy";
 import { jsonWithEtag } from "@/lib/etag";
 import { PUBLIC_LIST_CDN_SECONDS, PUBLIC_LIST_CDN_STALE_SECONDS } from "@/lib/refreshSettings";
 

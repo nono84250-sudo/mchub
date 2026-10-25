@@ -23,10 +23,29 @@ const MOD_DOWNLOAD_CONCURRENCY = 6;
 const FILE_INFO_BATCH = 100;
 const INSTALLER_TIMEOUT_MS = 15 * 60 * 1000;
 const STATE_FILE = ".omniscient-modpack.json";
+// Meme regle que INSTANCE_SLUG_RE dans main.js : le slug devient un nom de dossier
+// (instances/<slug>), jamais pris tel quel (audit 25/10).
+const INSTANCE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,80}$/i;
 
 // Hotes autorises pour les fichiers d'un .mrpack (specification Modrinth) : un
 // modpack ne doit pas pouvoir nous faire telecharger depuis n'importe quel serveur.
 const MRPACK_ALLOWED_HOSTS = new Set(["cdn.modrinth.com", "github.com", "raw.githubusercontent.com", "gitlab.com"]);
+// Fichier du modpack lui-meme et mods CurseForge (audit 25/10) : le site ne fait que relayer les
+// liens de l'API CurseForge (CDN *.forgecdn.net : edge., mediafilez.) ou Modrinth
+// (cdn.modrinth.com) — jamais un fichier heberge par le site Omniscient. Toujours en https.
+function isAllowedModpackUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return false;
+    return url.hostname === "cdn.modrinth.com" || url.hostname.endsWith(".forgecdn.net");
+  } catch {
+    return false;
+  }
+}
+
+// Plus aucune donnee recue pendant ce delai : le telechargement est coupe puis reessaye. Pas de
+// delai total (audit 25/10) : un gros fichier sur une connexion lente doit pouvoir aboutir.
+const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
 
 // Seuls hotes acceptes pour un fichier FTB qui n'est PAS un mod CurseForge : leurs propres
 // serveurs. Jamais edge.forgecdn.net (ni les "mirrors" de leur API) pour un mod CurseForge : ces
@@ -106,39 +125,54 @@ function downloadFile(url, destPath, options) {
 }
 
 // Telecharge vers `destPath` (fichier .part puis renommage) en verifiant la
-// taille et l'empreinte SHA-1 quand elles sont connues, avec 3 essais.
+// taille et les empreintes SHA-1 / SHA-512 quand elles sont connues, avec 3 essais.
 // `signal` (2026-10-11, gestionnaire de telechargements) : annulation
 // volontaire (bouton Annuler) — jamais reessayee, contrairement a une vraie
 // erreur reseau. `onBytes` : octets reçus pour CE fichier depuis le dernier
 // appel, pour la progression/vitesse affichees dans le panneau.
-async function downloadFileLocked(url, destPath, { sha1, size, signal, onBytes } = {}) {
+async function downloadFileLocked(url, destPath, { sha1, sha512, size, signal, onBytes } = {}) {
   await fsp.mkdir(path.dirname(destPath), { recursive: true });
   const partPath = `${destPath}.part`;
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (signal?.aborted) throw new DOMException("Téléchargement annulé.", "AbortError");
+    // Delai d'inactivite, rearme a chaque morceau recu (voir DOWNLOAD_IDLE_TIMEOUT_MS).
+    const idle = new AbortController();
+    let idleTimer = null;
+    const armIdle = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => idle.abort(), DOWNLOAD_IDLE_TIMEOUT_MS);
+    };
     try {
-      const timeoutSignal = AbortSignal.timeout(5 * 60_000);
-      const res = await fetch(url, { signal: signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal });
+      armIdle();
+      const res = await fetch(url, { signal: signal ? AbortSignal.any([idle.signal, signal]) : idle.signal });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const hash = crypto.createHash("sha1");
+      const hash512 = sha512 ? crypto.createHash("sha512") : null;
       let received = 0;
       const source = Readable.fromWeb(res.body);
       source.on("data", (chunk) => {
+        armIdle();
         hash.update(chunk);
+        hash512?.update(chunk);
         received += chunk.length;
         onBytes?.(chunk.length);
       });
       await pipeline(source, fs.createWriteStream(partPath));
       if (size && received !== size) throw new Error(`taille reçue ${received} au lieu de ${size}`);
       if (sha1 && hash.digest("hex") !== sha1.toLowerCase()) throw new Error("empreinte SHA-1 différente de celle attendue");
+      if (hash512 && hash512.digest("hex") !== sha512.toLowerCase()) throw new Error("empreinte SHA-512 différente de celle attendue");
       await fsp.rename(partPath, destPath);
       return;
     } catch (error) {
-      lastError = error;
+      lastError = idle.signal.aborted && !signal?.aborted
+        ? new Error(`aucune donnée reçue pendant ${DOWNLOAD_IDLE_TIMEOUT_MS / 1000} s`)
+        : error;
       await fsp.rm(partPath, { force: true });
       if (error?.name === "AbortError" && signal?.aborted) throw error; // annulation volontaire : jamais de reessai
       if (attempt < 3) await sleep(600 * attempt);
+    } finally {
+      clearTimeout(idleTimer);
     }
   }
   throw new ModpackError(`Téléchargement impossible (${path.basename(destPath)}) : ${lastError.message}`, {
@@ -175,6 +209,7 @@ async function readInstalledState(instanceDir) {
 // precis seulement.) Meme fichier d'etat que readInstalledState ci-dessus,
 // juste sans avoir besoin de le parser entierement.
 async function isInstalled(gameRoot, slug) {
+  if (typeof slug !== "string" || !INSTANCE_SLUG_RE.test(slug)) return false;
   try {
     await fsp.access(path.join(gameRoot, "instances", slug, STATE_FILE));
     return true;
@@ -290,7 +325,8 @@ function resolveModrinthFiles(index) {
         code: "disallowed_download_host",
       });
     }
-    entries.push({ path: file.path, url, sha1: file.hashes?.sha1 || null, size: file.fileSize || null });
+    // SHA-512 : toujours donne par un .mrpack conforme, verifie au telechargement en plus du SHA-1.
+    entries.push({ path: file.path, url, sha1: file.hashes?.sha1 || null, sha512: file.hashes?.sha512 || null, size: file.fileSize || null });
   }
   return entries;
 }
@@ -499,9 +535,9 @@ async function resolveFtbFiles({ config, files, onProgress, instanceDir, manualS
 // Le joueur peut le recuperer lui-meme (14/10, demande de Rushi, comme Prism ou
 // ATLauncher) : il le telecharge depuis la page du mod et le laisse dans son dossier
 // Telechargements (`manualSearchDirs`), ou il est retrouve ici par sa taille puis son
-// empreinte SHA-1, et deplace dans mods/ (14/10, retour de Rushi : ne pas laisser de copie
-// qui encombre Telechargements). Ce qui manque encore fait echouer l'installation
-// avec la liste de ces mods (code "manual_mods"), affichee par le launcher.
+// empreinte SHA-1, et copie dans mods/. L'original reste dans Telechargements (audit 25/10 :
+// avant, il y etait efface sans rien demander au joueur). Ce qui manque encore fait echouer
+// l'installation avec la liste de ces mods (code "manual_mods"), affichee par le launcher.
 // Pas de lien de repli vers le CDN de CurseForge : il contournerait le choix de l'auteur.
 async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDir, manualSearchDirs = [] }) {
   onProgress({ text: "Récupération de la liste des mods…" });
@@ -525,13 +561,18 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
       continue;
     }
     const entry = { path: `mods/${path.basename(info.fileName)}`, url: info.downloadUrl, sha1: info.sha1, size: info.fileLength };
+    if (info.downloadUrl && !isAllowedModpackUrl(info.downloadUrl)) {
+      throw new ModpackError(`Le mod "${info.fileName}" du modpack se télécharge depuis un site non autorisé.`, {
+        code: "disallowed_download_host",
+      });
+    }
     if (info.downloadUrl) entries.push(entry);
     else blocked.push({ info, entry });
   }
 
   if (blocked.length && instanceDir) {
     const found = await findManualFiles(blocked, { instanceDir, searchDirs: manualSearchDirs });
-    if (found > 0) onProgress({ text: `${found} mod(s) ajouté(s) à la main retrouvé(s) et déplacé(s) dans le jeu.` });
+    if (found > 0) onProgress({ text: `${found} mod(s) ajouté(s) à la main retrouvé(s) et copié(s) dans le jeu.` });
   }
   const fromModrinth = await findOnModrinth(blocked.filter((item) => !item.ready));
   if (fromModrinth > 0) onProgress({ text: `${fromModrinth} mod(s) récupéré(s) sur Modrinth.` });
@@ -608,6 +649,7 @@ async function findOnModrinth(items) {
     }
     if (url.protocol !== "https:" || url.hostname !== "cdn.modrinth.com") continue;
     item.entry.url = url.href;
+    if (/^[0-9a-f]{128}$/i.test(file.hashes?.sha512 || "")) item.entry.sha512 = file.hashes.sha512;
     item.ready = true;
     item.viaModrinth = true;
     found++;
@@ -635,13 +677,11 @@ function safeCurseforgeUrl(value) {
 
 // Mods bloques deja presents (dans mods/ de l'instance, ou deposes par le joueur dans un
 // des dossiers `searchDirs`) : un fichier n'est accepte que si sa taille ET son empreinte
-// SHA-1 sont celles annoncees par CurseForge — sans les deux, il n'est jamais deplace. Seuls les
+// SHA-1 sont celles annoncees par CurseForge — sans les deux, il n'est jamais copie. Seuls les
 // .jar/.zip de la bonne taille sont lus, rien d'autre du dossier Telechargements.
-// Deplacement = copie complete dans mods/ PUIS suppression de l'original : jamais l'inverse,
-// et si la suppression echoue (fichier ouvert, droits), l'original reste simplement la — rien
-// n'est perdu. Pas de rename direct : Telechargements et le dossier du jeu peuvent etre sur
-// deux disques differents.
-// Marque `ready` sur chaque mod retrouve et renvoie combien ont ete deplaces depuis searchDirs.
+// Copie seulement (audit 25/10) : le launcher n'efface ni ne deplace jamais rien dans le dossier
+// Telechargements du joueur. Copie vers un .part puis renommage, verifiee ensuite.
+// Marque `ready` sur chaque mod retrouve et renvoie combien ont ete copies depuis searchDirs.
 async function findManualFiles(blocked, { instanceDir, searchDirs }) {
   let copied = 0;
   const pending = [];
@@ -688,11 +728,13 @@ async function findManualFiles(blocked, { instanceDir, searchDirs }) {
       await fsp.mkdir(path.dirname(match.target), { recursive: true });
       await fsp.copyFile(candidate, `${match.target}.part`);
       await fsp.rename(`${match.target}.part`, match.target);
+      // Copie relue : un fichier modifie entre-temps n'est pas compte comme retrouve.
+      if (!(await fileMatches(match.target, { sha1: match.entry.sha1, size: match.entry.size }))) {
+        await fsp.rm(match.target, { force: true }).catch(() => {});
+        continue;
+      }
       match.ready = true;
       copied++;
-      if (await fileMatches(match.target, { sha1: match.entry.sha1, size: match.entry.size })) {
-        await fsp.rm(candidate, { force: true }).catch(() => {});
-      }
     }
   }
   return copied;
@@ -797,6 +839,7 @@ async function installFiles({ entries, instanceDir, previousFiles, keepPaths = [
         if (!(await fileMatches(entry.target, { sha1: entry.sha1, size: entry.size }))) {
           await downloadFile(entry.url, entry.target, {
             sha1: entry.sha1,
+            sha512: entry.sha512,
             size: entry.size,
             signal,
             onBytes: (n) => {
@@ -1135,6 +1178,9 @@ async function prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersio
 const installLocks = new Map();
 
 function installModpack(options) {
+  if (typeof options.slug !== "string" || !INSTANCE_SLUG_RE.test(options.slug)) {
+    return Promise.reject(new ModpackError("Serveur invalide.", { code: "invalid_slug" }));
+  }
   const instanceDir = path.join(options.gameRoot, "instances", options.slug);
   const existing = installLocks.get(instanceDir);
   if (existing) return existing;
@@ -1145,7 +1191,9 @@ function installModpack(options) {
 
 // `manualSearchDirs` : dossiers ou chercher les mods bloques que le joueur a telecharges lui-meme
 // (le dossier Telechargements, voir main.js et resolveCurseforgeFiles).
-async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJava, onProgress = () => {}, signal, waitIfPaused, manualSearchDirs = [] }) {
+// `onWarning(texte)` (facultatif) : avertissements pour le journal seulement (jamais affiches
+// dans la progression), ex. fichier sans empreinte a verifier.
+async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJava, onProgress = () => {}, onWarning = () => {}, signal, waitIfPaused, manualSearchDirs = [] }) {
   // `step` : etape affichee dans le panneau de la pilule (« étape 3 sur 6 », voir renderer.js).
   onProgress({ step: "prepare", text: "Recherche du modpack…" });
   // Serveur prive : preuve d'acces (voir config.headers dans main.js, game:launch).
@@ -1154,6 +1202,11 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
   const { file } = info;
   // FTB n'a pas d'archive (downloadUrl null) : la liste des fichiers se lit sur leur API.
   if (source !== "ftb" && !file?.downloadUrl) throw new ModpackError("Ce modpack n'a pas de lien de téléchargement.", { code: "no_download_url" });
+  if (file?.downloadUrl && !isAllowedModpackUrl(file.downloadUrl)) {
+    throw new ModpackError("Le fichier du modpack se télécharge depuis un site non autorisé.", { code: "disallowed_download_host" });
+  }
+  // L'API CurseForge/Modrinth ne donne pas toujours l'empreinte : pas bloquant, mais trace.
+  if (source !== "ftb" && !file.sha1) onWarning(`Modpack "${info.modpack?.name ?? slug}" : aucune empreinte SHA-1 fournie, fichier vérifié sur sa taille seulement.`);
 
   const instanceDir = path.join(gameRoot, "instances", slug);
   await fsp.mkdir(instanceDir, { recursive: true });
@@ -1232,6 +1285,10 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
   // previousHashes/nextHashes : seul le format FTB s'en sert (configs livrees comme fichiers a
   // telecharger, pas dans une archive — voir keptByPlayer).
   const entries = await pack.resolveFiles({ config, onProgress, instanceDir, manualSearchDirs, previousHashes, nextHashes: overrideHashes });
+  const unhashed = (Array.isArray(entries) ? entries : []).filter((entry) => !entry.sha1 && !entry.sha512);
+  if (unhashed.length) {
+    onWarning(`${unhashed.length} fichier(s) du modpack sans empreinte, non vérifiés : ${unhashed.slice(0, 5).map((entry) => entry.path).join(", ")}`);
+  }
   const keepPaths = [...overrideJars, ...(Array.isArray(entries.keptPaths) ? entries.keptPaths : [])];
   const installedFiles = await installFiles({ entries, instanceDir, previousFiles, keepPaths, onProgress, signal, waitIfPaused });
   await fsp.writeFile(

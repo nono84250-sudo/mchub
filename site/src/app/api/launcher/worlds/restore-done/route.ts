@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withD1Busy } from "@/lib/db";
+import { withD1Busy } from "@/lib/d1Busy";
 import { playLauncherUser } from "@/lib/playLauncher";
 import { clearRestore } from "@/lib/playWorlds";
 

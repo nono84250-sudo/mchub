@@ -103,6 +103,9 @@ async function launchMinecraft({
   onGameLine = null,
 }) {
   await ensureJavaAvailable(javaPath);
+  // Adresse du serveur masquee dans tout ce qui sera journalise a partir d'ici (lignes du
+  // launcher, de minecraft-launcher-core et de Minecraft), voir logStore.addSensitiveAddress.
+  if (serverIp) logStore.addSensitiveAddress(serverIp);
 
   const launcher = new Client();
 
@@ -169,7 +172,7 @@ async function launchMinecraft({
     if (addToServerList) {
       try {
         if (await addServerToList(gameDirectory || GAME_ROOT, { name: serverName, ip: serverIp })) {
-          logStore.pushLog({ source: "launcher", message: `« ${serverName || serverIp} » ajouté à la liste Multijoueur.` });
+          logStore.pushLog({ source: "launcher", message: `« ${serverName || logStore.maskAddress(serverIp)} » ajouté à la liste Multijoueur.` });
         }
       } catch (error) {
         logStore.pushLog({ level: "warn", source: "launcher", message: `Liste Multijoueur non mise à jour : ${error instanceof Error ? error.message : error}` });
@@ -204,7 +207,7 @@ async function launchMinecraft({
       if (!started) reject(new Error(`Le jeu s'est fermé avant de démarrer (code ${code}).`));
     });
     onProgress?.({ text: "Lancement du jeu…" });
-    logStore.pushLog({ source: "game", message: `Lancement de Minecraft ${version}${serverIp ? ` → ${serverIp}` : ""}…` });
+    logStore.pushLog({ source: "game", message: `Lancement de Minecraft ${version}${serverIp ? ` → ${logStore.maskAddress(serverIp)}` : ""}…` });
     launcher
       .launch(opts)
       .then((proc) => {

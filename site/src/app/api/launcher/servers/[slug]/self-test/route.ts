@@ -6,6 +6,7 @@ import { SERVERS_CACHE_TAG, isProvenOwner, proofFromRequest } from "@/lib/public
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { runAndStoreChecks } from "@/lib/verification";
 import { MANUAL_MODS_READY, parseManualMods } from "@/lib/manualMods";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Recoit le resultat de l'auto-test de publication lance depuis le launcher (voir
 // "Tester pour publication" dans Mes instances, renderer.js/runSelfTest) — 3 controles :
@@ -23,7 +24,7 @@ import { MANUAL_MODS_READY, parseManualMods } from "@/lib/manualMods";
 // canSeeServer/getServerWithIpBySlug — jeton Mojang ou session de lanceur) : sans ce controle,
 // n'importe qui connaissant le slug pourrait debloquer la publication d'un serveur qui n'est
 // pas le sien.
-export async function POST(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/self-test">) {
+async function handlePOST(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/self-test">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -46,7 +47,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
     return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => null)) ?? {};
   const checks = {
     reachable: body.checks?.reachable === true,
     modpackInstalled: body.checks?.modpackInstalled === true,
@@ -90,3 +91,5 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
 
   return NextResponse.json({ ok: true, passed: true });
 }
+
+export const POST = withD1Busy(handlePOST);

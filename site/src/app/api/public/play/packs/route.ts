@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { rateLimitResponse } from "@/lib/rateLimit";
-import { withD1Busy } from "@/lib/db";
+import { withD1Busy } from "@/lib/d1Busy";
 import { getPlayBeta, listPublishedPacks } from "@/lib/playWorlds";
 
 // Mode Jouer (bêta, 24/10) : packs officiels publiés (listes de mods Modrinth, rien n'est hébergé

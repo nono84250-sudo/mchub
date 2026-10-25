@@ -59,44 +59,29 @@ const RELATIONS: Record<string, Record<string, { model: string; fk: string }>> =
 const CF_ENDPOINT = () =>
   `https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/d1/database/${process.env.CF_D1_DATABASE_ID}/query`;
 
-// Audit de charge du 19/10 (B5) : quand Cloudflare limite le debit (HTTP 429, ~1 200 appels par
-// 5 min), TOUS les appels echouent pendant un moment. Avant : une erreur 500 obscure (« Réponse
-// 500 du site Omniscient » dans le launcher), et chaque nouvelle requete reessayait aussitot,
-// ce qui prolongeait le blocage. Maintenant : D1BusyError, transformee en 503 avec un message
-// clair par withD1Busy() ci-dessous, et cette instance n'appelle plus Cloudflare pendant 60 s.
-export const D1_BUSY_MESSAGE = "Le site Omniscient est très demandé : réessaie dans une minute.";
+// Base saturee (quota de l'API Cloudflare depasse, HTTP 429) ou trop lente : erreur a part,
+// pour que les routes du launcher repondent 503 « reessaie dans une minute » (voir
+// lib/d1Busy.ts) au lieu d'une erreur 500 opaque qui fait insister les launchers (audit 25/10).
 export class D1BusyError extends Error {
-  constructor() {
-    super(D1_BUSY_MESSAGE);
+  constructor(message = "D1 : base saturee") {
+    super(message);
     this.name = "D1BusyError";
   }
 }
+
+// Audit de charge du 19/10 (B5) : apres un 429, cette instance n'appelle plus Cloudflare pendant
+// 60 s (chaque nouvelle requete qui reessayait aussitot prolongeait le blocage).
 const BUSY_PAUSE_MS = 60_000;
 let busyUntil = 0;
 
-export function isD1Busy(error: unknown): boolean {
-  return error instanceof D1BusyError || (error instanceof Error && error.name === "D1BusyError");
-}
+// Cloudflare D1 accepte au plus 100 parametres lies par requete (limite documentee) : les
+// requetes construites a partir d'une liste (IN (...), INSERT multi-lignes) sont decoupees en
+// lots qui restent en dessous (audit 25/10).
+export const D1_MAX_PARAMS = 90;
 
-// 503 + message clair (et code "busy" pour le launcher) si l'erreur vient de la limite de debit
-// de Cloudflare, sinon null.
-export function d1BusyResponse(error: unknown): Response | null {
-  if (!isD1Busy(error)) return null;
-  return Response.json({ error: D1_BUSY_MESSAGE, code: "busy" }, { status: 503, headers: { "Retry-After": "60" } });
-}
-
-// Enveloppe une route /api : une limite de debit Cloudflare devient un 503 lisible au lieu d'un 500.
-export function withD1Busy<A extends unknown[]>(handler: (...args: A) => Promise<Response>): (...args: A) => Promise<Response> {
-  return async (...args: A) => {
-    try {
-      return await handler(...args);
-    } catch (error) {
-      const busy = d1BusyResponse(error);
-      if (busy) return busy;
-      throw error;
-    }
-  };
-}
+// Delai maximum d'un appel D1 : sans lui, une API Cloudflare lente bloque la fonction Vercel
+// jusqu'a sa propre limite. 10 s laisse une large marge (un appel normal prend < 300 ms).
+const D1_TIMEOUT_MS = 10_000;
 
 // Mesure (21/10, chantier cache des fiches) : avec D1_LOG=1 dans l'environnement (jamais en
 // production), chaque appel a Cloudflare est ecrit dans la console du site avec son numero et le
@@ -104,20 +89,29 @@ export function withD1Busy<A extends unknown[]>(handler: (...args: A) => Promise
 let d1CallCount = 0;
 
 async function d1Rest(sql: string, params: unknown[]): Promise<Row[]> {
-  if (Date.now() < busyUntil) throw new D1BusyError();
+  if (Date.now() < busyUntil) throw new D1BusyError("D1 : pause apres une limite de debit");
   if (process.env.D1_LOG === "1") console.log(`[D1 #${++d1CallCount}] ${sql.replace(/\s+/g, " ").slice(0, 60)}`);
-  const res = await fetch(CF_ENDPOINT(), {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.CF_D1_API_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ sql, params }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(CF_ENDPOINT(), {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.CF_D1_API_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ sql, params }),
+      signal: AbortSignal.timeout(D1_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new D1BusyError("D1 : delai depasse");
+    }
+    throw error;
+  }
+  if (res.status === 429) {
+    busyUntil = Date.now() + BUSY_PAUSE_MS;
+    throw new D1BusyError("D1 : limite de debit Cloudflare atteinte (HTTP 429)");
+  }
   // Reponse pas forcement JSON en cas de panne/blocage cote Cloudflare (page d'erreur, WAF,
   // limite de debit) : on le dit clairement plutot que de laisser .json() lever une SyntaxError opaque.
   const text = await res.text();
-  if (res.status === 429) {
-    busyUntil = Date.now() + BUSY_PAUSE_MS;
-    throw new D1BusyError();
-  }
   let json: { success: boolean; errors?: { message: string }[]; result?: { results: Row[] }[] };
   try {
     json = JSON.parse(text);
@@ -232,13 +226,17 @@ class Query {
       if (ids.length) {
         const table = TABLES[rel.model];
         const want = inc.columns ? ["id", ...inc.columns] : undefined;
-        const res = await (await d1())
-          .prepare(`SELECT ${selectList(want)} FROM "${table}" WHERE "id" IN (${ids.map(() => "?").join(",")})`)
-          .bind(...ids)
-          .all<Row>();
-        for (const r of res.results) {
-          const full = fromDb(table, r);
-          related.set(full.id, full);
+        // Par lots : l'API D1 refuse plus de 100 parametres par requete (D1_MAX_PARAMS).
+        for (let i = 0; i < ids.length; i += D1_MAX_PARAMS) {
+          const chunk = ids.slice(i, i + D1_MAX_PARAMS);
+          const res = await (await d1())
+            .prepare(`SELECT ${selectList(want)} FROM "${table}" WHERE "id" IN (${chunk.map(() => "?").join(",")})`)
+            .bind(...chunk)
+            .all<Row>();
+          for (const r of res.results) {
+            const full = fromDb(table, r);
+            related.set(full.id, full);
+          }
         }
       }
       for (const row of rows) {

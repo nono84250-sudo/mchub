@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkSlugVisibility, getCachedVisibleServerBySlug, getPublicServerBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
-import { withD1Busy } from "@/lib/db";
+import { withD1Busy } from "@/lib/d1Busy";
 import { jsonWithEtag } from "@/lib/etag";
 
 export const revalidate = 60;

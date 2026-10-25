@@ -43,6 +43,14 @@ export async function imagesUsedByAnotherOwner(urls: (string | null)[], ownerId:
   return anyServerUses(keys, { sql: `"ownerId" != ?`, param: ownerId });
 }
 
+// Vrai si une AUTRE fiche que serverId (null : fiche en creation) utilise deja cette image
+// (correctif de l'audit du 25/10, garde avec imagesUsedByAnotherOwner ci-dessus).
+export async function isImageUsedByAnotherServer(url: string | null, serverId: string | null): Promise<boolean> {
+  const key = imageKeyFromUrl(url);
+  if (!key) return false;
+  return anyServerUses([key], serverId ? { sql: `"id" != ?`, param: serverId } : null);
+}
+
 // Supprime une image deposee sur R2 (/api/upload) quand elle est remplacee ou retiree —
 // sans ca, l'ancien objet reste sur R2 indefiniment (voir /api/images/[key]/route.ts pour
 // le format de cle attendu). N'agit que sur nos propres URLs.

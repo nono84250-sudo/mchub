@@ -78,7 +78,9 @@ export async function resolveAudienceRecipients(audience: "everyone" | "owners")
 // qu'une ligne). Decoupe en lots : l'API REST D1 borne le nombre de parametres lies par
 // requete, donc un envoi "everyone" avec beaucoup de destinataires reste plusieurs requetes —
 // un petit nombre de lots plutot qu'un aller-retour par destinataire.
-const BROADCAST_CHUNK_SIZE = 50; // 50 lignes * 6 parametres = 300, large marge sous la limite D1
+// 15 lignes * 6 parametres = 90 : D1 refuse plus de 100 parametres par requete (audit 25/10,
+// les lots de 50 lignes = 300 parametres echouaient).
+const BROADCAST_CHUNK_SIZE = 15;
 export async function broadcastNotification(input: {
   recipientMinecraftUuids: string[];
   type: NotificationType;

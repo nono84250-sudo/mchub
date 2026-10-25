@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { proofFromRequest, visibleServerIdBySlug } from "@/lib/public-servers";
 import { createReport, createBehaviorReport, type ReportIssue, type BehaviorIssue } from "@/lib/reports";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { withD1Busy } from "@/lib/d1Busy";
 
 const VALID_ISSUES: ReportIssue[] = ["cant_connect", "wrong_version", "modpack_download", "crash", "other"];
 const VALID_BEHAVIOR_ISSUES: BehaviorIssue[] = ["stolen_server", "stolen_content", "impersonating", "inappropriate_content", "scam_phishing", "other"];
@@ -26,7 +27,7 @@ function safeProofUrl(raw: unknown): string | null {
 // partage que les autres routes launcher. Deux categories (voir "03b/03c Report a server" dans
 // Design/Omniscient Launcher UI Mockups.dc.html) : "technical" part chez le proprietaire,
 // "behavior" part aux moderateurs Omniscient (jamais vu par le proprietaire, voir lib/reports.ts).
-export async function POST(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/report">) {
+async function handlePOST(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/report">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -41,7 +42,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => null)) ?? {};
   const reporterMinecraftUuid = String(body.reporterMinecraftUuid ?? "").trim().slice(0, 100);
   const message = String(body.message ?? "").trim().slice(0, 2000);
   const category = body.category === "behavior" ? "behavior" : "technical";
@@ -88,3 +89,5 @@ export async function POST(request: Request, ctx: RouteContext<"/api/launcher/se
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withD1Busy(handlePOST);

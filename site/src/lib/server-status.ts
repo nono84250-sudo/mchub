@@ -3,14 +3,17 @@ import { revalidateTag } from "next/cache";
 import { db, or } from "@/lib/db";
 import { pingMinecraftServer } from "@/lib/mc-ping";
 
-// Durée pendant laquelle un statut mesuré reste valable avant qu'on
-// interroge de nouveau le serveur Minecraft.
-export const SERVER_STATUS_TTL_MS = 60_000;
+// Durée pendant laquelle un statut mesuré reste valable avant qu'une visite
+// (fiche, liste, launcher) déclenche une nouvelle mesure du serveur Minecraft.
+// 5 min au lieu de 60 s (audit de charge 25/10) : chaque mesure coûte 2 appels D1
+// par serveur, et le cron (/api/cron/recheck-reachability) remesure déjà tout
+// toutes les 5 min. Les visites ne servent plus que de filet si le cron s'arrête.
+export const SERVER_STATUS_TTL_MS = 5 * 60_000;
 
-// Un serveur qui ne répond pas n'est re-mesuré que toutes les 5 minutes (au lieu
-// de 60 s) : une mesure qui échoue attend jusqu'à 3 s, inutile d'y revenir aussi
+// Un serveur qui ne répond pas n'est re-mesuré que toutes les 10 minutes par les
+// visites : une mesure qui échoue attend jusqu'à 3 s, inutile d'y revenir aussi
 // souvent. Voir refreshOne (lastPingedAt est alors repoussé dans le futur).
-const FAILED_PING_RETRY_MS = 5 * 60_000;
+const FAILED_PING_RETRY_MS = 10 * 60_000;
 
 // Audit de charge du 19/10 (B1) : la tâche automatique (cron recheck-reachability, toutes les
 // 5 min) mesure déjà tous les serveurs publics. Les mesures déclenchées par les visites faisaient

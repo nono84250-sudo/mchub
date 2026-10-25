@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withD1Busy } from "@/lib/db";
+import { withD1Busy } from "@/lib/d1Busy";
 import { playLauncherUser } from "@/lib/playLauncher";
 import { beatWorldLocks, deleteCloudVersion, deviceConflict, findCloudVersion, findCloudWorld, releaseWorldLock, resolveSplit, takeWorldLock } from "@/lib/playWorlds";
 
@@ -56,7 +56,7 @@ export const POST = withD1Busy(async (request: Request) => {
       for (const id of ids) {
         const v = await findCloudVersion(userId, id);
         // explicit : supprimée à la main dans le launcher (même une version avec un nom).
-        if (v?.worldId === world.id && (body.explicit === true || !v.label) && (await deleteCloudVersion(userId, id)) === "ok") deletedIds.push(id);
+        if (v && v.worldId === world.id && (body.explicit === true || !v.label) && (await deleteCloudVersion(userId, id)) === "ok") deletedIds.push(id);
       }
     }
     return NextResponse.json({ ok: true, deleted: deletedIds.length, deletedIds });

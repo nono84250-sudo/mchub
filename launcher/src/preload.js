@@ -7,9 +7,11 @@ contextBridge.exposeInMainWorld("mchub", {
   restartApp: () => ipcRenderer.invoke("app:restart"),
   // Parametres > Divers > A propos : "terms" ou "privacy" seulement (liste fixe cote main.js).
   openLegalPage: (page) => ipcRenderer.invoke("app:openLegal", page),
-  checkMaintenance: () => ipcRenderer.invoke("maintenance:check"),
+  // `opts.background` (listes, notifications, maintenance, amis) : appel de fond, mis en pause
+  // par main.js quand le site est sature (voir siteBusyUntil).
+  checkMaintenance: (opts) => ipcRenderer.invoke("maintenance:check", opts),
   verifyMaintenanceCode: (code) => ipcRenderer.invoke("maintenance:verifyCode", code),
-  listServers: () => ipcRenderer.invoke("servers:list"),
+  listServers: (opts) => ipcRenderer.invoke("servers:list", opts),
   clearServerCache: () => ipcRenderer.invoke("servers:clearCache"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
   getFeaturedServer: () => ipcRenderer.invoke("servers:featured"),
@@ -46,7 +48,7 @@ contextBridge.exposeInMainWorld("mchub", {
   // partir du heartbeat ci-dessous, jamais d'un ping reseau serveur (pas fiable pour ca, voir
   // le rapport).
   friends: {
-    list: () => ipcRenderer.invoke("friends:list"),
+    list: (opts) => ipcRenderer.invoke("friends:list", opts),
     add: (minecraftUsername) => ipcRenderer.invoke("friends:add", minecraftUsername),
     accept: (friendUserId) => ipcRenderer.invoke("friends:accept", friendUserId),
     remove: (friendUserId) => ipcRenderer.invoke("friends:remove", friendUserId),
@@ -59,7 +61,7 @@ contextBridge.exposeInMainWorld("mchub", {
   sendPresenceHeartbeat: (opts) => ipcRenderer.invoke("presence:heartbeat", opts),
   submitReport: (report) => ipcRenderer.invoke("reports:submit", report),
   reportInstallProblem: (payload) => ipcRenderer.invoke("servers:reportInstallProblem", payload),
-  listNotifications: () => ipcRenderer.invoke("notifications:list"),
+  listNotifications: (opts) => ipcRenderer.invoke("notifications:list", opts),
   markNotificationsRead: () => ipcRenderer.invoke("notifications:markRead"),
   deleteNotification: (id) => ipcRenderer.invoke("notifications:delete", id),
   clearReadNotifications: () => ipcRenderer.invoke("notifications:clearRead"),

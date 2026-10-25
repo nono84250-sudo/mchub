@@ -231,8 +231,17 @@
     }
   }
   let replayQueued = false;
-  new MutationObserver(() => {
-    if (replayQueued) return;
+  // Ne réagit qu'aux changements de Paramètres ou de l'Aide (audit 25/10) : avant, chaque
+  // modification de la page (liste des serveurs, barres de progression…) relançait addReplay
+  // pendant toute la session. L'observateur reste branché : l'onglet Divers est redessiné à
+  // chaque ouverture et la ligne doit y revenir.
+  const concernsReplay = (record) => {
+    const el = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+    if (el?.closest?.("#settings-panel, #help-panel")) return true;
+    return [...record.addedNodes].some((n) => n.nodeType === 1 && (n.id === "help-panel" || !!n.querySelector?.("#help-panel")));
+  };
+  new MutationObserver((records) => {
+    if (replayQueued || !records.some(concernsReplay)) return;
     replayQueued = true;
     setTimeout(() => { replayQueued = false; addReplay(); }, 50);
   }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden", "class"] });

@@ -7,7 +7,7 @@ import { recordPresenceHeartbeat, recordSessionPresence } from "@/lib/presence";
 import { listPublicServers } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
-import { withD1Busy } from "@/lib/db";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Idee 2 du lancement (19/10) : signal groupe du launcher, une fois par minute. Remplace trois
 // appels separes (presence chaque minute, maintenance toutes les 2 min, notifications toutes les

@@ -74,9 +74,9 @@ function playersText(server) {
   }
   // Version A (19/10, validee par Rushi) : un maximum de 0 veut dire « pas de maximum annonce »
   // (beaucoup de grands serveurs cachent leur limite), jamais « 3570 / 0 ».
-  const capacity = server.playerCapacity > 0 ? ` / ${server.playerCapacity}` : "";
+  const capacity = server.playerCapacity > 0 ? ` / ${Number(server.playerCapacity)}` : "";
   // Juste le nombre : « 16170 / 200000 » (le libellé est donné par le titre de la case).
-  return `${server.playerCount}${capacity}`;
+  return `${Number(server.playerCount)}${capacity}`;
 }
 
 // Remplissage du serveur (17/10, meme logique que la jauge du site) : orange a partir de 80 % des
@@ -486,7 +486,7 @@ function refreshFriendsForLists(onChange) {
   if (!signedIn || gamePlaying || Date.now() - friendsForListsAt < FRIENDS_FOR_LISTS_MS) return;
   friendsForListsAt = Date.now();
   const before = JSON.stringify([...friendsBySlug()]);
-  refreshFriends().then(() => {
+  refreshFriends({ background: true }).then(() => {
     if (JSON.stringify([...friendsBySlug()]) !== before) onChange();
   });
 }
@@ -3105,11 +3105,11 @@ let serverListCache = null;
 let serverListCacheAt = 0;
 const SERVER_LIST_CACHE_MS = 15_000;
 
-async function fetchServerList({ force = false } = {}) {
+async function fetchServerList({ force = false, background = false } = {}) {
   if (!force && serverListCache && Date.now() - serverListCacheAt < SERVER_LIST_CACHE_MS) {
     return serverListCache;
   }
-  const result = await window.mchub.listServers();
+  const result = await window.mchub.listServers({ background });
   if (result.ok) {
     rememberTagLabels(result.servers);
     serverListCache = result;
@@ -3832,7 +3832,7 @@ async function ensureNotInMaintenance(pendingCheck) {
 // une fois le bon code entre.
 async function checkMaintenanceLoop() {
   if (maintenanceBypassed || pulseIsFresh()) return;
-  const status = await window.mchub.checkMaintenance();
+  const status = await window.mchub.checkMaintenance({ background: true });
   if (status.active) await showMaintenanceScreen(status.message);
 }
 
@@ -3879,9 +3879,9 @@ async function showNotificationPopup(notif) {
   }
 }
 
-async function refreshNotifications() {
+async function refreshNotifications({ background = false } = {}) {
   if (!signedIn) return;
-  const result = await window.mchub.listNotifications();
+  const result = await window.mchub.listNotifications({ background });
   if (!result.ok) return;
   await applyNotifications(result.notifications);
 }
@@ -3889,7 +3889,7 @@ async function refreshNotifications() {
 // Tour planifie (toutes les 5 min) : inutile si le signal groupe vient de les rapporter.
 async function scheduledRefreshNotifications() {
   if (pulseIsFresh()) return;
-  await refreshNotifications();
+  await refreshNotifications({ background: true });
 }
 
 async function applyNotifications(notifications) {
@@ -4179,10 +4179,13 @@ function renderFriendsList() {
     friendsSectionHtml("friends.sectionOutgoing", friendsOutgoing, (r) => friendRequestRowHtml(r, "outgoing"));
 }
 
-async function refreshFriends() {
+// `background` : rafraichissement des listes de serveurs (refreshFriendsForLists), garde 5 min par
+// main.js et mis en pause quand le site est sature. Sans lui (page Amis ouverte, apres une
+// action), main.js ne garde la liste qu'une minute, comme avant.
+async function refreshFriends({ background = false } = {}) {
   if (!signedIn) return;
   const ownerId = currentProfile?.id ?? null;
-  const result = await window.mchub.friends.list();
+  const result = await window.mchub.friends.list({ background });
   // Compte change ou deconnecte pendant la requete : la reponse ne le concerne plus.
   if (!signedIn || (currentProfile?.id ?? null) !== ownerId) return;
   if (friendsOwnerId !== ownerId) resetFriendsState();
@@ -6279,9 +6282,16 @@ function renderDebugTab(contentEl, settings) {
     });
   });
 
+  // Refuse pendant une partie ou une installation (voir diagnostics:repair dans main.js) : memes
+  // messages que « Supprimer les fichiers » d'une instance.
+  const diagnosticsRefusal = (result) =>
+    result?.code === "running" ? t("instanceTools.delRefusedRunning")
+      : result?.code === "installing" || result?.code === "launching" ? t("instanceTools.delRefusedInstalling")
+        : null;
+
   document.getElementById("settings-repair").addEventListener("click", async () => {
-    await window.mchub.diagnostics.repair();
-    document.getElementById("settings-reset-status").textContent = t("debug.repaired");
+    const result = await window.mchub.diagnostics.repair();
+    document.getElementById("settings-reset-status").textContent = diagnosticsRefusal(result) || t("debug.repaired");
   });
 
   const formatCacheSize = (bytes) =>
@@ -6295,7 +6305,12 @@ function renderDebugTab(contentEl, settings) {
   document.getElementById("settings-clear-cache").addEventListener("click", async () => {
     const { confirmed } = await showModal({ tone: "warn", title: t("debug.clearCacheTitle"), body: t("debug.clearCacheBody"), confirmLabel: t("debug.clearCacheBtn"), cancelLabel: t("common.cancel") });
     if (!confirmed) return;
-    await window.mchub.diagnostics.clearCache();
+    const result = await window.mchub.diagnostics.clearCache();
+    const refusal = diagnosticsRefusal(result);
+    if (refusal) {
+      document.getElementById("settings-reset-status").textContent = refusal;
+      return;
+    }
     document.getElementById("settings-reset-status").textContent = t("debug.cacheCleared");
     document.getElementById("settings-cache-size-desc").textContent = t("debug.clearCacheDesc", { size: formatCacheSize(0) });
   });
@@ -7666,7 +7681,7 @@ async function silentRefreshList() {
   if (!signedIn || listEl.hidden || gamePlaying || document.hidden) return;
   lastSilentListRefreshAt = Date.now();
   const generation = listViewGeneration;
-  const result = await fetchServerList({ force: true });
+  const result = await fetchServerList({ force: true, background: true });
   if (result.ok && generation === listViewGeneration && !listEl.hidden) renderList(result.servers);
 }
 
@@ -7708,8 +7723,15 @@ window.mchub.onGameState((running, exitCode) => {
 
 function scheduleRefresh(task, baseMs = REFRESH_INTERVAL_MS) {
   const tick = async () => {
-    await task();
-    setTimeout(tick, gamePlaying ? REFRESH_PLAYING_INTERVAL_MS : baseMs);
+    // Toujours reprogramme (audit 25/10) : avant, une seule erreur dans `task` arretait ce
+    // cycle pour toute la session (plus de liste, de notifications ni de maintenance).
+    try {
+      await task();
+    } catch (error) {
+      console.error("Rafraîchissement périodique échoué :", error);
+    } finally {
+      setTimeout(tick, gamePlaying ? REFRESH_PLAYING_INTERVAL_MS : baseMs);
+    }
   };
   setTimeout(tick, baseMs);
 }
@@ -7722,10 +7744,10 @@ document.addEventListener("visibilitychange", () => {
 // Notifications : toutes les 5 minutes (chaque appel interroge la base du site).
 scheduleRefresh(scheduledRefreshNotifications, 300_000);
 scheduleRefresh(checkMaintenanceLoop, 120_000);
-// Presence (systeme d'amis) : MEME valeur de cycle que silentRefreshList ci-dessus
-// (REFRESH_INTERVAL_MS, 60s) — greffe dessus comme demande, pas un nouvel intervalle ni celui
-// des notifications (qui est a 5 min, pas 30s comme un ancien commentaire le pretendait a
-// tort). Delibérément PAS via scheduleRefresh() : ce helper ralentit a
+// Presence (systeme d'amis) : son propre cycle de 2 min (audit 25/10, charge du site : avant 60 s,
+// comme silentRefreshList). Le site compte un ami « en ligne » pendant 5 min apres son dernier
+// heartbeat (ONLINE_WINDOW_MS cote site), donc un heartbeat rate ne le fait pas encore passer
+// « hors ligne ». Delibérément PAS via scheduleRefresh() : ce helper ralentit a
 // REFRESH_PLAYING_INTERVAL_MS (5 min) pendant une partie, ce qui est le bon choix pour la liste
 // de serveurs (pas besoin de la rafraichir pendant que le joueur est en jeu) mais serait exactement
 // le mauvais choix ici — un ami en train de JOUER est le cas ou on veut le plus montrer "en

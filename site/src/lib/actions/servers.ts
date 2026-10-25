@@ -149,6 +149,10 @@ async function getOwnedServer(serverId: string, userId: string) {
   return db.orm.public.Server.where({ id: serverId, ownerId: userId }).first();
 }
 
+// Audit 25/10 : changer l'adresse d'une fiche gelee permettait de liberer l'ancienne adresse,
+// puis de recreer une fiche avec elle (addressUsedByFrozenServer ne la voyait plus).
+const FROZEN_SERVER_ADDRESS_ERROR = "Cette fiche est gelée : son adresse ne peut pas changer tant que le gel n'est pas levé.";
+
 export async function createServer(_prevState: ServerActionState, formData: FormData): Promise<ServerActionState> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -213,6 +217,7 @@ export async function updateServer(
 
   const parsed = readForm(formData, await requestHost(), owned);
   if ("error" in parsed) return parsed;
+  if (parsed.ip !== owned.ip && owned.frozenAt) return { error: FROZEN_SERVER_ADDRESS_ERROR };
   if (parsed.ip !== owned.ip && (await addressUsedByFrozenServer(parsed.ip, serverId))) return { error: FROZEN_ADDRESS_ERROR };
   const addedImages = (["bannerUrl", "iconUrl", "backgroundUrl"] as const).filter((k) => parsed[k] !== owned[k]).map((k) => parsed[k]);
   if (await imagesUsedByAnotherOwner(addedImages, session.user.id)) return { error: FOREIGN_IMAGE_ERROR };

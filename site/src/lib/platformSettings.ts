@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { NextResponse } from "next/server";
 import { revalidateTag, unstable_cache } from "next/cache";
 import { db, execSql } from "@/lib/db";
@@ -103,7 +104,9 @@ export async function getLauncherMaintenance(): Promise<LauncherMaintenance> {
 // Genere un nouveau code a chaque activation : un ancien code communique par erreur ne doit
 // plus marcher la fois suivante.
 export async function activateLauncherMaintenance(message: string): Promise<string> {
-  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+  // Tirage cryptographique (audit 25/10) : Math.random n'est pas fait pour un code d'acces.
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
   await execSql(
     'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"',
     [MAINTENANCE_KEY, JSON.stringify({ active: true, code, message }), new Date().toISOString()],
