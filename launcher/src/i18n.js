@@ -180,6 +180,9 @@ const DICTIONARIES = {
       onlyOnce: "Cet écran ne s'affiche qu'à la première installation de ce serveur.",
       installPlay: "Installer et jouer",
       install: "Installer",
+      installAnyway: "Installer quand même",
+      sourceMaintenance: "{source} est en maintenance",
+      sourceMaintenanceHint: "L'installation peut échouer ou être lente. Tu peux réessayer après la maintenance.",
       cancel: "Annuler",
     },
     // Mode discret, etats vides et assistant (design 17/10, point 6).
@@ -1407,6 +1410,9 @@ const DICTIONARIES = {
       onlyOnce: "This screen only shows the first time you install this server.",
       installPlay: "Install and play",
       install: "Install",
+      installAnyway: "Install anyway",
+      sourceMaintenance: "{source} is under maintenance",
+      sourceMaintenanceHint: "Installing may fail or be slow. You can try again after the maintenance.",
       cancel: "Cancel",
     },
     discreet: {

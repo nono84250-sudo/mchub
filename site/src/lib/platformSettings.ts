@@ -198,6 +198,16 @@ export async function getLauncherStatus(): Promise<LauncherStatus> {
   return { maintenance: { active: false, message: null }, disruption: { system: m.system, message: m.message, endsAt: m.endsAt } };
 }
 
+// 25/10 (demande de Rushi) : maintenance en cours d'une source de modpacks (CurseForge, Modrinth,
+// FTB) — affichee sur le site la ou on choisit la source (creation d'un serveur, Parametres).
+export type SourceMaintenance = { source: Source; message: string } | null;
+const SOURCE_OF_SYSTEM: Record<string, Source> = { CurseForge: "curseforge", Modrinth: "modrinth", FTB: "ftb" };
+export async function getSourceMaintenance(): Promise<SourceMaintenance> {
+  const { disruption } = await getLauncherStatus();
+  const source = disruption ? SOURCE_OF_SYSTEM[disruption.system] : undefined;
+  return source && disruption ? { source, message: disruption.message } : null;
+}
+
 // Libellés affichés pour les deux rôles staff (admin/modérateur) — le nom change, pas les
 // permissions (toujours juste les deux rôles existants, voir adminAuth.ts). Reutilise
 // platformSetting comme la bannière ci-dessus : pas de table a part pour deux chaines.

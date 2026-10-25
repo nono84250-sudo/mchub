@@ -2705,6 +2705,10 @@ async function confirmFirstInstall(server, { launch }) {
   if (installed) return true;
 
   const need = server.type === "modded" ? FIRST_INSTALL_NEED_BYTES.modded : FIRST_INSTALL_NEED_BYTES.vanilla;
+  // 25/10 (demande de Rushi) : la source du modpack (CurseForge, Modrinth, FTB) est en maintenance.
+  const SOURCE_SYSTEMS = { curseforge: "CurseForge", modrinth: "Modrinth", ftb: "FTB" };
+  const sourceDisruption =
+    server.type === "modded" && currentDisruption && currentDisruption.system === SOURCE_SYSTEMS[server.modpackSource || "curseforge"] ? currentDisruption : null;
   let low = false;
   const bodyHtml = (free) => {
     low = free != null && free < need;
@@ -2720,7 +2724,10 @@ async function confirmFirstInstall(server, { launch }) {
     const manual = manualCount > 0 ? `<p class="first-install-line">ⓘ ${escapeHtml(t("manualMods.badgeTip", { count: manualCount }))}</p>` : "";
     const ownerMessage = ownerInstallMessage(server);
     const message = ownerMessage ? `<div class="owner-message"><span class="owner-message-label">${escapeHtml(t("firstInstall.ownerLabel"))}</span>${escapeHtml(ownerMessage)}</div>` : "";
-    return `${size}${ram}${manual}${message}<p class="first-install-note">${escapeHtml(t("firstInstall.onlyOnce"))}</p>`;
+    const maintenance = sourceDisruption
+      ? `<div class="disruption-banner" role="status" style="margin: 0;"><span aria-hidden="true">🛠</span><div style="min-width: 0;"><strong>${escapeHtml(t("firstInstall.sourceMaintenance", { source: sourceDisruption.system }))}</strong><div class="disruption-text">${escapeHtml(sourceDisruption.message || "")}<br>${escapeHtml(t("firstInstall.sourceMaintenanceHint"))}</div></div></div>`
+      : "";
+    return `${size}${ram}${manual}${message}${maintenance}<p class="first-install-note">${escapeHtml(t("firstInstall.onlyOnce"))}</p>`;
   };
   const readFree = async () => {
     try {
@@ -2736,7 +2743,7 @@ async function confirmFirstInstall(server, { launch }) {
     bodyHtml: bodyHtml(await readFree()),
     actions: [],
   });
-  const goLabel = launch ? t("firstInstall.installPlay") : t("firstInstall.install");
+  const goLabel = sourceDisruption ? t("firstInstall.installAnyway") : launch ? t("firstInstall.installPlay") : t("firstInstall.install");
   const renderActions = () =>
     modal.setActions([
       { label: t("firstInstall.cancel"), value: "cancel" },
@@ -3955,7 +3962,10 @@ async function checkMaintenanceLoop() {
 // /admin/notifications : le launcher reste utilisable, un bandeau previent des perturbations.
 // Seuls « Tout » et « Launcher » bloquent (ecran de maintenance ci-dessus).
 const disruptionBannerEl = document.getElementById("disruption-banner");
+// Derniere perturbation connue : reprise dans la fenetre avant d'installer (confirmFirstInstall).
+let currentDisruption = null;
 function applyDisruption(disruption) {
+  currentDisruption = disruption || null;
   if (!disruptionBannerEl) return;
   disruptionBannerEl.hidden = !disruption;
   if (!disruption) return;

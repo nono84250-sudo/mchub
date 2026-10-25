@@ -732,6 +732,8 @@
     "modpackModrinthHint": "Modrinth : tous les mods d'un modpack sont téléchargeables automatiquement.",
     "modpackCurseforgeHint": "CurseForge : les mods dont l'auteur interdit le téléchargement automatique devront être installés à la main.",
     "modpackFtbHint": "Packs officiels de l’équipe FTB. Les mods viennent de CurseForge, de Modrinth et des serveurs de FTB.",
+    "sourceMaintenanceTitle": "{source} est en maintenance",
+    "sourceMaintenanceHint": "La recherche et les téléchargements peuvent ne pas marcher. Tu peux quand même enregistrer ton serveur.",
     "modpackSourceDisabled": "{source} est temporairement désactivé par l'équipe — la recherche ne fonctionnera pas. Choisis une autre source ou saisis l'identifiant à la main.",
     "modpackSearchLabel": "Modpack",
     "modpackSearchPlaceholder": "Rechercher un modpack sur {source}…",

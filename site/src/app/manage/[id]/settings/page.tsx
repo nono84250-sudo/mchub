@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { updateServer, deleteServer, toggleServerPublished, duplicateServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
-import { allSourceStates } from "@/lib/platformSettings";
+import { allSourceStates, getSourceMaintenance } from "@/lib/platformSettings";
 import { ServerForm } from "@/components/ServerForm";
 import { ManageActions } from "@/components/ManageActions";
 import { getT } from "@/i18n/getDictionary";
@@ -28,7 +28,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
   const boundTogglePublished = toggleServerPublished.bind(null, server.id);
   const boundDuplicate = duplicateServer.bind(null, server.id);
   const showTeamPicker = TEAMS_READY && (await featureVisibleOnSite("team"));
-  const [versions, sourceStates, teams] = await Promise.all([getMinecraftVersions(), allSourceStates(), showTeamPicker ? listMyTeams(session.user.id) : Promise.resolve([])]);
+  const [versions, sourceStates, sourceMaintenance, teams] = await Promise.all([getMinecraftVersions(), allSourceStates(), getSourceMaintenance(), showTeamPicker ? listMyTeams(session.user.id) : Promise.resolve([])]);
   const currentTeamId = (server as { teamId?: string | null }).teamId ?? null;
 
   const defaultValues = {
@@ -78,6 +78,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
           inviteCode={server.inviteCode}
           canPublish={canPublish}
           sourceStates={sourceStates}
+          sourceMaintenance={sourceMaintenance}
           defaultValues={defaultValues}
         >
           <div className="border-t border-border pt-5">
