@@ -18,11 +18,14 @@ export function ManageSidebar({
   const pathname = usePathname();
   const { t } = useI18n();
 
-  const navItems: { href: string; label: string; icon: PhosphorIcon; badge?: number }[] = [
+  // Design 2026-10-17, point 7 : 3 entrees principales (Vue d'ensemble, Ma fiche,
+  // Statistiques) ; Signalements et Parametres descendent sous un trait. Memes pages qu'avant.
+  type NavItem = { href: string; label: string; icon: PhosphorIcon; badge?: number; separated?: boolean };
+  const navItems: NavItem[] = [
     { href: `/manage/${serverId}`, label: t("manage.navOverview"), icon: Layout },
-    { href: `/manage/${serverId}/activity`, label: t("manage.navActivity"), icon: ChartBar },
-    { href: `/manage/${serverId}/reports`, label: t("manage.navReports"), icon: Flag, badge: openReportsCount },
-    { href: `/manage/${serverId}/public-page`, label: t("manage.navPublicPage"), icon: PaintBrush },
+    { href: `/manage/${serverId}/public-page`, label: t("manage.navMyPage"), icon: PaintBrush },
+    { href: `/manage/${serverId}/activity`, label: t("manage.navStats"), icon: ChartBar },
+    { href: `/manage/${serverId}/reports`, label: t("manage.navReports"), icon: Flag, badge: openReportsCount, separated: true },
     { href: `/manage/${serverId}/settings`, label: t("manage.navSettings"), icon: Gear },
   ];
 
@@ -37,11 +40,12 @@ export function ManageSidebar({
         <span className="hidden min-w-0 truncate font-medium text-foreground sm:inline">{serverName}</span>
       </Link>
 
-      {navItems.map(({ href, label, icon: Icon, badge }) => {
+      {navItems.map(({ href, label, icon: Icon, badge, separated }) => {
         const active = pathname === href;
         return (
           <Link
             key={href}
+            style={separated ? { marginTop: "0.625rem", borderTop: "1px solid var(--border)", borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingTop: "0.75rem" } : undefined}
             href={href}
             title={label}
             className={`flex items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors sm:justify-start sm:px-3 ${

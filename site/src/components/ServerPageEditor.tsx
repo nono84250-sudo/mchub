@@ -1,13 +1,18 @@
 "use client";
 
 import { Fragment, useActionState, useEffect, useRef, useState, type CSSProperties } from "react";
+import { FitHeightIconRow } from "@/components/FitHeightIconRow";
 import { ArrowDown, ArrowUp, ImageSquare, Image as ImageIcon, Sparkle, X } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { ImageDropzone } from "@/components/ImageDropzone";
 import { ServerPageSections, type ServerPageLabels } from "@/components/ServerPageSections";
 import { TagPicker } from "@/components/TagPicker";
 import { AccentPicker } from "@/components/AccentPicker";
+import { TagRequestBox } from "@/components/TagRequestBox";
+import type { OwnerTagPanel } from "@/lib/tagRequests";
+import { tagName, type CustomTag } from "@/lib/tagCatalog";
 import type { ServerPageActionState } from "@/lib/actions/serverPage";
+import { SavedToast } from "@/components/SavedToast";
 import {
   PAGE_ACCENTS,
   PAGE_LANGUAGES,
@@ -23,6 +28,7 @@ import {
   type PageEditorInput,
   type PageFieldError,
   type PageSection,
+  type PageTag,
 } from "@/lib/serverPage";
 
 type ServerSummary = {
@@ -61,15 +67,26 @@ const LATER = (label: string) => (
 export function ServerPageEditor({
   action,
   initial,
-  server,
+  server: serverProp,
   labels,
+  publicHref,
+  serverId,
+  customTags = [],
+  tagPanel,
 }: {
   action: (state: ServerPageActionState, formData: FormData) => Promise<ServerPageActionState>;
   initial: PageEditorInput;
   server: ServerSummary;
   labels: ServerPageLabels;
+  // Design 2026-10-17, point 7 : lien « Voir la fiche » de la bulle apres enregistrement.
+  publicHref?: string;
+  // Demandes d'etiquettes (16/10) : etiquettes ajoutees par l'equipe et bloc « Il te manque une etiquette ? ».
+  serverId?: string;
+  customTags?: CustomTag[];
+  tagPanel?: OwnerTagPanel;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const tagLabel = (tag: string) => tagName(tag, locale, customTags) || tag;
   const [state, setState] = useState<PageEditorInput>(initial);
   const [baseline, setBaseline] = useState(() => JSON.stringify(initial));
   const [openSection, setOpenSection] = useState<PageSection | null>("about");
@@ -79,6 +96,18 @@ export function ServerPageEditor({
   const submitted = useRef<string | null>(null);
   const aboutRef = useRef<HTMLTextAreaElement>(null);
 
+  // Apercu : nom, description et images tels qu'ils sont en train d'etre modifies (carte Identite).
+  const server = state.identity
+    ? {
+        ...serverProp,
+        name: state.identity.name || serverProp.name,
+        description: state.identity.description,
+        bannerUrl: state.identity.bannerUrl || null,
+        iconUrl: state.identity.iconUrl || null,
+      }
+    : serverProp;
+  const setIdentity = (patch: Partial<NonNullable<PageEditorInput["identity"]>>) =>
+    setState((s) => (s.identity ? { ...s, identity: { ...s.identity, ...patch } } : s));
   const serialized = JSON.stringify(state);
   const dirty = serialized !== baseline;
   const errors = pageInputErrors(state);
@@ -336,7 +365,8 @@ export function ServerPageEditor({
   );
 
   return (
-    <div className="max-w-7xl">
+    <div className="max-w-none">
+      <SavedToast savedAt={result?.savedAt} href={publicHref} />
       <h1 className="text-2xl font-bold text-foreground">{t("serverPage.editor.title")}</h1>
       <p className="mb-5 mt-1 text-sm text-muted">{t("serverPage.editor.lead")}</p>
 
@@ -355,9 +385,62 @@ export function ServerPageEditor({
         ))}
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      {/* 19/10 (choix de Rushi) : reglages en une colonne fixe, apercu sur tout le reste de la largeur. */}
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)]">
         {/* ---- Reglages ---- */}
         <div className={`min-w-0 flex-col gap-4 ${pane === "edit" ? "flex" : "hidden lg:flex"}`}>
+          {/* Identite (19/10, variante A) : nom, description, banniere, icone. Le fond reste juste
+              dessous dans Apparence. Avant, ces champs etaient dans Parametres. */}
+          {state.identity ? (
+            <section className="panel flex flex-col gap-3 p-4">
+              <h2 className="text-sm font-semibold text-foreground">{t("serverPage.editor.identity")}</h2>
+              <label className="flex flex-col gap-1.5">
+                <span className="field-label">{t("serverForm.name")}</span>
+                <input
+                  type="text"
+                  value={state.identity.name}
+                  onChange={(e) => setIdentity({ name: e.target.value })}
+                  placeholder={t("serverForm.namePlaceholder")}
+                  className="field-input"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="field-label">{t("serverForm.description")}</span>
+                <textarea
+                  rows={3}
+                  value={state.identity.description}
+                  onChange={(e) => setIdentity({ description: e.target.value })}
+                  placeholder={t("serverForm.descriptionPlaceholder")}
+                  className="field-input"
+                />
+              </label>
+              <div className="grid grid-cols-[minmax(0,1fr)_96px] items-start gap-3">
+                <ImageDropzone
+                  key={`banner-${resetKey}`}
+                  name="identityBanner"
+                  field="banner"
+                  defaultValue={state.identity.bannerUrl}
+                  label={t("serverForm.bannerUrl")}
+                  hint={t("serverForm.bannerHint")}
+                  placeholder={t("serverForm.dropBanner")}
+                  icon={ImageSquare}
+                  onChange={(url) => setIdentity({ bannerUrl: url })}
+                />
+                <ImageDropzone
+                  key={`icon-${resetKey}`}
+                  name="identityIcon"
+                  field="icon"
+                  defaultValue={state.identity.iconUrl}
+                  label={t("serverForm.iconUrl")}
+                  hint={t("serverForm.iconHint")}
+                  placeholder=""
+                  icon={ImageSquare}
+                  onChange={(url) => setIdentity({ iconUrl: url })}
+                />
+              </div>
+            </section>
+          ) : null}
+
           <section className="panel flex flex-col gap-4 p-4">
             <h2 className="text-sm font-semibold text-foreground">{t("serverPage.editor.look")}</h2>
 
@@ -420,6 +503,7 @@ export function ServerPageEditor({
                 selected={config.tags}
                 max={PAGE_LIMITS.tags}
                 onChange={(tags) => setConfig({ tags, extraTags: config.extraTags.filter((x) => !tags.includes(x)) })}
+                custom={customTags}
               />
             </div>
 
@@ -431,8 +515,26 @@ export function ServerPageEditor({
                 max={PAGE_LIMITS.extraTags}
                 exclude={config.tags}
                 onChange={(extraTags) => setConfig({ extraTags })}
+                custom={customTags}
               />
             </div>
+
+            {serverId && tagPanel ? (
+              <TagRequestBox
+                serverId={serverId}
+                initial={tagPanel}
+                custom={customTags}
+                hasTag={(tag) => config.tags.includes(tag as PageTag) || config.extraTags.includes(tag as PageTag)}
+                onAdd={(tag) => {
+                  const id = tag as PageTag;
+                  if (config.tags.includes(id) || config.extraTags.includes(id)) return true;
+                  if (config.tags.length < PAGE_LIMITS.tags) setConfig({ tags: [...config.tags, id] });
+                  else if (config.extraTags.length < PAGE_LIMITS.extraTags) setConfig({ extraTags: [...config.extraTags, id] });
+                  else return false;
+                  return true;
+                }}
+              />
+            ) : null}
 
             <div className="flex flex-col gap-2">
               <span className="text-xs font-semibold text-foreground">{t("serverPage.editor.languages")}</span>
@@ -456,6 +558,23 @@ export function ServerPageEditor({
               </div>
               <p className="text-xs text-muted">{t("serverPage.editor.languagesHelp")}</p>
             </div>
+          </section>
+
+          {/* Message pendant l'installation (launcher, 17/10, point 6) */}
+          <section className="panel flex flex-col gap-2 p-4">
+            <h2 className="text-sm font-semibold text-foreground">{t("serverPage.editor.installMessage")}</h2>
+            <p className="text-xs text-muted">{t("serverPage.editor.installMessageHelp")}</p>
+            <textarea
+              value={config.installMessage}
+              maxLength={PAGE_LIMITS.installMessage}
+              rows={3}
+              placeholder={t("serverPage.editor.installMessagePlaceholder")}
+              onChange={(e) => setConfig({ installMessage: e.target.value })}
+              className={`${inputClass(false)} min-h-[72px] resize-y text-sm leading-relaxed`}
+            />
+            <span className="self-end text-[11px] text-muted">
+              {config.installMessage.length} / {PAGE_LIMITS.installMessage}
+            </span>
           </section>
 
           <div>
@@ -543,29 +662,30 @@ export function ServerPageEditor({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   {server.bannerUrl ? <img src={server.bannerUrl} alt="" className="h-full w-full object-cover" /> : null}
                 </div>
-                <div className="flex items-start gap-3">
-                  <span className="server-icon h-12 w-12 shrink-0 overflow-hidden text-xl">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {server.iconUrl ? <img src={server.iconUrl} alt="" className="h-full w-full object-cover" /> : server.name.trim().charAt(0).toUpperCase() || "?"}
-                  </span>
-                  <div className="min-w-0">
+                {/* 19/10 : meme icone que la fiche, a la hauteur du texte. */}
+                <FitHeightIconRow
+                  className="!gap-3"
+                  icon={
+                    // eslint-disable-next-line @next/next/no-img-element
+                    server.iconUrl ? <img src={server.iconUrl} alt="" className="h-full w-full object-cover" /> : server.name.trim().charAt(0).toUpperCase() || "?"
+                  }
+                >
                     <div className="truncate text-xl font-bold text-foreground">{server.name}</div>
                     {config.tags.length || config.languages.length ? (
                       <div className="mt-1 flex flex-wrap gap-1.5">
                         {config.tags.map((tag) => (
                           <span key={tag} className="tag-chip tag-chip-accent">
-                            {t(`serverPage.tags.${tag}`)}
+                            {tagLabel(tag)}
                           </span>
                         ))}
                         {config.languages.map((lang) => (
-                          <span key={lang} className="tag-chip tag-chip-outline">
-                            {t(`serverPage.languages.${lang}`)}
+                          <span key={lang} className="lang-chip" title={t(`serverPage.languages.${lang}`)}>
+                            {lang}
                           </span>
                         ))}
                       </div>
                     ) : null}
-                  </div>
-                </div>
+                </FitHeightIconRow>
               </div>
 
               <section className="panel p-3">
@@ -600,7 +720,7 @@ export function ServerPageEditor({
                     <div className="flex flex-wrap gap-1.5">
                       {config.extraTags.map((tag) => (
                         <span key={tag} className="tag-chip">
-                          {t(`serverPage.tags.${tag}`)}
+                          {tagLabel(tag)}
                         </span>
                       ))}
                     </div>

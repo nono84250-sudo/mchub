@@ -22,7 +22,11 @@
   /* Bleu choisi par le client (2026-10-11) — remplace le blurple d'origine.
      Les formules color-mix ci-dessous (--accent-hover, --accent-2,
      --accent-fill) se recalculent automatiquement, rien d'autre a toucher. */
-  --accent: #5fa3d3;
+  /* Lot 8 (18/10) : le meme bleu que le launcher (#2792dd, 5,2:1 sur le fond sombre). En theme
+     clair, un bleu plus fonce pour le texte (#1a6dab, 5,5:1 sur blanc) : #5fa3d3 n'y faisait que 2,7. */
+  --accent: #2792dd;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   /* Formules color-mix (pas de hex fige) pour rester identiques a celles du
      launcher (voir launcher/src/index.html) qui, elles, DOIVENT etre des
      formules puisque son accent est configurable par l'utilisateur — deux
@@ -45,6 +49,9 @@
      faire basculer. */
   --frozen: #8ac3e0;
   --pending: #e0b84a;
+  /* Etats des serveurs (lot 2 de l'audit, 17/10) : memes valeurs que le launcher. */
+  --state-busy: #f0a040;
+  --state-off: #8a8c9a;
   /* Elevation : un trait + une ombre sombre plutot qu'une lueur colorée. */
   --glow-accent: 0 0 0 1px var(--accent), 0 10px 24px -10px rgba(0, 0, 0, 0.6);
 }
@@ -56,6 +63,9 @@
    que "Systeme"/"Sombre"/"Clair" soient tous les trois des choix explicites,
    comme dans le launcher. */
 :root[data-theme="light"] {
+  --accent: #1a6dab;
+  /* Lot 8 (18/10) : warn, success, frozen, pending et state-off fonces pour passer 4,5:1 sur le
+     fond clair (verifie par scripts/check-contrast.mjs). */
   --background: #f3f3f6;
   --surface: #ffffff;
   --surface-raised: color-mix(in srgb, var(--foreground) 4%, var(--surface));
@@ -67,10 +77,12 @@
   --muted: color-mix(in srgb, var(--foreground) 65%, transparent);
   --muted2: color-mix(in srgb, var(--foreground) 62%, transparent);
   --danger: #c0453f;
-  --warn: #9a6a1f;
-  --success: #2f9e6e;
-  --frozen: #2b7a9e;
-  --pending: #8f6a12;
+  --warn: #8a5d16;
+  --success: #1f7a52;
+  --frozen: #226a8c;
+  --pending: #7d5b0e;
+  --state-busy: #a05a10;
+  --state-off: #64667a;
 }
 
 @theme inline {
@@ -113,15 +125,27 @@ body {
   }
 }
 
+@keyframes directory-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
 @keyframes float-block {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-10px) rotate(3deg); }
 }
 
+/* « Reduire les animations » du systeme (audit design du 17/10, lot 1) : plus aucune
+   animation ni transition qui bouge, et pas de defilement anime — partout sur le site,
+   panel admin compris. */
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -279,8 +303,60 @@ body {
     background: color-mix(in srgb, var(--danger) 10%, transparent);
   }
 
+  /* Bouton plein (design 2026-10-17, point 1) : reserve a UNE action par
+     ecran, celle qui fait jouer (Telecharger). Exception assumee a la regle
+     "jamais d'aplat" ci-dessus, validee sur la preview de l'accueil. */
+  .btn-fill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    padding: 0.55rem 1.1rem;
+    /* Lot 8 : fond bleu fonce + texte blanc (5,5:1) dans les deux themes. Calcule ICI (pas dans
+       une variable de :root) pour suivre une couleur d'accent posee plus bas, ex. sur une fiche. */
+    border: 1px solid color-mix(in srgb, var(--accent) 78%, black);
+    background: color-mix(in srgb, var(--accent) 78%, black);
+    color: #fff;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .btn-fill:hover {
+    background: color-mix(in srgb, var(--accent) 90%, black);
+  }
+
+  :root[data-theme="light"] .btn-fill {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+
+  :root[data-theme="light"] .btn-fill:hover {
+    background: color-mix(in srgb, var(--accent) 85%, black);
+  }
+
+  .btn-big {
+    font-size: 1rem;
+    padding: 0.8rem 1.5rem;
+    border-radius: 0.625rem;
+  }
+
   .gradient-text {
     color: var(--accent);
+  }
+
+  /* Carte de l'annuaire (design 2026-10-17, point 5) : liseré au survol ou au
+     clavier, sans le saut de 3 px de .glow-card. */
+  .card-calm {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .card-calm:hover,
+  .card-calm:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
   }
 
   .glow-card {
@@ -360,6 +436,42 @@ body {
     background: transparent;
     border-color: var(--accent);
     color: var(--accent);
+  }
+
+  /* Etiquette de langue (20/10, choix de Rushi : variante A, le code FR/EN mais de la taille
+     d'un mot ecrit en entier). Meme taille dans le launcher. Seule : encore plus large. */
+  .lang-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 3rem;
+    height: 1.5rem;
+    padding: 0 0.6rem;
+    border-radius: 0.4rem;
+    border: 1.5px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .lang-chip:only-child {
+    min-width: 4.5rem;
+  }
+  /* Pas de langue renseignee : « Langue ? » en pointille. */
+  .lang-chip-empty {
+    border-style: dashed;
+    border-color: var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-family: inherit;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
   }
 
   /* Trait qui s'estompe a ses deux bouts plutot que de s'arreter net —

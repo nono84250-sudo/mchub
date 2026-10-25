@@ -213,6 +213,135 @@ export async function countPlayerData(userId: string): Promise<Record<ExportCate
   return counts;
 }
 
+// Donnees en plus pour l'export demande par le joueur lui-meme (« Recuperer mes donnees »,
+// Parametres du compte, 23/10) : pas dans EXPORT_CATEGORIES pour ne pas changer la fenetre
+// d'export admin. Chaque lecture est protegee : une table pas encore creee sur une base (teams,
+// etiquettes, problemes d'installation : migrations a part) donne juste une liste vide.
+const safe = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+  try {
+    return await fn();
+  } catch {
+    return fallback;
+  }
+};
+const uuidKey = (uuid: string) => uuid.toLowerCase().replaceAll("-", "");
+const INSTALL_KINDS: Record<string, string> = {
+  disk: "espace disque",
+  net: "réseau",
+  crash: "crash",
+  manual_mods: "mods à ajouter à la main",
+  other: "autre",
+};
+const REQUEST_STATUS: Record<string, string> = { pending: "en attente", accepted: "acceptée", refused: "refusée" };
+
+const SELF_EXTRAS = {
+  team: (a: Account) =>
+    safe(
+      async () =>
+        (await rows('SELECT "name", "slug", "description", "createdAt" FROM "team" WHERE "ownerId" = ? ORDER BY "createdAt"', [a.id])).map((t) => ({
+          nom: t.name,
+          adresse: `https://omniscientlauncher.com/team/${t.slug}`,
+          description: t.description ?? null,
+          creeeLe: t.createdAt,
+        })),
+      [] as unknown[],
+    ),
+  // Sans "decidedBy" (nom de connexion d'un admin, voir TEAM plus haut).
+  demandesDeTeam: (a: Account) =>
+    safe(
+      async () =>
+        (
+          await rows(
+            'SELECT "name", "reason", "proof", "status", "refuseReason", "createdAt", "decidedAt" FROM "teamRequest" WHERE "userId" = ? ORDER BY "createdAt" DESC',
+            [a.id],
+          )
+        ).map((r) => ({
+          nom: r.name,
+          raison: r.reason,
+          preuve: r.proof,
+          statut: REQUEST_STATUS[String(r.status)] ?? r.status,
+          motifDuRefus: r.refuseReason ?? null,
+          envoyeeLe: r.createdAt,
+          decideeLe: r.decidedAt ?? null,
+        })),
+      [] as unknown[],
+    ),
+  demandesDEtiquettes: (a: Account) =>
+    safe(
+      async () =>
+        (
+          await rows(
+            `SELECT s."name" AS "serverName", t."word", t."status", t."createdAt", t."decidedAt"
+             FROM "tagRequest" t JOIN "server" s ON s."id" = t."serverId" WHERE t."ownerUserId" = ? ORDER BY t."createdAt" DESC`,
+            [a.id],
+          )
+        ).map((t) => ({ serveur: t.serverName, mot: t.word, statut: REQUEST_STATUS[String(t.status)] ?? t.status, envoyeeLe: t.createdAt, decideeLe: t.decidedAt ?? null })),
+      [] as unknown[],
+    ),
+  problemesDInstallation: (a: Account) => {
+    const uuid = a.minecraftUuid;
+    if (!uuid) return Promise.resolve([] as unknown[]);
+    return safe(
+      async () =>
+        (
+          await rows(
+            `SELECT s."name" AS "serverName", p."kind", p."summary", p."detail", p."launcherVersion", p."minecraftVersion", p."logTail", p."createdAt"
+             FROM "installProblem" p JOIN "server" s ON s."id" = p."serverId"
+             WHERE lower(replace(p."reporterMinecraftUuid", '-', '')) = ? ORDER BY p."createdAt" DESC`,
+            [uuidKey(uuid)],
+          )
+        ).map((p) => ({
+          serveur: p.serverName,
+          type: INSTALL_KINDS[String(p.kind)] ?? p.kind,
+          resume: p.summary,
+          detail: p.detail ?? null,
+          versionLauncher: p.launcherVersion ?? null,
+          versionMinecraft: p.minecraftVersion ?? null,
+          extraitDuJournal: p.logTail ?? null,
+          envoyeLe: p.createdAt,
+        })),
+      [] as unknown[],
+    );
+  },
+  // Le reglage seulement : le code ami lui-meme sert a se faire ajouter, il reste dans la page Amis.
+  reglageAmis: (a: Account) =>
+    safe(
+      async () => {
+        const [u] = await rows('SELECT "friendPolicy" FROM "user" WHERE "id" = ?', [a.id]);
+        const p = String(u?.friendPolicy ?? "code");
+        return { quiPeutMAjouter: p === "all" ? "tout le monde" : p === "none" ? "personne" : "seulement avec mon code ami" };
+      },
+      null as unknown,
+    ),
+};
+type SelfExtra = keyof typeof SELF_EXTRAS;
+const SELF_EXTRA_KEYS = Object.keys(SELF_EXTRAS) as SelfExtra[];
+
+// Ce que la fenetre « Recuperer mes donnees » affiche avant l'export : le compte des categories
+// admin (sans les notes du staff) plus celles d'au-dessus.
+export const SELF_CATEGORIES: ExportCategory[] = EXPORT_CATEGORIES.filter((c) => c !== "notesDuStaff");
+export async function countSelfData(userId: string): Promise<Record<string, number> | null> {
+  const account = await loadAccount(userId);
+  if (!account) return null;
+  const counts: Record<string, number> = {};
+  for (const key of SELF_CATEGORIES) {
+    const value = await LOADERS[key](account);
+    counts[key] = Array.isArray(value) ? value.length : key === "presence" ? ((value as { derniereActiviteDansLeLauncher: unknown }).derniereActiviteDansLeLauncher ? 1 : 0) : 0;
+  }
+  for (const key of SELF_EXTRA_KEYS) {
+    if (key === "reglageAmis") continue;
+    const value = await SELF_EXTRAS[key](account);
+    counts[key] = Array.isArray(value) ? value.length : 0;
+  }
+  return counts;
+}
+
+export const SELF_NOT_INCLUDED = [
+  ...NOT_INCLUDED,
+  "Notes internes de l'équipe : demande-les par le formulaire contact si tu les veux",
+  "Messages envoyés par le formulaire contact : ils ne sont pas liés à ton compte, demande-les par le formulaire contact",
+];
+
 async function contactMessages(email: string) {
   return (
     await rows('SELECT "name", "message", "status", "createdAt" FROM "contactMessage" WHERE lower("email") = lower(?) ORDER BY "createdAt" DESC', [email])
@@ -230,7 +359,12 @@ export type PlayerExport = { jsonName: string; txtName: string; json: string; su
 
 export async function buildPlayerExport(
   userId: string,
-  { categories, email, now = new Date() }: { categories: ExportCategory[]; email: string | null; now?: Date },
+  {
+    categories,
+    email,
+    now = new Date(),
+    byPlayer = false,
+  }: { categories: ExportCategory[]; email: string | null; now?: Date; byPlayer?: boolean },
 ): Promise<PlayerExport | null> {
   const account = await loadAccount(userId);
   if (!account) return null;
@@ -238,6 +372,9 @@ export async function buildPlayerExport(
   const picked = EXPORT_CATEGORIES.filter((c) => categories.includes(c));
   const data: Record<string, unknown> = {};
   for (const key of picked) data[key] = await LOADERS[key](account);
+  // byPlayer : export demande par le joueur depuis Parametres (lib/actions/dataExport.ts).
+  const extras = byPlayer ? SELF_EXTRA_KEYS : [];
+  for (const key of extras) data[key] = await SELF_EXTRAS[key](account);
   const contact = email ? await contactMessages(email) : null;
 
   const exportJson = {
@@ -245,10 +382,10 @@ export async function buildPlayerExport(
       service: "Omniscient (omniscientlauncher.com)",
       responsable: "Rushifa · omniscient.launchermc@gmail.com",
       genereLe: now.toISOString(),
-      genereePar: TEAM,
+      genereePar: byPlayer ? "le joueur lui-même (Paramètres du compte)" : TEAM,
       joueur: account.pseudo,
-      categories: ["compte", ...picked, ...(contact ? ["messagesDeContact"] : [])],
-      nonInclus: NOT_INCLUDED,
+      categories: ["compte", ...picked, ...extras, ...(contact ? ["messagesDeContact"] : [])],
+      nonInclus: byPlayer ? SELF_NOT_INCLUDED : NOT_INCLUDED,
     },
     compte: account,
     ...data,
@@ -267,7 +404,11 @@ export async function buildPlayerExport(
     for (const item of items) L.push(`- ${line(item)}`);
   };
   L.push(`DONNÉES PERSONNELLES DE ${account.pseudo.toUpperCase()} SUR OMNISCIENT`);
-  L.push(`Export du ${dateFr(now.toISOString())}, en réponse à ta demande d'accès (RGPD, article 15).`);
+  L.push(
+    byPlayer
+      ? `Export du ${dateFr(now.toISOString())}, demandé par toi depuis Paramètres (RGPD, articles 15 et 20).`
+      : `Export du ${dateFr(now.toISOString())}, en réponse à ta demande d'accès (RGPD, article 15).`,
+  );
   L.push(`Le fichier joint ${jsonName} contient le détail complet.`);
   L.push("", "TON COMPTE");
   L.push(`- Pseudo : ${account.pseudo}`);
@@ -298,6 +439,17 @@ export async function buildPlayerExport(
     L.push("", `DERNIÈRE ACTIVITÉ DANS LE LAUNCHER : ${p.derniereActiviteDansLeLauncher ? dateFr(p.derniereActiviteDansLeLauncher) : "aucune"}`);
   }
   if (data.serveursSuivis) list("SERVEURS SUIVIS", data.serveursSuivis as Any[], (w) => `${w.serveur}${w.prevenirQuandIlRevientEnLigne ? " : alerte quand il revient en ligne" : ""}`);
+  if (data.team) list("TA TEAM", data.team as Any[], (t) => `${t.nom} (${t.adresse})`);
+  if (data.demandesDeTeam) list("DEMANDES DE TEAM", data.demandesDeTeam as Any[], (r) => `${r.nom}, le ${dateFr(r.envoyeeLe)} : ${r.statut}`);
+  if (data.demandesDEtiquettes) list("DEMANDES D'ÉTIQUETTES", data.demandesDEtiquettes as Any[], (t) => `« ${t.mot} » pour ${t.serveur} : ${t.statut}`);
+  if (data.problemesDInstallation) {
+    list("PROBLÈMES D'INSTALLATION ENVOYÉS", data.problemesDInstallation as Any[], (p) => `${p.serveur}, le ${dateFr(p.envoyeLe)} : ${p.resume} (${p.type})`);
+  }
+  if (data.reglageAmis) L.push("", `QUI PEUT T'AJOUTER EN AMI : ${(data.reglageAmis as Any).quiPeutMAjouter}`);
+  if (byPlayer) {
+    L.push("", "PAS DANS CET EXPORT");
+    for (const line of SELF_NOT_INCLUDED) L.push(`- ${line}`);
+  }
   if (contact) list("MESSAGES ENVOYÉS PAR LE FORMULAIRE CONTACT", contact, (m) => `${dateFr(m.envoyeLe)} : « ${m.message} »`);
   L.push("");
   L.push("Tu peux supprimer ton compte à tout moment depuis Dashboard > Paramètres > Supprimer mon compte.");

@@ -5,13 +5,15 @@ import { ADMIN_COOKIE, ADMIN_PENDING_COOKIE, readAdminSession, type AdminRole } 
 
 // Compte admin connecté, ou null. Relit le compte en base à chaque appel : un
 // compte supprimé ou dont le rôle change perd l'accès immédiatement.
-export type CurrentAdmin = { id: string; username: string; role: AdminRole; mustChangeCredentials: boolean };
+// isOwner : proprietaire du site (Rushi, 23/10). Pas un role ni un droit attribuable : marque
+// une seule fois en base (adminAccount.isOwner, index unique), aucune route ne permet de le donner.
+export type CurrentAdmin = { id: string; username: string; role: AdminRole; mustChangeCredentials: boolean; isOwner: boolean };
 
 async function getCurrentAdminUncached(): Promise<CurrentAdmin | null> {
   const token = (await cookies()).get(ADMIN_COOKIE)?.value;
   const session = readAdminSession(token);
   if (!session) return null;
-  const account = await db.orm.public.AdminAccount.select("id", "username", "role", "mustChangeCredentials", "passwordChangedAt", "totpEnabledAt")
+  const account = await db.orm.public.AdminAccount.select("id", "username", "role", "mustChangeCredentials", "isOwner", "passwordChangedAt", "totpEnabledAt")
     .where({ id: session.sub })
     .first();
   // totpEnabledAt : une session complete n'existe qu'apres le code 2FA ; si la 2FA du compte a
@@ -27,6 +29,7 @@ async function getCurrentAdminUncached(): Promise<CurrentAdmin | null> {
     username: account.username,
     role: account.role === "admin" ? "admin" : "moderator",
     mustChangeCredentials: account.mustChangeCredentials,
+    isOwner: account.isOwner === true,
   };
 }
 
@@ -58,7 +61,7 @@ export async function getPendingAdmin(): Promise<PendingAdmin | null> {
   const session = readAdminSession(token, Date.now(), "pending");
   if (!session) return null;
   const account = await db.orm.public.AdminAccount.select(
-    "id", "username", "role", "mustChangeCredentials", "passwordChangedAt",
+    "id", "username", "role", "mustChangeCredentials", "isOwner", "passwordChangedAt",
     "totpSecret", "totpEnabledAt", "totpLastStep", "totpLockedUntil", "totpRecoveryCodes",
   )
     .where({ id: session.sub })
@@ -70,6 +73,7 @@ export async function getPendingAdmin(): Promise<PendingAdmin | null> {
     username: account.username,
     role: account.role === "admin" ? "admin" : "moderator",
     mustChangeCredentials: account.mustChangeCredentials,
+    isOwner: account.isOwner === true,
     totpEnabled: !!account.totpEnabledAt,
     totpSecret: account.totpSecret ?? null,
     totpLastStep: account.totpLastStep ?? null,

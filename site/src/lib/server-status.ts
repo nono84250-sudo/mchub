@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { revalidateTag } from "next/cache";
 import { db, or } from "@/lib/db";
 import { pingMinecraftServer } from "@/lib/mc-ping";
 
@@ -13,6 +14,18 @@ export const SERVER_STATUS_TTL_MS = 5 * 60_000;
 // visites : une mesure qui échoue attend jusqu'à 3 s, inutile d'y revenir aussi
 // souvent. Voir refreshOne (lastPingedAt est alors repoussé dans le futur).
 const FAILED_PING_RETRY_MS = 10 * 60_000;
+
+// Audit de charge du 19/10 (B1) : la tâche automatique (cron recheck-reachability, toutes les
+// 5 min) mesure déjà tous les serveurs publics. Les mesures déclenchées par les visites faisaient
+// doublon (jusqu'à 60-80 appels D1/min). Une visite ne relance donc une mesure que si la
+// dernière date de plus de 12 min, c'est-à-dire si la tâche automatique a raté au moins deux
+// passages (pas encore déployée, en panne...) : filet de secours, plus doublon.
+const VISIT_FALLBACK_AFTER_MS = 12 * 60_000;
+
+function needsVisitRefresh(lastPingedAt: string | null): boolean {
+  if (!lastPingedAt) return true;
+  return Date.now() - new Date(lastPingedAt).getTime() > VISIT_FALLBACK_AFTER_MS;
+}
 
 // Mesures simultanées au maximum par instance du site, et serveurs traités au
 // maximum par affichage de page : borne le travail et la charge sur la base, même
@@ -41,7 +54,7 @@ export function isStatusStale(lastPingedAt: string | null): boolean {
 const inFlight = new Set<string>();
 
 // Les listes viennent d'un cache (voir public-servers.ts) : leur `lastPingedAt`
-// peut rester périmé jusqu'à une minute. Sans ceci, chaque visite reprogrammerait
+// peut avoir jusqu'à une minute de retard. Sans ceci, chaque visite reprogrammerait
 // la même mesure (une requête de réservation par serveur et par visite, pour rien).
 const RESCHEDULE_AFTER_MS = 15_000;
 const recentlyScheduled = new Map<string, number>();
@@ -67,7 +80,7 @@ async function refreshOne(id: string, ip: string): Promise<void> {
       // Réservation atomique en base : si une autre instance (ou visite) vient de
       // mesurer ce serveur, la mise à jour ne touche aucune ligne et on s'arrête.
       const claimed = await db.orm.public.Server.where({ id })
-        .where((s) => or(s.lastPingedAt.isNull(), s.lastPingedAt.lt(new Date(now - SERVER_STATUS_TTL_MS).toISOString())))
+        .where((s) => or(s.lastPingedAt.isNull(), s.lastPingedAt.lt(new Date(now - VISIT_FALLBACK_AFTER_MS).toISOString())))
         .update({ lastPingedAt: new Date(now).toISOString() });
       if (!claimed) return;
 
@@ -79,9 +92,17 @@ async function refreshOne(id: string, ip: string): Promise<void> {
               playerCount: null,
               playerCapacity: null,
               // Pas de réponse : la prochaine mesure aura lieu dans FAILED_PING_RETRY_MS.
-              lastPingedAt: new Date(Date.now() + FAILED_PING_RETRY_MS - SERVER_STATUS_TTL_MS).toISOString(),
+              lastPingedAt: new Date(Date.now() + FAILED_PING_RETRY_MS - VISIT_FALLBACK_AFTER_MS).toISOString(),
             },
       );
+      // 21/10 : chiffres visibles a la prochaine lecture. "servers-live" = SERVERS_LIVE_CACHE_TAG
+      // (pas importe : public-servers.ts importe deja ce fichier). Peut etre refuse hors d'une
+      // requete : le cache des joueurs se renouvelle alors seul au bout de 5 min.
+      try {
+        revalidateTag("servers-live", { expire: 0 });
+      } catch {
+        // sans gravite
+      }
     });
   } catch {
     // Un échec de mesure ne doit jamais casser une page : le chiffre reste celui de la dernière mesure.
@@ -100,7 +121,7 @@ async function refreshOne(id: string, ip: string): Promise<void> {
 export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; lastPingedAt: string | null }>): void {
   const now = Date.now();
   const todo = servers
-    .filter((s) => isStatusStale(s.lastPingedAt) && !inFlight.has(s.id) && now - (recentlyScheduled.get(s.id) ?? 0) > RESCHEDULE_AFTER_MS)
+    .filter((s) => needsVisitRefresh(s.lastPingedAt) && !inFlight.has(s.id) && now - (recentlyScheduled.get(s.id) ?? 0) > RESCHEDULE_AFTER_MS)
     .sort((a, b) => (a.lastPingedAt ?? "").localeCompare(b.lastPingedAt ?? ""))
     .slice(0, MAX_SERVERS_PER_SCHEDULE);
   if (!todo.length) return;

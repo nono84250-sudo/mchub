@@ -9,7 +9,7 @@ import { CONTACT_SUBJECTS } from "@/lib/contactSubjects";
 // email n'est envoye (voir lib/actions/contact.ts). Honeypot "website" cache visuellement et
 // retire de l'ordre de tabulation / des lecteurs d'ecran — un visiteur humain ne le voit ni ne
 // le remplit jamais, un bot qui remplit tous les champs si.
-export function ContactForm() {
+export function ContactForm({ defaultSubject, defaultMessage }: { defaultSubject?: string; defaultMessage?: string } = {}) {
   const { t } = useI18n();
   const [state, formAction, pending] = useActionState(submitContactMessage, undefined);
   const error = state && "error" in state ? state.error : null;
@@ -38,7 +38,7 @@ export function ContactForm() {
         <label htmlFor="subject" className="field-label">
           {t("contact.subjectLabel")}
         </label>
-        <select id="subject" name="subject" required defaultValue="" className="field-input">
+        <select id="subject" name="subject" required defaultValue={defaultSubject ?? ""} className="field-input">
           <option value="" disabled>
             {t("contact.subjectChoose")}
           </option>
@@ -54,7 +54,7 @@ export function ContactForm() {
         <label htmlFor="message" className="field-label">
           {t("contact.messageLabel")}
         </label>
-        <textarea id="message" name="message" rows={6} required maxLength={5000} className="field-input" />
+        <textarea id="message" name="message" rows={6} required maxLength={5000} defaultValue={defaultMessage} className="field-input" />
       </div>
 
       {/* Honeypot anti-spam : jamais visible ni atteignable au clavier. */}
@@ -74,7 +74,7 @@ export function ContactForm() {
         </p>
       ) : null}
 
-      <button type="submit" disabled={pending} className="btn-primary self-start text-sm">
+      <button type="submit" disabled={pending} className="btn-fill self-start text-sm">
         {pending ? t("contact.sending") : t("contact.send")}
       </button>
 

@@ -39,7 +39,9 @@ CREATE TABLE "server" (
   "curseforgeModpackId"      TEXT,
   "curseforgeModpackName"    TEXT,
   "curseforgeModpackVersion" TEXT,
-  "modpackSource"            TEXT NOT NULL DEFAULT 'curseforge' CHECK ("modpackSource" IN ('curseforge', 'modrinth')),
+  -- 'curseforge', 'modrinth' ou 'ftb' : plus de CHECK depuis la migration 2026-10-21-source-ftb
+  -- (valeurs controlees par parseModpackSource, lib/modpack-types.ts).
+  "modpackSource"            TEXT NOT NULL DEFAULT 'curseforge',
   "playerCount"              INTEGER,
   "playerCapacity"           INTEGER,
   "lastPingedAt"             TEXT,
@@ -87,6 +89,12 @@ CREATE TABLE "server" (
   -- cochee ou non. Vrai par defaut : comportement de lancement inchange pour les fiches
   -- existantes (decision du 2026-10-10).
   "autoConnect"              INTEGER NOT NULL DEFAULT 1,
+  -- Liste Multijoueur (21/10) : 1 = le launcher ecrit l'adresse dans servers.dat du joueur au
+  -- lancement (comportement d'avant) ; 0 = choix du proprietaire de ne pas l'y laisser. Dans ce
+  -- cas autoConnect est force a 1 (sinon le joueur n'aurait aucun moyen d'entrer) et un joueur
+  -- deconnecte doit fermer Minecraft puis recliquer sur Jouer. Ne cache pas vraiment l'IP (F3,
+  -- journal du jeu). Migration : d1/migrations/2026-10-21-liste-multijoueur.sql.
+  "addToServerList"          INTEGER NOT NULL DEFAULT 1,
   -- Recours contre un gel (voir lib/appeals.ts) : "second avis obligatoire à effet suspensif"
   -- plutot qu'une messagerie — reutilise le pattern verificationStatus/verificationHistory
   -- ci-dessus. Ajoutees par ALTER TABLE, pas de CHECK sur appealStatus (meme raisonnement que
@@ -149,6 +157,21 @@ CREATE TABLE "report" (
 );
 CREATE INDEX "report_serverId_status_createdAt_idx" ON "report"("serverId", "status", "createdAt");
 CREATE INDEX "report_category_status_createdAt_idx" ON "report"("category", "status", "createdAt");
+
+-- « Prévenir le serveur » (2026-10-17) : rapports d'echec d'installation envoyes par les joueurs.
+CREATE TABLE "installProblem" (
+  "id"                    TEXT PRIMARY KEY,
+  "serverId"              TEXT NOT NULL REFERENCES "server"("id") ON DELETE CASCADE,
+  "reporterMinecraftUuid" TEXT NOT NULL,
+  "kind"                  TEXT NOT NULL CHECK ("kind" IN ('disk', 'net', 'crash', 'manual_mods', 'other')),
+  "summary"               TEXT NOT NULL,
+  "detail"                TEXT,
+  "launcherVersion"       TEXT,
+  "minecraftVersion"      TEXT,
+  "logTail"               TEXT,
+  "createdAt"             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX "installProblem_serverId_createdAt_idx" ON "installProblem"("serverId", "createdAt");
 
 CREATE TABLE "notification" (
   "id"                     TEXT PRIMARY KEY,
@@ -217,8 +240,12 @@ CREATE TABLE "adminAccount" (
   "totpLastStep"          INTEGER,
   "totpFailedCount"       INTEGER NOT NULL DEFAULT 0,
   "totpLockedUntil"       TEXT,
-  "totpRecoveryCodes"     TEXT
+  "totpRecoveryCodes"     TEXT,
+  -- Proprietaire du site (23/10) : seul compte qui peut supprimer une note du staff. Pas un role,
+  -- aucune route ne le donne ; un seul possible (index unique partiel ci-dessous).
+  "isOwner"               INTEGER NOT NULL DEFAULT 0
 );
+CREATE UNIQUE INDEX "adminAccount_isOwner_idx" ON "adminAccount"("isOwner") WHERE "isOwner" = 1;
 
 -- Diffusion programmee (panel admin, voir lib/scheduledBroadcasts.ts). "scheduledAt" est
 -- toujours un instant UTC correct (l'admin saisit en heure de Belgique, voir lib/timezone.ts).
@@ -256,7 +283,10 @@ CREATE TABLE "adminNote" (
   "userId"    TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
   "text"      TEXT NOT NULL,
   "createdBy" TEXT NOT NULL,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- "note" = ecrite par le staff (supprimable par le proprietaire seulement) ; "export" = trace
+  -- automatique d'un export des donnees, jamais supprimable (voir api/admin/note-delete).
+  "kind"      TEXT NOT NULL DEFAULT 'note'
 );
 CREATE INDEX "adminNote_userId_createdAt_idx" ON "adminNote"("userId", "createdAt");
 
@@ -334,3 +364,164 @@ CREATE TABLE "contactMessage" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX "contactMessage_status_createdAt_idx" ON "contactMessage"("status", "createdAt");
+
+-- Demandes d'etiquettes (2026-10-16, voir lib/tagRequests.ts, lib/tagCatalog.ts et
+-- migrations/2026-10-16-demandes-etiquettes.sql). Les etiquettes en dur (PAGE_TAGS) restent la
+-- base ; customTag (id en "c-...") et tagAlias (mot normalise -> etiquette) les completent.
+-- tagRequest.word n'est jamais affiche en public. status : pending | accepted | merged | refused.
+CREATE TABLE "tagRequest" (
+  "id"           TEXT PRIMARY KEY,
+  "serverId"     TEXT NOT NULL REFERENCES "server"("id") ON DELETE CASCADE,
+  "ownerUserId"  TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "word"         TEXT NOT NULL,
+  "normalized"   TEXT NOT NULL,
+  "status"       TEXT NOT NULL DEFAULT 'pending',
+  "resultTagId"  TEXT,
+  "refuseReason" INTEGER,
+  "createdAt"    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "decidedAt"    TEXT
+);
+CREATE INDEX "tagRequest_status_idx" ON "tagRequest"("status", "createdAt");
+CREATE INDEX "tagRequest_normalized_idx" ON "tagRequest"("normalized");
+CREATE INDEX "tagRequest_server_idx" ON "tagRequest"("serverId");
+CREATE INDEX "tagRequest_owner_idx" ON "tagRequest"("ownerUserId", "createdAt");
+
+CREATE TABLE "customTag" (
+  "id"        TEXT PRIMARY KEY,
+  "nameFr"    TEXT NOT NULL,
+  "nameEn"    TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "removedAt" TEXT -- 23/10 : etiquette retiree (migration 2026-10-23-etiquettes-retirees.sql)
+);
+
+CREATE TABLE "tagAlias" (
+  "normalized" TEXT PRIMARY KEY,
+  "tagId"      TEXT NOT NULL,
+  "createdAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Mode « Jouer » (bêta, 24/10) : migration 2026-10-24-mode-jouer.sql
+CREATE TABLE "playPack" (
+  "id"            TEXT PRIMARY KEY,
+  "slug"          TEXT NOT NULL UNIQUE,
+  "nameFr"        TEXT NOT NULL,
+  "nameEn"        TEXT NOT NULL,
+  "descriptionFr" TEXT NOT NULL DEFAULT '',
+  "descriptionEn" TEXT NOT NULL DEFAULT '',
+  -- Liste de départ : identifiants ou slugs de projets Modrinth (JSON ["sodium", "lithium", ...]).
+  "modrinthProjects" TEXT NOT NULL DEFAULT '[]',
+  "createdAt"     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt"     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Une ligne par version de Minecraft préparée. status : tested (Testée), to_test (À tester),
+-- review (À revoir), not_enough (Pas assez de mods). Seules les lignes published = 1 sont
+-- proposées dans le launcher.
+CREATE TABLE "playPackVersion" (
+  "id"               TEXT PRIMARY KEY,
+  "packId"           TEXT NOT NULL REFERENCES "playPack"("id") ON DELETE CASCADE,
+  "minecraftVersion" TEXT NOT NULL,
+  "loader"           TEXT NOT NULL DEFAULT 'fabric',
+  "loaderVersion"    TEXT,
+  -- JSON [{ "projectId", "title", "url" (cdn.modrinth.com), "filename", "sha1", "size" }]
+  "files"            TEXT NOT NULL DEFAULT '[]',
+  -- JSON [{ "projectId", "title" }] : mods de la liste sans fichier pour cette version.
+  "missing"          TEXT NOT NULL DEFAULT '[]',
+  "status"           TEXT NOT NULL DEFAULT 'to_test',
+  "published"        INTEGER NOT NULL DEFAULT 0,
+  "createdAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE UNIQUE INDEX "playPackVersion_pack_mc_idx" ON "playPackVersion"("packId", "minecraftVersion");
+
+-- Offres : le quota et la durée de conservation viennent d'ici, jamais du code.
+CREATE TABLE "playOffer" (
+  "id"          TEXT PRIMARY KEY,
+  "nameFr"      TEXT NOT NULL,
+  "nameEn"      TEXT NOT NULL,
+  "cloud"       INTEGER NOT NULL DEFAULT 0,
+  "quotaBytes"  INTEGER NOT NULL DEFAULT 0,
+  "keepDays"    INTEGER NOT NULL DEFAULT 30,
+  "priceCents"  INTEGER NOT NULL DEFAULT 0,
+  "sortOrder"   INTEGER NOT NULL DEFAULT 0,
+  -- Versions gardées en ligne par monde, au maximum (le joueur choisit de 1 à ce nombre).
+  "cloudVersions" INTEGER NOT NULL DEFAULT 10
+);
+INSERT INTO "playOffer" ("id", "nameFr", "nameEn", "cloud", "quotaBytes", "keepDays", "priceCents", "sortOrder") VALUES
+  ('free', 'Gratuit', 'Free', 0, 0, 0, 0, 0),
+  ('supporter', 'Supporter', 'Supporter', 1, 10000000000, 30, 299, 1);
+
+-- Offre d'un joueur. Pas de ligne = Gratuit. source : 'simulated' (réglée dans l'admin pour les
+-- tests, tant que le paiement n'existe pas) ; plus tard 'payment'.
+CREATE TABLE "userPlayOffer" (
+  "userId"    TEXT PRIMARY KEY REFERENCES "user"("id") ON DELETE CASCADE,
+  "offerId"   TEXT NOT NULL REFERENCES "playOffer"("id"),
+  "source"    TEXT NOT NULL DEFAULT 'simulated',
+  "expiresAt" TEXT,
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Monde en ligne d'un joueur (worldKey = clé écrite par le launcher dans omniscient-world.json).
+CREATE TABLE "cloudWorld" (
+  "id"               TEXT PRIMARY KEY,
+  "userId"           TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "worldKey"         TEXT NOT NULL,
+  "name"             TEXT NOT NULL,
+  "minecraftVersion" TEXT,
+  "packName"         TEXT,
+  -- Version choisie sur le site (« Restaurer ») : appliquée par le launcher au prochain lancement.
+  "restoreVersionId" TEXT,
+  "createdAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- Plusieurs PC (migration 2026-10-24-multi-pc.sql).
+  "headVersionId"    TEXT,
+  "splitVersionId"   TEXT,
+  "lastDeviceId"     TEXT,
+  "lastDeviceName"   TEXT,
+  "lastPlayedAt"     TEXT,
+  "openDeviceId"     TEXT,
+  "openDeviceName"   TEXT,
+  "openSince"        TEXT,
+  "openBeatAt"       TEXT
+);
+CREATE UNIQUE INDEX "cloudWorld_user_key_idx" ON "cloudWorld"("userId", "worldKey");
+
+-- Chaque envoi terminé et vérifié = une version (fichier .zip dans R2, préfixe worlds/).
+CREATE TABLE "cloudWorldVersion" (
+  "id"               TEXT PRIMARY KEY,
+  "worldId"          TEXT NOT NULL REFERENCES "cloudWorld"("id") ON DELETE CASCADE,
+  "userId"           TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "objectKey"        TEXT NOT NULL,
+  "sizeBytes"        INTEGER NOT NULL,
+  "sha256"           TEXT NOT NULL,
+  "minecraftVersion" TEXT,
+  "reason"           TEXT,
+  "createdAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- Plusieurs PC et versions miroir (migration 2026-10-24-multi-pc.sql).
+  "deviceId"         TEXT,
+  "deviceName"       TEXT,
+  "baseVersionId"    TEXT,
+  "backupId"         TEXT,
+  "label"            TEXT
+);
+CREATE INDEX "cloudWorldVersion_world_idx" ON "cloudWorldVersion"("worldId", "createdAt");
+CREATE INDEX "cloudWorldVersion_user_idx" ON "cloudWorldVersion"("userId");
+CREATE INDEX "cloudWorldVersion_backup_idx" ON "cloudWorldVersion"("worldId", "backupId");
+
+-- Envois en cours (multipart R2) : permet de reprendre après une coupure, et de nettoyer ceux
+-- abandonnés (expiresAt).
+CREATE TABLE "cloudUpload" (
+  "id"               TEXT PRIMARY KEY,
+  "userId"           TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "worldKey"         TEXT NOT NULL,
+  "uploadId"         TEXT NOT NULL,
+  "objectKey"        TEXT NOT NULL,
+  "sizeBytes"        INTEGER NOT NULL,
+  "sha256"           TEXT NOT NULL,
+  "partSize"         INTEGER NOT NULL,
+  -- JSON { name, minecraftVersion, packName, reason }
+  "meta"             TEXT NOT NULL DEFAULT '{}',
+  "createdAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "expiresAt"        TEXT NOT NULL
+);
+CREATE INDEX "cloudUpload_user_idx" ON "cloudUpload"("userId");

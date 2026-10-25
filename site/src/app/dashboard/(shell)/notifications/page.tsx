@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { getT, type Dictionary } from "@/i18n/getDictionary";
-import { t } from "@/i18n/t";
-import { listNotificationsForRecipient, type NotificationSummary, type NotificationType } from "@/lib/notifications";
+import { getT } from "@/i18n/getDictionary";
+import { listNotificationsForRecipient, type NotificationType } from "@/lib/notifications";
+import { notificationTitle } from "@/lib/notificationTitles";
+import { MarkNotificationsRead } from "@/components/MarkNotificationsRead";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Notifications — Omniscient" };
@@ -16,36 +17,6 @@ function categoryFor(type: NotificationType): "announcements" | "servers" | "acc
   if (type.startsWith("broadcast_")) return "announcements";
   if (type.startsWith("admin_")) return "account";
   return "servers"; // report_replied / report_resolved / server_frozen / verification_* / instance_back_online
-}
-
-function titleFor(dict: Dictionary, n: NotificationSummary): string {
-  switch (n.type) {
-    case "server_frozen":
-      return t(dict, "dashboard.notifServerFrozenTitle", { server: n.serverName });
-    case "verification_approved":
-      return t(dict, "dashboard.notifVerificationApprovedTitle", { server: n.serverName });
-    case "verification_rejected":
-      return t(dict, "dashboard.notifVerificationRejectedTitle", { server: n.serverName });
-    case "instance_back_online":
-      return t(dict, "dashboard.notifInstanceBackOnlineTitle", { server: n.serverName });
-    case "broadcast_announcement":
-      return dict.dashboard.notifBroadcastAnnouncementTitle;
-    case "broadcast_maintenance":
-      return dict.dashboard.notifBroadcastMaintenanceTitle;
-    case "broadcast_alert":
-      return dict.dashboard.notifBroadcastAlertTitle;
-    case "broadcast_promotion":
-      return dict.dashboard.notifBroadcastPromotionTitle;
-    case "admin_info":
-    case "admin_warning":
-    case "admin_error":
-      return t(dict, "dashboard.notifAdminMessageTitle", { server: n.serverName });
-    case "report_resolved":
-      return t(dict, "dashboard.notifReportResolvedTitle", { server: n.serverName });
-    case "report_replied":
-    default:
-      return t(dict, "dashboard.notifReportRepliedTitle", { server: n.serverName });
-  }
 }
 
 export default async function NotificationsPage() {
@@ -65,7 +36,13 @@ export default async function NotificationsPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold tracking-tight text-foreground">{dict.dashboard.notificationsTitle}</h1>
+      {/* Lot 6 (18/10) : ouvrir la page marque tout comme lu et vide la pastille. */}
+      {notifications.some((n) => !n.read) ? <MarkNotificationsRead /> : null}
 
+      {/* Design 2026-10-17, point 7 : rien du tout -> une seule ligne, rien a faire. */}
+      {notifications.length === 0 ? (
+        <div className="panel mt-8 p-6 text-center text-[13.5px] text-muted">{dict.dashboard.notificationsAllEmpty}</div>
+      ) : (
       <div className="panel mt-8 p-6">
         <div className="flex flex-col gap-5">
           {NOTIFICATION_CATEGORIES.map((category) => {
@@ -82,7 +59,7 @@ export default async function NotificationsPage() {
                         key={n.id}
                         className={n.read ? "rounded-md border border-border px-3 py-2" : "rounded-md border border-accent bg-surface px-3 py-2"}
                       >
-                        <p className="text-sm font-medium text-foreground">{titleFor(dict, n)}</p>
+                        <p className="text-sm font-medium text-foreground">{notificationTitle(dict, n)}</p>
                         {n.message ? <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">{n.message}</p> : null}
                         <p className="mt-1 text-xs text-muted2">
                           {new Date(n.createdAt).toLocaleString(locale, {
@@ -102,6 +79,7 @@ export default async function NotificationsPage() {
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }

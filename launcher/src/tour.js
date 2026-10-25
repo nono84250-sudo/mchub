@@ -207,6 +207,7 @@
 
   // --- Rejouer : ligne dans Paramètres > Divers, carte en haut de l'Aide si elle existe --------
   function addReplay() {
+    if (!tourOn) return;
     const T = L();
     const content = $("settings-content");
     const misc = document.querySelector('#settings-panel .settings-nav-btn.active[data-tab="misc"]');
@@ -248,18 +249,35 @@
 
   // --- Premier lancement : on attend que l'appli soit prête et qu'aucune fenêtre ne soit ouverte
   // (connexion, assistant du premier lancement, choix de la mémoire…), jamais pendant le démarrage.
+  // Laboratoire (25/10) : la visite ne se propose que si l'interrupteur « tour » du site la montre.
+  let tourOn = false;
+  // La surveillance du premier lancement ne tourne que si la visite est ouverte (audit du 25/10).
+  const setTour = (state) => {
+    tourOn = state?.tour?.visible === true;
+    if (tourOn) watchFirstRun();
+  };
+  window.mchub?.getFeatures?.().then(setTour).catch(() => {});
+  window.mchub?.onFeaturesChanged?.(setTour);
+  window.addEventListener("omniscient:features", (e) => setTour(e.detail));
   function readyForTour() {
+    if (!tourOn) return false;
     if (!shown($("app")) || document.body.classList.contains("bootstrapping") || document.body.classList.contains("boot-preview")) return false;
     if ([...document.querySelectorAll(".modal-overlay")].some((o) => !o.hidden)) return false;
     return shown($("nav-home"));
   }
-  if (!readSeen()) {
+  let watching = false;
+  function watchFirstRun() {
+    if (watching || readSeen()) return;
+    watching = true;
     let calm = 0;
     const timer = setInterval(() => {
-      if (readSeen()) return clearInterval(timer);
+      if (readSeen() || !tourOn) {
+        watching = false;
+        return clearInterval(timer);
+      }
       // 3 vérifications de suite sans fenêtre ouverte (1,5 s) avant de proposer la visite.
       calm = readyForTour() ? calm + 1 : 0;
-      if (calm >= 3) { clearInterval(timer); welcome(); }
+      if (calm >= 3) { clearInterval(timer); watching = false; welcome(); }
     }, 500);
   }
 

@@ -5,6 +5,7 @@ import { updateServerPage } from "@/lib/actions/serverPage";
 import { parsePageConfig } from "@/lib/serverPage";
 import { ServerPageEditor } from "@/components/ServerPageEditor";
 import { getT } from "@/i18n/getDictionary";
+import { getOwnerTagPanel, getTagCatalog } from "@/lib/tagRequests";
 
 export const metadata = { title: "Fiche publique — Omniscient" };
 
@@ -17,6 +18,9 @@ export default async function ManageServerPublicPage({ params }: PageProps<"/man
 
   const server = await db.orm.public.Server.select(
     "id",
+    "slug",
+    "isPrivate",
+    "inviteCode",
     "name",
     "description",
     "bannerUrl",
@@ -34,18 +38,20 @@ export default async function ManageServerPublicPage({ params }: PageProps<"/man
     .where({ id, ownerId: session.user.id })
     .first();
   if (!server) notFound();
-  const { dict } = await getT();
+  const [{ dict }, catalog, tagPanel] = await Promise.all([getT(), getTagCatalog(), getOwnerTagPanel(server.id, session.user.id)]);
   const config = parsePageConfig(server.pageConfig);
 
   return (
     <ServerPageEditor
       action={updateServerPage.bind(null, server.id)}
+      publicHref={server.isPrivate && server.inviteCode ? `/join/${server.inviteCode}` : `/servers/${server.slug}`}
       initial={{
         config,
         videoUrl: config.videoId ? `https://www.youtube.com/watch?v=${config.videoId}` : "",
         discordUrl: server.discordUrl ?? "",
         websiteUrl: server.websiteUrl ?? "",
         backgroundUrl: server.backgroundUrl ?? "",
+        identity: { name: server.name, description: server.description, bannerUrl: server.bannerUrl ?? "", iconUrl: server.iconUrl ?? "" },
       }}
       server={{
         name: server.name,
@@ -59,6 +65,9 @@ export default async function ManageServerPublicPage({ params }: PageProps<"/man
           ? `${server.curseforgeModpackName}${server.curseforgeModpackVersion ? ` — ${server.curseforgeModpackVersion}` : ""}`
           : null,
       }}
+      serverId={server.id}
+      customTags={catalog.custom}
+      tagPanel={tagPanel}
       labels={{
         sections: dict.serverPage.sections,
         video: dict.serverPage.video,

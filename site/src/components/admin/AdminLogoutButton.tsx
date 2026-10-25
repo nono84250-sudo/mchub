@@ -11,7 +11,7 @@ export function AdminLogoutButton() {
     router.refresh();
   }
   return (
-    <button type="button" onClick={logout} style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer" }}>
+    <button type="button" onClick={logout} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}>
       Se déconnecter
     </button>
   );

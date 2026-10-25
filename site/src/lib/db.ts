@@ -34,12 +34,13 @@ const TABLES: Record<string, string> = {
   Friendship: "friendship",
   UserPresence: "userPresence",
   ContactMessage: "contactMessage",
+  Team: "team",
 };
 // Colonnes booleennes : stockees en 0/1 dans D1, rendues en true/false.
 const BOOLEAN_COLUMNS: Record<string, string[]> = {
-  server: ["published", "isPrivate", "autoConnect"],
+  server: ["published", "isPrivate", "autoConnect", "addToServerList"],
   notification: ["read"],
-  adminAccount: ["mustChangeCredentials"],
+  adminAccount: ["mustChangeCredentials", "isOwner"],
   scheduledBroadcast: ["banner", "blockLauncher"],
   news: ["published"],
   instanceWatch: ["notifyOnStatusChange", "lastKnownOnline"],
@@ -48,7 +49,7 @@ const BOOLEAN_COLUMNS: Record<string, string[]> = {
 const HAS_UPDATED_AT = new Set(["user", "server", "report", "platformSetting", "userPresence"]);
 // Relations belongsTo utilisees par include().
 const RELATIONS: Record<string, Record<string, { model: string; fk: string }>> = {
-  Server: { owner: { model: "User", fk: "ownerId" } },
+  Server: { owner: { model: "User", fk: "ownerId" }, team: { model: "Team", fk: "teamId" } },
   Report: { server: { model: "Server", fk: "serverId" } },
 };
 
@@ -62,11 +63,16 @@ const CF_ENDPOINT = () =>
 // pour que les routes du launcher repondent 503 « reessaie dans une minute » (voir
 // lib/d1Busy.ts) au lieu d'une erreur 500 opaque qui fait insister les launchers (audit 25/10).
 export class D1BusyError extends Error {
-  constructor(message: string) {
+  constructor(message = "D1 : base saturee") {
     super(message);
     this.name = "D1BusyError";
   }
 }
+
+// Audit de charge du 19/10 (B5) : apres un 429, cette instance n'appelle plus Cloudflare pendant
+// 60 s (chaque nouvelle requete qui reessayait aussitot prolongeait le blocage).
+const BUSY_PAUSE_MS = 60_000;
+let busyUntil = 0;
 
 // Cloudflare D1 accepte au plus 100 parametres lies par requete (limite documentee) : les
 // requetes construites a partir d'une liste (IN (...), INSERT multi-lignes) sont decoupees en
@@ -77,7 +83,14 @@ export const D1_MAX_PARAMS = 90;
 // jusqu'a sa propre limite. 10 s laisse une large marge (un appel normal prend < 300 ms).
 const D1_TIMEOUT_MS = 10_000;
 
+// Mesure (21/10, chantier cache des fiches) : avec D1_LOG=1 dans l'environnement (jamais en
+// production), chaque appel a Cloudflare est ecrit dans la console du site avec son numero et le
+// debut de la requete. Sert a compter les appels par page avant/apres un changement.
+let d1CallCount = 0;
+
 async function d1Rest(sql: string, params: unknown[]): Promise<Row[]> {
+  if (Date.now() < busyUntil) throw new D1BusyError("D1 : pause apres une limite de debit");
+  if (process.env.D1_LOG === "1") console.log(`[D1 #${++d1CallCount}] ${sql.replace(/\s+/g, " ").slice(0, 60)}`);
   let res: Response;
   try {
     res = await fetch(CF_ENDPOINT(), {
@@ -92,7 +105,10 @@ async function d1Rest(sql: string, params: unknown[]): Promise<Row[]> {
     }
     throw error;
   }
-  if (res.status === 429) throw new D1BusyError("D1 : limite de debit Cloudflare atteinte (HTTP 429)");
+  if (res.status === 429) {
+    busyUntil = Date.now() + BUSY_PAUSE_MS;
+    throw new D1BusyError("D1 : limite de debit Cloudflare atteinte (HTTP 429)");
+  }
   // Reponse pas forcement JSON en cas de panne/blocage cote Cloudflare (page d'erreur, WAF,
   // limite de debit) : on le dit clairement plutot que de laisser .json() lever une SyntaxError opaque.
   const text = await res.text();

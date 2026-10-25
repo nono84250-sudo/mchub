@@ -5,6 +5,8 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getT } from "@/i18n/getDictionary";
 import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
+import { serverState } from "@/lib/playerGauge";
+import { ServerStatePill } from "@/components/ServerStatePill";
 
 export const metadata = { title: "Mon espace — Omniscient" };
 
@@ -23,6 +25,9 @@ export default async function DashboardPage() {
     "frozenAt",
     "verificationStatus",
     "createdAt",
+    "playerCount",
+    "playerCapacity",
+    "lastPingedAt",
   )
     .where({ ownerId: session.user.id })
     .orderBy((s) => s.createdAt.desc())
@@ -32,14 +37,23 @@ export default async function DashboardPage() {
     <div>
       <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <h1 className="text-[26px] font-bold tracking-tight text-foreground">{dict.dashboard.myServers}</h1>
-        <Link href="/dashboard/servers/new" className="btn-primary justify-center sm:self-auto">
+        <Link href="/dashboard/servers/new" className="btn-fill justify-center sm:self-auto">
           <Plus className="h-4 w-4" />
           {dict.dashboard.newServer}
         </Link>
       </div>
 
       {servers.length === 0 ? (
-        <div className="panel mt-8 p-8 text-center text-muted">{dict.dashboard.empty}</div>
+        <div className="panel mt-8 flex min-h-40 flex-col items-center justify-center gap-2 p-6 text-center text-[13.5px] text-muted">
+          <span className="server-icon h-10 w-10 rounded-[10px]">
+            <Plus className="h-5 w-5" />
+          </span>
+          <b className="text-[15px] font-semibold text-foreground">{dict.dashboard.emptyTitle}</b>
+          <span>{dict.dashboard.emptyBody}</span>
+          <Link href="/dashboard/servers/new" className="btn-fill mt-1">
+            {dict.dashboard.emptyCta}
+          </Link>
+        </div>
       ) : (
         <ul className="mt-8 flex flex-col gap-2.5">
           {servers.map((server) => (
@@ -53,7 +67,15 @@ export default async function DashboardPage() {
                     {server.name.trim().charAt(0).toUpperCase() || "?"}
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">{server.name}</p>
+                    {/* 19/10 (Rushi) : pastille joueurs/etat a droite du nom, comme dans le launcher. */}
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate font-medium text-foreground">{server.name}</p>
+                      <ServerStatePill
+                        state={serverState(server.playerCount, server.playerCapacity, server.lastPingedAt != null)}
+                        count={server.playerCount}
+                        capacity={server.playerCapacity}
+                      />
+                    </div>
                     <p className="text-[13px] text-muted">
                       {server.type === "modded" ? dict.dashboard.modded : dict.dashboard.vanilla}
                     </p>
