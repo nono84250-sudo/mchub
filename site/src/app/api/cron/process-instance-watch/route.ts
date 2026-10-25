@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db, or } from "@/lib/db";
+import { D1_MAX_PARAMS, db, or } from "@/lib/db";
 import { pingMinecraftServer } from "@/lib/mc-ping";
 import { CONCURRENCY } from "@/lib/status-snapshot";
 import { createNotification } from "@/lib/notifications";
@@ -51,11 +51,16 @@ export async function POST(request: Request) {
   // regardent eux que les fiches publiques/approuvees). or(...) (lib/db.ts) plutot qu'un IN :
   // ce petit ORM n'a pas d'operateur IN expose, seulement eq/gte/lt/isNull combinables via or().
   const serverIds = [...new Set(watchRows.map((w) => w.serverId))];
-  const servers: { id: string; ip: string; name: string }[] = serverIds.length
-    ? await db.orm.public.Server.select("id", "ip", "name")
-        .where((c) => or(...serverIds.map((id) => c.id.eq(id))))
-        .all()
-    : [];
+  // Par lots de D1_MAX_PARAMS : D1 refuse plus de 100 parametres par requete (audit 25/10).
+  const servers: { id: string; ip: string; name: string }[] = [];
+  for (let i = 0; i < serverIds.length; i += D1_MAX_PARAMS) {
+    const chunk = serverIds.slice(i, i + D1_MAX_PARAMS);
+    servers.push(
+      ...(await db.orm.public.Server.select("id", "ip", "name")
+        .where((c) => or(...chunk.map((id) => c.id.eq(id))))
+        .all()),
+    );
+  }
   const serverById = new Map(servers.map((s) => [s.id, s]));
 
   const onlineByServerId = new Map<string, boolean>();

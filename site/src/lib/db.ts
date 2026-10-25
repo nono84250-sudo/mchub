@@ -58,12 +58,41 @@ const RELATIONS: Record<string, Record<string, { model: string; fk: string }>> =
 const CF_ENDPOINT = () =>
   `https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/d1/database/${process.env.CF_D1_DATABASE_ID}/query`;
 
+// Base saturee (quota de l'API Cloudflare depasse, HTTP 429) ou trop lente : erreur a part,
+// pour que les routes du launcher repondent 503 « reessaie dans une minute » (voir
+// lib/d1Busy.ts) au lieu d'une erreur 500 opaque qui fait insister les launchers (audit 25/10).
+export class D1BusyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "D1BusyError";
+  }
+}
+
+// Cloudflare D1 accepte au plus 100 parametres lies par requete (limite documentee) : les
+// requetes construites a partir d'une liste (IN (...), INSERT multi-lignes) sont decoupees en
+// lots qui restent en dessous (audit 25/10).
+export const D1_MAX_PARAMS = 90;
+
+// Delai maximum d'un appel D1 : sans lui, une API Cloudflare lente bloque la fonction Vercel
+// jusqu'a sa propre limite. 10 s laisse une large marge (un appel normal prend < 300 ms).
+const D1_TIMEOUT_MS = 10_000;
+
 async function d1Rest(sql: string, params: unknown[]): Promise<Row[]> {
-  const res = await fetch(CF_ENDPOINT(), {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.CF_D1_API_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ sql, params }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(CF_ENDPOINT(), {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.CF_D1_API_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ sql, params }),
+      signal: AbortSignal.timeout(D1_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new D1BusyError("D1 : delai depasse");
+    }
+    throw error;
+  }
+  if (res.status === 429) throw new D1BusyError("D1 : limite de debit Cloudflare atteinte (HTTP 429)");
   // Reponse pas forcement JSON en cas de panne/blocage cote Cloudflare (page d'erreur, WAF,
   // limite de debit) : on le dit clairement plutot que de laisser .json() lever une SyntaxError opaque.
   const text = await res.text();
@@ -181,13 +210,17 @@ class Query {
       if (ids.length) {
         const table = TABLES[rel.model];
         const want = inc.columns ? ["id", ...inc.columns] : undefined;
-        const res = await (await d1())
-          .prepare(`SELECT ${selectList(want)} FROM "${table}" WHERE "id" IN (${ids.map(() => "?").join(",")})`)
-          .bind(...ids)
-          .all<Row>();
-        for (const r of res.results) {
-          const full = fromDb(table, r);
-          related.set(full.id, full);
+        // Par lots : l'API D1 refuse plus de 100 parametres par requete (D1_MAX_PARAMS).
+        for (let i = 0; i < ids.length; i += D1_MAX_PARAMS) {
+          const chunk = ids.slice(i, i + D1_MAX_PARAMS);
+          const res = await (await d1())
+            .prepare(`SELECT ${selectList(want)} FROM "${table}" WHERE "id" IN (${chunk.map(() => "?").join(",")})`)
+            .bind(...chunk)
+            .all<Row>();
+          for (const r of res.results) {
+            const full = fromDb(table, r);
+            related.set(full.id, full);
+          }
         }
       }
       for (const row of rows) {

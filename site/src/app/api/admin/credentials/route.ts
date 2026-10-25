@@ -49,6 +49,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Mot de passe actuel incorrect." }, { status: 401 });
   }
 
+  // Changement force (compte cree par un autre admin, mot de passe connu de lui) : reprendre le
+  // meme mot de passe ne changerait rien (audit 25/10).
+  if (newPassword === currentPassword) {
+    return NextResponse.json({ error: "Choisis un nouveau mot de passe, différent de l'actuel." }, { status: 400 });
+  }
+
   const taken = await db.orm.public.AdminAccount.select("id").where({ username }).first();
   if (taken && taken.id !== admin.id) {
     return NextResponse.json({ error: "Ce nom d'utilisateur est déjà pris." }, { status: 409 });

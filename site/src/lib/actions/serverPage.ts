@@ -6,7 +6,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { isOwnImageUrl } from "@/lib/ownImageUrl";
-import { deleteR2ImageIfOwned } from "@/lib/serverImages";
+import { deleteR2ImageIfOwned, isImageUsedByAnotherServer } from "@/lib/serverImages";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import {
   normalizePageConfig,
@@ -70,6 +70,14 @@ export async function updateServerPage(
     input.config.gallery.some((g) => !isOwnImageUrl(g.url, host, previousGallery.has(g.url) ? g.url : null))
   ) {
     return { error: "images" };
+  }
+  // Une image nouvelle sur cette fiche ne doit appartenir a aucune autre fiche (audit 25/10).
+  const newImages = [
+    ...(backgroundUrl && backgroundUrl !== owned.backgroundUrl ? [backgroundUrl] : []),
+    ...input.config.gallery.map((g) => g.url).filter((url) => !previousGallery.has(url)),
+  ];
+  for (const url of newImages) {
+    if (await isImageUsedByAnotherServer(url, serverId)) return { error: "images" };
   }
 
   const config = normalizePageConfig({ ...input.config, videoId: input.videoUrl ? youtubeVideoId(input.videoUrl) : null });

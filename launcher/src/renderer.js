@@ -65,11 +65,13 @@ function playersText(server) {
   if (server.playerCount === null || server.playerCount === undefined) {
     return t("serverCard.statusUnknown");
   }
+  // Number() : ce texte est insere tel quel dans du HTML (playersLabel, cartes) — une valeur
+  // inattendue venue du site ne doit jamais pouvoir y glisser du balisage (audit 25/10).
   const capacity = server.playerCapacity !== null && server.playerCapacity !== undefined
-    ? ` / ${server.playerCapacity}`
+    ? ` / ${Number(server.playerCapacity)}`
     : "";
   // Juste le nombre : « 16170 / 200000 » (le libellé est donné par le titre de la case).
-  return `${server.playerCount}${capacity}`;
+  return `${Number(server.playerCount)}${capacity}`;
 }
 
 function playersLabel(server) {
@@ -294,8 +296,10 @@ function isServerOnline(server) {
 }
 
 // « Un ami y joue » : slug -> pseudos des amis en ligne sur ce serveur. Vient de la liste d'amis
-// (friendsList, deja gardee une minute par main.js) : un appel au site au plus par minute, et
-// seulement quand une liste de serveurs est ouverte par un joueur connecte.
+// (friendsList, gardee 5 min par main.js pour cet usage) : un appel au site au plus toutes les
+// 5 minutes (audit 25/10, charge du site : avant, chaque minute), et seulement quand une liste
+// de serveurs est ouverte par un joueur connecte.
+const FRIENDS_FOR_LISTS_INTERVAL_MS = 5 * 60_000;
 function friendsBySlug() {
   const map = new Map();
   for (const friend of friendsList) {
@@ -307,10 +311,10 @@ function friendsBySlug() {
 }
 let friendsForListsAt = 0;
 function refreshFriendsForLists(onChange) {
-  if (!signedIn || Date.now() - friendsForListsAt < 60_000) return;
+  if (!signedIn || Date.now() - friendsForListsAt < FRIENDS_FOR_LISTS_INTERVAL_MS) return;
   friendsForListsAt = Date.now();
   const before = JSON.stringify([...friendsBySlug()]);
-  refreshFriends().then(() => {
+  refreshFriends({ background: true }).then(() => {
     if (JSON.stringify([...friendsBySlug()]) !== before) onChange();
   });
 }
@@ -1748,11 +1752,11 @@ let serverListCache = null;
 let serverListCacheAt = 0;
 const SERVER_LIST_CACHE_MS = 15_000;
 
-async function fetchServerList({ force = false } = {}) {
+async function fetchServerList({ force = false, background = false } = {}) {
   if (!force && serverListCache && Date.now() - serverListCacheAt < SERVER_LIST_CACHE_MS) {
     return serverListCache;
   }
-  const result = await window.mchub.listServers();
+  const result = await window.mchub.listServers({ background });
   if (result.ok) {
     serverListCache = result;
     serverListCacheAt = Date.now();
@@ -2379,7 +2383,7 @@ async function ensureNotInMaintenance() {
 // une fois le bon code entre.
 async function checkMaintenanceLoop() {
   if (maintenanceBypassed) return;
-  const status = await window.mchub.checkMaintenance();
+  const status = await window.mchub.checkMaintenance({ background: true });
   if (status.active) await showMaintenanceScreen(status.message);
 }
 
@@ -2403,9 +2407,9 @@ async function showNotificationPopup(notif) {
   }
 }
 
-async function refreshNotifications() {
+async function refreshNotifications({ background = false } = {}) {
   if (!signedIn) return;
-  const result = await window.mchub.listNotifications();
+  const result = await window.mchub.listNotifications({ background });
   if (!result.ok) return;
   latestNotifications = result.notifications;
   renderNotifications();
@@ -2694,10 +2698,13 @@ function renderFriendsList() {
     friendsSectionHtml("friends.sectionOutgoing", friendsOutgoing, (r) => friendRequestRowHtml(r, "outgoing"));
 }
 
-async function refreshFriends() {
+// `background` : rafraichissement des listes de serveurs (refreshFriendsForLists), garde 5 min par
+// main.js et mis en pause quand le site est sature. Sans lui (page Amis ouverte, apres une
+// action), main.js ne garde la liste qu'une minute, comme avant.
+async function refreshFriends({ background = false } = {}) {
   if (!signedIn) return;
   const ownerId = currentProfile?.id ?? null;
-  const result = await window.mchub.friends.list();
+  const result = await window.mchub.friends.list({ background });
   // Compte change ou deconnecte pendant la requete : la reponse ne le concerne plus.
   if (!signedIn || (currentProfile?.id ?? null) !== ownerId) return;
   if (friendsOwnerId !== ownerId) resetFriendsState();
@@ -2793,10 +2800,10 @@ function wireFriends() {
   });
 }
 
-// Heartbeat de presence : greffe sur le cycle de 60s existant (scheduleRefresh(sendPresenceHeartbeat)
-// plus bas, meme intervalle que silentRefreshList — REFRESH_INTERVAL_MS), jamais un intervalle a
-// part. Echec silencieux (voir presence:heartbeat cote main.js, qui ne rejette jamais) : un
-// heartbeat rate ne fait que retarder le passage "hors ligne" d'un ami, jamais a signaler au joueur.
+// Heartbeat de presence : toutes les 2 min (PRESENCE_HEARTBEAT_INTERVAL_MS plus bas, audit 25/10 ;
+// avant, le cycle de 60s de silentRefreshList). Echec silencieux (voir presence:heartbeat cote
+// main.js, qui ne rejette jamais) : un heartbeat rate ne fait que retarder le passage "hors ligne"
+// d'un ami, jamais a signaler au joueur.
 async function sendPresenceHeartbeat() {
   if (!signedIn) return;
   const result = await window.mchub.sendPresenceHeartbeat();
@@ -4445,9 +4452,16 @@ function renderDebugTab(contentEl, settings) {
     });
   });
 
+  // Refuse pendant une partie ou une installation (voir diagnostics:repair dans main.js) : memes
+  // messages que « Supprimer les fichiers » d'une instance.
+  const diagnosticsRefusal = (result) =>
+    result?.code === "running" ? t("instanceTools.delRefusedRunning")
+      : result?.code === "installing" || result?.code === "launching" ? t("instanceTools.delRefusedInstalling")
+        : null;
+
   document.getElementById("settings-repair").addEventListener("click", async () => {
-    await window.mchub.diagnostics.repair();
-    document.getElementById("settings-reset-status").textContent = t("debug.repaired");
+    const result = await window.mchub.diagnostics.repair();
+    document.getElementById("settings-reset-status").textContent = diagnosticsRefusal(result) || t("debug.repaired");
   });
 
   const formatCacheSize = (bytes) =>
@@ -4460,7 +4474,12 @@ function renderDebugTab(contentEl, settings) {
   });
   document.getElementById("settings-clear-cache").addEventListener("click", async () => {
     if (!window.confirm(t("debug.clearCacheConfirm"))) return;
-    await window.mchub.diagnostics.clearCache();
+    const result = await window.mchub.diagnostics.clearCache();
+    const refusal = diagnosticsRefusal(result);
+    if (refusal) {
+      document.getElementById("settings-reset-status").textContent = refusal;
+      return;
+    }
     document.getElementById("settings-reset-status").textContent = t("debug.cacheCleared");
     document.getElementById("settings-cache-size-desc").textContent = t("debug.clearCacheDesc", { size: formatCacheSize(0) });
   });
@@ -5752,7 +5771,7 @@ const REFRESH_INTERVAL_MS = 60_000;
 
 async function silentRefreshList() {
   if (!signedIn || listEl.hidden) return;
-  const result = await fetchServerList({ force: true });
+  const result = await fetchServerList({ force: true, background: true });
   if (result.ok) renderList(result.servers);
 }
 
@@ -5770,26 +5789,34 @@ window.mchub.onGameState((running) => {
 
 function scheduleRefresh(task, baseMs = REFRESH_INTERVAL_MS) {
   const tick = async () => {
-    await task();
-    setTimeout(tick, gamePlaying ? REFRESH_PLAYING_INTERVAL_MS : baseMs);
+    // Toujours reprogramme (audit 25/10) : avant, une seule erreur dans `task` arretait ce
+    // cycle pour toute la session (plus de liste, de notifications ni de maintenance).
+    try {
+      await task();
+    } catch (error) {
+      console.error("Rafraîchissement périodique échoué :", error);
+    } finally {
+      setTimeout(tick, gamePlaying ? REFRESH_PLAYING_INTERVAL_MS : baseMs);
+    }
   };
   setTimeout(tick, baseMs);
 }
 
 scheduleRefresh(silentRefreshList);
-// Notifications : toutes les 5 minutes (chaque appel interroge la base du site).
-scheduleRefresh(refreshNotifications, 300_000);
+// Notifications : toutes les 5 minutes (chaque appel interroge la base du site). `background` :
+// appel de fond, mis en pause par main.js quand le site est sature (voir siteBusyUntil).
+scheduleRefresh(() => refreshNotifications({ background: true }), 300_000);
 scheduleRefresh(checkMaintenanceLoop, 120_000);
-// Presence (systeme d'amis) : MEME valeur de cycle que silentRefreshList ci-dessus
-// (REFRESH_INTERVAL_MS, 60s) — greffe dessus comme demande, pas un nouvel intervalle ni celui
-// des notifications (qui est a 5 min, pas 30s comme un ancien commentaire le pretendait a
-// tort). Delibérément PAS via scheduleRefresh() : ce helper ralentit a
+// Presence (systeme d'amis) : son propre cycle de 2 min (audit 25/10, charge du site : avant 60 s,
+// comme silentRefreshList). Le site compte un ami « en ligne » pendant 5 min apres son dernier
+// heartbeat (ONLINE_WINDOW_MS cote site), donc un heartbeat rate ne le fait pas encore passer
+// « hors ligne ». Delibérément PAS via scheduleRefresh() : ce helper ralentit a
 // REFRESH_PLAYING_INTERVAL_MS (5 min) pendant une partie, ce qui est le bon choix pour la liste
 // de serveurs (pas besoin de la rafraichir pendant que le joueur est en jeu) mais serait exactement
 // le mauvais choix ici — un ami en train de JOUER est le cas ou on veut le plus montrer "en
-// ligne", pas le laisser passer "hors ligne" apres 2 min (ONLINE_WINDOW_MS cote site) faute de
-// heartbeat. setInterval direct, jamais ralenti, jamais arrete.
-setInterval(sendPresenceHeartbeat, REFRESH_INTERVAL_MS);
+// ligne". setInterval direct, jamais ralenti, jamais arrete.
+const PRESENCE_HEARTBEAT_INTERVAL_MS = 120_000;
+setInterval(sendPresenceHeartbeat, PRESENCE_HEARTBEAT_INTERVAL_MS);
 
 // --- Fichiers de l'instance + « Arrêter le jeu » (16/10, option B validee par Rushi) ----------
 // Les actions sur les fichiers vivent dans la fenetre Reglages (engrenage, tout a droite de la
