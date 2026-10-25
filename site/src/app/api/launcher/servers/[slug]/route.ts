@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { teamsPublic, withoutTeam } from "@/lib/features";
 import { getLauncherServerForJoin, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
@@ -42,7 +43,7 @@ async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/serv
   }
   const server = join.server;
 
-  return NextResponse.json({ server });
+  return NextResponse.json({ server: (await teamsPublic()) ? server : withoutTeam(server) });
 }
 
 export const GET = withD1Busy(handleGET);

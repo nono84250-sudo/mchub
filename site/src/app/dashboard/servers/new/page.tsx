@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { featureVisibleOnSite } from "@/lib/features";
 import { auth } from "@/auth";
 import { createServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
@@ -16,7 +17,11 @@ export default async function NewServerPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const [versions, sourceStates, teams] = await Promise.all([getMinecraftVersions(), allSourceStates(), listMyTeams(session.user.id)]);
+  const [versions, sourceStates, teams] = await Promise.all([
+    getMinecraftVersions(),
+    allSourceStates(),
+    featureVisibleOnSite("team").then((on) => (on ? listMyTeams(session.user.id) : [])),
+  ]);
 
   return (
     <NewServerWizard

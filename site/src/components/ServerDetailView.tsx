@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { teamsPublic, withoutTeam } from "@/lib/features";
 import Link from "next/link";
 import { ArrowSquareOut } from "@phosphor-icons/react/ssr";
 import { ServerHowToPlay } from "@/components/ServerHowToPlay";
@@ -56,7 +57,9 @@ export function wallpaperStyle(url: string): CSSProperties {
 // canSeeServer dans public-servers.ts). Disposition « deux colonnes » (decision du 16/10) :
 // a gauche les sections choisies par le proprietaire (voir lib/serverPage.ts), a droite une
 // colonne qui reste visible avec la facon de rejoindre et les infos de base.
-export async function ServerDetailView({ slug, server, inviteCode }: { slug: string; server: PublicServerDetail; inviteCode?: string }) {
+export async function ServerDetailView({ slug, server: raw, inviteCode }: { slug: string; server: PublicServerDetail; inviteCode?: string }) {
+  // Laboratoire : pas de team sur la fiche tant que « Ma team » n'est pas ouverte à tous.
+  const server = (await teamsPublic()) ? raw : withoutTeam(raw);
   // Teams (19/10) : autres serveurs publics de la meme team, tires de la liste en cache (0 appel).
   const [{ dict, locale }, { custom }, teamServers] = await Promise.all([
     getT(),

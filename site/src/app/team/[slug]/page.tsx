@@ -1,4 +1,5 @@
 import { notFound, permanentRedirect } from "next/navigation";
+import { teamsPublic } from "@/lib/features";
 import { getT } from "@/i18n/getDictionary";
 import { t } from "@/i18n/t";
 import { ServerCard } from "@/components/ServerCard";
@@ -27,6 +28,8 @@ export async function generateMetadata({ params }: PageProps<"/team/[slug]">) {
 
 export default async function TeamPage({ params }: PageProps<"/team/[slug]">) {
   const { slug } = await params;
+  // Laboratoire : pages de team seulement quand « Ma team » est ouverte à tous.
+  if (!(await teamsPublic())) notFound();
   const found = await findTeamBySlug(slug);
   if (!found) notFound();
   if ("redirectTo" in found) permanentRedirect(`/team/${found.redirectTo}`);

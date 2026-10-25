@@ -14,7 +14,7 @@ import { TEAMS_READY } from "@/lib/teamRules";
 // Mon espace / Se déconnecter" n'ont plus la place de tenir sur une ligne à
 // côté du logo et débordaient hors de l'écran. Un seul bouton ouvre les
 // mêmes liens en liste verticale.
-export function MobileNav({ loggedIn, unread = 0 }: { loggedIn: boolean; unread?: number }) {
+export function MobileNav({ loggedIn, unread = 0, show = { friends: true, team: true } }: { loggedIn: boolean; unread?: number; show?: { friends: boolean; team: boolean } }) {
   const [open, setOpen] = useState(false);
   const { t } = useI18n();
 
@@ -63,8 +63,8 @@ export function MobileNav({ loggedIn, unread = 0 }: { loggedIn: boolean; unread?
               </p>
               {[
                 { href: "/dashboard", label: t("nav.mySpace"), badge: 0 },
-                { href: "/dashboard/amis", label: t("nav.friends"), badge: 0 },
-                ...(TEAMS_READY ? [{ href: "/dashboard/team", label: t("dashboard.navTeam"), badge: 0 }] : []),
+                ...(show.friends ? [{ href: "/dashboard/amis", label: t("nav.friends"), badge: 0 }] : []),
+                ...(TEAMS_READY && show.team ? [{ href: "/dashboard/team", label: t("dashboard.navTeam"), badge: 0 }] : []),
                 { href: "/dashboard/notifications", label: t("nav.notifications"), badge: unread },
                 { href: "/dashboard/parametres", label: t("nav.settings"), badge: 0 },
               ].map((l) => (

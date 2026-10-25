@@ -44,10 +44,11 @@ function isLocalSender(event) {
 }
 
 // Laboratoire (25/10) : chaque canal d'une fonctionnalité cachée répond « feature_off » sans
-// rien lancer (cloud:* = mondes en ligne, play:* = mode Jouer). Voir features.js.
+// rien lancer (cloud:* = mondes en ligne, play:* = mode Jouer, friends:* = amis). Voir features.js.
 const FEATURE_IPC = [
   ["cloud:", "worlds"],
   ["play:", "play"],
+  ["friends:", "friends"],
 ];
 const registerIpcHandler = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, listener) =>
@@ -419,9 +420,9 @@ function setSession(profile, authorization, { freshLogin = false } = {}) {
   requestLauncherSession();
   // Mode Jouer : reprend un envoi de mondes laissé en cours (worldCloud, défini plus bas).
   setTimeout(() => {
-    features.refresh();
     try {
-      if (features.visible("worlds")) worldCloud.start();
+      // État relu d'abord : la synchro ne démarre jamais sur un état ancien.
+      features.refresh().then(() => features.visible("worlds") && worldCloud.start()).catch(() => {});
     } catch {
       /* pas encore prêt au tout premier démarrage */
     }
@@ -529,12 +530,14 @@ const features = createFeatures({
   cacheDir: app.getPath("userData"),
   siteUrl: SITE_URL,
   authHeaders: () => launcherAuthHeaders(),
+  currentUuid: () => currentSession?.profile?.id || null,
   fetchJson: (url, options) => fetchJson(url, options),
   log: (message, level = "info") => logStore.pushLog({ level, source: "launcher", message }),
   onChange: (state) => {
     for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("features:changed", state);
     try {
       if (state.worlds?.visible && currentSession) worldCloud.start();
+      else if (!state.worlds?.visible) rawWorldCloud.suspend();
     } catch {
       /* worldCloud pas encore prêt : setSession s'en charge */
     }
@@ -3373,7 +3376,7 @@ function installVersionInBackground(versionId) {
   versionInstalls.set(versionId, run);
   return run;
 }
-const worldCloud = createWorldCloud({
+const rawWorldCloud = createWorldCloud({
   playMode,
   siteUrl: SITE_URL,
   authHeaders: launcherAuthHeaders,
@@ -3394,6 +3397,18 @@ const worldCloud = createWorldCloud({
   ensureVersionForMeta,
   installVersion: installVersionInBackground,
   device: loadDevice(),
+});
+// Laboratoire (25/10) : « Mondes en ligne » coupé pour ce joueur = aucune méthode de la synchro ne
+// tourne (aucun appel au site, aucun minuteur, aucun téléchargement), d'où qu'elle soit appelée.
+const worldCloud = new Proxy(rawWorldCloud, {
+  get(target, prop) {
+    const value = target[prop];
+    if (typeof value !== "function" || prop === "suspend") return value;
+    return (...args) => {
+      if (features.visible("worlds")) return value.apply(target, args);
+      return prop === "downloadJob" || prop === "lastStatus" || prop === "isTracked" ? null : Promise.resolve({ ok: false, code: "feature_off" });
+    };
+  },
 });
 // Versions miroir : la limite d'un monde sur ce PC s'applique aussi à ses versions en ligne.
 playMode.onBackupsPruned((key, drop) => worldCloud.dropPruned(key, drop));

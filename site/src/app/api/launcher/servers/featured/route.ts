@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
 import { getServerOfTheDay } from "@/lib/public-servers";
+import { teamsPublic, withoutTeam } from "@/lib/features";
 import { rateLimitResponse } from "@/lib/rateLimit";
 
 // « Petit serveur du jour » (19/10) : le launcher lit ici le choix du SITE pour sa colonne
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
   const pick = await getServerOfTheDay();
   return NextResponse.json(
     pick
-      ? { day: pick.day, automatic: true, server: pick.server, launches7d: pick.launches7d, fillPercent: pick.fillPercent }
+      ? { day: pick.day, automatic: true, server: (await teamsPublic()) ? pick.server : withoutTeam(pick.server), launches7d: pick.launches7d, fillPercent: pick.fillPercent }
       : { day: null, automatic: true, server: null },
   );
 }

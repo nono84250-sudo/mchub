@@ -399,12 +399,27 @@
   // Laboratoire (25/10) : l'onglet n'existe que si le site dit « visible » pour ce joueur ;
   // le badge « Bêta » suit l'état du mode Jouer (tout sauf « Pour tous »). Voir features.js.
   let playVisible = false;
+  let worldsOn = false; // « Mondes en ligne » : sinon aucun appel au cloud, aucune fenêtre
   let betaBadge = true;
   nav.hidden = true;
   function applyFeatures(state) {
     const f = state?.play || {};
     const wasVisible = playVisible;
+    const wasWorlds = worldsOn;
     playVisible = f.visible === true;
+    worldsOn = playVisible && state?.worlds?.visible === true;
+    if (!worldsOn) {
+      data.cloud = null;
+      data.job = null;
+      data.djob = null;
+      try {
+        renderActivity();
+      } catch {
+        /* pilule pas encore prête */
+      }
+    } else if (!wasWorlds) {
+      api.cloud.downloadJob().then((j) => setDjob(j)).catch(() => {});
+    }
     betaBadge = f.beta !== false;
     nav.hidden = !playVisible;
     drawNav();
@@ -1086,6 +1101,7 @@
   // Rien n'est jamais écrasé : si les deux copies avancent, le site garde les deux versions et le
   // joueur choisit laquelle continuer ; l'autre reste dans les sauvegardes.
   async function checkDevices(key, force = false) {
+    if (!worldsOn) return true;
     const r = await api.cloud.beforePlay(key, { force });
     if (!r?.ok || !r.conflict) return true;
     return openConflict(key, r);
@@ -1899,6 +1915,10 @@
   // force : après une action du joueur. Sinon la réponse gardée par le launcher suffit (30 min sans
   // offre cloud, 2 min avec), pour ne pas appeler le site à chaque rafraîchissement de l'onglet.
   async function loadCloud(force = false) {
+    if (!worldsOn) {
+      data.cloud = null;
+      return;
+    }
     const r = await api.cloud.status({ force }).catch(() => null);
     data.cloud = r?.ok ? r : null;
     if (r?.job) setJob(r.job);
@@ -2066,6 +2086,8 @@
     toast(fr ? "Téléchargement lancé. Suis-le en haut à droite : tu peux continuer à utiliser le launcher." : "Download started. Follow it at the top right: you can keep using the launcher.");
   }
   function setDjob(djob) {
+    if (djob && !Array.isArray(djob.items)) djob = null; // réponse « feature_off » ou vide
+    if (djob && !worldsOn) return;
     const was = data.djob && !data.djob.done;
     data.djob = djob;
     try {
@@ -2087,11 +2109,12 @@
     } else if (!panel.hidden && (!was || djob?.done)) render();
   }
   api.cloud.onDownloadUpdate(setDjob);
-  api.cloud.downloadJob().then((j) => j && setDjob(j)).catch(() => {});
 
   // Envoi en arrière-plan : affiché dans la pilule en haut à droite (renderActivity de renderer.js
   // appelle window.playCloudActivity) quand rien d'autre ne tourne.
   function setJob(job) {
+    if (job && !Array.isArray(job.items)) job = null;
+    if (job && !worldsOn) return;
     const wasActive = data.job && !data.job.done;
     data.job = job;
     try {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listPublicServers } from "@/lib/public-servers";
+import { teamsPublic, withoutTeam } from "@/lib/features";
 import { getTagCatalog } from "@/lib/tagRequests";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { withD1Busy } from "@/lib/d1Busy";
@@ -20,7 +21,8 @@ const CORS_HEADERS = { "Access-Control-Allow-Origin": "*" };
 export const GET = withD1Busy(async (request: Request) => {
   const limited = rateLimitResponse(request, "public-servers-list", 120, { headers: CORS_HEADERS });
   if (limited) return limited;
-  const [list, { custom }] = await Promise.all([listPublicServers(), getTagCatalog()]);
+  const [all, { custom }, showTeams] = await Promise.all([listPublicServers(), getTagCatalog(), teamsPublic()]);
+  const list = showTeams ? all : all.map(withoutTeam);
   // 23/10 : noms des etiquettes ajoutees ou renommees par l'equipe (« Remplacer une etiquette »),
   // seulement pour celles que porte le serveur : le launcher les affiche a la place de son propre
   // dictionnaire. Champ AJOUTE, un ancien launcher l'ignore. Catalogue en cache : 0 appel D1 de plus.

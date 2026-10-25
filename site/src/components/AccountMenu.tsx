@@ -31,7 +31,7 @@ function applyTheme(pref: ThemePreference) {
 // pour rester coherent entre le site et la console. Langue et Apparence ne
 // sont proposees ici QUE connecte (voir Nav.tsx, qui garde les selecteurs
 // autonomes hors connexion, puisqu'il n'y a alors aucun "Mon espace").
-export function AccountMenu({ unread = 0 }: { unread?: number }) {
+export function AccountMenu({ unread = 0, show = { friends: true, team: true } }: { unread?: number; show?: { friends: boolean; team: boolean } }) {
   const [open, setOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [themePref, setThemePref] = useState<ThemePreference>("system");
@@ -91,8 +91,8 @@ export function AccountMenu({ unread = 0 }: { unread?: number }) {
               ni de Dashboard). */}
           {[
             { href: "/dashboard", label: t("nav.dashboard"), badge: 0 },
-            { href: "/dashboard/amis", label: t("nav.friends"), badge: 0 },
-            ...(TEAMS_READY ? [{ href: "/dashboard/team", label: t("dashboard.navTeam"), badge: 0 }] : []),
+            ...(show.friends ? [{ href: "/dashboard/amis", label: t("nav.friends"), badge: 0 }] : []),
+            ...(TEAMS_READY && show.team ? [{ href: "/dashboard/team", label: t("dashboard.navTeam"), badge: 0 }] : []),
             { href: "/dashboard/notifications", label: t("nav.notifications"), badge: unread },
             { href: "/dashboard/parametres", label: t("nav.settings"), badge: 0 },
           ].map((l) => (

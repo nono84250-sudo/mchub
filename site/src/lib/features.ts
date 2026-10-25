@@ -270,3 +270,15 @@ export async function featureOnSite(id: string): Promise<FeatureAccess> {
 export function withLauncherFeature<A extends [Request, ...unknown[]]>(id: string, handler: (...args: A) => Promise<Response>) {
   return async (...args: A): Promise<Response> => (await requireLauncherFeature(args[0], id)) ?? handler(...args);
 }
+
+// Teams en public (byline des cartes et des fiches, filtre Team, pages /team/…, launcher) : ces
+// pages sont en cache, les mêmes pour tout le monde. Elles montrent les teams seulement quand
+// « Ma team » est ouverte à tous (Bêta publique ou Pour tous) ; avant, seul l'onglet Ma team des
+// testeurs existe.
+export async function teamsPublic(): Promise<boolean> {
+  const state = await featureState("team").catch(() => "hidden" as FeatureState);
+  return state === "beta" || state === "all";
+}
+export function withoutTeam<T>(value: T): T {
+  return value && typeof value === "object" && "team" in value ? { ...value, team: null } : value;
+}

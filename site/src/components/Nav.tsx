@@ -7,6 +7,7 @@ import { MobileNav } from "@/components/MobileNav";
 import { AccountMenu } from "@/components/AccountMenu";
 import { getT } from "@/i18n/getDictionary";
 import { countUnreadNotifications } from "@/lib/unreadNotifications";
+import { featuresFor, siteViewer } from "@/lib/features";
 
 export async function Nav() {
   // Idee 1 du lancement (19/10) : la barre du haut est sur toutes les pages. Si la base ne
@@ -23,6 +24,9 @@ export async function Nav() {
         return 0;
       })
     : 0;
+  // Laboratoire : liens Amis et Ma team du menu seulement si la fonctionnalité est visible pour ce compte.
+  const features = session?.user?.id ? await featuresFor(await siteViewer()).catch(() => null) : null;
+  const show = { friends: !!features?.friends?.visible, team: !!features?.team?.visible };
 
   return (
     <header className="relative border-b border-border bg-surface/95 backdrop-blur-md sticky top-0 z-20">
@@ -46,7 +50,7 @@ export async function Nav() {
           </nav>
         </div>
 
-        <MobileNav loggedIn={!!session?.user?.id} unread={unread} />
+        <MobileNav loggedIn={!!session?.user?.id} unread={unread} show={show} />
 
         {/* Elements utilitaires, toujours a droite. Langue/Apparence vivent
             dans le pied de page (Footer.tsx), pas ici — connecte, elles
@@ -56,7 +60,7 @@ export async function Nav() {
               Se connecter passe en simple lien (un joueur n'a pas besoin de
               compte pour jouer). */}
           {session?.user?.id ? (
-            <AccountMenu unread={unread} />
+            <AccountMenu unread={unread} show={show} />
           ) : (
             <Link href="/login" className="text-muted hover:text-foreground transition-colors">
               {dict.nav.login}

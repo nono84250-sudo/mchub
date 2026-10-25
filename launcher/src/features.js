@@ -3,20 +3,21 @@
 // refuse de toute façon les routes d'une fonctionnalité cachée ; ici on évite surtout de
 // montrer l'onglet et de démarrer son code.
 //
-// Gardé sur le disque : hors ligne, on reprend le dernier état reçu. Jamais reçu : seules les
-// fonctionnalités déjà ouvertes à tous avant le Laboratoire (amis) sont visibles.
+// Au démarrage, rien n'est visible (sauf les amis, ouverts à tous avant le Laboratoire) tant que
+// le site n'a pas répondu. Site injoignable : on reprend le dernier état reçu pour CE compte
+// (gardé sur le disque), jamais celui d'un autre compte.
 const fs = require("node:fs");
 const path = require("node:path");
 
 const FALLBACK = { friends: { visible: true, beta: false } };
 const REFRESH_MS = 10 * 60_000;
 
-function createFeatures({ cacheDir, siteUrl, authHeaders, fetchJson, onChange, log }) {
+function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson, onChange, log }) {
   const file = path.join(cacheDir, "features.json");
   let state = FALLBACK;
+  let saved = null;
   try {
-    const saved = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (saved && typeof saved.features === "object") state = saved.features;
+    saved = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
     /* premier démarrage : repli */
   }
@@ -35,13 +36,19 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, fetchJson, onChange, l
         const next = data.features;
         const changed = JSON.stringify(next) !== JSON.stringify(state);
         state = next;
+        saved = { at: Date.now(), uuid: currentUuid() || null, features: next };
+        fs.promises.mkdir(cacheDir, { recursive: true }).then(() => fs.promises.writeFile(file, JSON.stringify(saved))).catch(() => {});
         if (changed) {
-          fs.promises.mkdir(cacheDir, { recursive: true }).then(() => fs.promises.writeFile(file, JSON.stringify({ at: Date.now(), features: next }))).catch(() => {});
           log?.(`Laboratoire : ${Object.entries(next).filter(([, f]) => f.visible).map(([id]) => id).join(", ") || "rien"} visible`);
           onChange?.(state);
         }
       } catch (error) {
         log?.(`Laboratoire : lecture impossible (${error instanceof Error ? error.message : error}), dernier état gardé`, "warn");
+        const backup = saved && typeof saved.features === "object" && saved.uuid === (currentUuid() || null) ? saved.features : FALLBACK;
+        if (JSON.stringify(backup) !== JSON.stringify(state)) {
+          state = backup;
+          onChange?.(state);
+        }
       } finally {
         pending = null;
       }

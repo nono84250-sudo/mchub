@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { teamsPublic, withoutTeam } from "@/lib/features";
 import { checkSlugVisibility, getCachedVisibleServerBySlug, getPublicServerBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { withD1Busy } from "@/lib/d1Busy";
@@ -46,7 +47,8 @@ export const GET = withD1Busy(async (request: Request, ctx: RouteContext<"/api/p
 // preuve d'acces (ni code d'invitation, ni session, ni jeton) : une reponse qui depend d'une preuve
 // n'est jamais rejouee. Jamais de cache CDN ici (« private, no-store » pour les reponses avec
 // preuve) : une fiche retiree par la moderation disparait tout de suite.
-function respond(request: Request, server: unknown) {
+async function respond(request: Request, raw: unknown) {
+  const server = (await teamsPublic()) ? raw : withoutTeam(raw);
   const p = proofFromRequest(request);
   if (p.inviteCode || p.launcherSession || p.minecraftToken) {
     return NextResponse.json({ server }, { headers: { ...CORS_HEADERS, "Cache-Control": "private, no-store" } });

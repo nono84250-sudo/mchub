@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
 import { listServersOwnedByMinecraftUuid } from "@/lib/public-servers";
+import { teamsPublic, withoutTeam } from "@/lib/features";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { withD1Busy } from "@/lib/d1Busy";
 
@@ -25,7 +26,7 @@ async function handleGET(request: Request) {
   if (identity !== "verified") return identityErrorResponse(identity);
 
   const servers = await listServersOwnedByMinecraftUuid(minecraftUuid);
-  return NextResponse.json({ servers });
+  return NextResponse.json({ servers: (await teamsPublic()) ? servers : servers.map(withoutTeam) });
 }
 
 export const GET = withD1Busy(handleGET);

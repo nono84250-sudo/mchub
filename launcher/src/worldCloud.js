@@ -52,6 +52,8 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
   // État affiché dans la pilule et le panneau des tâches (window.playCloudActivity côté renderer).
   let job = null; // { items: [{ key, name, size, sent, done, error }], total, sent, bps, paused, done, error }
   let manualPause = false;
+  // Laboratoire (25/10) : « Mondes en ligne » coupé pour ce joueur → plus rien ne part (voir suspend).
+  let suspended = false;
   let gameRunning = false;
   let running = false;
   let retryTimer = null;
@@ -404,7 +406,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
     return { ok: true, left: dropped.length };
   }
 
-  const isPaused = () => gameRunning || manualPause;
+  const isPaused = () => suspended || gameRunning || manualPause;
   const waitWhilePaused = async () => {
     const signal = stopCtl.signal;
     while (isPaused()) {
@@ -682,6 +684,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
 
   // Au démarrage / à la connexion : reprend la file laissée par la dernière session.
   function start() {
+    suspended = false;
     if (state.queue.length) {
       for (const q of state.queue) q.uploading = false;
       ensureJob();
@@ -752,7 +755,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
 
   let beatTimer = null;
   function startBeat() {
-    if (beatTimer) return;
+    if (beatTimer || suspended) return;
     beatTimer = setInterval(() => {
       if (!state.locks.length) {
         clearInterval(beatTimer);
@@ -954,6 +957,18 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
     }
   }
 
+  // Laboratoire : la fonctionnalité vient d'être coupée pour ce joueur. Plus aucun minuteur ni
+  // appel au site ; la file reste sur le disque et repart avec start() si elle revient.
+  function suspend() {
+    suspended = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    if (beatTimer) clearInterval(beatTimer);
+    beatTimer = null;
+    for (const t of waiters.values()) clearTimeout(t);
+    waiters.clear();
+  }
+
   return {
     status,
     testConnection,
@@ -971,6 +986,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
     download,
     downloadMany,
     downloadJob: () => djob,
+    suspend,
     applyPendingRestore,
     start,
     beforePlay,

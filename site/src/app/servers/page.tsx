@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { teamsPublic, withoutTeam } from "@/lib/features";
 import { unstable_rethrow } from "next/navigation";
 import { ErrorBlock } from "@/components/ErrorBlock";
 import { ServerCard } from "@/components/ServerCard";
@@ -50,8 +51,11 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
   // bloc « Reessayer » ; le titre, la barre du haut et le pied de page restent.
   let data;
   try {
-    const [{ custom }, list] = await Promise.all([getTagCatalog(), listPublicServersPage({ ...requested, page: pageParam })]);
-    data = { customTags: custom, ...list };
+    const [{ custom }, list, showTeams] = await Promise.all([getTagCatalog(), listPublicServersPage({ ...requested, page: pageParam }), teamsPublic()]);
+    // Laboratoire : sans « Ma team » ouverte à tous, ni team sur les cartes ni filtre Team.
+    data = showTeams
+      ? { customTags: custom, ...list }
+      : { customTags: custom, ...list, servers: list.servers.map(withoutTeam), facets: { ...list.facets, teams: [] } };
   } catch (error) {
     unstable_rethrow(error);
     console.error(error);

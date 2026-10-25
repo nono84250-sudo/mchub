@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { teamsPublic, withoutTeam } from "@/lib/features";
 import { unstable_rethrow } from "next/navigation";
 import type { ReactNode } from "react";
 import { ArrowRight, WindowsLogo, HardDrives } from "@phosphor-icons/react/ssr";
@@ -12,7 +13,7 @@ import { LAUNCHER_DOWNLOAD_URL, detectPlatform, getLatestRelease } from "@/lib/l
 
 export default async function Home() {
   const { dict } = await getT();
-  const [session, platform, release, online, dayPick] = await Promise.all([
+  const [session, platform, release, onlineRaw, dayPickRaw, showTeams] = await Promise.all([
     auth().catch((error: unknown) => {
       unstable_rethrow(error);
       return null;
@@ -30,7 +31,11 @@ export default async function Home() {
       unstable_rethrow(error);
       return null;
     }),
+    teamsPublic(),
   ]);
+  // Laboratoire : pas de team affichée tant que « Ma team » n'est pas ouverte à tous.
+  const online = showTeams ? onlineRaw : { ...onlineRaw, servers: onlineRaw.servers.map((s) => withoutTeam(s)) };
+  const dayPick = showTeams || !dayPickRaw ? dayPickRaw : { ...dayPickRaw, server: withoutTeam(dayPickRaw.server) };
   const loggedIn = !!session?.user?.id;
 
   // Design 2026-10-17, point 1 : le bouton fort suit le systeme du visiteur.
