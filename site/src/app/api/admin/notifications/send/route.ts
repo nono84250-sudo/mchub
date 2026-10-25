@@ -93,8 +93,8 @@ async function sendMaintenance(
   const now = input.when !== "schedule";
   let startsAt = new Date();
   if (!now) {
-    const dateStr = String(form.get("scheduledDate") ?? "");
-    const timeStr = String(form.get("scheduledTime") ?? "");
+    const dateStr = String(form.get("startDate") ?? "");
+    const timeStr = String(form.get("startTime") ?? "");
     if (!dateStr || !timeStr) return NextResponse.json({ error: "Choisissez la date et l'heure de début." }, { status: 400 });
     startsAt = adminLocalToUtc(dateStr, timeStr);
     if (startsAt.getTime() <= Date.now()) return NextResponse.json({ error: "Le début doit être dans le futur." }, { status: 400 });

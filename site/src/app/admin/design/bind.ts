@@ -758,7 +758,7 @@ export function notificationsHtml(data: {
   const onType =
     "var m=this.value==='maintenance',f=this.form;f.querySelectorAll('[data-maint]').forEach(function(e){e.hidden=!m});" +
     "f.querySelector('[data-now]').textContent=m?'Commencer maintenant':'Envoyer maintenant';" +
-    "f.querySelector('[data-when-label]').textContent=m?'Début de la maintenance si tu la programmes (heure de Belgique)':'Programmer (heure de Belgique, la tienne) — laisser vide pour un envoi immédiat';" +
+    "f.querySelectorAll('[data-plain]').forEach(function(e){e.hidden=m});" +
     "f.querySelector('[data-text-label]').textContent=m?'Message en plus (facultatif)':'Message'";
   const onEnd = "this.form.querySelector('[data-end-row]').hidden=this.value!=='end'";
   const maintenanceFields =
@@ -766,15 +766,19 @@ export function notificationsHtml(data: {
     `<label style="${field}"><span style="${label}">Système concerné</span><select name="system" class="input" style="height:36px;">` +
     systems.map((s) => `<option value="${s}">${s}${s === "Tout" || s === "Launcher" ? " · bloque le launcher" : ""}</option>`).join("") +
     `</select></label>` +
-    `<div style="${box}font-size:13px;color:var(--muted);">` +
-    `<span><strong style="color:var(--color-text);">Tout</strong> et <strong style="color:var(--color-text);">Launcher</strong> bloquent le launcher : écran « Maintenance en cours » pour tout le monde (même ceux déjà connectés, dans la minute), sauf avec le code. Le code s'affiche à droite quand la maintenance commence.</span>` +
-    `<span>Les autres systèmes laissent le launcher ouvert : il affiche un bandeau « Perturbations ».</span>` +
-    `<span>Les joueurs reçoivent tout de suite : « ⚠ Maintenance … le 27/10 à 15h00. Durée prévue : 3 h. » (ou « Durée indéterminée »).</span></div>` +
+    `<div style="${box}"><span style="${label}">Début de la maintenance (heure de Belgique) — seulement si tu la programmes</span>` +
+    `<div style="display:flex;gap:10px;"><input type="date" name="startDate" class="input" style="height:36px;flex:1;"><input type="time" name="startTime" class="input" style="height:36px;flex:1;"></div>` +
+    `<span style="font-size:12px;color:var(--muted);">« Commencer maintenant » ignore ces champs.</span></div>` +
     `<div style="${box}"><span style="${label}">Fin de la maintenance</span>` +
     `<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="radio" name="endMode" value="end" onchange="${onEnd}" style="accent-color:var(--color-accent);margin:0;">Jusqu'à une date et une heure (débloque tout seul)</label>` +
     `<div data-end-row hidden style="display:flex;gap:10px;"><input type="date" name="endDate" class="input" style="height:36px;flex:1;"><input type="time" name="endTime" class="input" style="height:36px;flex:1;"></div>` +
     `<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="radio" name="endMode" value="none" checked onchange="${onEnd}" style="accent-color:var(--color-accent);margin:0;">Pas de fin prévue (durée indéterminée, tu la termines toi-même)</label>` +
-    `</div></div>`;
+    `</div>` +
+    `<div style="${box}font-size:13px;color:var(--muted);">` +
+    `<span><strong style="color:var(--color-text);">Tout</strong> et <strong style="color:var(--color-text);">Launcher</strong> bloquent le launcher : écran « Maintenance en cours » pour tout le monde (même ceux déjà connectés, dans la minute), sauf avec le code. Le code s'affiche à droite quand la maintenance commence.</span>` +
+    `<span>Les autres systèmes laissent le launcher ouvert : il affiche un bandeau « Perturbations ».</span>` +
+    `<span>Les joueurs reçoivent tout de suite : « ⚠ Maintenance … le 27/10 à 15h00. Durée prévue : 3 h. » (ou « Durée indéterminée »).</span></div>` +
+    `</div>`;
 
   const body =
     sentBanner +
@@ -787,8 +791,8 @@ export function notificationsHtml(data: {
     maintenanceFields +
     `<label style="${field}"><span style="${label}" data-text-label>Message</span><textarea class="input" name="text" maxlength="1000" style="min-height:110px;font-size:13.5px;"></textarea></label>` +
     `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;"><input type="checkbox" name="banner" style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Aussi afficher en bannière sur le site (remplace la bannière active)</label>` +
-    `<div style="${box}">` +
-    `<span style="${label}" data-when-label>Programmer (heure de Belgique, la tienne) — laisser vide pour un envoi immédiat</span>` +
+    `<div data-plain style="${box}">` +
+    `<span style="${label}">Programmer (heure de Belgique, la tienne) — laisser vide pour un envoi immédiat</span>` +
     `<div style="display:flex;gap:10px;">` +
     `<input type="date" name="scheduledDate" class="input" style="height:36px;flex:1;">` +
     `<input type="time" name="scheduledTime" class="input" style="height:36px;flex:1;">` +
