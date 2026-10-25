@@ -27,7 +27,7 @@ const RANK: Record<State, number> = { hidden: 0, test: 1, betaTesters: 2, beta: 
 const LABEL: Record<State, string> = { hidden: "Cachée", test: "Test", betaTesters: "Bêta testeurs", beta: "Bêta publique", all: "Pour tous" };
 const HELP: Record<State, string> = {
   hidden: "personne ne la voit, le site refuse ses appels",
-  test: "toi et les comptes testeurs seulement",
+  test: "seulement les comptes testeurs",
   betaTesters: "joueurs du launcher bêta, avec badge",
   beta: "tout le monde, avec badge bêta",
   all: "tout le monde, sans badge",
@@ -49,7 +49,7 @@ type Viewer = "player" | "betaPlayer" | "tester";
 const VIEWERS: { id: Viewer; label: string; sub: string }[] = [
   { id: "player", label: "Un joueur", sub: "launcher normal (version stable)" },
   { id: "betaPlayer", label: "Un joueur bêta", sub: "launcher bêta (0.4.0-beta…)" },
-  { id: "tester", label: "Toi (testeur)", sub: "compte testeur, launcher officiel" },
+  { id: "tester", label: "Un compte testeur", sub: "pseudo dans la liste, launcher officiel" },
 ];
 
 function effective(id: string, states: Record<string, State>, features: Feature[]): State {
@@ -339,7 +339,7 @@ export function AdminFeatureLab({ initial }: { initial: Lab }) {
           <section style={card}>
             <h2 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 500 }}>Comptes testeurs</h2>
             <p style={{ margin: "0 0 14px", fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-              Les comptes Minecraft qui voient l&apos;état « Test » dans le launcher et sur le site. Être connecté à l&apos;admin suffit aussi sur le site.
+              Les comptes Minecraft qui voient l&apos;état « Test » dans le launcher et sur le site.
             </p>
             {lab.testers.length ? (
               <div style={{ display: "grid", gap: 8 }}>
@@ -359,7 +359,7 @@ export function AdminFeatureLab({ initial }: { initial: Lab }) {
               </div>
             ) : (
               <p style={{ margin: 0, padding: "14px 8px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-                Aucun compte testeur. Ajoute ton pseudo Minecraft pour voir l&apos;état « Test » dans le launcher.
+                Aucun compte testeur. Ajoute ton pseudo Minecraft pour voir l&apos;état « Test » dans le launcher et sur le site.
               </p>
             )}
             <form onSubmit={addTester} style={{ display: "flex", gap: 8, marginTop: 10 }}>

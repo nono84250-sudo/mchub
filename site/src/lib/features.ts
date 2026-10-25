@@ -2,7 +2,6 @@ import { revalidateTag, unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db, execSql } from "@/lib/db";
-import { getCurrentAdmin } from "@/lib/adminSession";
 import { launcherIdentityUuid, normalizeMinecraftUuid } from "@/lib/launcherAuth";
 
 // Laboratoire (25/10, demande de Rushi) : un interrupteur par fonctionnalité, réglé dans
@@ -221,12 +220,11 @@ export async function launcherViewer(request: Request): Promise<Viewer & { uuid:
   return { uuid, tester: await isTesterUuid(uuid), betaChannel: /-beta/i.test(version) };
 }
 
-// Site : testeur = compte connecté dont le compte Minecraft est dans la liste, ou admin
-// connecté au panel. Le site n'a pas de canal bêta : « Bêta testeurs » n'y montre rien de plus
-// qu'aux testeurs.
+// Site : testeur = compte connecté dont le compte Minecraft est dans la liste. Être connecté à
+// l'admin ne suffit pas (25/10, demande de Rushi : pouvoir s'ajouter puis se retirer pour vérifier
+// que ça s'affiche puis disparaît). Le site n'a pas de canal bêta : « Bêta testeurs » n'y montre
+// rien de plus qu'aux testeurs.
 export async function siteViewer(): Promise<Viewer> {
-  const admin = await getCurrentAdmin().catch(() => null);
-  if (admin) return { tester: true, betaChannel: false };
   const session = await auth().catch(() => null);
   if (!session?.user?.id) return { tester: false, betaChannel: false };
   const user = await db.orm.public.User.select("minecraftUuid").where({ id: session.user.id }).first().catch(() => null);
