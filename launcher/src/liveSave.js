@@ -232,8 +232,10 @@ function createLiveSave({ playMode, overlay, globalShortcut, onBackup, onActivit
     return r;
   }
 
-  // F6 (marked = false) ou Maj+F6 (marked = true : sauvegarde ★ gardée à part, nommée par sa date,
-  // à renommer ensuite dans Mes mondes : taper un nom en jeu demanderait le focus).
+  // F6 (marked = false) ou Maj+F6 (marked = true : sauvegarde ★ gardée à part). Maj+F6 demande le
+  // nom dans le petit menu, qui prend alors le focus (choix de Rushi du 25/10) : le jeu se met en
+  // pause et enregistre. Échap ou Annuler : rien n'est sauvegardé. Pas de réponse en 90 s : nommée
+  // par sa date.
   async function manual(marked) {
     const t = T();
     info(`${marked ? "Maj+F6" : "F6"} reçu.`);
@@ -247,8 +249,17 @@ function createLiveSave({ playMode, overlay, globalShortcut, onBackup, onActivit
     if (!world) return overlay.show({ mode: "error", title: t.title, text: t.noWorld, hint: t.hint }, { hideAfter: 3500 });
     if (!world.backup) return overlay.show({ mode: "error", title: t.title, text: t.off }, { hideAfter: 5000 });
     busy = true;
-    const label = marked ? t.marked(new Date().toLocaleString(getLocale?.() === "en" ? "en-GB" : "fr-BE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })) : null;
+    let label = null;
     try {
+      if (marked) {
+        const typed = await overlay.ask({ title: t.askTitle, text: t.askText, placeholder: t.placeholder, okLabel: t.ok, cancelLabel: t.cancel });
+        if (typed === null) {
+          info("Maj+F6 annulé : rien n'est sauvegardé.");
+          overlay.show({ mode: "progress", title: t.cancelled, text: t.back }, { hideAfter: 3000 });
+          return;
+        }
+        label = typed || t.marked(new Date().toLocaleString(getLocale?.() === "en" ? "en-GB" : "fr-BE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
+      }
       overlay.show({ mode: "progress", title: t.title, text: `${t.saving}${wName(world) ? ` · ${wName(world)}` : ""}`, percent: 0, hint: t.hint });
       const r = await saveWhenWritten(world, { reason: label ? "named" : "ingame", label }, { title: t.title, ask: t.pressEsc, waitMs: F6_WAIT_MS });
       if (!r) {

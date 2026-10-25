@@ -137,14 +137,37 @@ function createSaveOverlay({ lockNavigation, log } = {}) {
     }, 180);
   }
 
-  // Demande un nom : plus utilisé en jeu (il faudrait le focus pour taper) ; Maj+F6 marque la
-  // sauvegarde, et on la renomme ensuite dans Mes mondes.
-  function ask(state) {
+  // Maj+F6 : demande un nom. C'est le SEUL moment où le petit menu prend le focus (choix de Rushi
+  // du 25/10, en connaissant le prix : le jeu se met en pause, et un plein écran peut se réduire).
+  // Renvoie le nom, null si le joueur annule (Échap, Annuler), undefined s'il ne répond pas à temps.
+  async function ask(state, { timeoutMs = 90_000 } = {}) {
     answer(null);
-    return new Promise((resolve) => {
+    const result = new Promise((resolve) => {
       pendingAnswer = resolve;
-      show({ ...state, mode: "ask" });
     });
+    try {
+      await showNow({ ...state, mode: "ask" });
+      if (win && !win.isDestroyed()) {
+        win.setFocusable(true);
+        win.show();
+        win.moveTop();
+        win.focus();
+      }
+    } catch (error) {
+      log?.({ level: "warn", source: "launcher", message: `[Sauvegarde en jeu] Case du nom non affichée : ${error instanceof Error ? error.message : error}` });
+      answer(undefined);
+    }
+    const timer = setTimeout(() => answer(undefined), timeoutMs);
+    const value = await result;
+    clearTimeout(timer);
+    // Plus de focus après la saisie : le petit menu est caché (Windows rend la main au jeu), puis
+    // remontré sans s'activer pour la suite de la sauvegarde.
+    if (win && !win.isDestroyed()) {
+      win.setIgnoreMouseEvents(true);
+      win.hide();
+      win.setFocusable(false);
+    }
+    return value;
   }
 
   function destroy() {
