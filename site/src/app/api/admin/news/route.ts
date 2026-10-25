@@ -13,12 +13,12 @@ export async function POST(request: Request) {
   const published = form.get("published") === "on";
   if (!title || !body) return NextResponse.json({ error: "Titre et texte requis." }, { status: 400 });
 
-  await db.orm.public.News.create({
+  const created = await db.orm.public.News.create({
     title,
     body,
     published,
     publishedAt: published ? new Date().toISOString() : null,
   });
-  if (published && form.get("notify") === "on") await notifyNewsPublished(title);
+  if (published && form.get("notify") === "on") await notifyNewsPublished(String(created.id), title);
   return NextResponse.redirect(new URL("/admin/notifications?tab=news&saved=1", request.url), 303);
 }

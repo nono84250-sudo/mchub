@@ -24,6 +24,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/admin/news/
     // Garde la premiere date de publication si deja publie ; en pose une si on publie maintenant.
     publishedAt: published ? (existing.publishedAt ?? new Date().toISOString()) : null,
   });
-  if (published && !existing.published && form.get("notify") === "on") await notifyNewsPublished(title);
+  if (published && !existing.published && form.get("notify") === "on") await notifyNewsPublished(id, title);
   return NextResponse.redirect(new URL("/admin/notifications?tab=news&saved=1", request.url), 303);
 }

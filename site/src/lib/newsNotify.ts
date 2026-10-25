@@ -3,13 +3,16 @@ import { broadcastNotification, resolveAudienceRecipients } from "@/lib/notifica
 // 25/10 : case « Prévenir les joueurs dans le launcher à la publication » de l'editeur d'articles
 // (onglet Actualités de /admin/notifications). Une annonce dans la boite du launcher de tout le
 // monde, seulement au premier passage en « Publié ».
-export async function notifyNewsPublished(title: string): Promise<void> {
+// serverName = « news:<id> » : le centre de notifications du launcher range le message dans
+// l'onglet Actualités et ouvre l'article en entier (voir /api/launcher/news/[id]). Pas de
+// nouveau type de notification, donc pas de migration.
+export async function notifyNewsPublished(id: string, title: string): Promise<void> {
   const recipients = await resolveAudienceRecipients("everyone");
   if (recipients.length === 0) return;
   await broadcastNotification({
     recipientMinecraftUuids: recipients,
     type: "broadcast_announcement",
-    serverName: "—",
+    serverName: `news:${id}`,
     message: `Nouvel article : ${title} (à lire dans Actualités sur le site)`,
   });
 }

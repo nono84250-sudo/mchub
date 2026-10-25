@@ -34,7 +34,6 @@ const NAV_LINKS: Record<string, string> = {
   "Vérification": "/admin/verification",
   Players: "/admin/players",
   Reports: "/admin/reports",
-  "Packs curés": "/admin/packs",
   Administration: "/admin/administration",
   "Paramètres": "/admin/parametres",
   Contact: "/admin/contact",
@@ -140,7 +139,8 @@ function linkNav(html: string): string {
 // joueurs mene a la fiche joueur, qui porte le bouton « Récupérer les données du joueur ».
 // 2026-10-25 : "Notifications" retiree aussi (remise dans le menu, demande de Rushi) pour
 // pouvoir activer le mode maintenance du launcher. "News" reste cachee : c'est maintenant
-// l'onglet « Actualités » de Notifications.
+// l'onglet « Actualités » de Notifications. 25/10 : « Packs curés » supprimee (pages et
+// ecrans retires, choix de Rushi) ; le libelle reste dans le menu de la maquette, donc cache ici.
 const HIDDEN_NAV_LABELS = ["Overview", "News", "Packs curés", "Administration", "Amis"];
 
 function hideNavItems(html: string): string {

@@ -2191,16 +2191,27 @@ ipcMain.handle("notifications:list", async (_event, opts) => {
   }
 });
 
-ipcMain.handle("notifications:markRead", async () => {
+ipcMain.handle("notifications:markRead", async (_event, id) => {
   if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
   try {
     const res = await fetch(`${SITE_URL}/api/launcher/notifications/read`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...launcherAuthHeaders() },
-      body: JSON.stringify({ minecraftUuid: currentSession.profile.id }),
+      body: JSON.stringify({ minecraftUuid: currentSession.profile.id, ...(typeof id === "string" ? { id } : {}) }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+// Article complet d'une actualite (centre de notifications, 25/10) :
+// site/src/app/api/launcher/news/[id]/route.ts.
+ipcMain.handle("news:get", async (_event, id) => {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/news/${encodeURIComponent(String(id))}`, { headers: launcherAuthHeaders() });
+    return { ok: true, news: { title: String(data.news.title || ""), body: String(data.news.body || "") } };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }

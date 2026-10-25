@@ -125,6 +125,12 @@ export async function markNotificationsRead(minecraftUuid: string) {
   await execSql('UPDATE "notification" SET "read" = 1 WHERE "recipientMinecraftUuid" = ? AND "read" = 0', [normalizeMinecraftUuid(minecraftUuid)]);
 }
 
+// Une seule notification (clic dans le centre de notifications du launcher, 25/10). Le filtre
+// sur le destinataire empeche de marquer celle d'un autre joueur.
+export async function markNotificationRead(id: string, minecraftUuid: string) {
+  await execSql('UPDATE "notification" SET "read" = 1 WHERE "id" = ? AND "recipientMinecraftUuid" = ?', [id, normalizeMinecraftUuid(minecraftUuid)]);
+}
+
 // Verifie que la notification appartient bien au joueur qui demande sa
 // suppression avant de l'effacer — sans ca, connaitre un id de notification
 // (visible cote client) suffirait a supprimer celle de n'importe qui.

@@ -3688,11 +3688,19 @@ function scheduleStartupMcStatus() {
 }
 
 // Cloche de notifications : alertes personnelles du joueur (reponse/
-// resolution de signalement, voir site/src/lib/notifications.ts) — pas les
-// Actualites (diffusion admin, distincte, pas encore construite).
+// resolution de signalement, voir site/src/lib/notifications.ts) et messages diffuses.
+// 25/10 : centre de notifications (preview validee par Rushi) : onglets Tout / Actualites /
+// Perturbations / Mes serveurs, perturbation en cours epinglee en haut (remplace le bandeau de
+// l'accueil), article lisible en entier au clic, pastille orange pendant une perturbation.
 let notifBadgeEl;
 let notifListEl;
+let notifTabsEl;
 let latestNotifications = [];
+let notifTab = "all";
+let openNotifId = null;
+// Articles deja charges (id -> { title, body } ou "loading" / "error").
+const newsCache = new Map();
+const NOTIF_TABS = ["all", "news", "disruptions", "servers"];
 
 function notifTimeLabel(iso) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -3728,7 +3736,50 @@ const BROADCAST_TITLE_KEYS = {
   broadcast_promotion: "broadcastPromotionTitle",
 };
 
+// Une actualite = message « news:<id> » (voir site/src/lib/newsNotify.ts). Les anciennes, sans id,
+// sont reconnues a leur texte mais ne s'ouvrent pas.
+const NEWS_PREFIX = /^Nouvel article : /;
+function notifNewsId(notif) {
+  const name = String(notif.serverName || "");
+  return name.startsWith("news:") ? name.slice(5) : null;
+}
+function notifCategory(notif) {
+  if (notifNewsId(notif) || (notif.type === "broadcast_announcement" && NEWS_PREFIX.test(notif.message || ""))) return "news";
+  if (notif.type === "broadcast_maintenance" || notif.type === "broadcast_alert") return "disruptions";
+  if (notif.type.startsWith("broadcast_")) return "other";
+  return "servers";
+}
+function newsTitleFromMessage(message) {
+  return String(message || "").replace(NEWS_PREFIX, "").replace(/ \(à lire dans Actualités sur le site\)$/, "");
+}
+const NOTIF_KIND_KEYS = { news: "kindNews", disruptions: "kindDisruption", servers: "kindServer", other: "kindInfo" };
+
+function newsItemHtml(notif) {
+  const id = notifNewsId(notif);
+  const open = id && openNotifId === notif.id;
+  const cached = id ? newsCache.get(id) : null;
+  let body = "";
+  if (open) {
+    if (cached === "loading" || !cached) body = `<div class="notif-news-body notif-news-wait">${t("notifications.newsLoading")}</div>`;
+    else if (cached === "error") body = `<div class="notif-news-body notif-news-wait">${t("notifications.newsError")}</div>`;
+    else body = `<div class="notif-news-body">${escapeHtml(cached.body)}</div>`;
+  }
+  const title = cached && typeof cached === "object" ? cached.title : newsTitleFromMessage(notif.message);
+  return `
+    <div class="notif-item notif-item-news${notif.read ? "" : " unread"}${id ? " notif-item-openable" : ""}" data-id="${escapeHtml(notif.id)}" data-cat="news"${id ? ' role="button" tabindex="0"' : ""}>
+      <button type="button" class="notif-item-delete" data-id="${escapeHtml(notif.id)}" title="${t("notifications.deleteOne")}">×</button>
+      <div class="notif-item-kind notif-kind-news">${t("notifications.kindNews")}</div>
+      <div class="notif-item-title" style="overflow-wrap:anywhere">${escapeHtml(title)}</div>
+      ${body}
+      ${id && !open ? `<div class="notif-item-more">${t("notifications.readArticle")}</div>` : ""}
+      <div class="notif-item-time">${notifTimeLabel(notif.createdAt)}</div>
+    </div>
+  `;
+}
+
 function notifItemHtml(notif) {
+  const category = notifCategory(notif);
+  if (category === "news") return newsItemHtml(notif);
   const color = NOTIF_COLORS[notif.type];
   const colorStyle = color ? ` style="color:${color};overflow-wrap:anywhere"` : "";
   const isAdmin = notif.type.startsWith("admin_");
@@ -3755,8 +3806,9 @@ function notifItemHtml(notif) {
     message = `<div class="notif-item-message"${colorStyle}>${escapeHtml(notif.message)}</div>`;
   }
   return `
-    <div class="notif-item${notif.read ? "" : " unread"}" data-id="${escapeHtml(notif.id)}">
+    <div class="notif-item${notif.read ? "" : " unread"}" data-id="${escapeHtml(notif.id)}" data-cat="${category}">
       <button type="button" class="notif-item-delete" data-id="${escapeHtml(notif.id)}" title="${t("notifications.deleteOne")}">×</button>
+      <div class="notif-item-kind notif-kind-${category}">${t(`notifications.${NOTIF_KIND_KEYS[category]}`)}</div>
       <div class="notif-item-title"${colorStyle}>${escapeHtml(title)}</div>
       ${message}
       <div class="notif-item-time">${notifTimeLabel(notif.createdAt)}</div>
@@ -3764,16 +3816,68 @@ function notifItemHtml(notif) {
   `;
 }
 
+function notifInTab(notif, tab) {
+  if (tab === "all") return true;
+  return notifCategory(notif) === tab;
+}
+
+function renderNotifTabs() {
+  if (!notifTabsEl) return;
+  const unread = latestNotifications.filter((n) => !n.read);
+  const labels = { all: "tabAll", news: "tabNews", disruptions: "tabDisruptions", servers: "tabServers" };
+  notifTabsEl.innerHTML = NOTIF_TABS.map((tab) => {
+    const count = unread.filter((n) => notifInTab(n, tab)).length;
+    return `<button type="button" class="notif-tab" role="tab" data-tab="${tab}" aria-selected="${notifTab === tab}">${t(`notifications.${labels[tab]}`)}${count ? `<span class="notif-tab-count">${count > 9 ? "9+" : count}</span>` : ""}</button>`;
+  }).join("");
+}
+
+// Perturbation en cours (pulse, voir applyDisruption) : epinglee en haut de Tout et Perturbations.
+function pinnedDisruptionHtml() {
+  if (!currentDisruption || (notifTab !== "all" && notifTab !== "disruptions")) return "";
+  return `<div class="notif-pin" role="status"><span aria-hidden="true">🛠</span><div style="min-width:0"><strong>${escapeHtml(t("maintenance.disruptionTitle", { system: currentDisruption.system }))}</strong><span>${escapeHtml(currentDisruption.message || "")}</span></div></div>`;
+}
+
 function renderNotifications() {
-  if (!latestNotifications.length) {
-    notifListEl.className = "";
+  renderNotifTabs();
+  const pinned = pinnedDisruptionHtml();
+  const shown = latestNotifications.filter((n) => notifInTab(n, notifTab));
+  notifListEl.className = "";
+  if (!shown.length && !pinned) {
     // Pas de bouton ici (audit 17/10, lot 1) : « Régler les notifications » menait a des
     // Parametres sans aucun reglage de notifications.
-    notifListEl.innerHTML = emptyStateHtml({ icon: "bell", title: t("notifications.emptyTitle"), text: t("notifications.emptyText"), extraClass: "notif-empty-state" });
+    notifListEl.innerHTML = notifTab === "all"
+      ? emptyStateHtml({ icon: "bell", title: t("notifications.emptyTitle"), text: t("notifications.emptyText"), extraClass: "notif-empty-state" })
+      : `<div class="notif-empty">${t("notifications.tabEmpty")}</div>`;
     return;
   }
-  notifListEl.className = "";
-  notifListEl.innerHTML = latestNotifications.map(notifItemHtml).join("");
+  notifListEl.innerHTML = pinned + shown.map(notifItemHtml).join("");
+}
+
+// Numero rouge = messages non lus ; orange pendant une perturbation (« ! » s'il n'y a rien de non lu).
+function updateNotifBadge() {
+  if (!notifBadgeEl) return;
+  const unreadCount = latestNotifications.filter((n) => !n.read).length;
+  notifBadgeEl.classList.toggle("busy", !!currentDisruption);
+  notifBadgeEl.hidden = unreadCount === 0 && !currentDisruption;
+  notifBadgeEl.textContent = unreadCount > 9 ? "9+" : unreadCount > 0 ? String(unreadCount) : "!";
+}
+
+async function openNotification(id) {
+  const notif = latestNotifications.find((n) => n.id === id);
+  if (!notif) return;
+  if (!notif.read) {
+    notif.read = true;
+    window.mchub.markNotificationsRead(id);
+  }
+  const newsId = notifNewsId(notif);
+  openNotifId = newsId && openNotifId !== id ? id : null;
+  renderNotifications();
+  updateNotifBadge();
+  if (!openNotifId || (newsCache.has(newsId) && newsCache.get(newsId) !== "error")) return;
+  newsCache.set(newsId, "loading");
+  const result = await window.mchub.getNews(newsId);
+  newsCache.set(newsId, result.ok ? result.news : "error");
+  renderNotifications();
 }
 
 // Pop-up : un message diffuse (voir BROADCAST_TITLE_KEYS) jamais vu dans cette fenetre de
@@ -3964,13 +4068,13 @@ async function checkMaintenanceLoop() {
 const disruptionBannerEl = document.getElementById("disruption-banner");
 // Derniere perturbation connue : reprise dans la fenetre avant d'installer (confirmFirstInstall).
 let currentDisruption = null;
+// 25/10 (centre de notifications) : plus de bandeau sur l'accueil, la perturbation est epinglee
+// dans la cloche et la pastille passe en orange.
 function applyDisruption(disruption) {
   currentDisruption = disruption || null;
-  if (!disruptionBannerEl) return;
-  disruptionBannerEl.hidden = !disruption;
-  if (!disruption) return;
-  document.getElementById("disruption-title").textContent = t("maintenance.disruptionTitle", { system: disruption.system });
-  document.getElementById("disruption-text").textContent = disruption.message || "";
+  if (disruptionBannerEl) disruptionBannerEl.hidden = true;
+  if (notifListEl) renderNotifications();
+  updateNotifBadge();
 }
 
 // Idee 2 du lancement (19/10) : le signal de presence (sendPresenceHeartbeat, chaque minute)
@@ -4032,9 +4136,7 @@ async function scheduledRefreshNotifications() {
 async function applyNotifications(notifications) {
   latestNotifications = notifications;
   renderNotifications();
-  const unreadCount = latestNotifications.filter((n) => !n.read).length;
-  notifBadgeEl.hidden = unreadCount === 0;
-  if (unreadCount > 0) notifBadgeEl.textContent = unreadCount > 9 ? "9+" : String(unreadCount);
+  updateNotifBadge();
 
   // Au tout premier chargement, les notifications deja la ne sont pas "nouvelles" : on les
   // marque vues sans pop-up, pour n'afficher que celles qui arrivent vraiment pendant la session.
@@ -4172,6 +4274,7 @@ function wireNotifications() {
   const panel = document.getElementById("notif-panel");
   notifBadgeEl = document.getElementById("notif-badge");
   notifListEl = document.getElementById("notif-list");
+  notifTabsEl = document.getElementById("notif-tabs");
   const markAllReadBtn = document.getElementById("notif-mark-all-read");
   const clearReadBtn = document.getElementById("notif-clear-read");
 
@@ -4189,11 +4292,29 @@ function wireNotifications() {
     panel.hidden = true;
   });
 
+  notifTabsEl.addEventListener("click", (event) => {
+    const tab = event.target.closest(".notif-tab");
+    if (!tab) return;
+    notifTab = tab.dataset.tab;
+    renderNotifications();
+  });
+
   notifListEl.addEventListener("click", async (event) => {
     const deleteBtn = event.target.closest(".notif-item-delete");
-    if (!deleteBtn) return;
-    await window.mchub.deleteNotification(deleteBtn.dataset.id);
-    await refreshNotifications();
+    if (deleteBtn) {
+      await window.mchub.deleteNotification(deleteBtn.dataset.id);
+      await refreshNotifications();
+      return;
+    }
+    const item = event.target.closest(".notif-item");
+    if (item) await openNotification(item.dataset.id);
+  });
+  notifListEl.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const item = event.target.closest(".notif-item-openable");
+    if (!item || event.target.closest(".notif-item-delete")) return;
+    event.preventDefault();
+    openNotification(item.dataset.id);
   });
 
   markAllReadBtn.addEventListener("click", async () => {

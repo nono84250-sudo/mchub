@@ -70,7 +70,9 @@ contextBridge.exposeInMainWorld("mchub", {
   submitReport: (report) => ipcRenderer.invoke("reports:submit", report),
   reportInstallProblem: (payload) => ipcRenderer.invoke("servers:reportInstallProblem", payload),
   listNotifications: (opts) => ipcRenderer.invoke("notifications:list", opts),
-  markNotificationsRead: () => ipcRenderer.invoke("notifications:markRead"),
+  // Sans id : tout marquer comme lu ; avec un id : seulement ce message (centre de notifications).
+  markNotificationsRead: (id) => ipcRenderer.invoke("notifications:markRead", id),
+  getNews: (id) => ipcRenderer.invoke("news:get", id),
   deleteNotification: (id) => ipcRenderer.invoke("notifications:delete", id),
   clearReadNotifications: () => ipcRenderer.invoke("notifications:clearRead"),
   signIn: (remember) => ipcRenderer.invoke("auth:signIn", remember),
