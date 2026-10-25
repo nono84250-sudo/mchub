@@ -2352,10 +2352,11 @@
 
   // Premier chargement : le Laboratoire décide si l'onglet existe, puis tuile d'accueil et
   // reprise d'un envoi interrompu.
+  // Droits lus pendant l'écran de chargement (renderer.js, boot) : appliqués avant que le menu
+  // n'apparaisse ; ensuite, mises à jour seulement si l'état change.
   window.mchub.onFeaturesChanged?.((state) => applyFeatures(state));
-  setTimeout(() => {
-    Promise.resolve(window.mchub.getFeatures?.())
-      .then((state) => applyFeatures(state || {}))
-      .catch(() => {});
-  }, 1500);
+  window.addEventListener("omniscient:features", (e) => applyFeatures(e.detail || {}));
+  Promise.resolve(window.mchub.getFeatures?.())
+    .then((state) => applyFeatures(state || {}))
+    .catch(() => {});
 })();

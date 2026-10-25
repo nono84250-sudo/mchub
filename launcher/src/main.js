@@ -544,6 +544,20 @@ const features = createFeatures({
   },
 });
 ipcMain.handle("features:get", () => features.all());
+// Écran de chargement (retour de Rushi du 25/10 : une icône surgissait 3 s après l'affichage) :
+// le menu attend les droits de CE compte. Compte mémorisé : on laisse d'abord sa reprise de
+// session aboutir (au plus 1,5 s), puis au plus 3,5 s en tout ; sinon le dernier état connu.
+ipcMain.handle("features:ready", async () => {
+  const start = Date.now();
+  let remembered = false;
+  try {
+    remembered = !!sessionStore.loadAccounts().activeId;
+  } catch {
+    /* pas de compte lisible : visiteur */
+  }
+  while (remembered && !currentSession && Date.now() - start < 1500) await new Promise((r) => setTimeout(r, 100));
+  return features.ready(Math.max(500, 3500 - (Date.now() - start)));
+});
 app.whenReady().then(() => features.start());
 
 async function fetchJson(url, { background = false, ...options } = {}, { withEtag = false } = {}) {

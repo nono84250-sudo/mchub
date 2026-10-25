@@ -22,13 +22,30 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
     /* premier démarrage : repli */
   }
   let pending = null;
+  let pendingUuid = null;
+  let confirmed = false; // vrai dès qu'une réponse du site a été reçue pour le compte actuel
   let timer = null;
 
   const visible = (id) => state[id]?.visible === true;
   const all = () => state;
 
+  // Repli sans réponse du site : le dernier état reçu pour CE compte, sinon « Pour tous » seulement.
+  function useSaved() {
+    const backup = saved && typeof saved.features === "object" && saved.uuid === (currentUuid() || null) ? saved.features : FALLBACK;
+    if (JSON.stringify(backup) !== JSON.stringify(state)) {
+      state = backup;
+      onChange?.(state);
+    }
+  }
+
   async function refresh() {
-    if (pending) return pending;
+    const uuid = currentUuid() || null;
+    // Une lecture déjà en cours pour un autre compte (ex. avant la reprise de session) : on attend
+    // qu'elle finisse puis on relit pour le bon compte.
+    if (pending && pendingUuid === uuid) return pending;
+    if (pending) await pending.catch(() => {});
+    pendingUuid = uuid;
+    confirmed = false;
     pending = (async () => {
       try {
         const data = await fetchJson(`${siteUrl}/api/launcher/features`, { background: true, headers: authHeaders() });
@@ -36,7 +53,8 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
         const next = data.features;
         const changed = JSON.stringify(next) !== JSON.stringify(state);
         state = next;
-        saved = { at: Date.now(), uuid: currentUuid() || null, features: next };
+        saved = { at: Date.now(), uuid, features: next };
+        confirmed = uuid === (currentUuid() || null);
         fs.promises.mkdir(cacheDir, { recursive: true }).then(() => fs.promises.writeFile(file, JSON.stringify(saved))).catch(() => {});
         if (changed) {
           log?.(`Laboratoire : ${Object.entries(next).filter(([, f]) => f.visible).map(([id]) => id).join(", ") || "rien"} visible`);
@@ -44,11 +62,7 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
         }
       } catch (error) {
         log?.(`Laboratoire : lecture impossible (${error instanceof Error ? error.message : error}), dernier état gardé`, "warn");
-        const backup = saved && typeof saved.features === "object" && saved.uuid === (currentUuid() || null) ? saved.features : FALLBACK;
-        if (JSON.stringify(backup) !== JSON.stringify(state)) {
-          state = backup;
-          onChange?.(state);
-        }
+        useSaved();
       } finally {
         pending = null;
       }
@@ -62,7 +76,15 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
     if (!timer) timer = setInterval(refresh, REFRESH_MS);
   }
 
-  return { visible, all, refresh, start };
+  // Démarrage (écran de chargement) : droits relus pour le compte, au plus `maxMs`. Trop long :
+  // dernier état connu pour ce compte, et la réponse du site mettra le menu à jour en arrivant.
+  async function ready(maxMs) {
+    const done = await Promise.race([refresh().then(() => true), new Promise((r) => setTimeout(() => r(false), maxMs))]);
+    if (!done && !confirmed) useSaved();
+    return state;
+  }
+
+  return { visible, all, refresh, ready, start };
 }
 
 module.exports = { createFeatures };

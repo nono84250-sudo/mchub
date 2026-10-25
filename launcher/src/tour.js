@@ -253,6 +253,7 @@
   let tourOn = false;
   window.mchub?.getFeatures?.().then((state) => { tourOn = state?.tour?.visible === true; }).catch(() => {});
   window.mchub?.onFeaturesChanged?.((state) => { tourOn = state?.tour?.visible === true; });
+  window.addEventListener("omniscient:features", (e) => { tourOn = e.detail?.tour?.visible === true; });
   function readyForTour() {
     if (!tourOn) return false;
     if (!shown($("app")) || document.body.classList.contains("bootstrapping") || document.body.classList.contains("boot-preview")) return false;

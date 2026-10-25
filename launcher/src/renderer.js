@@ -7619,6 +7619,13 @@ async function boot() {
 
   bootstrapStatusEl.textContent = t("bootstrap.resumingSession");
   bootstrapProgressEl.parentElement.classList.add("indeterminate");
+  // Laboratoire : droits de ce compte lus pendant le chargement, pour que le menu apparaisse
+  // complet du premier coup (Jouer, Amis…), sans icône qui surgit après.
+  const labState = await window.mchub.featuresReady?.().catch(() => null);
+  if (labState) {
+    applyLabFeatures(labState);
+    window.dispatchEvent(new CustomEvent("omniscient:features", { detail: labState }));
+  }
 
   // Sortie de la petite fenetre de demarrage vers la taille normale de
   // l'appli — sans effet si ensureJavaAvailable() l'a deja fait juste avant

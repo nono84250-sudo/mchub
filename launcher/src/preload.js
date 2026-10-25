@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("mchub", {
   getSiteUrl: () => ipcRenderer.invoke("app:getSiteUrl"),
   // Laboratoire (25/10) : { <id>: { visible, beta } } d'après le site, voir features.js.
   getFeatures: () => ipcRenderer.invoke("features:get"),
+  featuresReady: () => ipcRenderer.invoke("features:ready"),
   onFeaturesChanged: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("features:changed", listener);
