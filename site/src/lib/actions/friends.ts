@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { acceptFriendRequest, removeFriend, sendFriendRequest } from "@/lib/friends";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { FRIEND_PRIVACY_READY, isFriendPolicy, setFriendPolicy, setNewFriendCode, type FriendPolicy } from "@/lib/friendPrivacy";
+import { featureVisibleOnSite } from "@/lib/features";
 
 export type AddFriendState = { error?: string; done?: boolean } | undefined;
 
@@ -19,6 +20,7 @@ const FRIENDS_PAGE_PATH = "/dashboard/amis";
 export async function addFriendAction(_prevState: AddFriendState, formData: FormData): Promise<AddFriendState> {
   const session = await auth();
   if (!session?.user?.id) return { error: "Session expirée, reconnecte-toi." };
+  if (!(await featureVisibleOnSite("friends"))) return { error: "Session expirée, reconnecte-toi." };
 
   // Pseudo OU code d'ami (« K7Q-9XM »), reconnu cote serveur (voir lib/friendPrivacy.ts).
   const username = String(formData.get("username") ?? "").trim();
@@ -43,6 +45,7 @@ export async function addFriendAction(_prevState: AddFriendState, formData: Form
 export async function removeFriendAction(friendUserId: string): Promise<{ error: string } | void> {
   const session = await auth();
   if (!session?.user?.id) return { error: "Session expirée, reconnecte-toi." };
+  if (!(await featureVisibleOnSite("friends"))) return { error: "Session expirée, reconnecte-toi." };
 
   await removeFriend(session.user.id, friendUserId);
   revalidatePath(FRIENDS_PAGE_PATH);
@@ -52,6 +55,7 @@ export async function removeFriendAction(friendUserId: string): Promise<{ error:
 export async function acceptFriendAction(requesterUserId: string): Promise<{ error: string } | void> {
   const session = await auth();
   if (!session?.user?.id) return { error: "Session expirée, reconnecte-toi." };
+  if (!(await featureVisibleOnSite("friends"))) return { error: "Session expirée, reconnecte-toi." };
 
   await acceptFriendRequest(session.user.id, requesterUserId);
   revalidatePath(FRIENDS_PAGE_PATH);
@@ -62,6 +66,7 @@ export async function acceptFriendAction(requesterUserId: string): Promise<{ err
 export async function setFriendPolicyAction(policy: FriendPolicy): Promise<{ error: string } | void> {
   const session = await auth();
   if (!session?.user?.id) return { error: "Session expirée, reconnecte-toi." };
+  if (!(await featureVisibleOnSite("friends"))) return { error: "Session expirée, reconnecte-toi." };
   if (!FRIEND_PRIVACY_READY || !isFriendPolicy(policy)) return { error: "Réglage invalide." };
   await setFriendPolicy(session.user.id, policy);
   revalidatePath(FRIENDS_PAGE_PATH);
@@ -72,6 +77,7 @@ export async function setFriendPolicyAction(policy: FriendPolicy): Promise<{ err
 export async function newFriendCodeAction(): Promise<{ error: string } | { code: string }> {
   const session = await auth();
   if (!session?.user?.id) return { error: "Session expirée, reconnecte-toi." };
+  if (!(await featureVisibleOnSite("friends"))) return { error: "Session expirée, reconnecte-toi." };
   if (!FRIEND_PRIVACY_READY) return { error: "Pas encore disponible." };
   const code = await setNewFriendCode(session.user.id);
   revalidatePath(FRIENDS_PAGE_PATH);

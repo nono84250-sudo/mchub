@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminForAction, backToServers } from "@/lib/adminServers";
 import { deletePack, parseProjectList, savePack, setPackVersionState } from "@/lib/playPacks";
-import { listOffers, setPlayBeta, setSimulatedOffer } from "@/lib/playWorlds";
+import { listOffers, setSimulatedOffer } from "@/lib/playWorlds";
 import { db } from "@/lib/db";
 
 // Actions de la page admin « Packs officiels (bêta) » (mode Jouer, 24/10) et de l'offre simulée
@@ -17,11 +17,6 @@ export async function POST(request: Request) {
   if (admin instanceof NextResponse) return admin;
   const form = await request.formData();
   const action = clean(form.get("action"), 40);
-
-  if (action === "beta") {
-    await setPlayBeta(form.get("on") === "1");
-    return back(request, "done=beta");
-  }
 
   if (action === "offer") {
     const userId = clean(form.get("userId"), 80);

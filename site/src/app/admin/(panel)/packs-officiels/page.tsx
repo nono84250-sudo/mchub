@@ -18,7 +18,6 @@ const STATUS: Record<string, { label: string; color: string }> = {
   not_enough: { label: "Pas assez de mods", color: "var(--muted)" },
 };
 const DONE: Record<string, string> = {
-  beta: "Réglage du badge « Bêta » enregistré (launcher, site et admin).",
   tested: "Version marquée « Testée ».",
   untested: "Version remise « À tester ».",
   publish: "Version publiée : elle est proposée dans le launcher.",
@@ -96,19 +95,6 @@ export default async function PacksOfficiels({ searchParams }: PageProps<"/admin
       {done ? <div style={banner("var(--success)")}>{done}</div> : null}
       {error ? <div style={banner("var(--danger)")}>{error}</div> : null}
 
-      <section style={{ ...card, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 16, padding: "14px 18px" }}>
-        <div style={{ flex: "1 1 260px", minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 500 }}>Badge « Bêta » du mode Jouer</p>
-          <p style={{ margin: "2px 0 0", fontSize: 12.5, color: "var(--muted)" }}>
-            Un seul réglage pour le launcher (menu Jouer), le site (Mes mondes) et l&apos;admin (ce menu). {beta ? "Affiché en ce moment." : "Masqué en ce moment."}
-          </p>
-        </div>
-        <form method="post" action="/api/admin/play">
-          <input type="hidden" name="action" value="beta" />
-          <input type="hidden" name="on" value={beta ? "0" : "1"} />
-          <button type="submit" style={btn(beta ? "var(--color-text)" : "var(--warn)")}>{beta ? "Retirer « Bêta »" : "Remettre « Bêta »"}</button>
-        </form>
-      </section>
 
       <details style={{ ...card, marginBottom: 16 }} open={packs.length === 0}>
         <summary style={{ cursor: "pointer", fontWeight: 500 }}>+ Nouveau pack</summary>

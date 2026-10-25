@@ -4,6 +4,7 @@ import { getT } from "@/i18n/getDictionary";
 import { TeamEditor } from "@/components/TeamEditor";
 import { getTeamDashboard } from "@/lib/teams";
 import { TEAMS_READY } from "@/lib/teamRules";
+import { featureVisibleOnSite } from "@/lib/features";
 
 export const metadata = { title: "Ma team — Omniscient" };
 
@@ -14,6 +15,7 @@ export default async function TeamDashboardPage() {
   if (!TEAMS_READY) notFound();
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+  if (!(await featureVisibleOnSite("team"))) notFound();
   const [{ dict }, data] = await Promise.all([getT(), getTeamDashboard(session.user.id)]);
 
   return (

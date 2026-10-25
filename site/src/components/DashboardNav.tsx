@@ -8,18 +8,21 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { UnreadBadge } from "@/components/UnreadBadge";
 import { TEAMS_READY } from "@/lib/teamRules";
 
-export function DashboardNav({ unread = 0, playBeta = true }: { unread?: number; playBeta?: boolean }) {
+type NavShow = { friends: boolean; team: boolean; worlds: boolean };
+
+export function DashboardNav({ unread = 0, playBeta = true, show = { friends: true, team: true, worlds: false } }: { unread?: number; playBeta?: boolean; show?: NavShow }) {
   const pathname = usePathname();
   const { t } = useI18n();
 
   const NAV_ITEMS: { href: string; label: string; icon: PhosphorIcon }[] = [
     { href: "/dashboard", label: t("dashboard.navHome"), icon: SquaresFour },
     { href: "/dashboard/notifications", label: t("dashboard.navNotifications"), icon: Bell },
-    { href: "/dashboard/amis", label: t("dashboard.navFriends"), icon: Users },
+    ...(show.friends ? [{ href: "/dashboard/amis", label: t("dashboard.navFriends"), icon: Users }] : []),
     // Teams (19/10) : entre Amis et Actualites (choix de Rushi).
-    ...(TEAMS_READY ? [{ href: "/dashboard/team", label: t("dashboard.navTeam"), icon: UsersThree }] : []),
+    ...(TEAMS_READY && show.team ? [{ href: "/dashboard/team", label: t("dashboard.navTeam"), icon: UsersThree }] : []),
     // Mode Jouer (24/10) : « Mes mondes », avec « Bêta » tant que le reglage central est allume.
-    { href: "/dashboard/mondes", label: t("dashboard.navWorlds"), icon: Cube },
+    // Laboratoire (25/10) : affiche seulement si « Mondes en ligne » est visible pour ce compte.
+    ...(show.worlds ? [{ href: "/dashboard/mondes", label: t("dashboard.navWorlds"), icon: Cube }] : []),
     { href: "/dashboard/news", label: t("dashboard.navNews"), icon: Newspaper },
     { href: "/dashboard/parametres", label: t("dashboard.navSettings"), icon: Gear },
   ];

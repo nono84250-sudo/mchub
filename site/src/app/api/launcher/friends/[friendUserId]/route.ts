@@ -4,6 +4,7 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { acceptFriendRequest, removeFriend } from "@/lib/friends";
 import { withD1Busy } from "@/lib/d1Busy";
+import { withLauncherFeature } from "@/lib/features";
 
 // Lit et vérifie l'identité du joueur (même contrôle que /api/launcher/servers/mine) puis
 // renvoie l'id de sa ligne "user", ou une réponse d'erreur à renvoyer telle quelle. Pas de
@@ -49,5 +50,5 @@ async function handleDELETE(request: Request, ctx: RouteContext<"/api/launcher/f
   return NextResponse.json({ ok: true });
 }
 
-export const POST = withD1Busy(handlePOST);
-export const DELETE = withD1Busy(handleDELETE);
+export const POST = withD1Busy(withLauncherFeature("friends", handlePOST));
+export const DELETE = withD1Busy(withLauncherFeature("friends", handleDELETE));

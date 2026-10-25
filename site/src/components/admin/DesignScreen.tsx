@@ -41,6 +41,7 @@ const NAV_LINKS: Record<string, string> = {
   "Étiquettes": "/admin/etiquettes",
   Teams: "/admin/teams",
   "Packs officiels": "/admin/packs-officiels",
+  Laboratoire: "/admin/laboratoire",
 };
 
 // 2026-10-10 : /admin/parametres (identifiants du compte admin + interrupteurs des sources de
@@ -104,6 +105,17 @@ function addPlayPacksNavItem(html: string, beta: boolean): string {
     ? '<span style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--warn) 18%, transparent);color:var(--warn);">Bêta</span>'
     : "";
   const item = `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-cube" style="font-size:17px;"></i><span style="flex:1">Packs officiels</span>${badge}</div>`;
+  return html.split(marker).join(item + marker);
+}
+
+// 2026-10-25 : /admin/laboratoire (interrupteurs des fonctionnalités, voir lib/features.ts) —
+// même méthode, insérée juste avant "Paramètres" (après addContactNavItem) : Paramètres reste
+// la dernière ligne du menu.
+function addLabNavItem(html: string): string {
+  const marker =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-gear" style="font-size:17px;"></i><span style="flex:1">Paramètres</span></div>';
+  const item =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-flask" style="font-size:17px;"></i><span style="flex:1">Laboratoire</span></div>';
   return html.split(marker).join(item + marker);
 }
 
@@ -218,7 +230,7 @@ export async function buildScreenContent({ name, html, markAll }: { name: keyof 
   let content = markUserCard(
     markTopbarBell(
       removeTopbarSearch(
-        hideNavItems(reorderNav(linkNav(addPlayPacksNavItem(addTeamRequestsNavItem(addTagRequestsNavItem(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen }))), tagRequestsPending), teamRequestsPending), playBeta)))),
+        hideNavItems(reorderNav(linkNav(addPlayPacksNavItem(addTeamRequestsNavItem(addTagRequestsNavItem(addLabNavItem(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))), tagRequestsPending), teamRequestsPending), playBeta)))),
       ),
     ),
     admin,

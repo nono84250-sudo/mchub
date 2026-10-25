@@ -1,10 +1,11 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getT } from "@/i18n/getDictionary";
 import { listFriendsOverview } from "@/lib/friends";
 import { FriendsPanel } from "@/components/FriendsPanel";
 import { FriendsHeader } from "@/components/FriendsHeader";
 import { FRIEND_PRIVACY_READY, getFriendSettings } from "@/lib/friendPrivacy";
+import { featureVisibleOnSite } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Amis — Omniscient" };
@@ -15,6 +16,7 @@ export const metadata = { title: "Amis — Omniscient" };
 export default async function AmisPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+  if (!(await featureVisibleOnSite("friends"))) notFound();
   const { dict } = await getT();
 
   const [{ friends, incoming, outgoing }, settings] = await Promise.all([

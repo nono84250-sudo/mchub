@@ -10,6 +10,7 @@ import { getT } from "@/i18n/getDictionary";
 import { ServerTeamPicker } from "@/components/ServerTeamPicker";
 import { listMyTeams } from "@/lib/teams";
 import { TEAMS_READY } from "@/lib/teamRules";
+import { featureVisibleOnSite } from "@/lib/features";
 
 export const metadata = { title: "Paramètres — Omniscient" };
 
@@ -94,7 +95,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
         </ServerForm>
       </div>
 
-      {TEAMS_READY ? (
+      {TEAMS_READY && (await featureVisibleOnSite("team")) ? (
         <ServerTeamPicker
           serverId={server.id}
           teams={teams.map((team) => ({ id: team.id, name: team.name }))}

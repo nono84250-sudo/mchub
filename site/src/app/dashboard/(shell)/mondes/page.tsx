@@ -1,8 +1,9 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getT } from "@/i18n/getDictionary";
 import { getPlayBeta, getUserOffer, listCloudWorlds, listOffers, pruneCloud, usedBytes } from "@/lib/playWorlds";
 import { WorldsPanel, WorldsPlans } from "@/components/WorldsPanel";
+import { featureVisibleOnSite } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Mes mondes — Omniscient" };
@@ -14,6 +15,7 @@ export const metadata = { title: "Mes mondes — Omniscient" };
 export default async function MondesPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+  if (!(await featureVisibleOnSite("worlds"))) notFound();
   const userId = session.user.id;
   const { dict, locale } = await getT();
   const w = dict.worlds;

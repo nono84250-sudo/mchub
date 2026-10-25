@@ -29,8 +29,8 @@ function injectReactSlot(html: string): string {
 // composants React (voir injectReactSlot ci-dessus) : chacune reutilise "servers" comme
 // gabarit de sidebar/topbar (meme methode que Parametres, 2026-10-12), juste avec son propre
 // icone Phosphor et son propre libelle.
-const PAGE_ICON = { parametres: "ph-gear", contact: "ph-envelope", etiquettes: "ph-tag", teams: "ph-users-three", packsOfficiels: "ph-cube" } as const;
-const PAGE_LABEL = { parametres: "Paramètres", contact: "Contact", etiquettes: "Étiquettes proposées", teams: "Teams", packsOfficiels: "Packs officiels" } as const;
+const PAGE_ICON = { parametres: "ph-gear", contact: "ph-envelope", etiquettes: "ph-tag", teams: "ph-users-three", packsOfficiels: "ph-cube", laboratoire: "ph-flask" } as const;
+const PAGE_LABEL = { parametres: "Paramètres", contact: "Contact", etiquettes: "Étiquettes proposées", teams: "Teams", packsOfficiels: "Packs officiels", laboratoire: "Laboratoire" } as const;
 type ChromePage = keyof typeof PAGE_ICON;
 
 // La maquette "servers" marque son propre lien "Servers" comme actif en dur (chaque export

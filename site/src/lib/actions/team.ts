@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { deleteTeam, saveTeam, setServerTeam, submitTeamRequest, type TeamRequestSubmitError, type TeamSaveError } from "@/lib/teams";
+import { featureVisibleOnSite } from "@/lib/features";
 
 export type TeamActionState = { error: TeamSaveError } | { savedAt: number; id: string; slug: string } | undefined;
 export type TeamRequestActionState = { error: TeamRequestSubmitError } | { sentAt: number } | undefined;
@@ -24,6 +25,7 @@ function refresh() {
 export async function saveTeamAction(_prev: TeamActionState, formData: FormData): Promise<TeamActionState> {
   const session = await auth();
   if (!session?.user?.id) return { error: "generic" };
+  if (!(await featureVisibleOnSite("team"))) return { error: "generic" };
   if (checkRateLimit(`team-write:${session.user.id}`, 10, 60_000).limited) return { error: "generic" };
 
   const result = await saveTeam(
@@ -44,6 +46,7 @@ export async function saveTeamAction(_prev: TeamActionState, formData: FormData)
 export async function deleteTeamAction(teamId: string): Promise<void> {
   const session = await auth();
   if (!session?.user?.id) return;
+  if (!(await featureVisibleOnSite("team"))) return;
   await deleteTeam(session.user.id, String(teamId));
   refresh();
 }
@@ -52,6 +55,7 @@ export async function deleteTeamAction(teamId: string): Promise<void> {
 export async function setServerTeamAction(serverId: string, teamId: string | null): Promise<{ ok: boolean }> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false };
+  if (!(await featureVisibleOnSite("team"))) return { ok: false };
   if (checkRateLimit(`team-server:${session.user.id}`, 60, 60_000).limited) return { ok: false };
   const ok = await setServerTeam(session.user.id, String(serverId), teamId ? String(teamId) : null);
   if (ok) {
@@ -65,6 +69,7 @@ export async function setServerTeamAction(serverId: string, teamId: string | nul
 export async function submitTeamRequestAction(_prev: TeamRequestActionState, formData: FormData): Promise<TeamRequestActionState> {
   const session = await auth();
   if (!session?.user?.id) return { error: "generic" };
+  if (!(await featureVisibleOnSite("team"))) return { error: "generic" };
   if (checkRateLimit(`team-request:${session.user.id}`, 5, 60_000).limited) return { error: "generic" };
   const result = await submitTeamRequest(
     session.user.id,

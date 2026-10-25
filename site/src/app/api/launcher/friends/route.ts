@@ -6,6 +6,7 @@ import { findOrCreateUserByMinecraft } from "@/lib/users";
 import { listFriendsOverview, sendFriendRequest } from "@/lib/friends";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { withD1Busy } from "@/lib/d1Busy";
+import { withLauncherFeature } from "@/lib/features";
 
 // Liste d'amis + statut en ligne/hors ligne, plus les demandes reçues et envoyées (page "Amis"
 // du launcher). Le statut en ligne n'est renvoyé que pour les amis acceptés (voir
@@ -74,5 +75,5 @@ async function handlePOST(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-export const GET = withD1Busy(handleGET);
-export const POST = withD1Busy(handlePOST);
+export const GET = withD1Busy(withLauncherFeature("friends", handleGET));
+export const POST = withD1Busy(withLauncherFeature("friends", handlePOST));

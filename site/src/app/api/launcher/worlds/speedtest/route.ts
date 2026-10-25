@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { requireLauncherFeature } from "@/lib/features";
 
 // Test de connexion avant la première synchro (mode Jouer, 24/10) : le launcher envoie un petit
 // fichier (1 Mo au plus) et mesure le temps pris, pour annoncer la durée de l'envoi. Rien n'est
@@ -11,6 +12,8 @@ export async function POST(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   const limited = rateLimitResponse(request, "launcher-worlds-speedtest", 6);
   if (limited) return limited;
+  const off = await requireLauncherFeature(request, "worlds");
+  if (off) return off;
   let received = 0;
   const reader = request.body?.getReader();
   if (reader) {

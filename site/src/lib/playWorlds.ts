@@ -1,5 +1,6 @@
-import { revalidateTag, unstable_cache } from "next/cache";
+import { unstable_cache } from "next/cache";
 import { execSql } from "@/lib/db";
+import { featureState } from "@/lib/features";
 import { abortMultipart, deleteObjects, deletePrefix, userWorldsPrefix, worldPrefix } from "@/lib/worldStorage";
 
 // Mode « Jouer » (bêta, 24/10) : offres, mondes en ligne et packs officiels. Tables créées par
@@ -9,25 +10,13 @@ import { abortMultipart, deleteObjects, deletePrefix, userWorldsPrefix, worldPre
 
 type Row = Record<string, any>;
 const now = () => new Date().toISOString();
-const upsertSetting =
-  'INSERT INTO "platformSetting" ("key", "value", "updatedAt") VALUES (?, ?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = excluded."updatedAt"';
 
 // --- Badge « Bêta » --------------------------------------------------------------------------
-// UN SEUL réglage pour le launcher, le site et l'admin (demande de Rushi du 24/10) : tant qu'il
-// est allumé, les menus du mode Jouer portent « (bêta) ». Allumé par défaut.
-const BETA_KEY = "play.betaBadge";
+// Depuis le Laboratoire (25/10) : le badge suit l'état de « Mode Jouer » (/admin/laboratoire).
+// Allumé tant qu'il n'est pas « Pour tous ». Remplace l'ancien réglage play.betaBadge.
 export const PLAY_TAG = "play-settings";
-export const getPlayBeta = unstable_cache(
-  async (): Promise<boolean> => {
-    const [row] = await execSql('SELECT "value" FROM "platformSetting" WHERE "key" = ?', [BETA_KEY]);
-    return row ? row.value !== "off" : true;
-  },
-  ["play-beta-badge"],
-  { revalidate: 60, tags: [PLAY_TAG] },
-);
-export async function setPlayBeta(on: boolean): Promise<void> {
-  await execSql(upsertSetting, [BETA_KEY, on ? "on" : "off", now()]);
-  revalidateTag(PLAY_TAG, { expire: 0 });
+export async function getPlayBeta(): Promise<boolean> {
+  return (await featureState("play")) !== "all";
 }
 
 // --- Offres ----------------------------------------------------------------------------------

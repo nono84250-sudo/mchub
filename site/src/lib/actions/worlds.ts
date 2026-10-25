@@ -4,15 +4,18 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { deleteCloudVersion, deleteCloudWorld, getUserOffer, requestRestore } from "@/lib/playWorlds";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { featureVisibleOnSite } from "@/lib/features";
 
 // Actions de la page « Mes mondes » du site (mode Jouer, bêta, 24/10). Toujours sur le compte
 // connecté (session du site), jamais sur un id envoyé par le navigateur sans vérifier qu'il lui
 // appartient (les fonctions de lib/playWorlds.ts filtrent toutes par userId).
 export type WorldActionResult = { ok: true } | { ok: false; error: "session" | "notFound" | "current" | "limit" | "offer" };
 
+// Laboratoire (25/10) : mondes en ligne cachés pour ce visiteur = comme s'il n'était pas connecté.
 async function sessionUser(): Promise<string | null> {
   const session = await auth();
-  return session?.user?.id ?? null;
+  if (!session?.user?.id || !(await featureVisibleOnSite("worlds"))) return null;
+  return session.user.id;
 }
 
 function limited(userId: string) {
