@@ -43,7 +43,8 @@ const partCount = (u: Pick<Upload, "sizeBytes" | "partSize">) => Math.max(1, Mat
 const err = (error: string, code: string, status = 400) => NextResponse.json({ error, code }, { status });
 
 export const POST = withD1Busy(async (request: Request) => {
-  const body = await request.json().catch(() => ({}));
+  const raw = await request.json().catch(() => null);
+  const body = raw && typeof raw === "object" ? raw : {};
   const action = body.action;
   const auth = await playLauncherUser(request, typeof body.minecraftUuid === "string" ? body.minecraftUuid : null, {
     bucket: action === "parts" ? "launcher-worlds-parts" : "launcher-worlds-write",
@@ -71,7 +72,12 @@ export const POST = withD1Busy(async (request: Request) => {
     }
     // Toutes les versions comptent dans le quota. Plein : refusé (rien n'est supprimé pour faire
     // de la place), le launcher s'arrête et dit combien de sauvegardes n'ont pas pu partir.
-    const [used] = await execSql('SELECT COALESCE(SUM("sizeBytes"), 0) AS "total" FROM "cloudWorldVersion" WHERE "userId" = ?', [userId]);
+    // Audit du 25/10 : les envois en cours d'autres mondes comptent aussi (sinon plusieurs envois
+    // en parallèle dépassaient le quota) ; celui de ce monde est repris ou remplacé juste après.
+    const [used] = await execSql(
+      'SELECT (SELECT COALESCE(SUM("sizeBytes"), 0) FROM "cloudWorldVersion" WHERE "userId" = ?) + (SELECT COALESCE(SUM("sizeBytes"), 0) FROM "cloudUpload" WHERE "userId" = ? AND "worldKey" <> ? AND "expiresAt" > ?) AS "total"',
+      [userId, userId, worldKey, new Date().toISOString()],
+    );
     if (Number(used?.total) + sizeBytes > offer.quotaBytes) return err("Ton espace en ligne est plein.", "quotaFull", 413);
 
     // Reprise : même monde, même fichier, envoi pas expiré.
@@ -124,13 +130,28 @@ export const POST = withD1Busy(async (request: Request) => {
     try {
       await completeMultipart(upload.objectKey, upload.uploadId, parts);
     } catch (error) {
-      return err(`Assemblage refusé par le stockage : ${error instanceof Error ? error.message : String(error)}`, "complete");
+      // Audit du 25/10 : un « complete » relancé après une coupure trouve l'envoi déjà assemblé.
+      // Le fichier est là et a la bonne taille : on continue au lieu de le laisser orphelin.
+      const already = await objectSize(upload.objectKey).catch(() => null);
+      if (already !== Number(upload.sizeBytes)) {
+        console.error("[worlds/upload] complete", error);
+        return err("Assemblage refusé par le stockage.", "complete");
+      }
     }
     const size = await objectSize(upload.objectKey);
     if (size !== Number(upload.sizeBytes)) {
       await deleteObjects([upload.objectKey]);
       await execSql('DELETE FROM "cloudUpload" WHERE "id" = ?', [upload.id]);
       return err("Le fichier reçu n'a pas la bonne taille : il sera renvoyé.", "sizeMismatch", 422);
+    }
+    // Audit du 25/10 : l'offre et le quota sont revérifiés à la fin (offre expirée entre-temps,
+    // envois en parallèle).
+    const offerNow = await getUserOffer(userId);
+    const [usedNow] = await execSql('SELECT COALESCE(SUM("sizeBytes"), 0) AS "total" FROM "cloudWorldVersion" WHERE "userId" = ?', [userId]);
+    if (!offerNow.cloud || Number(usedNow?.total) + Number(upload.sizeBytes) > offerNow.quotaBytes) {
+      await deleteObjects([upload.objectKey]);
+      await execSql('DELETE FROM "cloudUpload" WHERE "id" = ?', [upload.id]);
+      return err("Ton espace en ligne est plein.", "quotaFull", 413);
     }
     const meta = (() => {
       try {
@@ -160,7 +181,7 @@ export const POST = withD1Busy(async (request: Request) => {
       createdAt: meta.createdAt ?? null,
     });
     await execSql('DELETE FROM "cloudUpload" WHERE "id" = ?', [upload.id]);
-    await pruneCloud(userId, await getUserOffer(userId));
+    await pruneCloud(userId, offerNow);
     return NextResponse.json({ ok: true, versionId: upload.id, worldId, split });
   }
 

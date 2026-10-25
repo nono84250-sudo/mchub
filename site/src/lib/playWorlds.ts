@@ -8,6 +8,7 @@ import { abortMultipart, deleteObjects, deletePrefix, userWorldsPrefix, worldPre
 // de la table playOffer (jamais écrits ici) ; le paiement n'existe pas encore : l'offre d'un
 // joueur est réglée à la main dans l'admin (source 'simulated').
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 const now = () => new Date().toISOString();
 
@@ -200,11 +201,12 @@ export async function addCloudVersion(
   let splitFrom: string | null = null;
   if (newer && head && head.id !== v.baseVersionId && head.deviceId && v.deviceId && head.deviceId !== v.deviceId) splitFrom = head.id;
   if (!world) {
-    const id = crypto.randomUUID();
-    await execSql('INSERT INTO "cloudWorld" ("id", "userId", "worldKey", "name", "minecraftVersion", "packName") VALUES (?, ?, ?, ?, ?, ?)', [
-      id, userId, v.worldKey, v.name, v.minecraftVersion, v.packName,
+    // Deux PC qui envoient le même nouveau monde en même temps : le second reprend la ligne du premier.
+    await execSql('INSERT INTO "cloudWorld" ("id", "userId", "worldKey", "name", "minecraftVersion", "packName") VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT ("userId", "worldKey") DO NOTHING', [
+      crypto.randomUUID(), userId, v.worldKey, v.name, v.minecraftVersion, v.packName,
     ]);
-    world = { id };
+    world = await findCloudWorld(userId, { worldKey: v.worldKey });
+    if (!world) throw new Error("Monde du cloud introuvable après sa création.");
   }
   await execSql(
     'INSERT INTO "cloudWorldVersion" ("id", "worldId", "userId", "objectKey", "sizeBytes", "sha256", "minecraftVersion", "reason", "deviceId", "deviceName", "baseVersionId", "backupId", "label", "createdAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -290,7 +292,19 @@ export async function resolveSplit(userId: string, worldKey: string, versionId: 
 
 // Ménage : versions plus vieilles que la durée de l'offre, puis, si le quota est dépassé, les
 // plus vieilles versions d'abord. La dernière version de chaque monde n'est jamais retirée ici.
-export async function pruneCloud(userId: string, offer: PlayOffer): Promise<number> {
+// Audit du 25/10 : l'état des mondes est relu toutes les 2 min par chaque launcher. Le ménage
+// (3 lectures au moins) n'y est fait qu'une fois par heure et par compte (`throttle`) ; il reste
+// fait à chaque envoi terminé.
+const lastPrune = new Map<string, number>();
+const PRUNE_EVERY_MS = 3_600_000;
+
+export async function pruneCloud(userId: string, offer: PlayOffer, { throttle = false }: { throttle?: boolean } = {}): Promise<number> {
+  if (throttle) {
+    const at = lastPrune.get(userId) ?? 0;
+    if (Date.now() - at < PRUNE_EVERY_MS) return 0;
+    if (lastPrune.size > 5000) lastPrune.clear();
+  }
+  lastPrune.set(userId, Date.now());
   // Envois jamais terminés (launcher fermé, monde retiré…) et expirés : abandonnés dans R2 pour ne
   // laisser aucun morceau dans le bucket, puis oubliés.
   for (const u of await execSql('SELECT "id", "objectKey", "uploadId" FROM "cloudUpload" WHERE "userId" = ? AND "expiresAt" < ?', [userId, now()])) {
@@ -317,9 +331,35 @@ export async function pruneCloud(userId: string, offer: PlayOffer): Promise<numb
   }
   if (!drop.length) return 0;
   await deleteObjects(drop.map((r) => r.objectKey));
-  for (const r of drop) await execSql('DELETE FROM "cloudWorldVersion" WHERE "id" = ?', [r.id]);
+  for (let i = 0; i < drop.length; i += 90) {
+    const ids = drop.slice(i, i + 90).map((r) => r.id);
+    await execSql(`DELETE FROM "cloudWorldVersion" WHERE "id" IN (${ids.map(() => "?").join(", ")})`, ids);
+  }
   await execSql('UPDATE "cloudWorld" SET "restoreVersionId" = NULL WHERE "userId" = ? AND "restoreVersionId" NOT IN (SELECT "id" FROM "cloudWorldVersion" WHERE "userId" = ?)', [userId, userId]);
   return drop.length;
+}
+
+// Plusieurs versions d'un même monde en une fois (« drop » du launcher). Audit du 25/10 : avant,
+// ~6 appels D1 par version ; ici 5 appels en tout, quel que soit le nombre. Jamais la dernière
+// version, la version à continuer ni l'autre version d'un monde en double ; les versions avec un
+// nom seulement si `explicit`. Renvoie les ids vraiment retirés.
+export async function deleteCloudVersions(userId: string, worldId: string, ids: string[], explicit: boolean): Promise<string[]> {
+  const list = [...new Set(ids)].slice(0, 90); // D1 : 100 paramètres max par requête
+  if (!list.length) return [];
+  const marks = list.map(() => "?").join(", ");
+  const rows = await execSql(`SELECT "id", "objectKey", "label" FROM "cloudWorldVersion" WHERE "userId" = ? AND "worldId" = ? AND "id" IN (${marks})`, [userId, worldId, ...list]);
+  if (!rows.length) return [];
+  const [last] = await execSql('SELECT "id" FROM "cloudWorldVersion" WHERE "worldId" = ? ORDER BY "createdAt" DESC LIMIT 1', [worldId]);
+  const [w] = await execSql('SELECT "headVersionId", "splitVersionId" FROM "cloudWorld" WHERE "id" = ?', [worldId]);
+  const keep = new Set([last?.id, w?.headVersionId, w?.splitVersionId].filter(Boolean));
+  const drop = rows.filter((r) => !keep.has(r.id) && (explicit || !r.label));
+  if (!drop.length) return [];
+  await deleteObjects(drop.map((r) => r.objectKey));
+  const dropIds = drop.map((r) => String(r.id));
+  const dropMarks = dropIds.map(() => "?").join(", ");
+  await execSql(`DELETE FROM "cloudWorldVersion" WHERE "id" IN (${dropMarks})`, dropIds);
+  await execSql(`UPDATE "cloudWorld" SET "restoreVersionId" = NULL WHERE "id" = ? AND "restoreVersionId" IN (${dropMarks})`, [worldId, ...dropIds]);
+  return dropIds;
 }
 
 export async function deleteCloudVersion(userId: string, versionId: string): Promise<"ok" | "notFound" | "current"> {

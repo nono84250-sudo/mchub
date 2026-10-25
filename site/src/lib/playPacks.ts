@@ -161,6 +161,7 @@ export async function requiredDeps(slug: string): Promise<{ slug: string; title:
   return projects.map((p) => ({ slug: p.slug.toLowerCase(), title: p.title }));
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 const now = () => new Date().toISOString();
 

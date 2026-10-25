@@ -177,7 +177,9 @@ function TeamForm({
   const [state, formAction, pending] = useActionState<TeamActionState, FormData>(saveTeamAction, undefined);
   // Les rappels changent a chaque rendu du parent : seul un nouvel enregistrement les declenche.
   const callbacks = useRef({ onSaved, onDone });
-  callbacks.current = { onSaved, onDone };
+  useEffect(() => {
+    callbacks.current = { onSaved, onDone };
+  });
 
   useEffect(() => {
     if (state && "savedAt" in state) {

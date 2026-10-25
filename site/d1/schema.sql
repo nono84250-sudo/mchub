@@ -472,7 +472,17 @@ CREATE TABLE "cloudWorld" (
   -- Version choisie sur le site (« Restaurer ») : appliquée par le launcher au prochain lancement.
   "restoreVersionId" TEXT,
   "createdAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "updatedAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "updatedAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- Plusieurs PC (migration 2026-10-24-multi-pc.sql).
+  "headVersionId"    TEXT,
+  "splitVersionId"   TEXT,
+  "lastDeviceId"     TEXT,
+  "lastDeviceName"   TEXT,
+  "lastPlayedAt"     TEXT,
+  "openDeviceId"     TEXT,
+  "openDeviceName"   TEXT,
+  "openSince"        TEXT,
+  "openBeatAt"       TEXT
 );
 CREATE UNIQUE INDEX "cloudWorld_user_key_idx" ON "cloudWorld"("userId", "worldKey");
 
@@ -486,10 +496,17 @@ CREATE TABLE "cloudWorldVersion" (
   "sha256"           TEXT NOT NULL,
   "minecraftVersion" TEXT,
   "reason"           TEXT,
-  "createdAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "createdAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- Plusieurs PC et versions miroir (migration 2026-10-24-multi-pc.sql).
+  "deviceId"         TEXT,
+  "deviceName"       TEXT,
+  "baseVersionId"    TEXT,
+  "backupId"         TEXT,
+  "label"            TEXT
 );
 CREATE INDEX "cloudWorldVersion_world_idx" ON "cloudWorldVersion"("worldId", "createdAt");
 CREATE INDEX "cloudWorldVersion_user_idx" ON "cloudWorldVersion"("userId");
+CREATE INDEX "cloudWorldVersion_backup_idx" ON "cloudWorldVersion"("worldId", "backupId");
 
 -- Envois en cours (multipart R2) : permet de reprendre après une coupure, et de nettoyer ceux
 -- abandonnés (expiresAt).

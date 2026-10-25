@@ -11,7 +11,7 @@ export const GET = withD1Busy(async (request: Request) => {
   const auth = await playLauncherUser(request, minecraftUuid, { bucket: "launcher-worlds", limit: 30 });
   if ("response" in auth) return auth.response;
   const offer = await getUserOffer(auth.userId);
-  if (offer.cloud) await pruneCloud(auth.userId, offer);
+  if (offer.cloud) await pruneCloud(auth.userId, offer, { throttle: true });
   const [worlds, used, beta] = await Promise.all([listCloudWorlds(auth.userId), usedBytes(auth.userId), getPlayBeta()]);
   return NextResponse.json({
     beta,

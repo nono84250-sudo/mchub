@@ -12,7 +12,7 @@ import { t } from "@/i18n/t";
 import type { Dictionary } from "@/i18n/getDictionary";
 import { getFreshness } from "@/lib/freshness";
 import { fallbackBanner } from "@/lib/fallbackBanner";
-import { STATE_COLOR, bandColor, gaugePercent, serverState } from "@/lib/playerGauge";
+import { STATE_COLOR, bandColor, serverState } from "@/lib/playerGauge";
 import { ServerStatePill } from "@/components/ServerStatePill";
 import { FitHeightIconRow } from "@/components/FitHeightIconRow";
 import { ManualModsBadge } from "@/components/ManualModsBadge";

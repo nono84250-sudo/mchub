@@ -40,7 +40,7 @@ export default async function MondesPage() {
     );
   }
 
-  await pruneCloud(userId, offer);
+  await pruneCloud(userId, offer, { throttle: true });
   const [worlds, used] = await Promise.all([listCloudWorlds(userId), usedBytes(userId)]);
   return (
     <div>

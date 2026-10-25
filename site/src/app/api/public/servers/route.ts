@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { listPublicServers } from "@/lib/public-servers";
 import { teamsPublic, withoutTeam } from "@/lib/features";
 import { getTagCatalog } from "@/lib/tagRequests";

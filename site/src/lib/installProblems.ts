@@ -75,5 +75,9 @@ export async function listInstallProblemGroups(serverId: string): Promise<Instal
     group.uuids.add(row.reporterMinecraftUuid);
     group.players = group.uuids.size;
   }
-  return [...groups.values()].map(({ uuids: _uuids, ...group }) => group);
+  return [...groups.values()].map((g) => {
+    const { uuids, ...group } = g;
+    void uuids;
+    return group;
+  });
 }

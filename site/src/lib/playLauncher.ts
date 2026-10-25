@@ -22,8 +22,9 @@ export async function playLauncherUser(
   if (!minecraftUuid) return { response: NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 }) };
   const { check, name } = await verifyLauncherProfile(request, minecraftUuid);
   if (check !== "verified") return { response: identityErrorResponse(check) };
-  // Action volontaire du joueur (il joue / synchronise) : comme une demande d'ami.
-  const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: true });
+  // Audit du 25/10 : ces appels partent aussi tout seuls (état au démarrage, battement toutes les
+  // 5 min) : un compte supprimé par son propriétaire n'est PAS recréé ici (404 « Compte introuvable »).
+  const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: false });
   if (!user) return { response: NextResponse.json({ error: "Compte introuvable" }, { status: 404 }) };
   return { userId: user.id };
 }

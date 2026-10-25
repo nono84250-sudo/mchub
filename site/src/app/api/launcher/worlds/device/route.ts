@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { withD1Busy } from "@/lib/d1Busy";
 import { playLauncherUser } from "@/lib/playLauncher";
-import { beatWorldLocks, deleteCloudVersion, deviceConflict, findCloudVersion, findCloudWorld, releaseWorldLock, resolveSplit, takeWorldLock } from "@/lib/playWorlds";
+import { beatWorldLocks, deleteCloudVersions, deviceConflict, findCloudWorld, releaseWorldLock, resolveSplit, takeWorldLock } from "@/lib/playWorlds";
 
 // Mode Jouer, plusieurs PC (24/10). Appelé par le launcher seulement pour un monde déjà dans le
 // cloud (jamais pour un compte sans offre) :
@@ -21,7 +21,8 @@ const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice
 const bad = (error: string) => NextResponse.json({ error, code: "invalid" }, { status: 400 });
 
 export const POST = withD1Busy(async (request: Request) => {
-  const body = await request.json().catch(() => ({}));
+  const raw = await request.json().catch(() => null);
+  const body = raw && typeof raw === "object" ? raw : {};
   const action = body.action;
   const auth = await playLauncherUser(request, typeof body.minecraftUuid === "string" ? body.minecraftUuid : null, {
     bucket: action === "check" || action === "beat" ? "launcher-worlds" : "launcher-worlds-write",
@@ -49,16 +50,10 @@ export const POST = withD1Busy(async (request: Request) => {
 
   if (action === "drop") {
     const world = await findCloudWorld(userId, { worldKey });
-    const ids = Array.isArray(body.versionIds) ? body.versionIds.filter((x: unknown) => typeof x === "string").slice(0, 100) : [];
+    const ids = Array.isArray(body.versionIds) ? body.versionIds.filter((x: unknown) => typeof x === "string").slice(0, 90) : [];
     // deletedIds : le launcher note lesquelles ne sont plus en ligne (« versions en ligne », 25/10).
-    const deletedIds: string[] = [];
-    if (world) {
-      for (const id of ids) {
-        const v = await findCloudVersion(userId, id);
-        // explicit : supprimée à la main dans le launcher (même une version avec un nom).
-        if (v && v.worldId === world.id && (body.explicit === true || !v.label) && (await deleteCloudVersion(userId, id)) === "ok") deletedIds.push(id);
-      }
-    }
+    // explicit : supprimée à la main dans le launcher (même une version avec un nom).
+    const deletedIds = world ? await deleteCloudVersions(userId, String(world.id), ids, body.explicit === true) : [];
     return NextResponse.json({ ok: true, deleted: deletedIds.length, deletedIds });
   }
 

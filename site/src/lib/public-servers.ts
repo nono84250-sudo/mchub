@@ -50,6 +50,7 @@ export const SERVERS_LIVE_CACHE_TAG = "servers-live";
 // colonnes TEAM_COLUMNS ou null, booleens en true/false.
 const SERVER_BOOLEAN_COLUMNS = ["published", "isPrivate", "autoConnect", "addToServerList"];
 // Meme type libre que les lignes de lib/db.ts.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ServerRow = any;
 async function selectServersWithOwnerAndTeam(columns: readonly string[], whereSql: string, params: unknown[], tail = ""): Promise<ServerRow[]> {
   const list = [...new Set(columns)].map((c) => `s."${c}"`).join(", ");
@@ -448,11 +449,13 @@ export async function isVisibleRow(row: VisibilityRow, proof: PrivateServerProof
 // Audit de charge du 19/10 (B4) : la ligne du serveur ET le pseudo Minecraft du proprietaire en
 // UNE requete (JOIN), au lieu de deux (.include("owner") fait un 2e appel a D1). « Rejoindre »
 // relisait aussi la meme ligne deux fois (visibilite puis IP) : voir getLauncherServerForJoin.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function serverWithOwnerBySlug(slug: string, columns: readonly string[]): Promise<Record<string, any> | null> {
   const list = [...new Set(columns)].map((c) => `s."${c}"`).join(", ");
   const rows = (await execSql(
     `SELECT ${list}, u."minecraftUuid" AS "__ownerUuid", s."ownerId" AS "__ownerId" FROM "server" s LEFT JOIN "user" u ON u."id" = s."ownerId" WHERE s."slug" = ? LIMIT 1`,
     [slug],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   )) as Record<string, any>[];
   const row = rows[0];
   if (!row) return null;
@@ -499,6 +502,7 @@ const LAUNCHER_DETAIL_COLUMNS = [
   ...MANUAL_MODS_COLUMNS,
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function launcherDetail(row: Record<string, any>): LauncherServerDetail {
   return {
     name: row.name,
