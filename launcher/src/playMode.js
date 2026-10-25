@@ -680,7 +680,9 @@ function createPlayMode({ gameRoot, appDataDir }) {
   // à la main, import, et celles avec un nom.
   const CLOUD_GAME_REASONS = new Set(["auto", "world-exit", "named", "manual", "import"]);
   function wantedInCloud(b) {
-    if (b.cloudDropped) return false; // retirée du cloud (limite en ligne ou ✕) : reste sur le PC
+    // ✕ « Retirer du cloud » : reste sur le PC. L'ancienne marque `true` venait surtout de la limite
+    // « Versions en ligne » de Partiel : elle ne bloque plus (avec « Toutes », tout repart).
+    if (b.cloudDropped === "user") return false;
     if (b.cloudKeep) return true; // « ☁ Envoyer » : demandée par le joueur
     return !!b.label || keepConfig().send !== "game" || CLOUD_GAME_REASONS.has(b.reason);
   }

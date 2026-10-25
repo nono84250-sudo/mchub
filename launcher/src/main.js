@@ -3584,8 +3584,9 @@ ipcMain.handle("play:setBackupLimit", async (_event, _key, cfg) => {
   if (!cfg || typeof cfg !== "object") return { ok: false, error: "Réglage invalide." };
   try {
     const out = await liveSave.enqueue(() => playMode.setKeepConfig(cfg));
-    // Moins de versions en ligne qu'avant : les plus vieilles sortent du cloud (restent sur le PC).
-    worldCloud.limitAllOnline().catch(() => {});
+    // Partiel : les versions en trop sortent du cloud (restent sur le PC) ; Toutes : celles qui
+    // manquent en ligne partent.
+    worldCloud.applySettings().catch(() => {});
     return out;
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };

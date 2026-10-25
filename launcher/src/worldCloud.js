@@ -159,12 +159,15 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
   const GAME_REASONS = new Set(["auto", "world-exit", "named", "manual", "import"]);
   // Réglage « Envoi au cloud ». Retour de Rushi du 25/10 : « Une par partie » vaut aussi pour le
   // bouton Synchroniser (il envoyait toutes les sauvegardes). « À la main » : seulement Synchroniser.
+  // « À la main » (retour de Rushi du 25/10) : rien ne part tout seul, même une sauvegarde ★ ;
+  // seulement « ☁ Envoyer » (cloudKeep) et le bouton Synchroniser.
   function sendAllowed(key, backup, manual) {
-    if (backup.cloudDropped) return false; // retirée du cloud : reste sur le PC
-    if (backup.label || backup.cloudKeep) return true;
+    if (backup.cloudDropped === "user") return false; // ✕ retirée du cloud par le joueur : reste sur le PC
+    if (backup.cloudKeep) return true;
     const send = playMode.keepConfig?.(key)?.send || "all";
-    if (send === "game") return GAME_REASONS.has(backup.reason);
     if (send === "manual") return manual;
+    if (backup.label) return true;
+    if (send === "game") return GAME_REASONS.has(backup.reason);
     return true;
   }
   // Sauvegarde marquée « envoyée » vers un monde du cloud qui n'existe plus (retiré puis
@@ -331,7 +334,8 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
   }
   // « Versions en ligne » (25/10) : au plus N versions automatiques par monde en ligne ; les ★ et
   // les envois à la main restent en plus. Les autres sortent du cloud et restent sur le PC
-  // (cloudDropped : elles ne repartent plus toutes seules).
+  // Pas de marque : avec « Toutes » (pas de limite par monde), elles repartent au prochain
+  // rattrapage (retour de Rushi du 25/10 : elles restaient bloquées hors du cloud).
   async function limitOnline(key) {
     if (!playMode.cloudPlan || !currentUuid()) return 0;
     const list = await playMode.listBackups(key);
@@ -340,7 +344,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
     if (!extra.length) return 0;
     const r = await deviceApi("drop", { worldKey: key, versionIds: extra.map((b) => b.cloud.versionId), explicit: false });
     const gone = new Set(r.deletedIds || []);
-    for (const b of extra) if (gone.has(b.cloud.versionId)) await playMode.patchBackup(key, b.id, { cloud: null, cloudDropped: true });
+    for (const b of extra) if (gone.has(b.cloud.versionId)) await playMode.patchBackup(key, b.id, { cloud: null });
     if (gone.size) {
       lastStatus = null;
       log("info", `Cloud : ${gone.size} ancienne(s) version(s) retirée(s) en ligne (limite de ${playMode.onlineLimit()} par monde), gardée(s) sur ce PC`);
@@ -351,6 +355,15 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
     let n = 0;
     for (const key of state.syncedKeys) n += await limitOnline(key).catch(() => 0);
     return n;
+  }
+  // Réglages des sauvegardes changés : avec « Partiel », les versions en trop sortent du cloud ;
+  // avec « Toutes », celles qui manquent en ligne partent tout de suite (avant : au prochain
+  // démarrage seulement). « À la main » n'envoie rien.
+  async function applySettings() {
+    await limitAllOnline();
+    if (!state.syncedKeys.length || !currentUuid()) return 0;
+    const st = await status().catch(() => null);
+    return st?.offer?.cloud ? backfill(state.syncedKeys) : 0;
   }
   // ✕ « Retirer du cloud » sur une sauvegarde : elle reste sur le PC.
   async function uncloudBackup(key, backupId) {
@@ -366,7 +379,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
       }
       lastStatus = null;
     }
-    await playMode.patchBackup(key, backupId, { cloud: null, cloudDropped: true, cloudKeep: null });
+    await playMode.patchBackup(key, backupId, { cloud: null, cloudDropped: "user", cloudKeep: null });
     await saveState();
     return { ok: true };
   }
@@ -980,6 +993,7 @@ function createWorldCloud({ playMode, siteUrl, authHeaders, currentUuid, log, on
     stop,
     limitOnline,
     limitAllOnline,
+    applySettings,
     uncloudBackup,
     sendBackup,
     setGameRunning,
