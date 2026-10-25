@@ -29,5 +29,5 @@ export default async function JoinByInviteCodePage({ params }: PageProps<"/join/
   if (!slug) notFound();
   const server = await getPublicServerBySlug(slug, { inviteCode: code });
   if (!server) notFound();
-  return <ServerDetailView slug={slug} server={server} />;
+  return <ServerDetailView slug={slug} server={server} inviteCode={code} />;
 }

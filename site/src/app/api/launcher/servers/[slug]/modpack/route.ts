@@ -3,15 +3,16 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
-import { db } from "@/lib/db";
+import { D1BusyError, db } from "@/lib/db";
 import { SERVERS_CACHE_TAG, isVisibleRow, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getModpackInstallFile } from "@/lib/curseforge";
 import { getModrinthModpackInstallFile } from "@/lib/modrinth";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Fichier du modpack d'un serveur moddé (CurseForge ou Modrinth), pour que le
 // launcher l'installe (voir launcher/src/modpack.js). La cle CurseForge reste
 // ici : le launcher ne recoit que le lien de telechargement du fichier.
-export async function GET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/modpack">) {
+async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/modpack">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -80,7 +81,12 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
     if (error instanceof CurseforgeForbiddenError) {
       return NextResponse.json({ error: error.message, code: "curseforge_forbidden" }, { status: 502 });
     }
-    const message = error instanceof Error ? error.message : "Erreur inconnue";
-    return NextResponse.json({ error: message, code: "modpack_source_error" }, { status: 502 });
+    // Base saturee : laisse withD1Busy repondre 503. Le detail des autres erreurs (base,
+    // API externe) reste dans les journaux du site, pas dans la reponse (audit 25/10).
+    if (error instanceof D1BusyError) throw error;
+    console.error("[launcher/modpack]", error);
+    return NextResponse.json({ error: "La source du modpack n'a pas répondu correctement. Réessaie dans un instant.", code: "modpack_source_error" }, { status: 502 });
   }
 }
+
+export const GET = withD1Busy(handleGET);

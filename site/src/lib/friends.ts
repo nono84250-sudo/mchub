@@ -14,6 +14,8 @@ export type FriendSummary = {
   minecraftUsername: string | null;
   minecraftUuid: string | null;
   online: boolean;
+  // Serveur public sur lequel l'ami joue en ce moment (filtre « Un ami y joue » du launcher).
+  playingSlug: string | null;
 };
 
 // Pas de champ "online" ni d'UUID ici, volontairement : tant que la demande n'est pas acceptee,
@@ -72,7 +74,12 @@ export async function listFriendsOverview(userId: string): Promise<FriendsOvervi
   const statuses = await getOnlineStatuses(accepted.map((r) => r.userId));
 
   return {
-    friends: accepted.map((r) => ({ ...toRequest(r), minecraftUuid: r.minecraftUuid, online: statuses.get(r.userId) ?? false })),
+    friends: accepted.map((r) => ({
+      ...toRequest(r),
+      minecraftUuid: r.minecraftUuid,
+      online: statuses.get(r.userId)?.online ?? false,
+      playingSlug: statuses.get(r.userId)?.playingSlug ?? null,
+    })),
     incoming: pending.filter((r) => r.requesterId !== userId).map(toRequest),
     outgoing: pending.filter((r) => r.requesterId === userId).map(toRequest),
   };

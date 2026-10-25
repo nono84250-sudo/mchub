@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { deleteR2ImageIfOwned, deleteAllR2Images } from "@/lib/serverImages";
+import { deleteR2ImageIfOwned, deleteAllR2Images, isImageUsedByAnotherServer } from "@/lib/serverImages";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { slugify } from "@/lib/slug";
 import { generateUniqueInviteCode } from "@/lib/inviteCode";
@@ -13,6 +13,7 @@ import { DEFAULT_MODPACK_CHANNEL, type ModpackChannel, type ModpackSource } from
 import { runAndStoreChecks } from "@/lib/verification";
 import { requestServerAppeal } from "@/lib/appeals";
 import { addressUsedByFrozenServer } from "@/lib/frozenAddress";
+import { isOwnImageUrl } from "@/lib/ownImageUrl";
 
 export type ServerActionState = { error: string } | undefined;
 
@@ -37,33 +38,6 @@ type ServerFormValues = {
   recommendedRamGB: number | null;
   autoConnect: boolean;
 };
-
-// Ces URLs finissent dans des attributs HTML et des url(...) CSS cote launcher. Depuis le
-// passage a R2 (ImageDropzone -> /api/upload), le formulaire n'envoie plus que l'URL renvoyee
-// par /api/upload : <origine du site>/api/images/<uuid>.<ext>. 2026-10-14 : la validation
-// acceptait encore n'importe quelle adresse http(s) — un formulaire forge a la main pouvait
-// donc poser une image hebergee ailleurs (contenu modifiable apres coup, IP des joueurs vue
-// par ce site tiers, http non chiffre). Desormais seule notre propre URL d'image est acceptee :
-// meme hote que la requete en cours, chemin /api/images/<uuid>.<ext> exact, https (http
-// seulement sur localhost, pour le dev local). Exception : une valeur DEJA enregistree sur la
-// fiche (anciennes URLs ex-Vercel Blob) reste acceptee telle quelle a la modification, pour ne
-// pas bloquer l'enregistrement d'une fiche existante — elle ne peut pas etre remplacee par une
-// autre URL externe.
-const OWN_IMAGE_PATH = /^\/api\/images\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/;
-const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1"]);
-
-function isOwnImageUrl(url: string | null, host: string | null, previous?: string | null): boolean {
-  if (url === null) return true;
-  if (previous && url === previous) return true;
-  if (!host || !/^https?:\/\/[^\s"'<>`\\]+$/.test(url)) return false;
-  try {
-    const parsed = new URL(url);
-    const secure = parsed.protocol === "https:" || (parsed.protocol === "http:" && LOCAL_HOSTNAMES.has(parsed.hostname));
-    return secure && parsed.host === host && OWN_IMAGE_PATH.test(parsed.pathname) && !parsed.search && !parsed.hash;
-  } catch {
-    return false;
-  }
-}
 
 async function requestHost(): Promise<string | null> {
   return (await headers()).get("host");
@@ -159,6 +133,25 @@ async function getOwnedServer(serverId: string, userId: string) {
   return db.orm.public.Server.where({ id: serverId, ownerId: userId }).first();
 }
 
+// Audit 25/10 : une fiche ne peut pas reprendre la banniere, l'icone ou le fond d'une autre
+// fiche (sinon, en la retirant ensuite, elle pouvait l'effacer de R2 ; voir serverImages.ts).
+const FOREIGN_IMAGE_ERROR = "Les images (bannière, icône, fond) doivent être envoyées depuis ce formulaire.";
+async function usesForeignImage(
+  parsed: { bannerUrl: string | null; iconUrl: string | null; backgroundUrl: string | null },
+  serverId: string | null,
+  previous?: { bannerUrl: string | null; iconUrl: string | null; backgroundUrl: string | null },
+): Promise<boolean> {
+  for (const field of ["bannerUrl", "iconUrl", "backgroundUrl"] as const) {
+    const url = parsed[field];
+    if (url && url !== previous?.[field] && (await isImageUsedByAnotherServer(url, serverId))) return true;
+  }
+  return false;
+}
+
+// Audit 25/10 : changer l'adresse d'une fiche gelee permettait de liberer l'ancienne adresse,
+// puis de recreer une fiche avec elle (addressUsedByFrozenServer ne la voyait plus).
+const FROZEN_SERVER_ADDRESS_ERROR = "Cette fiche est gelée : son adresse ne peut pas changer tant que le gel n'est pas levé.";
+
 export async function createServer(_prevState: ServerActionState, formData: FormData): Promise<ServerActionState> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -166,6 +159,7 @@ export async function createServer(_prevState: ServerActionState, formData: Form
   const parsed = readForm(formData, await requestHost());
   if ("error" in parsed) return parsed;
   if (await addressUsedByFrozenServer(parsed.ip)) return { error: FROZEN_ADDRESS_ERROR };
+  if (await usesForeignImage(parsed, null)) return { error: FOREIGN_IMAGE_ERROR };
 
   const slug = await uniqueSlugFor(parsed.name);
   // Toute nouvelle fiche est privee, quoi qu'en dise le formulaire (visibilite retiree de
@@ -208,7 +202,9 @@ export async function updateServer(
 
   const parsed = readForm(formData, await requestHost(), owned);
   if ("error" in parsed) return parsed;
+  if (parsed.ip !== owned.ip && owned.frozenAt) return { error: FROZEN_SERVER_ADDRESS_ERROR };
   if (parsed.ip !== owned.ip && (await addressUsedByFrozenServer(parsed.ip, serverId))) return { error: FROZEN_ADDRESS_ERROR };
+  if (await usesForeignImage(parsed, serverId, owned)) return { error: FOREIGN_IMAGE_ERROR };
 
   // Un changement d'IP, de version declaree ou de modpack rend l'auto-test precedent caduc —
   // meme esprit que runAndStoreChecks ci-dessous pour le controle automatique du site : une

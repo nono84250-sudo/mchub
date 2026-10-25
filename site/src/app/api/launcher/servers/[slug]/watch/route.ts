@@ -3,6 +3,7 @@ import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdent
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { getInstanceWatch, setInstanceWatch } from "@/lib/instanceWatch";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Lecture/écriture de la case "Me prévenir du changement de statut de cette instance" (point 9,
 // voir INSTANCE_SETTINGS_FIELDS côté launcher) depuis la même petite fenêtre "Réglages" que le
@@ -12,7 +13,7 @@ import { getInstanceWatch, setInstanceWatch } from "@/lib/instanceWatch";
 // peut donc activer son propre suivi sur n'importe quel serveur, d'où verifyLauncherIdentity
 // (même contrôle que /api/launcher/notifications et /api/launcher/servers/mine) plutôt qu'une
 // preuve de propriété.
-export async function GET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/watch">) {
+async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/watch">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -37,7 +38,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   return NextResponse.json({ notifyOnStatusChange: watch?.notifyOnStatusChange ?? false });
 }
 
-export async function PATCH(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/watch">) {
+async function handlePATCH(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/watch">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -46,7 +47,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/launcher/s
   const limited = rateLimitResponse(request, "launcher-watch-write", 10);
   if (limited) return limited;
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => null)) ?? {};
   const minecraftUuid = typeof body.minecraftUuid === "string" ? body.minecraftUuid : null;
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
@@ -68,3 +69,6 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/launcher/s
 
   return NextResponse.json({ ok: true, notifyOnStatusChange });
 }
+
+export const GET = withD1Busy(handleGET);
+export const PATCH = withD1Busy(handlePATCH);

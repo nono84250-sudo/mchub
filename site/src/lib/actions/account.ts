@@ -27,7 +27,7 @@ export async function deleteAccount(confirmation: string): Promise<{ error: Dele
   const user = await db.orm.public.User.select("id", "minecraftUuid").where({ id: session.user.id }).first();
   if (!user) return { error: "notFound" };
 
-  const servers = await db.orm.public.Server.select("id", "bannerUrl", "iconUrl", "backgroundUrl").where({ ownerId: user.id }).all();
+  const servers = await db.orm.public.Server.select("id", "bannerUrl", "iconUrl", "backgroundUrl", "pageConfig").where({ ownerId: user.id }).all();
   for (const server of servers) await deleteAllR2Images(server, server.id);
 
   if (user.minecraftUuid) {

@@ -12,8 +12,15 @@ const { app } = require("electron");
 // Prism Launcher) plutot que de demander une installation manuelle.
 const RUNTIME_BASE = path.join(app.getPath("userData"), "runtime");
 const RUNTIME_DIR = path.join(RUNTIME_BASE, "java");
+// Windows (historique) ou Linux (version de test personnelle de Rushi, 14/10) :
+// Adoptium sert un .zip pour Windows et un .tar.gz pour Linux, et l'executable
+// s'appelle java.exe ou java selon le systeme.
+const IS_WINDOWS = process.platform === "win32";
+const ADOPTIUM_OS = IS_WINDOWS ? "windows" : process.platform === "darwin" ? "mac" : "linux";
+const ADOPTIUM_ARCH = !IS_WINDOWS && process.arch === "arm64" ? "aarch64" : "x64";
+const JAVA_EXE = IS_WINDOWS ? "java.exe" : "java";
 const adoptiumApiUrl = (major) =>
-  `https://api.adoptium.net/v3/assets/latest/${major}/hotspot?image_type=jre&os=windows&architecture=x64&vendor=eclipse`;
+  `https://api.adoptium.net/v3/assets/latest/${major}/hotspot?image_type=jre&os=${ADOPTIUM_OS}&architecture=${ADOPTIUM_ARCH}&vendor=eclipse`;
 
 // Minecraft 1.20.5+ exige Java 21 — ce launcher standardise sur Java 21
 // comme minimum pour toutes les versions vanilla qu'il lance (c'est aussi
@@ -39,6 +46,8 @@ function parseJavaMajorVersion(versionString) {
 // seul binaire bloque bloquait tout le pipeline de lancement sans aucun message (audit du
 // 2026-10-10).
 const PROCESS_TIMEOUT_MS = 15_000;
+// Extraction de l'archive Java (Windows comme Linux), voir extractZip.
+const JAVA_EXTRACT_TIMEOUT_MS = 120_000;
 const FETCH_TIMEOUT_MS = 20_000;
 
 function detectJava(javaPath) {
@@ -82,7 +91,7 @@ async function fetchLatestJreInfo(major) {
   if (!res.ok) throw new Error(`L'API Adoptium a répondu ${res.status}.`);
   const data = await res.json();
   const asset = data[0];
-  if (!asset) throw new Error(`Aucune version de Java ${major} disponible pour Windows x64.`);
+  if (!asset) throw new Error(`Aucune version de Java ${major} disponible pour ${IS_WINDOWS ? "Windows" : "Linux"} ${ADOPTIUM_ARCH}.`);
   return {
     version: asset.version.semver,
     url: asset.binary.package.link,
@@ -103,13 +112,18 @@ function extractZip(zipPath, destDir) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(destDir, { recursive: true });
     // PowerShell est present sur toute machine Windows — evite d'ajouter
-    // une dependance npm de decompression juste pour cet usage ponctuel.
-    const proc = spawn("powershell.exe", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      `Expand-Archive -LiteralPath '${escapePowerShellSingleQuoted(zipPath)}' -DestinationPath '${escapePowerShellSingleQuoted(destDir)}' -Force`,
-    ]);
+    // une dependance npm de decompression juste pour cet usage ponctuel. Sous
+    // Linux, l'archive est un .tar.gz et tar est toujours present (il garde
+    // aussi le droit d'execution de bin/java). Arguments passes un par un :
+    // aucun shell, donc aucun echappement a faire.
+    const proc = IS_WINDOWS
+      ? spawn("powershell.exe", [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `Expand-Archive -LiteralPath '${escapePowerShellSingleQuoted(zipPath)}' -DestinationPath '${escapePowerShellSingleQuoted(destDir)}' -Force`,
+        ])
+      : spawn("tar", ["-xzf", zipPath, "-C", destDir]);
     let settled = false;
     const finish = (fn) => {
       if (settled) return;
@@ -117,10 +131,12 @@ function extractZip(zipPath, destDir) {
       clearTimeout(timer);
       fn();
     };
+    // 2 min partout (audit 25/10) : 15 s sous Windows ne suffisaient pas a Expand-Archive sur un
+    // disque lent ou avec un antivirus qui scanne chaque fichier de l'archive.
     const timer = setTimeout(() => {
       proc.kill();
       finish(() => reject(new Error("Extraction de Java : délai dépassé.")));
-    }, PROCESS_TIMEOUT_MS);
+    }, JAVA_EXTRACT_TIMEOUT_MS);
     proc.on("error", (error) => finish(() => reject(error)));
     proc.on("exit", (code) => finish(() => (code === 0 ? resolve() : reject(new Error(`Extraction échouée (code ${code}).`)))));
   });
@@ -133,7 +149,7 @@ function findExtractedJavaExe(destDir) {
   if (!fs.existsSync(destDir)) return null;
   const entries = fs.readdirSync(destDir, { withFileTypes: true }).filter((e) => e.isDirectory());
   for (const entry of entries) {
-    const candidate = path.join(destDir, entry.name, "bin", "java.exe");
+    const candidate = path.join(destDir, entry.name, "bin", JAVA_EXE);
     if (fs.existsSync(candidate)) return candidate;
   }
   return null;
@@ -220,20 +236,24 @@ async function downloadAndInstallJavaLocked(onProgress, { major = MIN_JAVA_MAJOR
 // "le premier Java du PATH".
 
 // "jdk-21.0.7.6-hotspot" -> 21, "jre-17.0.9" -> 17, "jdk1.8.0_301" -> 8,
-// "zulu17.44.53-ca-jdk17.0.8-win_x64" -> 17.
+// "zulu17.44.53-ca-jdk17.0.8-win_x64" -> 17 ; sous Linux (/usr/lib/jvm) :
+// "java-21-openjdk-amd64" -> 21, "temurin-17-jdk-amd64" -> 17.
 function javaMajorFromFolderName(name) {
   const legacy = /^(?:jdk|jre)1\.(\d+)/i.exec(name);
   if (legacy) return Number(legacy[1]);
   const modern = /(?:jdk|jre|zulu|corretto|liberica)[-_]?(\d+)/i.exec(name);
-  return modern ? Number(modern[1]) : null;
+  if (modern) return Number(modern[1]);
+  const linux = /^(?:java|temurin|openjdk)-(\d+)/i.exec(name);
+  return linux ? Number(linux[1]) : null;
 }
 
 function javaInstallRoots(major) {
+  const managed = [RUNTIME_DIR, path.join(RUNTIME_BASE, `java-${major}`)];
+  if (!IS_WINDOWS) return ["/usr/lib/jvm", "/usr/java", "/opt/java", ...managed];
   const programFiles = process.env.ProgramFiles || "C:\\Program Files";
   return [
     ...["Java", "Eclipse Adoptium", "Microsoft", "Zulu", "BellSoft", "Amazon Corretto"].map((vendor) => path.join(programFiles, vendor)),
-    RUNTIME_DIR,
-    path.join(RUNTIME_BASE, `java-${major}`),
+    ...managed,
   ];
 }
 
@@ -248,7 +268,7 @@ async function findInstalledJava(major) {
     }
     for (const entry of entries) {
       if (javaMajorFromFolderName(entry.name) !== major) continue;
-      const exe = path.join(root, entry.name, "bin", "java.exe");
+      const exe = path.join(root, entry.name, "bin", JAVA_EXE);
       if (!fs.existsSync(exe)) continue;
       const info = await detectJava(exe);
       if (info.found && info.majorVersion === major && info.is64Bit) return exe;

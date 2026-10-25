@@ -71,6 +71,9 @@ const DEFAULTS = {
   // Parametres > Divers > Discord : coupe = le launcher ne se connecte meme pas a Discord
   // (voir discordPresence.js, setEnabled).
   discordPresence: true,
+  // Parametres > Divers > Videos (16/10) : les videos des fiches serveur ne demarrent qu'au
+  // clic, meme si le proprietaire a choisi le lancement automatique (voir setupPageVideo).
+  blockVideoAutoplay: false,
 };
 
 // Bornes larges mais raisonnables — evite qu'un mauvais reglage empeche le
@@ -165,6 +168,7 @@ function saveSettings(partial) {
   }
   if (filtered.betaChannelChosen !== undefined) next.betaChannelChosen = !!filtered.betaChannelChosen;
   if (filtered.discordPresence !== undefined) next.discordPresence = !!filtered.discordPresence;
+  if (filtered.blockVideoAutoplay !== undefined) next.blockVideoAutoplay = !!filtered.blockVideoAutoplay;
 
   writeSettingsFile(next);
   return next;

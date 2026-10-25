@@ -17,15 +17,31 @@ if (missing.length > 0) {
 
 // Audit 14/10 (B8) : sans MCHUB_SITE_URL, le launcher distribue visait http://localhost:3000
 // sans prevenir. Un build publie doit viser une adresse https publique.
+// Audit 25/10 : un build publie vise EXACTEMENT le site officiel (sans www, un seul slash final
+// tolere puis retire). Toute autre adresse (faute de frappe, ancien domaine vercel.app, site de
+// test) est refusee, sauf build de test explicite avec MCHUB_ALLOW_CUSTOM_SITE=1.
+const OFFICIAL_SITE_URL = "https://omniscientlauncher.com";
+const allowCustomSite = process.env.MCHUB_ALLOW_CUSTOM_SITE === "1";
+const rawSiteUrl = String(process.env.MCHUB_SITE_URL).trim().replace(/\/$/, "");
+if (!allowCustomSite && rawSiteUrl !== OFFICIAL_SITE_URL) {
+  console.error(
+    `[generate-env] MCHUB_SITE_URL doit etre exactement ${OFFICIAL_SITE_URL} (sans www ni chemin), recu : ${process.env.MCHUB_SITE_URL}\n` +
+      "[generate-env] Pour un build de test vers une autre adresse, relance avec MCHUB_ALLOW_CUSTOM_SITE=1.",
+  );
+  process.exit(1);
+}
 let siteUrl;
 try {
-  siteUrl = new URL(process.env.MCHUB_SITE_URL);
+  siteUrl = new URL(rawSiteUrl);
 } catch {
   siteUrl = null;
 }
 if (!siteUrl || siteUrl.protocol !== "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(siteUrl.hostname)) {
-  console.error(`[generate-env] MCHUB_SITE_URL doit etre une adresse https publique (ex. https://omniscientlauncher.com), recu : ${process.env.MCHUB_SITE_URL}`);
+  console.error(`[generate-env] MCHUB_SITE_URL doit etre une adresse https publique (ex. ${OFFICIAL_SITE_URL}), recu : ${process.env.MCHUB_SITE_URL}`);
   process.exit(1);
+}
+if (allowCustomSite && siteUrl.origin !== OFFICIAL_SITE_URL) {
+  console.warn(`[generate-env] ATTENTION : build de test vers ${siteUrl.origin} (MCHUB_ALLOW_CUSTOM_SITE=1), a ne jamais publier.`);
 }
 
 const content = `// Genere automatiquement par scripts/generate-env.js juste avant chaque

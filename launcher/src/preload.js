@@ -5,11 +5,19 @@ contextBridge.exposeInMainWorld("mchub", {
   restartApp: () => ipcRenderer.invoke("app:restart"),
   // Parametres > Divers > A propos : "terms" ou "privacy" seulement (liste fixe cote main.js).
   openLegalPage: (page) => ipcRenderer.invoke("app:openLegal", page),
-  checkMaintenance: () => ipcRenderer.invoke("maintenance:check"),
+  // `opts.background` (listes, notifications, maintenance, amis) : appel de fond, mis en pause
+  // par main.js quand le site est sature (voir siteBusyUntil).
+  checkMaintenance: (opts) => ipcRenderer.invoke("maintenance:check", opts),
   verifyMaintenanceCode: (code) => ipcRenderer.invoke("maintenance:verifyCode", code),
-  listServers: () => ipcRenderer.invoke("servers:list"),
+  listServers: (opts) => ipcRenderer.invoke("servers:list", opts),
   clearServerCache: () => ipcRenderer.invoke("servers:clearCache"),
   getServer: (slug) => ipcRenderer.invoke("servers:get", slug),
+  // Fiche personnalisable (16/10) : reseaux et video, re-verifies cote main.js avant ouverture.
+  openServerPageLink: (kind, value) => ipcRenderer.invoke("servers:openPageLink", kind, value),
+  // Liens omniscient:// du site (bouton « Ouvrir dans le launcher ») : celui recu avant que la
+  // page soit prete, puis les suivants au fil de l'eau. Voir parseServerLink cote main.js.
+  takeServerLink: () => ipcRenderer.invoke("app:takeServerLink"),
+  onServerLink: (callback) => ipcRenderer.on("app:serverLink", (_event, link) => callback(link)),
   // Bouton "Installer" d'une fiche (2026-10-11) : pour savoir s'il faut encore
   // l'afficher pour CE serveur precis — voir servers:installStatus.
   getServerInstallStatus: (slug) => ipcRenderer.invoke("servers:installStatus", slug),
@@ -35,16 +43,16 @@ contextBridge.exposeInMainWorld("mchub", {
   // partir du heartbeat ci-dessous, jamais d'un ping reseau serveur (pas fiable pour ca, voir
   // le rapport).
   friends: {
-    list: () => ipcRenderer.invoke("friends:list"),
+    list: (opts) => ipcRenderer.invoke("friends:list", opts),
     add: (minecraftUsername) => ipcRenderer.invoke("friends:add", minecraftUsername),
     accept: (friendUserId) => ipcRenderer.invoke("friends:accept", friendUserId),
     remove: (friendUserId) => ipcRenderer.invoke("friends:remove", friendUserId),
   },
-  // Heartbeat de presence, greffe sur le meme cycle de 60s que silentRefreshList
-  // (REFRESH_INTERVAL_MS/scheduleRefresh en bas de renderer.js) — jamais un intervalle a part.
+  // Heartbeat de presence, toutes les 2 min (PRESENCE_HEARTBEAT_INTERVAL_MS en bas de
+  // renderer.js). Toujours un appel de fond pour main.js.
   sendPresenceHeartbeat: () => ipcRenderer.invoke("presence:heartbeat"),
   submitReport: (report) => ipcRenderer.invoke("reports:submit", report),
-  listNotifications: () => ipcRenderer.invoke("notifications:list"),
+  listNotifications: (opts) => ipcRenderer.invoke("notifications:list", opts),
   markNotificationsRead: () => ipcRenderer.invoke("notifications:markRead"),
   deleteNotification: (id) => ipcRenderer.invoke("notifications:delete", id),
   clearReadNotifications: () => ipcRenderer.invoke("notifications:clearRead"),
@@ -114,6 +122,16 @@ contextBridge.exposeInMainWorld("mchub", {
   getConnection: (force) => ipcRenderer.invoke("status:getConnection", !!force),
   onConnectionProgress: (callback) => ipcRenderer.on("status:connectionProgress", (_event, progress) => callback(progress)),
   onGameState: (callback) => ipcRenderer.on("game:state", (_event, running) => callback(running)),
+  // Menu « ⋯ » des cartes d'instance + « Arrêter le jeu » (16/10) — voir main.js.
+  getGameStatus: () => ipcRenderer.invoke("game:status"),
+  stopGame: () => ipcRenderer.invoke("game:stop"),
+  instances: {
+    openFolder: (slug) => ipcRenderer.invoke("instances:openFolder", slug),
+    readLog: (slug) => ipcRenderer.invoke("instances:readLog", slug),
+    openLogsFolder: (slug) => ipcRenderer.invoke("instances:openLogsFolder", slug),
+    filesInfo: (slug) => ipcRenderer.invoke("instances:filesInfo", slug),
+    deleteFiles: (slug, options) => ipcRenderer.invoke("instances:deleteFiles", slug, options),
+  },
   updates: {
     check: () => ipcRenderer.invoke("update:check"),
     onStatus: (callback) => {

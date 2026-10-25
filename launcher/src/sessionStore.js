@@ -10,8 +10,18 @@ const { app, safeStorage } = require("electron");
 // unique, pour permettre de basculer entre plusieurs comptes Microsoft.
 const ACCOUNTS_FILE = path.join(app.getPath("userData"), "accounts.bin");
 
+// Sous Linux sans trousseau (ni libsecret ni KWallet, ex. machine virtuelle
+// minimale), Electron "chiffre" avec une cle fixe connue de tous (backend
+// "basic_text") : autant dire en clair. On refuse alors de memoriser le compte,
+// le joueur se reconnecte a chaque demarrage. Windows : inchange.
+function encryptionAvailable() {
+  if (!safeStorage.isEncryptionAvailable()) return false;
+  if (process.platform === "linux" && safeStorage.getSelectedStorageBackend?.() === "basic_text") return false;
+  return true;
+}
+
 function loadAccounts() {
-  if (!fs.existsSync(ACCOUNTS_FILE) || !safeStorage.isEncryptionAvailable()) {
+  if (!fs.existsSync(ACCOUNTS_FILE) || !encryptionAvailable()) {
     return { accounts: [], activeId: null };
   }
   try {
@@ -33,7 +43,7 @@ function loadAccounts() {
 // fichier depuis cet etat vide, effacant definitivement les autres comptes memorises sans
 // aucune trace (voir audit 2026-10-10, §3.7).
 function saveAccounts(state) {
-  if (!safeStorage.isEncryptionAvailable()) return false;
+  if (!encryptionAvailable()) return false;
   const encrypted = safeStorage.encryptString(JSON.stringify(state));
   const tmpFile = `${ACCOUNTS_FILE}.tmp`;
   fs.writeFileSync(tmpFile, encrypted);

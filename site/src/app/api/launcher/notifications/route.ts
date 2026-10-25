@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
 import { listNotificationsForRecipient } from "@/lib/notifications";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Alimente la cloche de notifications du launcher : les alertes personnelles
 // (reponse/resolution de signalement) du joueur actuellement connecte, trouve
 // par son profil Minecraft/Xbox deja connu du launcher (meme pattern que
 // /api/launcher/servers/mine).
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -27,3 +28,5 @@ export async function GET(request: Request) {
   const notifications = await listNotificationsForRecipient(minecraftUuid);
   return NextResponse.json({ notifications });
 }
+
+export const GET = withD1Busy(handleGET);

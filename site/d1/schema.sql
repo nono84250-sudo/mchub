@@ -111,7 +111,10 @@ CREATE TABLE "server" (
   -- 'beta' (accepte aussi les versions beta du modpack, en plus des releases). Choisi dans
   -- ModpackPicker.tsx (creation/edition) ou depuis le launcher (voir
   -- /api/launcher/servers/[slug]/channel) — les deux ecrivent la meme colonne.
-  "modpackChannel"           TEXT NOT NULL DEFAULT 'release'
+  "modpackChannel"           TEXT NOT NULL DEFAULT 'release',
+  -- Fiche publique personnalisable (voir lib/serverPage.ts, migration 2026-10-16) : JSON en
+  -- choix fermes, jamais de HTML/CSS libre. NULL = fiche par defaut. Ajoutee par ALTER TABLE.
+  "pageConfig"               TEXT
 );
 CREATE INDEX "server_ownerId_idx" ON "server"("ownerId");
 
@@ -288,6 +291,9 @@ CREATE INDEX "friendship_userId2_idx" ON "friendship"("userId2");
 CREATE TABLE "userPresence" (
   "userId"     TEXT PRIMARY KEY REFERENCES "user"("id") ON DELETE CASCADE,
   "lastSeenAt" TEXT NOT NULL,
+  -- Serveur public en cours de partie (filtre « Un ami y joue », migration 2026-10-16) : NULL
+  -- hors partie ou sur un serveur prive. Montre uniquement aux amis acceptes.
+  "playingSlug" TEXT,
   "createdAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

@@ -40,11 +40,68 @@ function todayLogPath() {
 // renvoie pas), donc on coupe --xuid et, par filet de securite, tout ce qui
 // ressemble a un JWT. Coupe aussi les en-tetes Bearer par prudence.
 function redact(message) {
-  return message
+  let text = message
     .replace(/--accessToken\s+\S+/gi, "--accessToken [REDACTED]")
     .replace(/--xuid\s+\S+/gi, "--xuid [REDACTED]")
     .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[REDACTED-JWT]")
     .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]");
+  for (const { pattern, masked } of maskedAddresses.values()) text = text.replace(pattern, masked);
+  return text;
+}
+
+// Adresse (IP ou domaine) d'un serveur rejoint (audit 25/10) : le site ne la donne qu'au launcher,
+// elle ne doit pas finir en clair dans les journaux (fichiers joints au support, rapport de
+// diagnostic). Un domaine garde un debut lisible (« play.exa*** ») pour s'y retrouver ; une IP
+// est entierement masquee.
+const MASKED_IP = "[adresse masquée]";
+const maskedAddresses = new Map();
+
+function addressHost(address) {
+  const value = String(address ?? "").trim();
+  const bracketed = /^\[([^\]]+)\]/.exec(value);
+  if (bracketed) return bracketed[1];
+  // Une seule ":" = hote:port ; plusieurs = IPv6 sans crochets.
+  return (value.match(/:/g) || []).length === 1 ? value.split(":")[0] : value;
+}
+
+function maskAddress(address) {
+  const host = addressHost(address);
+  if (!host) return MASKED_IP;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":")) return MASKED_IP;
+  return `${host.slice(0, Math.min(8, Math.floor(host.length / 2)))}***`;
+}
+
+// A appeler avant de lancer le jeu vers ce serveur : toute ligne journalisee ensuite (launcher,
+// minecraft-launcher-core, sortie de Minecraft) a cette adresse masquee.
+function addSensitiveAddress(address) {
+  const host = addressHost(address);
+  if (host.length < 3 || maskedAddresses.has(host.toLowerCase())) return;
+  const escaped = host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Adresse entiere seulement : « mc.exemple.fr » ne masque pas un bout de « libs.mc.exemple.fr.cdn ».
+  const pattern = new RegExp(`(?<![\\w.-])${escaped}(?![\\w-]|\\.[\\w-])`, "gi");
+  maskedAddresses.set(host.toLowerCase(), { pattern, masked: maskAddress(host) });
+}
+
+// Fichiers du dossier logs plus vieux que 14 jours effaces au demarrage (audit 25/10) : journaux
+// du launcher et rapports de diagnostic, rien d'autre.
+const LOG_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+
+function pruneOldLogs() {
+  try {
+    const dir = logsDir();
+    const limit = Date.now() - LOG_RETENTION_MS;
+    for (const name of fs.readdirSync(dir)) {
+      if (!/^launcher-\d{4}-\d{2}-\d{2}\.log$/.test(name) && !/^rapport-diagnostic-\d+\.txt$/.test(name)) continue;
+      const file = path.join(dir, name);
+      try {
+        if (fs.statSync(file).mtimeMs < limit) fs.rmSync(file, { force: true });
+      } catch {
+        // Fichier verrouille ou deja parti : on retentera au prochain demarrage.
+      }
+    }
+  } catch {
+    // Dossier illisible : jamais bloquant pour le demarrage.
+  }
 }
 
 function setMinFileLevel(level) {
@@ -94,4 +151,4 @@ function onLog(listener) {
   return () => listeners.delete(listener);
 }
 
-module.exports = { pushLog, getAll, clear, onLog, setMinFileLevel, logsDir, todayLogPath };
+module.exports = { pushLog, getAll, clear, onLog, setMinFileLevel, logsDir, todayLogPath, maskAddress, addSensitiveAddress, pruneOldLogs };
