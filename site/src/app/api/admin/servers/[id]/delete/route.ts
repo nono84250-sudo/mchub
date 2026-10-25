@@ -9,7 +9,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/admin/serve
   if (admin instanceof NextResponse) return admin;
   const { id } = await ctx.params;
   const form = await request.formData();
-  const server = await db.orm.public.Server.select("id", "name", "bannerUrl", "iconUrl", "backgroundUrl").where({ id }).first();
+  const server = await db.orm.public.Server.select("id", "name", "bannerUrl", "iconUrl", "backgroundUrl", "pageConfig").where({ id }).first();
   if (!server) return NextResponse.json({ error: "Serveur introuvable." }, { status: 404 });
   if (String(form.get("confirm") ?? "") !== server.name) {
     return NextResponse.json({ error: "Le nom ne correspond pas : rien n'a été supprimé." }, { status: 400 });
