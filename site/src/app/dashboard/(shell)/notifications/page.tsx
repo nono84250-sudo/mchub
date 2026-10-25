@@ -3,7 +3,8 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getT } from "@/i18n/getDictionary";
 import { listNotificationsForRecipient, type NotificationType } from "@/lib/notifications";
-import { notificationTitle } from "@/lib/notificationTitles";
+import Link from "next/link";
+import { isNewsNotification, newsTitleFromMessage, notificationTitle } from "@/lib/notificationTitles";
 import { MarkNotificationsRead } from "@/components/MarkNotificationsRead";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +61,16 @@ export default async function NotificationsPage() {
                         className={n.read ? "rounded-md border border-border px-3 py-2" : "rounded-md border border-accent bg-surface px-3 py-2"}
                       >
                         <p className="text-sm font-medium text-foreground">{notificationTitle(dict, n)}</p>
-                        {n.message ? <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">{n.message}</p> : null}
+                        {isNewsNotification(n) ? (
+                          <p className="mt-0.5 text-sm text-muted">
+                            {newsTitleFromMessage(n.message)} ·{" "}
+                            <Link href="/dashboard/news" className="text-accent hover:underline">
+                              {dict.dashboard.notifNewsRead}
+                            </Link>
+                          </p>
+                        ) : n.message ? (
+                          <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">{n.message}</p>
+                        ) : null}
                         <p className="mt-1 text-xs text-muted2">
                           {new Date(n.createdAt).toLocaleString(locale, {
                             day: "numeric",

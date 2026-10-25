@@ -5,6 +5,8 @@ import type { NotificationSummary } from "@/lib/notifications";
 // Titre d'une notification, partage par la page Notifications et la bande « Pour toi » du
 // tableau de bord (memes libelles que notifItemHtml cote launcher).
 export function notificationTitle(dict: Dictionary, n: NotificationSummary): string {
+  // 25/10 : message d'article (serverName « news:<id> », voir lib/newsNotify.ts).
+  if (isNewsNotification(n)) return dict.dashboard.notifNewsTitle;
   switch (n.type) {
     case "server_frozen":
       return t(dict, "dashboard.notifServerFrozenTitle", { server: n.serverName });
@@ -32,4 +34,13 @@ export function notificationTitle(dict: Dictionary, n: NotificationSummary): str
     default:
       return t(dict, "dashboard.notifReportRepliedTitle", { server: n.serverName });
   }
+}
+
+export function isNewsNotification(n: NotificationSummary): boolean {
+  return n.serverName.startsWith("news:");
+}
+
+// « Nouvel article : Titre (à lire dans Actualités sur le site) » -> « Titre ».
+export function newsTitleFromMessage(message: string | null): string {
+  return String(message ?? "").replace(/^Nouvel article : /, "").replace(/ \(à lire dans Actualités sur le site\)$/, "");
 }

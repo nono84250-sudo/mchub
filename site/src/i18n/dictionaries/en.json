@@ -200,6 +200,8 @@
     "notifReportResolvedTitle": "Report resolved — {server}",
     "notifReportRepliedTitle": "Reply to your report — {server}",
     "notifBroadcastAnnouncementTitle": "Announcement",
+    "notifNewsTitle": "News",
+    "notifNewsRead": "Read the article",
     "notifBroadcastMaintenanceTitle": "Maintenance",
     "notifBroadcastAlertTitle": "Alert",
     "notifBroadcastPromotionTitle": "Promotion",
