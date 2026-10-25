@@ -1,5 +1,5 @@
 const crypto = require("node:crypto");
-const { BrowserWindow } = require("electron");
+const { BrowserWindow, session } = require("electron");
 
 // Connexion joueur via compte Microsoft -> Xbox Live -> Minecraft, suivant le
 // flux officiel documente par Microsoft/Mojang (OAuth2 + PKCE, sans secret
@@ -14,6 +14,8 @@ const REDIRECT_URI = "https://login.microsoftonline.com/common/oauth2/nativeclie
 const AUTHORITY = "https://login.microsoftonline.com/consumers";
 const SCOPE = "XboxLive.signin offline_access";
 const REQUEST_TIMEOUT_MS = 8000;
+// Cookies de la fenetre de connexion Microsoft (gardes sur disque entre deux connexions).
+const LOGIN_PARTITION = "persist:mchub-microsoft-account";
 
 // Sans ça, un serveur Microsoft/Xbox qui ne répond jamais bloquerait la
 // promesse indéfiniment — et comme boot() attend la restauration de session
@@ -84,7 +86,7 @@ function openLoginWindow(authUrl, expectedState) {
       title: "Connexion Microsoft",
       autoHideMenuBar: true,
       webPreferences: {
-        partition: "persist:mchub-microsoft-account",
+        partition: LOGIN_PARTITION,
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
@@ -329,4 +331,16 @@ async function refreshSession(refreshToken) {
   }
 }
 
-module.exports = { signIn, refreshSession, PendingApprovalError };
+// Deconnexion / suppression d'un compte (audit 25/10) : efface les cookies Microsoft de la
+// fenetre de connexion, pour que le compte ne reste pas ouvert sur ce PC. Ne rejette jamais :
+// la deconnexion elle-meme ne doit pas echouer pour ca. Renvoie false si l'effacement a rate.
+async function clearLoginStorage() {
+  try {
+    await session.fromPartition(LOGIN_PARTITION).clearStorageData();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { signIn, refreshSession, clearLoginStorage, PendingApprovalError };

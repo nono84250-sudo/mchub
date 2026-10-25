@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { deleteR2ImageIfOwned, deleteAllR2Images } from "@/lib/serverImages";
+import { deleteR2ImageIfOwned, deleteAllR2Images, isImageUsedByAnotherServer } from "@/lib/serverImages";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { slugify } from "@/lib/slug";
 import { generateUniqueInviteCode } from "@/lib/inviteCode";
@@ -133,6 +133,25 @@ async function getOwnedServer(serverId: string, userId: string) {
   return db.orm.public.Server.where({ id: serverId, ownerId: userId }).first();
 }
 
+// Audit 25/10 : une fiche ne peut pas reprendre la banniere, l'icone ou le fond d'une autre
+// fiche (sinon, en la retirant ensuite, elle pouvait l'effacer de R2 ; voir serverImages.ts).
+const FOREIGN_IMAGE_ERROR = "Les images (bannière, icône, fond) doivent être envoyées depuis ce formulaire.";
+async function usesForeignImage(
+  parsed: { bannerUrl: string | null; iconUrl: string | null; backgroundUrl: string | null },
+  serverId: string | null,
+  previous?: { bannerUrl: string | null; iconUrl: string | null; backgroundUrl: string | null },
+): Promise<boolean> {
+  for (const field of ["bannerUrl", "iconUrl", "backgroundUrl"] as const) {
+    const url = parsed[field];
+    if (url && url !== previous?.[field] && (await isImageUsedByAnotherServer(url, serverId))) return true;
+  }
+  return false;
+}
+
+// Audit 25/10 : changer l'adresse d'une fiche gelee permettait de liberer l'ancienne adresse,
+// puis de recreer une fiche avec elle (addressUsedByFrozenServer ne la voyait plus).
+const FROZEN_SERVER_ADDRESS_ERROR = "Cette fiche est gelée : son adresse ne peut pas changer tant que le gel n'est pas levé.";
+
 export async function createServer(_prevState: ServerActionState, formData: FormData): Promise<ServerActionState> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -140,6 +159,7 @@ export async function createServer(_prevState: ServerActionState, formData: Form
   const parsed = readForm(formData, await requestHost());
   if ("error" in parsed) return parsed;
   if (await addressUsedByFrozenServer(parsed.ip)) return { error: FROZEN_ADDRESS_ERROR };
+  if (await usesForeignImage(parsed, null)) return { error: FOREIGN_IMAGE_ERROR };
 
   const slug = await uniqueSlugFor(parsed.name);
   // Toute nouvelle fiche est privee, quoi qu'en dise le formulaire (visibilite retiree de
@@ -182,7 +202,9 @@ export async function updateServer(
 
   const parsed = readForm(formData, await requestHost(), owned);
   if ("error" in parsed) return parsed;
+  if (parsed.ip !== owned.ip && owned.frozenAt) return { error: FROZEN_SERVER_ADDRESS_ERROR };
   if (parsed.ip !== owned.ip && (await addressUsedByFrozenServer(parsed.ip, serverId))) return { error: FROZEN_ADDRESS_ERROR };
+  if (await usesForeignImage(parsed, serverId, owned)) return { error: FOREIGN_IMAGE_ERROR };
 
   // Un changement d'IP, de version declaree ou de modpack rend l'auto-test precedent caduc —
   // meme esprit que runAndStoreChecks ci-dessous pour le controle automatique du site : une

@@ -5,6 +5,7 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { SERVERS_CACHE_TAG, isProvenOwner, proofFromRequest } from "@/lib/public-servers";
 import type { ModpackChannel } from "@/lib/modpack-types";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Lecture/ecriture du canal de suivi du modpack (release/beta, voir server.modpackChannel et
 // ModpackPicker.tsx cote site) depuis la petite fenetre "Reglages" d'une instance (Mes
@@ -13,7 +14,7 @@ import type { ModpackChannel } from "@/lib/modpack-types";
 // serveur, meme preuve que /self-test (jeton Mojang ou session de lanceur, voir isProvenOwner) :
 // un joueur qui a juste rejoint ne doit pas pouvoir changer la configuration d'un serveur qui
 // n'est pas le sien.
-export async function GET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/channel">) {
+async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/channel">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -35,7 +36,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   return NextResponse.json({ modpackChannel: server.modpackChannel, type: server.type });
 }
 
-export async function PATCH(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/channel">) {
+async function handlePATCH(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]/channel">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -59,7 +60,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/launcher/s
     return NextResponse.json({ error: "Ce serveur n'a pas de modpack." }, { status: 400 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => null)) ?? {};
   const modpackChannel: ModpackChannel = body.modpackChannel === "beta" ? "beta" : "release";
   if (modpackChannel === server.modpackChannel) {
     return NextResponse.json({ ok: true, modpackChannel });
@@ -73,3 +74,6 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/launcher/s
 
   return NextResponse.json({ ok: true, modpackChannel });
 }
+
+export const GET = withD1Busy(handleGET);
+export const PATCH = withD1Busy(handlePATCH);

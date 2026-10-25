@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { adminForAction } from "@/lib/adminServers";
 import { createNotification } from "@/lib/notifications";
+import { forgetAccountAuthState } from "@/lib/launcherAuth";
 
 // Verrouille un compte joueur (boutons "Freeze account" / "Lock account" de la fiche —
 // meme mecanisme pour les deux, voir bind.ts : seuls le libelle et le motif par defaut
@@ -22,6 +23,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/admin/playe
 
   await db.orm.public.User.where({ id }).update({ lockedAt: new Date().toISOString(), lockedReason: reason, lockedBy: admin.username });
   if (player.minecraftUuid) {
+    forgetAccountAuthState(player.minecraftUuid);
     await createNotification({ recipientMinecraftUuid: player.minecraftUuid, type: "admin_error", serverName: "—", message: `Compte verrouillé : ${reason}` });
   }
   return NextResponse.redirect(new URL(`/admin/players/${id}`, request.url), 303);

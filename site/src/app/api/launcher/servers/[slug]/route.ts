@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { checkSlugVisibility, getServerWithIpBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Route reservee au launcher (jamais au site public) : c'est la SEULE
 // route qui renvoie l'IP d'un serveur. Protegee par un secret partage
@@ -11,7 +12,7 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 // (un joueur qui a deja rejoint connait ensuite l'IP).
 // Serveur prive : l'IP n'est donnee qu'avec une preuve (code d'invitation
 // du serveur rejoint, ou jeton Mojang du proprietaire), voir canSeeServer.
-export async function GET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]">) {
+async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -46,3 +47,5 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
 
   return NextResponse.json({ server });
 }
+
+export const GET = withD1Busy(handleGET);

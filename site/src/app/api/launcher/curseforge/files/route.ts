@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { CurseforgeForbiddenError, CurseforgeNotConfiguredError, getFilesInfo } from "@/lib/curseforge";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { withD1Busy } from "@/lib/d1Busy";
+import { D1BusyError } from "@/lib/db";
 
 // Nombre maximum de fichiers par appel : un gros modpack en compte quelques
 // centaines, mais ca borne aussi l'usage de cette route comme relais vers
@@ -11,7 +13,7 @@ const MAX_FILE_IDS = 500;
 
 // Liens de telechargement des mods d'un modpack (identifiants de fichiers lus
 // dans le manifeste du modpack par le launcher — voir launcher/src/modpack.js).
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -53,7 +55,12 @@ export async function POST(request: Request) {
     if (error instanceof CurseforgeForbiddenError) {
       return NextResponse.json({ error: error.message, code: "curseforge_forbidden" }, { status: 502 });
     }
-    const message = error instanceof Error ? error.message : "Erreur inconnue";
-    return NextResponse.json({ error: message, code: "curseforge_error" }, { status: 502 });
+    // Base saturee : laisse withD1Busy repondre 503. Le detail des autres erreurs (base,
+    // API externe) reste dans les journaux du site, pas dans la reponse (audit 25/10).
+    if (error instanceof D1BusyError) throw error;
+    console.error("[launcher/curseforge/files]", error);
+    return NextResponse.json({ error: "La source du modpack n'a pas répondu correctement. Réessaie dans un instant.", code: "curseforge_error" }, { status: 502 });
   }
 }
+
+export const POST = withD1Busy(handlePOST);

@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
 import { listServersOwnedByMinecraftUuid } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Alimente la vue "Mes instances" du launcher : tous les serveurs du joueur
 // actuellement connecte (publies ou en pause), retrouves via son UUID Minecraft
 // (le compte site est cree par la connexion Microsoft). Le launcher passe son
 // propre profil Minecraft/Xbox deja connu — cette route ne fait que le mapper
 // au compte site correspondant.
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -26,3 +27,5 @@ export async function GET(request: Request) {
   const servers = await listServersOwnedByMinecraftUuid(minecraftUuid);
   return NextResponse.json({ servers });
 }
+
+export const GET = withD1Busy(handleGET);

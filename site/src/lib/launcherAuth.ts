@@ -64,8 +64,40 @@ export type IdentityCheck = "verified" | "refused" | "unavailable";
 // dans le launcher du tout. Interroge a chaque fois (comme sessionsValidAfter
 // plus bas) pour qu'un verrou pose par un admin coupe l'acces immediatement,
 // pas seulement a la prochaine expiration de cache/session.
+//
+// Charge (audit 25/10) : cette lecture avait lieu a CHAQUE appel du launcher (presence, amis,
+// notifications...), soit 1 appel D1 de plus sur presque toutes les routes. Elle est gardee
+// AUTH_ROW_TTL_MS en memoire, par instance : un verrou ou une deconnexion pose par un admin
+// coupe l'acces en 30 s au plus (tout de suite sur l'instance qui l'a pose, voir
+// forgetAccountAuthState), au lieu d'immediatement.
+type AccountAuthState = { lockedAt: string | null; lockedReason: string | null; sessionsValidAfter: string | null };
+const AUTH_ROW_TTL_MS = 30_000;
+const authRowCache = new Map<string, { state: AccountAuthState | null; expiresAt: number }>();
+
+async function getAccountAuthState(uuid: string): Promise<AccountAuthState | null> {
+  const key = normalizeMinecraftUuid(uuid);
+  const cached = authRowCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.state;
+  const user = await db.orm.public.User.select("lockedAt", "lockedReason", "sessionsValidAfter").where({ minecraftUuid: key }).first();
+  const state: AccountAuthState | null = user
+    ? { lockedAt: user.lockedAt ?? null, lockedReason: user.lockedReason ?? null, sessionsValidAfter: user.sessionsValidAfter ?? null }
+    : null;
+  if (authRowCache.size > MAX_IDENTITY_CACHE_ENTRIES) {
+    const now = Date.now();
+    for (const [k, entry] of authRowCache) if (entry.expiresAt <= now) authRowCache.delete(k);
+  }
+  authRowCache.set(key, { state, expiresAt: Date.now() + AUTH_ROW_TTL_MS });
+  return state;
+}
+
+// A appeler apres un changement de verrou, de deconnexion ou de compte (suppression) pour
+// que cette instance ne serve plus l'ancien etat.
+export function forgetAccountAuthState(uuid: string): void {
+  authRowCache.delete(normalizeMinecraftUuid(uuid));
+}
+
 export async function getAccountLock(uuid: string): Promise<{ lockedReason: string | null } | null> {
-  const user = await db.orm.public.User.select("lockedAt", "lockedReason").where({ minecraftUuid: normalizeMinecraftUuid(uuid) }).first();
+  const user = await getAccountAuthState(uuid);
   return user?.lockedAt ? { lockedReason: user.lockedReason ?? null } : null;
 }
 
@@ -158,7 +190,7 @@ export async function sessionIdentity(token: string): Promise<string | null> {
 async function sessionProfile(token: string): Promise<{ uuid: string; name: string | null } | null> {
   const claims = readLauncherSession(token);
   if (!claims) return null;
-  const user = await db.orm.public.User.select("sessionsValidAfter", "lockedAt").where({ minecraftUuid: claims.uuid }).first();
+  const user = await getAccountAuthState(claims.uuid);
   if (isSessionRevoked(claims.issuedAt, user?.sessionsValidAfter)) return null;
   if (user?.lockedAt) return null;
   return { uuid: claims.uuid, name: claims.name };
@@ -169,6 +201,7 @@ async function sessionProfile(token: string): Promise<{ uuid: string; name: stri
 // n'en cree pas : voir le rapport, les jetons de ces joueurs expirent seuls en 15 min).
 export async function revokeLauncherSessions(uuid: string): Promise<boolean> {
   const updated = await db.orm.public.User.where({ minecraftUuid: normalizeMinecraftUuid(uuid) }).update({ sessionsValidAfter: new Date().toISOString() });
+  forgetAccountAuthState(uuid);
   return !!updated;
 }
 

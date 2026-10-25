@@ -18,6 +18,8 @@ export type MinecraftServerStatus = {
 };
 
 const PING_TIMEOUT_MS = 3000;
+// Taille maximale d'une reponse de statut acceptee (icone du serveur en base64 comprise).
+const MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
 const DEFAULT_PORT = 25565;
 // Numéro de version protocole envoyé dans le handshake : n'a pas besoin
 // de correspondre exactement à la version du serveur pour une requête de
@@ -180,6 +182,12 @@ export async function pingMinecraftServer(address: string): Promise<MinecraftSer
 
     socket.on("data", (chunk) => {
       received = Buffer.concat([received, chunk]);
+      // Une vraie reponse de statut fait quelques Ko (icone comprise) : au-dela, on coupe pour
+      // qu'un faux serveur ne puisse pas charger la memoire du site (audit 25/10).
+      if (received.length > MAX_STATUS_RESPONSE_BYTES) {
+        finish(null);
+        return;
+      }
       try {
         const status = tryParseStatusResponse(received);
         if (status) finish(status);
