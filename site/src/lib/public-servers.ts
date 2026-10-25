@@ -705,6 +705,9 @@ export type OwnedServerSummary = {
   selfTestPassedAt: string | null;
   // 19/10 : contacte au moins une fois (sans reponse = « Hors ligne », sinon « Inconnu »).
   pinged: boolean;
+  // 25/10 : sert seulement a programmer la re-mesure (route /api/launcher/servers/mine), retire
+  // de la reponse envoyee au launcher.
+  lastPingedAt: string | null;
 };
 
 // Sert la vue "Mes instances" du launcher (route /api/launcher/servers/mine,
@@ -742,7 +745,7 @@ async function loadOwnedServersByMinecraftUuid(minecraftUuid: string): Promise<O
     .orderBy((s) => s.createdAt.desc())
     .all();
 
-  return rows.map(({ lastPingedAt, ...row }) => ({ ...row, pinged: lastPingedAt != null }));
+  return rows.map((row) => ({ ...row, pinged: row.lastPingedAt != null }));
 }
 
 // « Mes instances » : résultat gardé 60 secondes par compte (vidé aussi par les actions admin).

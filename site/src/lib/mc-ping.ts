@@ -18,6 +18,17 @@ export type MinecraftServerStatus = {
 };
 
 const PING_TIMEOUT_MS = 3000;
+// 25/10 : les resolutions DNS (SRV puis adresse) n'avaient aucune limite de temps : un DNS lent
+// pouvait bloquer une mesure bien plus longtemps que PING_TIMEOUT_MS (meme garde que le launcher).
+const DNS_TIMEOUT_MS = 2000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Résolution DNS trop longue")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 // Taille maximale d'une reponse de statut acceptee (icone du serveur en base64 comprise).
 const MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
 const DEFAULT_PORT = 25565;
@@ -47,7 +58,7 @@ function parseServerAddress(address: string): { host: string; port: number } {
 // Le hote redirige repasse par la meme verification d'adresse que les autres.
 async function resolveSrvTarget(host: string): Promise<{ host: string; port: number } | null> {
   try {
-    const [best] = (await resolveSrv(`_minecraft._tcp.${host}`)).sort((a, b) => a.priority - b.priority || b.weight - a.weight);
+    const [best] = (await withTimeout(resolveSrv(`_minecraft._tcp.${host}`), DNS_TIMEOUT_MS)).sort((a, b) => a.priority - b.priority || b.weight - a.weight);
     return best ? { host: best.name.replace(/\.$/, ""), port: best.port } : null;
   } catch {
     return null;
@@ -152,7 +163,7 @@ export async function pingMinecraftServer(address: string): Promise<MinecraftSer
   // l'enregistrement du serveur, pour resister au DNS rebinding.
   let resolvedAddress: string;
   try {
-    resolvedAddress = (await lookup(host)).address;
+    resolvedAddress = (await withTimeout(lookup(host), DNS_TIMEOUT_MS)).address;
   } catch {
     return null;
   }
