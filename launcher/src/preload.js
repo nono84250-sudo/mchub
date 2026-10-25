@@ -2,6 +2,13 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("mchub", {
   getSiteUrl: () => ipcRenderer.invoke("app:getSiteUrl"),
+  // Laboratoire (25/10) : { <id>: { visible, beta } } d'après le site, voir features.js.
+  getFeatures: () => ipcRenderer.invoke("features:get"),
+  onFeaturesChanged: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("features:changed", listener);
+    return () => ipcRenderer.removeListener("features:changed", listener);
+  },
   // Idee 3 du lancement (19/10) : erreur de l'interface vers Sentry (voir errorReports.js).
   reportError: (info) => ipcRenderer.invoke("app:reportError", info).catch(() => {}),
   restartApp: () => ipcRenderer.invoke("app:restart"),

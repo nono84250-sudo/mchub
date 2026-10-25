@@ -396,7 +396,29 @@
   nav.type = "button";
   nav.className = "sidebar-btn";
   navServers.after(nav);
-  let betaBadge = true; // réglage central du site (/api/public/play/packs → beta)
+  // Laboratoire (25/10) : l'onglet n'existe que si le site dit « visible » pour ce joueur ;
+  // le badge « Bêta » suit l'état du mode Jouer (tout sauf « Pour tous »). Voir features.js.
+  let playVisible = false;
+  let betaBadge = true;
+  nav.hidden = true;
+  function applyFeatures(state) {
+    const f = state?.play || {};
+    const wasVisible = playVisible;
+    playVisible = f.visible === true;
+    betaBadge = f.beta !== false;
+    nav.hidden = !playVisible;
+    drawNav();
+    if (!playVisible) {
+      if (!panel.hidden) {
+        panel.hidden = true;
+        nav.classList.remove("active");
+        document.getElementById("nav-home")?.click();
+      }
+      homePanel?.querySelector(".play-home-section")?.remove();
+    } else if (!wasVisible) {
+      refresh().catch(() => {});
+    }
+  }
   function drawNav() {
     nav.title = betaBadge ? `${T("nav")} (${T("beta")})` : T("nav");
     nav.innerHTML = `${CUBE}<span class="sidebar-label">${esc(T("nav"))}</span>${betaBadge ? `<span class="sidebar-beta">${esc(T("beta"))}</span>` : ""}`;
@@ -478,14 +500,10 @@
     const r = await api.packs({ force }).catch(() => null);
     if (r) {
       data.packs = Array.isArray(r.packs) ? r.packs : [];
-      const beta = r.beta !== false;
-      if (beta !== betaBadge) {
-        betaBadge = beta;
-        drawNav();
-      }
     }
   }
   async function refresh() {
+    if (!playVisible) return;
     const [v, w] = await Promise.all([api.listVersions(), api.listWorlds()]);
     data.versions = v?.versions || [];
     data.worlds = w?.worlds || [];
@@ -1829,6 +1847,7 @@
   function injectHome() {
     if (!homePanel) return;
     homePanel.querySelector(".play-home-section")?.remove();
+    if (!playVisible) return;
     const w = data.worlds[0];
     if (!w) return;
     const halves = homePanel.querySelector("#home-halves");
@@ -2308,6 +2327,12 @@
     renderActivity();
   }, true);
 
-  // Premier chargement (tuile d'accueil, badge bêta, reprise d'un envoi interrompu).
-  setTimeout(() => refresh().catch(() => {}), 1500);
+  // Premier chargement : le Laboratoire décide si l'onglet existe, puis tuile d'accueil et
+  // reprise d'un envoi interrompu.
+  window.mchub.onFeaturesChanged?.((state) => applyFeatures(state));
+  setTimeout(() => {
+    Promise.resolve(window.mchub.getFeatures?.())
+      .then((state) => applyFeatures(state || {}))
+      .catch(() => {});
+  }, 1500);
 })();

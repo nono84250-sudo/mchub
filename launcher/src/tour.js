@@ -207,6 +207,7 @@
 
   // --- Rejouer : ligne dans Paramètres > Divers, carte en haut de l'Aide si elle existe --------
   function addReplay() {
+    if (!tourOn) return;
     const T = L();
     const content = $("settings-content");
     const misc = document.querySelector('#settings-panel .settings-nav-btn.active[data-tab="misc"]');
@@ -248,7 +249,12 @@
 
   // --- Premier lancement : on attend que l'appli soit prête et qu'aucune fenêtre ne soit ouverte
   // (connexion, assistant du premier lancement, choix de la mémoire…), jamais pendant le démarrage.
+  // Laboratoire (25/10) : la visite ne se propose que si l'interrupteur « tour » du site la montre.
+  let tourOn = false;
+  window.mchub?.getFeatures?.().then((state) => { tourOn = state?.tour?.visible === true; }).catch(() => {});
+  window.mchub?.onFeaturesChanged?.((state) => { tourOn = state?.tour?.visible === true; });
   function readyForTour() {
+    if (!tourOn) return false;
     if (!shown($("app")) || document.body.classList.contains("bootstrapping") || document.body.classList.contains("boot-preview")) return false;
     if ([...document.querySelectorAll(".modal-overlay")].some((o) => !o.hidden)) return false;
     return shown($("nav-home"));

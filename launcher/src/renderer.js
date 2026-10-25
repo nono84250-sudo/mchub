@@ -44,6 +44,17 @@ const navMyInstancesBtn = document.getElementById("nav-my-instances");
 // plus bas), et renderAccountHeader()/renderGuestHeader() pour sa visibilite (compte Microsoft
 // requis, comme nav-settings).
 const navFriendsBtn = document.getElementById("nav-friends");
+// Laboratoire (25/10) : l'onglet Amis suit l'interrupteur « friends » du site (voir features.js).
+let friendsFeatureOn = true;
+function applyLabFeatures(state) {
+  friendsFeatureOn = state?.friends?.visible === true;
+  if (!friendsFeatureOn) {
+    navFriendsBtn.hidden = true;
+    if (!document.getElementById("friends-panel")?.hidden) navHomeBtn?.click();
+  } else if (currentProfile) navFriendsBtn.hidden = false;
+}
+window.mchub.getFeatures?.().then(applyLabFeatures).catch(() => {});
+window.mchub.onFeaturesChanged?.(applyLabFeatures);
 const navSettingsBtn = document.getElementById("nav-settings");
 // D'ou vient la fiche detail actuellement affichee (liste "Serveurs" ou
 // page "Favoris") — pour que le bouton "Retour" ramene au bon endroit.
@@ -3237,7 +3248,7 @@ function renderAccountHeader(profile, { rememberFailed } = {}) {
   // en mode visiteur, renderGuestHeader() l'avait deplace tout en bas, a la
   // place de l'avatar absent — voir ce commentaire la-bas.
   navSettingsBtn.hidden = false;
-  navFriendsBtn.hidden = false;
+  navFriendsBtn.hidden = !friendsFeatureOn;
   if (currentProfile && currentProfile.id !== profile.id) {
     myInstancesServers = [];
     myJoinedServers = [];

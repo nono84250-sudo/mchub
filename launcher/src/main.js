@@ -43,10 +43,18 @@ function isLocalSender(event) {
   }
 }
 
+// Laboratoire (25/10) : chaque canal d'une fonctionnalité cachée répond « feature_off » sans
+// rien lancer (cloud:* = mondes en ligne, play:* = mode Jouer). Voir features.js.
+const FEATURE_IPC = [
+  ["cloud:", "worlds"],
+  ["play:", "play"],
+];
 const registerIpcHandler = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, listener) =>
   registerIpcHandler(channel, (event, ...args) => {
     if (!isLocalSender(event)) throw new Error("Appel refusé : origine non autorisée");
+    const gate = FEATURE_IPC.find(([prefix]) => channel.startsWith(prefix));
+    if (gate && !features.visible(gate[1])) return { ok: false, code: "feature_off" };
     return listener(event, ...args);
   });
 
@@ -202,6 +210,7 @@ const { createPlayMode, supportsQuickPlay } = require("./playMode");
 const { createWorldCloud } = require("./worldCloud");
 const { createSaveOverlay } = require("./saveOverlay");
 const { createLiveSave } = require("./liveSave");
+const { createFeatures } = require("./features");
 const { trackGameWindow } = require("./gameWindow");
 const { pingMinecraftServer } = require("./mcPing");
 const sessionStore = require("./sessionStore");
@@ -344,6 +353,8 @@ function requestLauncherSession() {
       // Joueur deconnecte pendant l'echange : on ne garde pas sa session.
       if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
+      // Laboratoire : ce joueur est peut-être testeur, on relit ses fonctionnalités.
+      features.refresh();
       logStore.pushLog({ level: "debug", source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
     } catch (error) {
       // Sans importance : les requetes continuent avec le jeton Mojang.
@@ -377,7 +388,7 @@ async function revokeLauncherSession() {
 function launcherAuthHeaders() {
   const sessionToken = usableLauncherSessionToken();
   if (sessionToken) {
-    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": sessionToken };
+    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": sessionToken, "X-Launcher-Version": app.getVersion() };
   }
   // Pas encore connecte (2026-10-11 : "Installer" peut maintenant s'utiliser
   // sans compte, voir server:install) — la cle du launcher seule suffit pour
@@ -387,10 +398,10 @@ function launcherAuthHeaders() {
   // etait lu sans garde, "Cannot read properties of null" des le premier
   // appel sans session (trouve en testant le bouton "Installer").
   if (!currentSession) {
-    return { Authorization: `Bearer ${LAUNCHER_API_KEY}` };
+    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Version": app.getVersion() };
   }
   requestLauncherSession();
-  return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Minecraft-Token": currentSession.authorization.access_token };
+  return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Minecraft-Token": currentSession.authorization.access_token, "X-Launcher-Version": app.getVersion() };
 }
 
 // Session du joueur connecté (compte Microsoft/Minecraft), en mémoire.
@@ -408,8 +419,9 @@ function setSession(profile, authorization, { freshLogin = false } = {}) {
   requestLauncherSession();
   // Mode Jouer : reprend un envoi de mondes laissé en cours (worldCloud, défini plus bas).
   setTimeout(() => {
+    features.refresh();
     try {
-      worldCloud.start();
+      if (features.visible("worlds")) worldCloud.start();
     } catch {
       /* pas encore prêt au tout premier démarrage */
     }
@@ -512,6 +524,25 @@ function markSiteBusy(res) {
 }
 
 // `options.background` : appel de fond periodique, saute tant que le site est sature.
+// Laboratoire (25/10) : fonctionnalités visibles pour ce launcher, voir features.js.
+const features = createFeatures({
+  cacheDir: app.getPath("userData"),
+  siteUrl: SITE_URL,
+  authHeaders: () => launcherAuthHeaders(),
+  fetchJson: (url, options) => fetchJson(url, options),
+  log: (message, level = "info") => logStore.pushLog({ level, source: "launcher", message }),
+  onChange: (state) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("features:changed", state);
+    try {
+      if (state.worlds?.visible && currentSession) worldCloud.start();
+    } catch {
+      /* worldCloud pas encore prêt : setSession s'en charge */
+    }
+  },
+});
+ipcMain.handle("features:get", () => features.all());
+app.whenReady().then(() => features.start());
+
 async function fetchJson(url, { background = false, ...options } = {}, { withEtag = false } = {}) {
   // Jamais affiche au joueur : les appels de fond echouent en silence (voir renderer.js).
   if (background && Date.now() < siteBusyUntil) throw siteBusyError("Site Omniscient saturé : appel de fond reporté.");
@@ -2266,6 +2297,7 @@ ipcMain.handle("auth:signOut", async () => {
   }
   await revokeLauncherSession();
   currentSession = null;
+  features.refresh();
   await clearMicrosoftLoginStorage();
   return { ok: true };
 });
@@ -3256,7 +3288,7 @@ let playPacksCache = null;
 async function fetchPlayPacks({ force = false } = {}) {
   if (!force && playPacksCache && Date.now() - playPacksCache.at < 10 * 60_000) return playPacksCache.data;
   try {
-    const data = await fetchJson(`${SITE_URL}/api/public/play/packs`, { headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` } });
+    const data = await fetchJson(`${SITE_URL}/api/public/play/packs`, { headers: launcherAuthHeaders() });
     playPacksCache = { at: Date.now(), data };
     fsp.mkdir(playMode.PLAY_ROOT, { recursive: true }).then(() => fsp.writeFile(PLAY_PACKS_CACHE, JSON.stringify(data))).catch(() => {});
     return data;
@@ -3680,7 +3712,7 @@ ipcMain.handle("play:launch", async (event, { versionId, worldKey = null } = {})
         if (running) {
           playRunning = { versionId, startedAt };
           worldCloud.setGameRunning(true);
-          liveSave.start({ startedAt, pid: getRunningGame()?.pid, worldKey });
+          if (features.visible("liveSave")) liveSave.start({ startedAt, pid: getRunningGame()?.pid, worldKey });
           return;
         }
         // Avant de réafficher les fenêtres : ferme le petit menu en jeu et libère F6.
