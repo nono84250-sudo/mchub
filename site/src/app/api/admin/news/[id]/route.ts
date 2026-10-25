@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { adminForAction } from "@/lib/adminServers";
-import { notifyNewsPublished } from "@/lib/newsNotify";
+import { notifyNewsPublished, removeNewsNotifications } from "@/lib/newsNotify";
 
 // Mise a jour (titre/texte/publie) depuis l'editeur (panel admin /admin/news/[id]).
 export async function POST(request: Request, ctx: RouteContext<"/api/admin/news/[id]">) {
@@ -25,5 +25,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/admin/news/
     publishedAt: published ? (existing.publishedAt ?? new Date().toISOString()) : null,
   });
   if (published && !existing.published && form.get("notify") === "on") await notifyNewsPublished(id, title);
+  if (!published && existing.published) await removeNewsNotifications(id);
   return NextResponse.redirect(new URL("/admin/notifications?tab=news&saved=1", request.url), 303);
 }

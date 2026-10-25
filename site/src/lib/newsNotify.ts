@@ -1,3 +1,4 @@
+import { execSql } from "@/lib/db";
 import { broadcastNotification, resolveAudienceRecipients } from "@/lib/notifications";
 
 // 25/10 : case « Prévenir les joueurs dans le launcher à la publication » de l'editeur d'articles
@@ -7,6 +8,8 @@ import { broadcastNotification, resolveAudienceRecipients } from "@/lib/notifica
 // l'onglet Actualités et ouvre l'article en entier (voir /api/launcher/news/[id]). Pas de
 // nouveau type de notification, donc pas de migration.
 export async function notifyNewsPublished(id: string, title: string): Promise<void> {
+  // Republier (Dépublier puis Publier) ne doit pas laisser deux messages pour le meme article.
+  await removeNewsNotifications(id);
   const recipients = await resolveAudienceRecipients("everyone");
   if (recipients.length === 0) return;
   await broadcastNotification({
@@ -15,4 +18,9 @@ export async function notifyNewsPublished(id: string, title: string): Promise<vo
     serverName: `news:${id}`,
     message: `Nouvel article : ${title} (à lire dans Actualités sur le site)`,
   });
+}
+
+// Article depublie ou supprime : son message disparait des cloches (il ne s'ouvrirait plus).
+export async function removeNewsNotifications(id: string): Promise<void> {
+  await execSql('DELETE FROM "notification" WHERE "serverName" = ?', [`news:${id}`]);
 }
