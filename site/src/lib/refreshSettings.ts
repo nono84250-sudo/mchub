@@ -27,3 +27,13 @@ export const PUBLIC_LIST_CDN_STALE_SECONDS = 30;
 // laissent la marge d'un envoi en retard. Consequence acceptee par Rushi : apres la fermeture du
 // launcher, un ami peut encore le voir « en ligne » jusqu'a 7 min.
 export const ONLINE_WINDOW_SECONDS = 7 * 60;
+
+// Panel Analytique (31/10) : un onglet visible du site envoie un signal par minute ; un visiteur est
+// « en ligne » 2 min après son dernier signal, puis sa ligne est effacée.
+export const ANALYTICS_PING_SECONDS = 60;
+export const ANALYTICS_SITE_WINDOW_SECONDS = 120;
+// Le site n'écrit les signaux reçus dans la base qu'une fois toutes les 15 s au plus (par instance) :
+// voir lib/analytics.ts, le quota Cloudflare est partagé avec tout le reste.
+export const ANALYTICS_FLUSH_SECONDS = 15;
+// Page /admin/analytique ouverte et visible : une requête groupée toutes les 30 s.
+export const ANALYTICS_ADMIN_REFRESH_SECONDS = 30;

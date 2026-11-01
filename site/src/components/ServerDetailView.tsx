@@ -153,7 +153,7 @@ export async function ServerDetailView({ slug, server: raw, inviteCode }: { slug
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span
-                className="inline-flex items-center whitespace-nowrap rounded-lg px-2.5 py-1 text-[12.5px] font-semibold"
+                className="inline-flex items-center rounded-lg px-2.5 py-1 text-[12.5px] font-semibold sm:whitespace-nowrap"
                 style={
                   tested
                     ? { color: "var(--success)", background: "color-mix(in srgb, var(--success) 16%, transparent)" }

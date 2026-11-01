@@ -1,4 +1,3 @@
-import Script from "next/script";
 import { SCREENS } from "@/app/admin/design/screens";
 import { markAllSections, balancedEnd, markNavBadges, escapeHtml } from "@/app/admin/design/bind";
 import { countOpenBehaviorReports } from "@/lib/reports";
@@ -11,6 +10,7 @@ import { getStaffRoleLabels } from "@/lib/platformSettings";
 import { countPendingTagGroups } from "@/lib/tagRequests";
 import { countPendingTeamRequests } from "@/lib/teams";
 import { getPlayBeta } from "@/lib/playWorlds";
+import { featureState } from "@/lib/features";
 
 // Affiche un écran de la maquette "Omniscient Admin Dashboard" : même markup, même
 // style (feuille Nocturne), mêmes icônes (Phosphor). `html` remplace le modèle
@@ -27,6 +27,7 @@ export const WRAPPER_VARS = {
 } as React.CSSProperties;
 
 const NAV_LINKS: Record<string, string> = {
+  Analytique: "/admin/analytique",
   Overview: "/admin/overview",
   Notifications: "/admin/notifications",
   News: "/admin/news",
@@ -34,7 +35,7 @@ const NAV_LINKS: Record<string, string> = {
   "Vérification": "/admin/verification",
   Players: "/admin/players",
   Reports: "/admin/reports",
-  "Packs curés": "/admin/packs",
+  Bugs: "/admin/bugs",
   Administration: "/admin/administration",
   "Paramètres": "/admin/parametres",
   Contact: "/admin/contact",
@@ -119,6 +120,32 @@ function addLabNavItem(html: string): string {
   return html.split(marker).join(item + marker);
 }
 
+// 2026-10-31 : /admin/bugs (catalogue de bugs, voir lib/bugCatalog.ts), juste sous "Reports". Même
+// habillage que les autres entrées ; à passer avant linkNav, comme les autres.
+function addBugsNavItem(html: string): string {
+  const at = html.indexOf(">Reports<");
+  if (at < 0) return html;
+  const end = balancedEnd(html, html.lastIndexOf("<div", at), "div");
+  if (end < 0) return html;
+  const item =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-bug" style="font-size:17px;"></i><span style="flex:1">Bugs</span></div>';
+  return html.slice(0, end) + item + html.slice(end);
+}
+
+// 2026-10-31 : /admin/analytique (voir lib/analytics.ts) — même méthode, mais tout en HAUT du menu,
+// donc insérée juste avant "Overview" (première ligne de la maquette, cachée par hideNavItems).
+// Absente quand l'interrupteur du Laboratoire est sur « Cachée ».
+function addAnalyticsNavItem(html: string, show: boolean): string {
+  if (!show) return html;
+  const at = html.indexOf(">Overview<");
+  const start = at < 0 ? -1 : html.lastIndexOf("<div", at);
+  if (start < 0) return html;
+  const badge =
+    '<span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:1px 7px;border-radius:999px;background:var(--color-accent);color:#fff;">NOUVEAU</span>';
+  const item = `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-chart-line-up" style="font-size:17px;"></i><span style="flex:1">Analytique</span>${badge}</div>`;
+  return html.slice(0, start) + item + html.slice(start);
+}
+
 // Rend le menu cliquable (même style, même libellés). "Amis" (maquette, sans page admin) reste
 // un simple libellé, de toute façon masqué par hideNavItems.
 function linkNav(html: string): string {
@@ -138,7 +165,11 @@ function linkNav(html: string): string {
 // sans que ce soit volontaire.
 // 2026-10-14 : "Players" retiree aussi (remise dans le menu, demande de Rushi) — la liste des
 // joueurs mene a la fiche joueur, qui porte le bouton « Récupérer les données du joueur ».
-const HIDDEN_NAV_LABELS = ["Overview", "Notifications", "News", "Packs curés", "Administration", "Amis"];
+// 2026-10-25 : "Notifications" retiree aussi (remise dans le menu, demande de Rushi) pour
+// pouvoir activer le mode maintenance du launcher. "News" reste cachee : c'est maintenant
+// l'onglet « Actualités » de Notifications. 25/10 : « Packs curés » supprimee (pages et
+// ecrans retires, choix de Rushi) ; le libelle reste dans le menu de la maquette, donc cache ici.
+const HIDDEN_NAV_LABELS = ["Overview", "News", "Packs curés", "Administration", "Amis"];
 
 function hideNavItems(html: string): string {
   let result = html;
@@ -215,7 +246,7 @@ function markUserCard(html: string, admin: Awaited<ReturnType<typeof getCurrentA
 // composants client interactifs, injectes via un portail React plutot que du HTML statique —
 // voir le commentaire la-bas) sans dupliquer tout ce pipeline de transformation.
 export async function buildScreenContent({ name, html, markAll }: { name: keyof typeof SCREENS; html?: string; markAll?: boolean | "proposal" }): Promise<string> {
-  const [verificationPending, reportsOpen, admin, roleLabels, tagRequestsPending, teamRequestsPending, playBeta] = await Promise.all([
+  const [verificationPending, reportsOpen, admin, roleLabels, tagRequestsPending, teamRequestsPending, playBeta, analyticsState] = await Promise.all([
     countPendingVerification(),
     countOpenBehaviorReports(),
     getCurrentAdmin(),
@@ -223,6 +254,7 @@ export async function buildScreenContent({ name, html, markAll }: { name: keyof 
     countPendingTagGroups(),
     countPendingTeamRequests(),
     getPlayBeta().catch(() => true),
+    featureState("analytics"),
   ]);
   // markNavBadges, addSettingsNavItem et addContactNavItem doivent tourner avant linkNav :
   // celui-ci transforme le <span style="flex:1"> du libelle en <a>, ce qui change sa balise
@@ -230,7 +262,7 @@ export async function buildScreenContent({ name, html, markAll }: { name: keyof 
   let content = markUserCard(
     markTopbarBell(
       removeTopbarSearch(
-        hideNavItems(reorderNav(linkNav(addPlayPacksNavItem(addTeamRequestsNavItem(addTagRequestsNavItem(addLabNavItem(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))), tagRequestsPending), teamRequestsPending), playBeta)))),
+        hideNavItems(reorderNav(linkNav(addAnalyticsNavItem(addBugsNavItem(addPlayPacksNavItem(addTeamRequestsNavItem(addTagRequestsNavItem(addLabNavItem(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))), tagRequestsPending), teamRequestsPending), playBeta)), analyticsState !== "hidden")))),
       ),
     ),
     admin,
@@ -246,7 +278,8 @@ export async function DesignScreen({ name, html, markAll }: { name: keyof typeof
     <>
       <link rel="stylesheet" href="/admin/nocturne.css" />
       <link rel="stylesheet" href="/admin/nb.css" />
-      <Script src="https://unpkg.com/@phosphor-icons/web@2.1.1" strategy="afterInteractive" />
+      {/* 25/10 : feuille de style des icones au lieu du script (le script faisait echouer l'hydratation en dev). */}
+      <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
       <div style={WRAPPER_VARS} dangerouslySetInnerHTML={{ __html: content }} />
     </>
   );

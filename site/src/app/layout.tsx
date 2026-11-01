@@ -3,6 +3,8 @@ import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { SiteChrome } from "@/components/SiteChrome";
 import { SiteBanner } from "@/components/SiteBanner";
+import { SiteAnalyticsPing } from "@/components/SiteAnalyticsPing";
+import { featureVisibleOnSite } from "@/lib/features";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { getT } from "@/i18n/getDictionary";
 import "./globals.css";
@@ -37,6 +39,9 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const { locale, dict } = await getT();
+  // Panel Analytique (31/10) : interrupteur du Laboratoire coupé = le composant n'arrive même pas
+  // dans le navigateur, donc aucun signal. Même lecture en cache que la Nav juste en dessous.
+  const analyticsOn = await featureVisibleOnSite("analytics").catch(() => false);
 
   return (
     <html lang={locale} className="h-full antialiased" suppressHydrationWarning>
@@ -68,6 +73,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           <SiteChrome>
             <Footer />
           </SiteChrome>
+          {analyticsOn ? <SiteAnalyticsPing /> : null}
         </I18nProvider>
       </body>
     </html>

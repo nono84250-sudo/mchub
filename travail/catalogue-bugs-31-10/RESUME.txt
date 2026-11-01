@@ -1,0 +1,56 @@
+CATALOGUE DE BUGS : CE QUI EST FAIT (1er novembre, en local, rien de poussé)
+Preview validée : https://claude.ai/artifact/HKTTdfqkEgLpMGwwB89eYm
+Tout est derrière l'interrupteur « Catalogue de bugs » du Laboratoire (Confort et aide, défaut Test).
+
+SITE
+- Page admin « Bugs » sous Reports : liste, filtres, recherche, fiche complète FR/EN, test de la phrase repère,
+  publier/brouillon, supprimer, compteurs sur 7 jours.
+- Pages publiques /aide/bugs et /aide/bugs/<fiche> (404 tant que l'interrupteur la cache ; visibles par un admin).
+  Liens de /aide et du menu d'aide cachés dans ce cas. Sitemap seulement en Bêta publique ou Pour tous.
+- API : /api/launcher/bugs (ETag), /api/launcher/bugs/stat, /api/admin/bugs, /api/admin/bugs/<id>.
+- Base DEV : migration passée (2 tables, 12 fiches). Base PROD : pas touchée.
+  À passer sur PROD avant toute mise en ligne : site/d1/migrations/2026-10-31-catalogue-bugs.sql
+
+LAUNCHER
+- bugCatalog.js (fiches gardées dans bug-catalog.json, relues toutes les 10 min, reconnaissance, réparation).
+- bugCatalogUi.js (fenêtres : Corriger, marche à suivre, petit message). Textes dans i18n.js.
+- À la fermeture du jeu : si l'aide au crash trouve un problème ET qu'une fiche correspond, la fiche remplace la fenêtre générale.
+- Fiche 4 : deux variantes de repère. Fiche 5 : le rapport n'est lu que jusqu'à la pile d'appels (liste des mods exclue).
+- Signaux ajoutés : fiche 1 (playPacks.js), fiche 2 (main.js, myPack:cfTarget), fiche 3 (modpack.js), fiche 8 (renderer.js, fenêtre des mods manuels).
+- Réparations : chargeur (plus récent seulement, packs mine/cf/mr), retirer, remplacer (ajoute puis retire), mettre à jour,
+  retélécharger, vider le cache. Sauvegarde avant : <dossier du jeu>/.omniscient/mods-avant-reparation/<date> (3 gardées).
+- « Essayer dans le launcher » : omniscient://test-bug/<fiche>, montre la fenêtre sans réparer ni compter.
+
+ÉCARTS AVEC LA PREVIEW (le code ne pouvait pas faire ce qu'elle montrait)
+1. « Envoyer le rapport » et l'onglet « Rapports d'erreurs » n'existent pas encore dans le vrai code :
+   remplacés par « Copier les logs » et le bloc de contact du centre d'aide ; pas d'onglet Rapports ni de « Créer une fiche » depuis un rapport.
+2. « Modifier > Version du chargeur » n'existe pas dans le launcher : étapes de la fiche 4 réécrites (couper ou retirer Sodium Extra).
+3. Étape de la fiche 7 : « copie les logs et écris-nous » au lieu de « envoie le rapport ».
+4. L'admin est en français seulement, comme le reste du panel (les fiches, elles, se rédigent en FR et EN).
+
+VÉRIFIÉ
+- tsc --noEmit : aucune erreur. ESLint sur les fichiers touchés : aucune erreur (2 avertissements déjà là dans AdminChrome).
+- node --check sur tous les fichiers du launcher touchés.
+- tests\bc-tests.js : bc1 à bc12 OK.
+- Page d'essai avec les vrais bugCatalogUi.js et i18n.js et un faux launcher : Corriger, progression, réussite, échec, pack officiel,
+  Pas maintenant, guide, Échap, petit message, mode essai, texte échappé : OK.
+- Site local, visiteur non connecté : /aide/bugs 404, /api/launcher/bugs 401, /admin/bugs renvoie au login, POST admin 401, sitemap 200, aucun lien sur /aide.
+
+PAS VÉRIFIÉ
+- Page admin et pages publiques à l'écran : il faut ton compte admin ou testeur, je n'entre pas de mot de passe.
+- Launcher réel : ni /api/launcher/bugs avec la clé, ni un vrai crash, ni une vraie réparation.
+
+À TESTER PAR RUSHI (site relancé, launcher relancé, ton compte dans les testeurs)
+bc-a  /admin/bugs : la ligne Bugs est sous Reports, 12 fiches, modifier et enregistrer une fiche.
+bc-b  /aide/bugs : 8 fiches (12 moins les 3 fiches équipe et la fiche 9 en analyse), filtres, recherche, une fiche, thème clair et sombre, FR et EN.
+bc-c  Admin, fiche 4, « Essayer dans le launcher » : la fenêtre s'ouvre, Corriger ne change rien.
+bc-d  Vrai cas : le pack avec Sodium Extra et Fabric 0.19.5 : fenêtre, Corriger, le chargeur passe en 0.20.1, le jeu démarre.
+bc-e  Vrai cas : importer un pack CurseForge avec mods manuels : la marche à suivre s'ouvre une fois par session.
+
+RESTE À FAIRE
+- bc-a à bc-e, puis ton accord avant de pousser.
+- Fiche 6 : si un autre mod du pack demande Fabric API, le launcher le remet : la réparation le dit et échoue proprement, à voir en vrai.
+- Essai sur fiche « se corrige toute seule » : pas de fenêtre à essayer, bouton désactivé.
+- La sauvegarde du dossier mods compte dans l'espace disque du joueur (3 gardées).
+
+COPIES : avant\ (état du 31/10 au soir), apres\ (état du 1er novembre).

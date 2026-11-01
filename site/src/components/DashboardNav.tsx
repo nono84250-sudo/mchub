@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SquaresFour, Bell, Newspaper, Gear, Users, UsersThree, Cube } from "@phosphor-icons/react";
+import { SquaresFour, Bell, Newspaper, Gear, Users, UsersThree, Cube, Package } from "@phosphor-icons/react";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { UnreadBadge } from "@/components/UnreadBadge";
 import { TEAMS_READY } from "@/lib/teamRules";
 
-type NavShow = { friends: boolean; team: boolean; worlds: boolean };
+type NavShow = { friends: boolean; team: boolean; worlds: boolean; packs?: boolean };
 
 export function DashboardNav({ unread = 0, playBeta = true, show = { friends: true, team: true, worlds: false } }: { unread?: number; playBeta?: boolean; show?: NavShow }) {
   const pathname = usePathname();
@@ -23,6 +23,8 @@ export function DashboardNav({ unread = 0, playBeta = true, show = { friends: tr
     // Mode Jouer (24/10) : « Mes mondes », avec « Bêta » tant que le reglage central est allume.
     // Laboratoire (25/10) : affiche seulement si « Mondes en ligne » est visible pour ce compte.
     ...(show.worlds ? [{ href: "/dashboard/mondes", label: t("dashboard.navWorlds"), icon: Cube }] : []),
+    // Pack Omniscient (27/10) : « Proposer un pack », si l'interrupteur du Laboratoire le montre.
+    ...(show.packs ? [{ href: "/dashboard/packs", label: t("dashboard.navPacks"), icon: Package }] : []),
     { href: "/dashboard/news", label: t("dashboard.navNews"), icon: Newspaper },
     { href: "/dashboard/parametres", label: t("dashboard.navSettings"), icon: Gear },
   ];

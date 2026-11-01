@@ -20,7 +20,11 @@ const FAILED_PING_RETRY_MS = 10 * 60_000;
 // doublon (jusqu'à 60-80 appels D1/min). Une visite ne relance donc une mesure que si la
 // dernière date de plus de 12 min, c'est-à-dire si la tâche automatique a raté au moins deux
 // passages (pas encore déployée, en panne...) : filet de secours, plus doublon.
-const VISIT_FALLBACK_AFTER_MS = 12 * 60_000;
+// 25/10 (statuts « Inconnu » ou très lents) : la tâche automatique n'est PAS encore déployée
+// (cron-worker pointe sur localhost), les visites sont donc la SEULE source de mesure. Ramené à
+// 5 min (= SERVER_STATUS_TTL_MS) tant que le cron ne tourne pas ; remettre 12 min après son
+// déploiement. Coût : au plus 2 appels D1 par serveur affiché et par tranche de 5 min.
+const VISIT_FALLBACK_AFTER_MS = SERVER_STATUS_TTL_MS;
 
 function needsVisitRefresh(lastPingedAt: string | null): boolean {
   if (!lastPingedAt) return true;
@@ -42,7 +46,18 @@ type CachedStatus = {
 export type ServerStatus = {
   playerCount: number | null;
   playerCapacity: number | null;
+  // Contacte au moins une fois (sans reponse = « Hors ligne », sinon « Inconnu »).
+  pinged: boolean;
 };
+
+// 25/10 : resultat de la derniere mesure faite par cette instance, lu par getServerStatus quand il
+// attend la toute premiere mesure d'un serveur (jamais mesure = « Inconnu » sinon).
+const freshResults = new Map<string, { playerCount: number | null; playerCapacity: number | null }>();
+const awaitingFirst = new Set<string>();
+// Mesure en cours par serveur : un 2e affichage simultane (ex. titre + contenu de la fiche) attend
+// la meme mesure au lieu d'en relancer une.
+const pendingById = new Map<string, Promise<void>>();
+const FIRST_PING_WAIT_MS = 4500;
 
 export function isStatusStale(lastPingedAt: string | null): boolean {
   if (!lastPingedAt) return true;
@@ -85,6 +100,10 @@ async function refreshOne(id: string, ip: string): Promise<void> {
       if (!claimed) return;
 
       const result = await pingMinecraftServer(ip);
+      if (awaitingFirst.has(id)) {
+        freshResults.set(id, result ? { playerCount: result.online, playerCapacity: result.max } : { playerCount: null, playerCapacity: null });
+        setTimeout(() => freshResults.delete(id), 10_000);
+      }
       await db.orm.public.Server.where({ id }).update(
         result
           ? { playerCount: result.online, playerCapacity: result.max }
@@ -118,13 +137,13 @@ async function refreshOne(id: string, ip: string): Promise<void> {
  * `ip` n'est utilisée que côté serveur pour ouvrir la connexion de ping — elle
  * n'est jamais renvoyée à l'appelant.
  */
-export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; lastPingedAt: string | null }>): void {
+export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; lastPingedAt: string | null }>): Promise<void> | null {
   const now = Date.now();
   const todo = servers
     .filter((s) => needsVisitRefresh(s.lastPingedAt) && !inFlight.has(s.id) && now - (recentlyScheduled.get(s.id) ?? 0) > RESCHEDULE_AFTER_MS)
     .sort((a, b) => (a.lastPingedAt ?? "").localeCompare(b.lastPingedAt ?? ""))
     .slice(0, MAX_SERVERS_PER_SCHEDULE);
-  if (!todo.length) return;
+  if (!todo.length) return null;
 
   if (recentlyScheduled.size > 2000) {
     for (const [id, at] of recentlyScheduled) if (now - at > RESCHEDULE_AFTER_MS) recentlyScheduled.delete(id);
@@ -133,12 +152,20 @@ export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; l
     inFlight.add(s.id);
     recentlyScheduled.set(s.id, now);
   }
-  const work = Promise.all(todo.map((s) => refreshOne(s.id, s.ip)));
+  const work = Promise.all(
+    todo.map((s) => {
+      const one = refreshOne(s.id, s.ip).finally(() => pendingById.delete(s.id));
+      pendingById.set(s.id, one);
+      return one;
+    }),
+  ).then(() => undefined);
   try {
     after(() => work);
   } catch {
     // Hors d'une requête : la mesure tourne quand même, sans être attendue.
   }
+  // Rendue pour l'espace propriétaire, qui peut l'attendre un court instant (voir dashboard).
+  return work;
 }
 
 /**
@@ -147,6 +174,17 @@ export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; l
  * après l'envoi de la page (elle apparaîtra à la visite suivante).
  */
 export async function getServerStatus(serverId: string, ip: string, cached: CachedStatus): Promise<ServerStatus> {
-  scheduleStatusRefresh([{ id: serverId, ip, lastPingedAt: cached.lastPingedAt }]);
-  return { playerCount: cached.playerCount, playerCapacity: cached.playerCapacity };
+  if (cached.lastPingedAt == null) awaitingFirst.add(serverId);
+  const work = scheduleStatusRefresh([{ id: serverId, ip, lastPingedAt: cached.lastPingedAt }]) ?? pendingById.get(serverId);
+  // 25/10 : serveur JAMAIS mesure (fiche privee, en attente...) : on attend sa premiere mesure au
+  // plus FIRST_PING_WAIT_MS, une seule fois, au lieu d'afficher « Inconnu » jusqu'a la visite
+  // suivante. Les autres affichages n'attendent jamais.
+  if (work && cached.lastPingedAt == null) {
+    const done = await Promise.race([work.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), FIRST_PING_WAIT_MS))]);
+    const fresh = done ? freshResults.get(serverId) : undefined;
+    awaitingFirst.delete(serverId);
+    if (fresh) return { ...fresh, pinged: true };
+  }
+  awaitingFirst.delete(serverId);
+  return { playerCount: cached.playerCount, playerCapacity: cached.playerCapacity, pinged: cached.lastPingedAt != null };
 }

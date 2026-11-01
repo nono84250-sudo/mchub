@@ -1,5 +1,6 @@
 import { db, execSql } from "@/lib/db";
 import { normalizeMinecraftUuid } from "@/lib/launcherSession";
+import { notifyOwnerOfReport } from "@/lib/reportNotify";
 
 // Signalements envoyes par les joueurs depuis le launcher (voir "03b Report a server" dans
 // Design/Omniscient Launcher UI Mockups.dc.html) — deux categories distinctes : "Probleme
@@ -51,12 +52,18 @@ export async function createReport(input: {
   clientVersion: string | null;
   launcherVersion: string | null;
 }) {
-  return db.orm.public.Report.create({
+  const report = await db.orm.public.Report.create({
     ...input,
     reporterMinecraftUuid: normalizeMinecraftUuid(input.reporterMinecraftUuid),
     status: "new",
     category: "technical",
   });
+  // 26/10 : le proprietaire est prevenu (voir lib/reportNotify.ts). Un echec de la notification
+  // ne doit pas faire echouer le signalement, deja enregistre.
+  await notifyOwnerOfReport(input.serverId).catch((error: unknown) => {
+    console.error("[report] notification au proprietaire impossible", error);
+  });
+  return report;
 }
 
 // --- Comportement / contenu (moderation Omniscient) ---

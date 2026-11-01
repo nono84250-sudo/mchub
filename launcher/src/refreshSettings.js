@@ -15,10 +15,13 @@
     LIST_CACHE_MS: 3 * MINUTE,
     SERVER_DETAIL_CACHE_MS: 60_000,
     // Presence (amis) : envoyee au lancement du jeu, a sa fermeture, puis toutes les 5 min en
-    // jeu ; toutes les minutes hors partie (elle rapporte aussi maintenance et notifications).
+    // jeu ; hors partie toutes les 3 min, et 5 min quand la fenetre est reduite ou cachee (audit
+    // du 28/10, valide par Rushi : avant, chaque minute, ~70 % de la charge du site). Elle
+    // rapporte aussi maintenance, notifications et amis.
     // Le site garde un joueur « en ligne » 7 min (ONLINE_WINDOW_SECONDS cote site) : un ami peut
     // donc encore le voir en ligne jusqu'a ~7 min apres la fermeture (accepte par Rushi).
-    PRESENCE_IDLE_MS: MINUTE,
+    PRESENCE_IDLE_MS: 3 * MINUTE,
+    PRESENCE_HIDDEN_MS: 5 * MINUTE,
     PRESENCE_PLAYING_MS: 5 * MINUTE,
   });
   if (typeof module !== "undefined" && module.exports) module.exports = settings;

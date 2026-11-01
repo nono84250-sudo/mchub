@@ -7,6 +7,7 @@ import { getT } from "@/i18n/getDictionary";
 import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
 import { serverState } from "@/lib/playerGauge";
 import { ServerStatePill } from "@/components/ServerStatePill";
+import { scheduleStatusRefresh } from "@/lib/server-status";
 
 export const metadata = { title: "Mon espace — Omniscient" };
 
@@ -15,7 +16,7 @@ export default async function DashboardPage() {
   if (!session?.user?.id) redirect("/login");
   const { dict } = await getT();
 
-  const servers = await db.orm.public.Server.select(
+  const loadServers = () => db.orm.public.Server.select(
     "id",
     "slug",
     "name",
@@ -28,10 +29,24 @@ export default async function DashboardPage() {
     "playerCount",
     "playerCapacity",
     "lastPingedAt",
+    "ip",
   )
     .where({ ownerId: session.user.id })
     .orderBy((s) => s.createdAt.desc())
     .all();
+  let servers = await loadServers();
+
+  // 25/10 : cette page ne mesurait jamais les serveurs. Un serveur prive (absent de l'annuaire)
+  // restait donc « Inconnu » tant que son proprietaire n'ouvrait pas sa page « Gerer ». Les
+  // statuts perimes sont maintenant re-mesures ; pour un serveur jamais mesure, on attend la
+  // mesure au plus 5 s (une seule fois, ensuite elle est en base) puis on relit la liste. Si la
+  // mesure n'a pas fini a temps, on garde « Inconnu » (jamais un faux « Hors ligne »).
+  // L'ip ne sert qu'au ping cote serveur, elle n'est pas affichee.
+  const work = scheduleStatusRefresh(servers);
+  if (work && servers.some((s) => s.lastPingedAt == null)) {
+    const done = await Promise.race([work.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000))]);
+    if (done) servers = await loadServers();
+  }
 
   return (
     <div>

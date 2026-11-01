@@ -37,8 +37,8 @@ let loggedFailure = false;
 
 // Texte envoye a Discord, dans la langue du launcher (ce que les amis du joueur lisent).
 const TEXTS = {
-  fr: { browsing: "Parcourt les serveurs", inLauncher: "Dans le launcher", privateServer: "Joue sur un serveur privé", modpack: "Modpack : {name}" },
-  en: { browsing: "Browsing servers", inLauncher: "In the launcher", privateServer: "Playing on a private server", modpack: "Modpack: {name}" },
+  fr: { browsing: "Parcourt les serveurs", inLauncher: "Dans le launcher", privateServer: "Joue sur un serveur privé", playMode: "Joue à {game}", modpack: "Modpack : {name}" },
+  en: { browsing: "Browsing servers", inLauncher: "In the launcher", privateServer: "Playing on a private server", playMode: "Playing {game}", modpack: "Modpack: {name}" },
 };
 function text(key) {
   return (TEXTS[locale] || TEXTS.fr)[key];
@@ -161,6 +161,11 @@ function buildActivity(request) {
   if (request.kind === "browsing") {
     activity.details = text("browsing");
     activity.state = text("inLauncher");
+  } else if (request.playMode) {
+    // Mode Jouer : le launcher ne sait pas si le joueur reste en solo ou rejoint un serveur ensuite,
+    // donc un texte toujours vrai : « Joue à Minecraft 1.21.1 », puis le modpack s'il y en a un.
+    activity.details = text("playMode").replace("{game}", request.serverName || "Minecraft");
+    if (request.modpackName) activity.state = text("modpack").replace("{name}", request.modpackName);
   } else if (request.isPrivate) {
     // Serveur sur invitation : ni son nom ni son modpack (le joueur n'a pas choisi de le rendre public).
     activity.details = text("privateServer");
@@ -192,8 +197,9 @@ function setBrowsingActivity() {
 // Affichage voulu : le titre en gras « Joue à Omniscient Launcher » vient du NOM de l'application
 // Discord (rien à écrire ici), puis `details` = le serveur rejoint, `state` = le modpack s'il y en a un.
 // Serveur prive : seulement « Joue sur un serveur privé ».
-function setPlayingActivity(serverName, modpackName, { isPrivate = false } = {}) {
-  lastRequest = { kind: "playing", serverName, modpackName, isPrivate: isPrivate === true, startTimestamp: Date.now() };
+// Mode Jouer : « Joue à Minecraft <version> » (solo ou multi, on ne sait pas).
+function setPlayingActivity(serverName, modpackName, { isPrivate = false, playMode = false } = {}) {
+  lastRequest = { kind: "playing", serverName, modpackName, isPrivate: isPrivate === true, playMode: playMode === true, startTimestamp: Date.now() };
   refresh();
 }
 

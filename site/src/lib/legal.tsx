@@ -8,9 +8,9 @@ import type { Locale } from "@/i18n/locales";
 // à mettre à jour à chaque fonction qui touche aux données (amis et présence, suppression de compte
 // en libre-service, formulaire de contact...). La version de travail complète, avec les points à
 // faire relire par un avocat, est Legal/DOCUMENTS_LEGAUX_OMNISCIENT.md.
-export const LEGAL_EDITOR = "Rushifa";
+export const LEGAL_EDITOR = "Bruno Catoire (Rushifa)";
 export const LEGAL_EMAIL = "omniscient.launchermc@gmail.com";
-const UPDATED = { fr: "Dernière mise à jour : 19 octobre 2026", en: "Last updated: October 19, 2026" };
+const UPDATED = { fr: "Dernière mise à jour : 1er novembre 2026", en: "Last updated: November 1, 2026" };
 
 type LegalPage = { title: string; updated: string; intro: ReactNode; sections: LegalSection[] };
 
@@ -396,6 +396,11 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 <>Cookies techniques de connexion Microsoft (sécurité de la connexion) : quelques minutes.</>,
                 <>« NEXT_LOCALE » (langue choisie) : 1 an.</>,
                 <>« theme » (thème clair ou sombre, stockage local du navigateur) : jusqu&apos;à ce que vous l&apos;effaciez.</>,
+                <>
+                  « omni-visitor » (mesure d&apos;audience, stockage local du navigateur) : un identifiant au hasard, changé à
+                  chaque visite. Sans adresse IP ; relié à votre compte seulement si vous êtes connecté. Nos serveurs
+                  l&apos;effacent après 2 minutes sans signe de vie et ne conservent que des totaux par heure et par jour.
+                </>,
               ]}
             />
             <p>Le comptage des vues des fiches n&apos;utilise aucun cookie ni aucun stockage sur votre appareil.</p>
@@ -715,6 +720,11 @@ function privacyEn(): LegalPage {
                 <>Technical Microsoft sign-in cookies (sign-in security): a few minutes.</>,
                 <>&quot;NEXT_LOCALE&quot; (chosen language): 1 year.</>,
                 <>&quot;theme&quot; (light or dark theme, browser local storage): until you clear it.</>,
+                <>
+                  &quot;omni-visitor&quot; (audience measurement, browser local storage): a random identifier, changed at each
+                  visit. No IP address; linked to your account only if you are signed in. Our servers erase it after 2
+                  minutes without a sign of life and only keep hourly and daily totals.
+                </>,
               ]}
             />
             <p>Counting listing views uses no cookie and no storage on your device.</p>

@@ -60,6 +60,9 @@ const DEFAULTS = {
   discreetMode: false,
   // Barre laterale depliee avec les noms (serie 2, idee 1) : repliee par defaut pour les habitues.
   sidebarExpanded: false,
+  // Passe a true apres le tout premier demarrage, ou la barre s'ouvre depliee une seule fois pour
+  // montrer le nom des pages (Rushi 25/10) ; ensuite elle suit sidebarExpanded (repliee par defaut).
+  sidebarIntroShown: false,
   // Dernier onglet de Ma bibliotheque (audit 17/10, lot 3) : Installes par defaut.
   libraryTab: "installed",
   firstRunWizardDone: false,

@@ -24,6 +24,7 @@ type Props = {
   action: (prevState: ServerActionState, formData: FormData) => ServerActionState | Promise<ServerActionState>;
   versions: string[];
   sourceStates?: Record<ModpackSource, boolean>;
+  sourceMaintenance?: { source: ModpackSource; message: string } | null;
   // Teams du compte (teams, 19/10) : liste « Team » de l'etape 1, « Aucune team » par defaut.
   teams?: { id: string; name: string }[];
 };
@@ -34,7 +35,7 @@ type Props = {
 // les 3 etapes : les champs des etapes precedentes restent montes (juste
 // masques en CSS) pour que leurs valeurs fassent partie de la soumission
 // finale, plutot que de dupliquer un state parallele pour chaque champ.
-export function NewServerWizard({ action, versions, sourceStates, teams = [] }: Props) {
+export function NewServerWizard({ action, versions, sourceStates, sourceMaintenance, teams = [] }: Props) {
   const { t, locale } = useI18n();
   const STEPS = [
     { label: t("wizard.stepBasics") },
@@ -234,7 +235,7 @@ export function NewServerWizard({ action, versions, sourceStates, teams = [] }: 
             aller-retour Vanilla/Modde. Les champs caches partent aussi en vanilla,
             createServer les ignore (voir lib/actions/servers.ts). */}
         <div className={type === "modded" ? undefined : "hidden"}>
-          <ModpackPicker onChange={setModpack} sourceStates={sourceStates} />
+          <ModpackPicker onChange={setModpack} sourceStates={sourceStates} sourceMaintenance={sourceMaintenance} />
         </div>
 
         <div className="mt-2 flex justify-end gap-2.5">

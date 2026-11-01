@@ -152,6 +152,13 @@ export async function listCloudWorlds(userId: string): Promise<CloudWorld[]> {
     .filter((w) => w.versions.length);
 }
 
+// Audit du 28/10 (correctif 8) : le joueur a-t-il au moins une version en ligne ? Sans version,
+// listCloudWorlds renvoie [] et usedBytes 0 : une seule petite lecture suffit pour le savoir.
+export async function hasCloudVersions(userId: string): Promise<boolean> {
+  const rows = await execSql('SELECT 1 AS "found" FROM "cloudWorldVersion" WHERE "userId" = ? LIMIT 1', [userId]);
+  return rows.length > 0;
+}
+
 export async function usedBytes(userId: string): Promise<number> {
   const [row] = await execSql('SELECT COALESCE(SUM("sizeBytes"), 0) AS "total" FROM "cloudWorldVersion" WHERE "userId" = ?', [userId]);
   return Number(row?.total) || 0;
@@ -419,6 +426,10 @@ export type PackFile = { projectId: string; title?: string; url: string; filenam
 export type PublicPack = {
   id: string;
   slug: string;
+  // Pack Omniscient (27/10) : 'omni' = archive .omnipack téléchargée par le launcher
+  // (/api/launcher/play/omnipack), 'list' = liste de mods Modrinth comme avant.
+  kind: "list" | "omni";
+  author: string | null;
   name: { fr: string; en: string };
   description: { fr: string; en: string };
   versions: { id: string; minecraftVersion: string; loader: string; loaderVersion: string | null; files: PackFile[]; updatedAt: string }[];
@@ -443,6 +454,8 @@ export const listPublishedPacks = unstable_cache(
       .map((p: Row) => ({
         id: p.id,
         slug: p.slug,
+        kind: p.kind === "omni" ? ("omni" as const) : ("list" as const),
+        author: p.author ?? null,
         name: { fr: p.nameFr, en: p.nameEn },
         description: { fr: p.descriptionFr, en: p.descriptionEn },
         versions: versions
@@ -451,6 +464,7 @@ export const listPublishedPacks = unstable_cache(
       }))
       .filter((p) => p.versions.length);
   },
-  ["play-packs"],
+  // Clé changée le 27/10 (colonnes kind et author).
+  ["play-packs-v2"],
   { revalidate: 120, tags: [PLAY_TAG] },
 );

@@ -1,4 +1,3 @@
-import Script from "next/script";
 import { buildScreenContent, WRAPPER_VARS } from "@/components/admin/DesignScreen";
 import { balancedEnd } from "@/app/admin/design/bind";
 import { SlotPortal } from "@/components/admin/SlotPortal";
@@ -29,8 +28,8 @@ function injectReactSlot(html: string): string {
 // composants React (voir injectReactSlot ci-dessus) : chacune reutilise "servers" comme
 // gabarit de sidebar/topbar (meme methode que Parametres, 2026-10-12), juste avec son propre
 // icone Phosphor et son propre libelle.
-const PAGE_ICON = { parametres: "ph-gear", contact: "ph-envelope", etiquettes: "ph-tag", teams: "ph-users-three", packsOfficiels: "ph-cube", laboratoire: "ph-flask" } as const;
-const PAGE_LABEL = { parametres: "Paramètres", contact: "Contact", etiquettes: "Étiquettes proposées", teams: "Teams", packsOfficiels: "Packs officiels", laboratoire: "Laboratoire" } as const;
+const PAGE_ICON = { parametres: "ph-gear", contact: "ph-envelope", etiquettes: "ph-tag", teams: "ph-users-three", packsOfficiels: "ph-cube", laboratoire: "ph-flask", bugs: "ph-bug", analytique: "ph-chart-line-up" } as const;
+const PAGE_LABEL = { parametres: "Paramètres", contact: "Contact", etiquettes: "Étiquettes proposées", teams: "Teams", packsOfficiels: "Packs officiels", laboratoire: "Laboratoire", bugs: "Bugs", analytique: "Analytique" } as const;
 type ChromePage = keyof typeof PAGE_ICON;
 
 // La maquette "servers" marque son propre lien "Servers" comme actif en dur (chaque export
@@ -63,7 +62,8 @@ export async function AdminChrome({ children, active = "parametres" }: { childre
     <>
       <link rel="stylesheet" href="/admin/nocturne.css" />
       <link rel="stylesheet" href="/admin/nb.css" />
-      <Script src="https://unpkg.com/@phosphor-icons/web@2.1.1" strategy="afterInteractive" />
+      {/* 25/10 : feuille de style des icones au lieu du script (le script faisait echouer l'hydratation en dev). */}
+      <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
       <div style={WRAPPER_VARS} dangerouslySetInnerHTML={{ __html: content }} />
       <SlotPortal slotId={SLOT_ID}>{children}</SlotPortal>
     </>

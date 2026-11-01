@@ -1,7 +1,7 @@
 {
   "name": "launcher",
   "productName": "Omniscient Launcher",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "Launcher Minecraft Omniscient — lit les serveurs publiés sur le site Omniscient et lance le jeu.",
   "main": "src/main.js",
@@ -35,6 +35,14 @@
       "build/icon.png",
       "build/icon.ico",
       "package.json"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "omnipack",
+        "name": "Pack Omniscient",
+        "description": "Pack Omniscient",
+        "icon": "build/icon.ico"
+      }
     ],
     "protocols": [
       {

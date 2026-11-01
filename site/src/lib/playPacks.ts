@@ -2,6 +2,7 @@ import "server-only";
 import { revalidateTag } from "next/cache";
 import { execSql } from "@/lib/db";
 import { PLAY_TAG, type PackFile } from "@/lib/playWorlds";
+import { dropOmniArchive } from "@/lib/omniPacks";
 
 // Admin « Packs officiels » (mode Jouer, bêta, 24/10). Un pack = une liste de projets Modrinth.
 // À l'enregistrement, on prépare tout seul une version du pack pour chaque version de Minecraft
@@ -168,7 +169,7 @@ const now = () => new Date().toISOString();
 export async function listAdminPacks(): Promise<(Row & { versions: Row[] })[]> {
   const [packs, versions] = await Promise.all([
     execSql('SELECT * FROM "playPack" ORDER BY "createdAt" DESC'),
-    execSql('SELECT "id", "packId", "minecraftVersion", "loaderVersion", "files", "missing", "status", "published", "updatedAt" FROM "playPackVersion"'),
+    execSql('SELECT "id", "packId", "minecraftVersion", "loader", "loaderVersion", "files", "missing", "status", "published", "extras", "updatedAt" FROM "playPackVersion"'),
   ]);
   return packs.map((p: Row) => ({
     ...p,
@@ -182,6 +183,10 @@ export async function listAdminPacks(): Promise<(Row & { versions: Row[] })[]> {
 // « Testée » dont la liste de fichiers n'a pas changé garde son statut et sa publication ; sinon
 // elle repasse « À tester » et est retirée du launcher.
 export async function savePack(input: { id?: string; slug: string; nameFr: string; nameEn: string; descriptionFr: string; descriptionEn: string; projects: string[] }): Promise<{ id: string; counts: Record<string, number> }> {
+  if (input.id) {
+    const [kind] = await execSql('SELECT "kind" FROM "playPack" WHERE "id" = ?', [input.id]);
+    if (kind?.kind === "omni") throw new Error("Un Pack Omniscient se modifie dans le launcher, pas ici.");
+  }
   const prepared = await preparePackVersions(input.projects);
   const id = input.id ?? crypto.randomUUID();
   if (input.id) {
@@ -230,6 +235,8 @@ export async function setPackVersionState(versionId: string, change: { status?: 
 }
 
 export async function deletePack(id: string): Promise<void> {
+  // Pack Omniscient (27/10) : son archive dans R2 part avec lui.
+  await dropOmniArchive(id);
   await execSql('DELETE FROM "playPackVersion" WHERE "packId" = ?', [id]);
   await execSql('DELETE FROM "playPack" WHERE "id" = ?', [id]);
   revalidateTag(PLAY_TAG, { expire: 0 });

@@ -16,7 +16,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
       <DashboardNav
         unread={unread}
         playBeta={features.worlds.beta}
-        show={{ friends: features.friends.visible, team: features.team.visible, worlds: features.worlds.visible }}
+        show={{ friends: features.friends.visible, team: features.team.visible, worlds: features.worlds.visible, packs: features.omniPack?.visible ?? false }}
       />
       <div className="min-w-0 flex-1">{children}</div>
     </div>
