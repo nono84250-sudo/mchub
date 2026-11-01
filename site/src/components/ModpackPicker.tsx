@@ -7,6 +7,7 @@ import {
   DEFAULT_MODPACK_CHANNEL,
   DEFAULT_MODPACK_SOURCE,
   MODPACK_SOURCES,
+  MODPACK_SOURCE_LABELS,
   type ModpackChannel,
   type ModpackSearchResult,
   type ModpackSource,
@@ -29,9 +30,15 @@ export type ModpackValue = {
 
 type Chosen = ModpackValue & { iconUrl: string | null; verified: boolean };
 
-const SOURCE_LABELS: Record<ModpackSource, string> = { curseforge: "CurseForge", modrinth: "Modrinth" };
+const SOURCE_LABELS = MODPACK_SOURCE_LABELS;
 
-// Choix du modpack d'un serveur moddé (CurseForge ou Modrinth) — partagé entre
+const SOURCE_HINT_KEYS: Record<ModpackSource, string> = {
+  curseforge: "wizard.modpackCurseforgeHint",
+  modrinth: "wizard.modpackModrinthHint",
+  ftb: "wizard.modpackFtbHint",
+};
+
+// Choix du modpack d'un serveur moddé (CurseForge, Modrinth ou FTB) — partagé entre
 // l'assistant de création et la page Paramètres. Recherche dans la source
 // choisie, avec repli en saisie manuelle si elle est indisponible (clé
 // CurseForge absente, API en panne) : jamais bloquant pour un serveur moddé.
@@ -45,6 +52,7 @@ export function ModpackPicker({
   defaultValue,
   onChange,
   sourceStates,
+  sourceMaintenance,
 }: {
   defaultValue?: ModpackValue;
   onChange?: (value: ModpackValue) => void;
@@ -54,6 +62,8 @@ export function ModpackPicker({
   // l'utilisateur : confusion -> signalements evitables). Optionnel pour ne pas casser un
   // appelant qui ne l'a pas encore (traite alors toutes les sources comme activees).
   sourceStates?: Record<ModpackSource, boolean>;
+  // 25/10 : source en maintenance (voir getSourceMaintenance) : avertissement orange, jamais bloquant.
+  sourceMaintenance?: { source: ModpackSource; message: string } | null;
 }) {
   const { t } = useI18n();
   const [source, setSource] = useState<ModpackSource>(defaultValue?.id ? defaultValue.source : DEFAULT_MODPACK_SOURCE);
@@ -142,6 +152,7 @@ export function ModpackPicker({
       <div role="radiogroup" aria-label={t("wizard.modpackSourceLabel")} className="inline-flex w-fit overflow-hidden rounded-md border border-border">
         {MODPACK_SOURCES.map((option, index) => {
           const disabled = sourceStates?.[option] === false;
+          const inMaintenance = sourceMaintenance?.source === option;
           return (
             <button
               key={option}
@@ -154,23 +165,42 @@ export function ModpackPicker({
                 disabled
                   ? { color: "var(--danger)" }
                   : source === option
-                    ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: "var(--accent)" }
-                    : { color: "var(--muted)" }
+                    ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: inMaintenance ? "var(--state-busy)" : "var(--accent)" }
+                    : { color: inMaintenance ? "var(--state-busy)" : "var(--muted)" }
               }
             >
               {SOURCE_LABELS[option]}
-              {disabled ? " ⚠" : ""}
+              {disabled ? " ⚠" : inMaintenance ? " 🛠" : ""}
             </button>
           );
         })}
       </div>
-      {sourceStates?.[source] === false ? (
+      {sourceStates?.[source] !== false && sourceMaintenance?.source === source ? (
+        <div
+          role="status"
+          className="mb-1 flex items-start gap-2.5 rounded-[10px] px-3 py-2.5 text-[13px] leading-snug"
+          style={{
+            background: "color-mix(in srgb, var(--state-busy) 12%, var(--surface))",
+            border: "1px solid color-mix(in srgb, var(--state-busy) 40%, transparent)",
+          }}
+        >
+          <span aria-hidden="true">🛠</span>
+          <div>
+            <strong className="block text-foreground">{t("wizard.sourceMaintenanceTitle", { source: SOURCE_LABELS[source] })}</strong>
+            <span className="text-muted">
+              {sourceMaintenance.message}
+              <br />
+              {t("wizard.sourceMaintenanceHint")}
+            </span>
+          </div>
+        </div>
+      ) : sourceStates?.[source] === false ? (
         <p className="mb-1 text-xs" style={{ color: "var(--danger)" }}>
           {t("wizard.modpackSourceDisabled", { source: SOURCE_LABELS[source] })}
         </p>
       ) : (
         <p className="mb-1 text-xs text-muted2">
-          {source === "modrinth" ? t("wizard.modpackModrinthHint") : t("wizard.modpackCurseforgeHint")}
+          {t(SOURCE_HINT_KEYS[source])}
         </p>
       )}
 

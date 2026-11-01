@@ -78,7 +78,9 @@ export async function resolveAudienceRecipients(audience: "everyone" | "owners")
 // qu'une ligne). Decoupe en lots : l'API REST D1 borne le nombre de parametres lies par
 // requete, donc un envoi "everyone" avec beaucoup de destinataires reste plusieurs requetes —
 // un petit nombre de lots plutot qu'un aller-retour par destinataire.
-const BROADCAST_CHUNK_SIZE = 50; // 50 lignes * 6 parametres = 300, large marge sous la limite D1
+// 15 lignes * 6 parametres = 90 : D1 refuse plus de 100 parametres par requete (audit 25/10,
+// les lots de 50 lignes = 300 parametres echouaient).
+const BROADCAST_CHUNK_SIZE = 15;
 export async function broadcastNotification(input: {
   recipientMinecraftUuids: string[];
   type: NotificationType;
@@ -121,6 +123,12 @@ export async function listNotificationsForRecipient(minecraftUuid: string): Prom
 // notifications rendait "Tout marquer comme lu"/"Effacer les lues" visiblement lent.
 export async function markNotificationsRead(minecraftUuid: string) {
   await execSql('UPDATE "notification" SET "read" = 1 WHERE "recipientMinecraftUuid" = ? AND "read" = 0', [normalizeMinecraftUuid(minecraftUuid)]);
+}
+
+// Une seule notification (clic dans le centre de notifications du launcher, 25/10). Le filtre
+// sur le destinataire empeche de marquer celle d'un autre joueur.
+export async function markNotificationRead(id: string, minecraftUuid: string) {
+  await execSql('UPDATE "notification" SET "read" = 1 WHERE "id" = ? AND "recipientMinecraftUuid" = ?', [id, normalizeMinecraftUuid(minecraftUuid)]);
 }
 
 // Verifie que la notification appartient bien au joueur qui demande sa

@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { getT, type Dictionary } from "@/i18n/getDictionary";
-import { t } from "@/i18n/t";
+import { getT } from "@/i18n/getDictionary";
 import { listNotificationsForRecipient, type NotificationSummary, type NotificationType } from "@/lib/notifications";
+import Link from "next/link";
+import { isNewsNotification, newsTitleFromMessage, notificationTitle, reportNotificationInfo } from "@/lib/notificationTitles";
+import { MarkNotificationsRead } from "@/components/MarkNotificationsRead";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Notifications — Omniscient" };
@@ -12,40 +14,13 @@ export const metadata = { title: "Notifications — Omniscient" };
 // lib/notifications.ts) — meme regroupement par categorie que la maquette d'origine, et
 // mêmes libelles que notifItemHtml côté launcher (launcher/src/renderer.js), traduits ici
 // via le dictionnaire du site plutôt que celui du launcher.
-function categoryFor(type: NotificationType): "announcements" | "servers" | "account" {
+function categoryFor(n: NotificationSummary): "announcements" | "servers" | "account" {
+  const type: NotificationType = n.type;
+  // 26/10 : un signalement recu (type admin_info, voir lib/reportNotify.ts) range dans Serveurs.
+  if (reportNotificationInfo(n)) return "servers";
   if (type.startsWith("broadcast_")) return "announcements";
   if (type.startsWith("admin_")) return "account";
   return "servers"; // report_replied / report_resolved / server_frozen / verification_* / instance_back_online
-}
-
-function titleFor(dict: Dictionary, n: NotificationSummary): string {
-  switch (n.type) {
-    case "server_frozen":
-      return t(dict, "dashboard.notifServerFrozenTitle", { server: n.serverName });
-    case "verification_approved":
-      return t(dict, "dashboard.notifVerificationApprovedTitle", { server: n.serverName });
-    case "verification_rejected":
-      return t(dict, "dashboard.notifVerificationRejectedTitle", { server: n.serverName });
-    case "instance_back_online":
-      return t(dict, "dashboard.notifInstanceBackOnlineTitle", { server: n.serverName });
-    case "broadcast_announcement":
-      return dict.dashboard.notifBroadcastAnnouncementTitle;
-    case "broadcast_maintenance":
-      return dict.dashboard.notifBroadcastMaintenanceTitle;
-    case "broadcast_alert":
-      return dict.dashboard.notifBroadcastAlertTitle;
-    case "broadcast_promotion":
-      return dict.dashboard.notifBroadcastPromotionTitle;
-    case "admin_info":
-    case "admin_warning":
-    case "admin_error":
-      return t(dict, "dashboard.notifAdminMessageTitle", { server: n.serverName });
-    case "report_resolved":
-      return t(dict, "dashboard.notifReportResolvedTitle", { server: n.serverName });
-    case "report_replied":
-    default:
-      return t(dict, "dashboard.notifReportRepliedTitle", { server: n.serverName });
-  }
 }
 
 export default async function NotificationsPage() {
@@ -65,11 +40,17 @@ export default async function NotificationsPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold tracking-tight text-foreground">{dict.dashboard.notificationsTitle}</h1>
+      {/* Lot 6 (18/10) : ouvrir la page marque tout comme lu et vide la pastille. */}
+      {notifications.some((n) => !n.read) ? <MarkNotificationsRead /> : null}
 
+      {/* Design 2026-10-17, point 7 : rien du tout -> une seule ligne, rien a faire. */}
+      {notifications.length === 0 ? (
+        <div className="panel mt-8 p-6 text-center text-[13.5px] text-muted">{dict.dashboard.notificationsAllEmpty}</div>
+      ) : (
       <div className="panel mt-8 p-6">
         <div className="flex flex-col gap-5">
           {NOTIFICATION_CATEGORIES.map((category) => {
-            const items = notifications.filter((n) => categoryFor(n.type) === category.id);
+            const items = notifications.filter((n) => categoryFor(n) === category.id);
             return (
               <div key={category.id}>
                 <p className="text-sm font-medium text-foreground">{category.label}</p>
@@ -82,8 +63,24 @@ export default async function NotificationsPage() {
                         key={n.id}
                         className={n.read ? "rounded-md border border-border px-3 py-2" : "rounded-md border border-accent bg-surface px-3 py-2"}
                       >
-                        <p className="text-sm font-medium text-foreground">{titleFor(dict, n)}</p>
-                        {n.message ? <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">{n.message}</p> : null}
+                        <p className="text-sm font-medium text-foreground">{notificationTitle(dict, n)}</p>
+                        {reportNotificationInfo(n) ? (
+                          <p className="mt-0.5 text-sm text-muted">
+                            {reportNotificationInfo(n)!.count > 1 ? dict.dashboard.notifReportReceivedBodyMany : dict.dashboard.notifReportReceivedBody} ·{" "}
+                            <Link href={`/manage/${encodeURIComponent(reportNotificationInfo(n)!.serverId)}/reports`} className="text-accent hover:underline">
+                              {dict.dashboard.notifReportReceivedLink}
+                            </Link>
+                          </p>
+                        ) : isNewsNotification(n) ? (
+                          <p className="mt-0.5 text-sm text-muted">
+                            {newsTitleFromMessage(n.message)} ·{" "}
+                            <Link href="/dashboard/news" className="text-accent hover:underline">
+                              {dict.dashboard.notifNewsRead}
+                            </Link>
+                          </p>
+                        ) : n.message ? (
+                          <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">{n.message}</p>
+                        ) : null}
                         <p className="mt-1 text-xs text-muted2">
                           {new Date(n.createdAt).toLocaleString(locale, {
                             day: "numeric",
@@ -102,6 +99,7 @@ export default async function NotificationsPage() {
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }

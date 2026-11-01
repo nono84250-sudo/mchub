@@ -3,10 +3,14 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { updateServer, deleteServer, toggleServerPublished, duplicateServer } from "@/lib/actions/servers";
 import { getMinecraftVersions } from "@/lib/minecraft-versions";
-import { allSourceStates } from "@/lib/platformSettings";
+import { allSourceStates, getSourceMaintenance } from "@/lib/platformSettings";
 import { ServerForm } from "@/components/ServerForm";
 import { ManageActions } from "@/components/ManageActions";
 import { getT } from "@/i18n/getDictionary";
+import { ServerTeamPicker } from "@/components/ServerTeamPicker";
+import { listMyTeams } from "@/lib/teams";
+import { TEAMS_READY } from "@/lib/teamRules";
+import { featureVisibleOnSite } from "@/lib/features";
 
 export const metadata = { title: "Paramètres — Omniscient" };
 
@@ -23,7 +27,9 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
   const boundDelete = deleteServer.bind(null, server.id);
   const boundTogglePublished = toggleServerPublished.bind(null, server.id);
   const boundDuplicate = duplicateServer.bind(null, server.id);
-  const [versions, sourceStates] = await Promise.all([getMinecraftVersions(), allSourceStates()]);
+  const showTeamPicker = TEAMS_READY && (await featureVisibleOnSite("team"));
+  const [versions, sourceStates, sourceMaintenance, teams] = await Promise.all([getMinecraftVersions(), allSourceStates(), getSourceMaintenance(), showTeamPicker ? listMyTeams(session.user.id) : Promise.resolve([])]);
+  const currentTeamId = (server as { teamId?: string | null }).teamId ?? null;
 
   const defaultValues = {
     name: server.name,
@@ -42,6 +48,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
     curseforgeModpackVersion: server.curseforgeModpackVersion ?? "",
     recommendedRamGB: server.recommendedRamGB?.toString() ?? "",
     autoConnect: server.autoConnect,
+    addToServerList: server.addToServerList !== false,
   };
   // Controle "Publier" (visibilite publique) masque tant que l'auto-test de publication
   // (launcher, voir /api/launcher/servers/[slug]/self-test) n'a pas encore reussi une fois.
@@ -71,11 +78,13 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
           inviteCode={server.inviteCode}
           canPublish={canPublish}
           sourceStates={sourceStates}
+          sourceMaintenance={sourceMaintenance}
           defaultValues={defaultValues}
         >
           <div className="border-t border-border pt-5">
             <ManageActions
               slug={server.slug}
+              serverName={server.name}
               published={server.published}
               isPrivate={server.isPrivate}
               frozen={server.frozenAt !== null}
@@ -87,6 +96,14 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
           </div>
         </ServerForm>
       </div>
+
+      {showTeamPicker ? (
+        <ServerTeamPicker
+          serverId={server.id}
+          teams={teams.map((team) => ({ id: team.id, name: team.name }))}
+          current={teams.some((team) => team.id === currentTeamId) ? currentTeamId : null}
+        />
+      ) : null}
     </div>
   );
 }

@@ -88,7 +88,7 @@ export default async function AdminContact() {
                   </form>
                 ) : null}
                 <form method="post" action={`/api/admin/contact/${m.id}/delete`}>
-                  <ConfirmSubmitButton confirmText="Supprimer définitivement ce message ?" style={actionStyle("var(--danger)")}>
+                  <ConfirmSubmitButton confirmText="Supprimer ce message ?" confirmBody="Le message sera effacé définitivement." confirmLabel="Supprimer le message" style={actionStyle("var(--danger)")}>
                     Supprimer
                   </ConfirmSubmitButton>
                 </form>

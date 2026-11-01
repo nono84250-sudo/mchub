@@ -11,7 +11,7 @@ export function MicrosoftSignInButton({ from }: { from?: string }) {
 
   return (
     <form action={signInWithMicrosoft.bind(null, from)}>
-      <button type="submit" className="btn-primary w-full justify-center gap-2.5">
+      <button type="submit" className="btn-fill w-full justify-center gap-2.5">
         <svg viewBox="0 0 21 21" className="h-4 w-4" aria-hidden="true">
           <rect x="1" y="1" width="9" height="9" fill="#f25022" />
           <rect x="11" y="1" width="9" height="9" fill="#7fba00" />

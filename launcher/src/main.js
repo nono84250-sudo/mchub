@@ -1,5 +1,5 @@
 require("dotenv").config({ path: require("node:path").join(__dirname, "..", ".env") });
-const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, session, screen, nativeImage } = require("electron");
 
 // Verrou de navigation (audit 14/10, L1). Avant : un lien glisse sur la fenetre, ou un
 // window.open, chargeait une page distante DANS la fenetre du launcher, avec le preload, donc
@@ -43,10 +43,29 @@ function isLocalSender(event) {
   }
 }
 
+// Laboratoire (25/10) : chaque canal d'une fonctionnalité cachée répond « feature_off » sans
+// rien lancer (cloud:* = mondes en ligne, play:* = mode Jouer, friends:* = amis). Voir features.js.
+const FEATURE_IPC = [
+  ["cloud:", "worlds"],
+  ["play:", "play"],
+  ["friends:", "friends"],
+  // Page d'une version (27/10) : Mon pack, version vanilla (« vanillaPage ») ou Pack Omniscient.
+  ["myPack:", ["myPack", "vanillaPage", "omniPack"]],
+  ["omniPack:", "omniPack"],
+  // « Importer un pack » (27/10) : export CurseForge ou pack Modrinth, l'un des deux suffit.
+  ["cfPack:", ["cfImport", "mrImport"]],
+];
 const registerIpcHandler = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, listener) =>
   registerIpcHandler(channel, (event, ...args) => {
     if (!isLocalSender(event)) throw new Error("Appel refusé : origine non autorisée");
+    const gate = FEATURE_IPC.find(([prefix]) => channel.startsWith(prefix));
+    if (gate && ![].concat(gate[1]).some((id) => features.visible(id))) return { ok: false, code: "feature_off" };
+    // Dossier d'une version vanilla : le sien avec la séparation stricte, sinon le dossier commun.
+    if (/^(play|myPack|omniPack|cfPack):/.test(channel)) {
+      playMode.setStrict(features.visible("strictDirs"));
+      playMode.setKeysSync(features.visible("keysSync"));
+    }
     return listener(event, ...args);
   });
 
@@ -55,6 +74,16 @@ ipcMain.handle = (channel, listener) =>
 // sur le meme GAME_ROOT, ecritures concurrentes sans verrou sur settings.json/accounts.bin,
 // double enregistrement du raccourci global de debug). Doit etre demande avant toute autre
 // initialisation (avant meme la creation de la premiere fenetre).
+// Icone de la barre des taches Windows (17/10, vu par Rushi : logo Electron en dev). Sans
+// AppUserModelId, Windows range la fenetre sous electron.exe et prend son icone ; avec le meme id
+// que electron-builder (build.appId), la fenetre garde l'icone Omniscient, en dev comme installe.
+// 18/10 : en npm start, l'id seul ne suffisait pas (toujours logo Electron, notifications
+// « Electron »). Windows tire le nom et l'icone des notifications d'un raccourci du menu Demarrer
+// portant cet id : l'installateur le cree, en dev voir ensureDevStartMenuShortcut. Id a part en dev
+// pour ne pas se melanger avec une version installee sur le meme PC.
+const APP_USER_MODEL_ID = app.isPackaged ? "app.omniscient.launcher" : "app.omniscient.launcher.dev";
+if (process.platform === "win32") app.setAppUserModelId(APP_USER_MODEL_ID);
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -82,6 +111,10 @@ app.on("open-url", (event, url) => {
 });
 
 const path = require("node:path");
+// Delais de rafraichissement (liste, fiches, presence) : un seul fichier de reglages, partage avec renderer.js.
+const REFRESH = require("./refreshSettings");
+// .ico sous Windows (plusieurs tailles, net dans la barre des taches), .png ailleurs.
+const WINDOW_ICON = path.join(__dirname, "..", "build", process.platform === "win32" ? "icon.ico" : "icon.png");
 const os = require("node:os");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
@@ -90,7 +123,8 @@ const logStore = require("./logStore");
 
 // Liens « Ouvrir dans le launcher » de la fiche serveur du site (16/10) :
 //   omniscient://server/<slug>  ouvre la fiche de ce serveur ;
-//   omniscient://join/<CODE>    rejoint un serveur prive par son code d'invitation, puis l'ouvre.
+//   omniscient://join/<CODE>    rejoint un serveur prive par son code d'invitation, puis l'ouvre ;
+//   omniscient://team/<slug>    ouvre la page Serveurs filtree sur cette team.
 // Rien d'autre n'est accepte : le lien vient d'une page web, donc seul un slug ou un code au
 // format attendu passe, et il ne fait qu'ouvrir une fiche (jamais lancer le jeu tout seul).
 // Le renderer recupere le lien en attente quand il est pret (app:takeServerLink) ; ensuite les
@@ -111,13 +145,29 @@ function parseServerLink(raw) {
   const value = url.pathname.replace(/^\/+|\/+$/g, "");
   if (url.hostname === "server" && /^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/.test(value)) return { kind: "server", value };
   if (url.hostname === "join" && /^[A-Za-z0-9]{4,16}$/.test(value)) return { kind: "join", value: value.toUpperCase() };
+  // omniscient://team/<slug> (19/10) : la page Serveurs filtree sur cette team.
+  if (url.hostname === "team" && /^[a-z0-9-]{1,80}$/.test(value)) return { kind: "team", value };
+  // omniscient://test-pack/<jeton> (31/10) : « Tester dans le launcher » de l'admin du site. Le jeton
+  // est signé par le site (10 min, pour UN pack proposé) ; le lien n'installe qu'une copie privée.
+  if (url.hostname === "test-pack" && /^[\w-]{8,64}\.\d{9,11}\.[\w-]{32}$/.test(value)) return { kind: "test-pack", value };
+  // omniscient://test-bug/<slug> (31/10) : « Essayer dans le launcher » de l'admin. Montre la fenêtre d'une
+  // fiche déjà reçue, sans jamais réparer ni compter : rien à protéger par un jeton.
+  if (url.hostname === "test-bug" && /^[a-z0-9-]{1,80}$/.test(value)) return { kind: "test-bug", value };
   return null;
 }
 
 function deliverServerLink(raw) {
   const link = parseServerLink(raw);
   if (!link) return;
-  logStore.pushLog({ level: "info", source: "launcher", message: `Lien du site : ${link.kind === "server" ? `fiche ${link.value}` : "code d'invitation"}` });
+  if (link.kind === "test-bug") {
+    showBugTest(link.value).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Essai de fiche : ${error.message}` }));
+    return;
+  }
+  if (link.kind === "test-pack") {
+    installTestPack(link.value).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Test de pack : ${error.message}` }));
+    return;
+  }
+  logStore.pushLog({ level: "info", source: "launcher", message: `Lien du site : ${link.kind === "server" ? `fiche ${link.value}` : link.kind === "team" ? `team ${link.value}` : "code d'invitation"}` });
   const win = BrowserWindow.getAllWindows()[0];
   if (serverLinkRendererReady && win && !win.isDestroyed()) win.webContents.send("app:serverLink", link);
   else pendingServerLink = link;
@@ -130,6 +180,21 @@ if (process.defaultApp && process.argv.length >= 2) {
   app.setAsDefaultProtocolClient(SERVER_LINK_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
 } else {
   app.setAsDefaultProtocolClient(SERVER_LINK_SCHEME);
+}
+// Fichiers .omnipack avec le logo Omniscient (28/10, Rushi). Version installée : l'installateur s'en
+// charge (fileAssociations de package.json). En développement (electron .) : écrit pour ce compte
+// Windows seulement (HKCU), le logo seul (le double-clic n'importe pas encore le pack).
+if (process.platform === "win32" && process.defaultApp) {
+  const ico = path.join(__dirname, "..", "build", "icon.ico");
+  if (fs.existsSync(ico)) {
+    const { execFile } = require("node:child_process");
+    const reg = (args) => new Promise((resolve) => execFile("reg", ["add", ...args, "/f"], { windowsHide: true }, () => resolve()));
+    (async () => {
+      await reg(["HKCU\\Software\\Classes\\.omnipack", "/ve", "/d", "Omniscient.omnipack"]);
+      await reg(["HKCU\\Software\\Classes\\Omniscient.omnipack", "/ve", "/d", "Pack Omniscient"]);
+      await reg(["HKCU\\Software\\Classes\\Omniscient.omnipack\\DefaultIcon", "/ve", "/d", `${ico},0`]);
+    })().catch(() => {});
+  }
 }
 {
   const startupLink = process.argv.find((arg) => typeof arg === "string" && arg.startsWith(`${SERVER_LINK_SCHEME}://`));
@@ -148,7 +213,10 @@ if (process.defaultApp && process.argv.length >= 2) {
 // impossible de "repartir de zero" en dev sans affecter la prod (et vice-versa).
 const isDev = !app.isPackaged;
 const defaultUserDataPath = app.getPath("userData");
-const dottedUserDataPath = path.join(path.dirname(defaultUserDataPath), isDev ? ".omniscient-launcher-dev" : ".omniscient-launcher");
+// MCHUB_USER_DATA_DIR (dev seulement) : profil jetable pour tester sans toucher au dossier dev
+// habituel (ex. deplacement du dossier des jeux, serie 2 idee 9).
+const dottedUserDataPath =
+  (isDev && process.env.MCHUB_USER_DATA_DIR) || path.join(path.dirname(defaultUserDataPath), isDev ? ".omniscient-launcher-dev" : ".omniscient-launcher");
 // Migration ponctuelle de l'ancien dossier par defaut d'Electron — uniquement en production :
 // seuls de vrais joueurs ont pu avoir des comptes/reglages enregistres dans ce dossier avant
 // l'introduction de la convention dotfile. En dev, un dossier par defaut trouve n'est que du
@@ -163,6 +231,8 @@ if (!isDev && !fs.existsSync(dottedUserDataPath) && fs.existsSync(defaultUserDat
 }
 app.setPath("userData", dottedUserDataPath);
 
+// Dossier des jeux (serie 2, idee 9) : a lire avant mcLaunch et javaManager.
+const gamesLocation = require("./gamesLocation");
 const msAuth = require("./msAuth");
 const { launchMinecraft, GAME_ROOT, getRunningGame, stopGame } = require("./mcLaunch");
 const {
@@ -174,7 +244,21 @@ const {
   prepareLaunchVersion,
   readInstalledState,
   listInstalledInstances,
+  installFiles,
+  findOnModrinth,
 } = require("./modpack");
+const { createPlayMode, supportsQuickPlay } = require("./playMode");
+const playPacks = require("./playPacks");
+const { createOmniPack } = require("./omniPack");
+const crashHelp = require("./crashHelp");
+const { createBugCatalog, canRepairKind, repair: repairBug } = require("./bugCatalog");
+const { readLevelBuffer } = require("./levelDat");
+const { extractZip, listZip, writeZip } = require("./zipStream");
+const { createWorldCloud } = require("./worldCloud");
+const { createSaveOverlay } = require("./saveOverlay");
+const { createLiveSave } = require("./liveSave");
+const { createFeatures } = require("./features");
+const { trackGameWindow } = require("./gameWindow");
 const { pingMinecraftServer } = require("./mcPing");
 const sessionStore = require("./sessionStore");
 const settingsStore = require("./settingsStore");
@@ -200,30 +284,12 @@ try {
 
 // URL du site Omniscient, source de vérité (voir cahier des charges, section
 // "modèle de synchronisation").
-let SITE_URL = process.env.MCHUB_SITE_URL || generatedEnv.MCHUB_SITE_URL || "http://localhost:3000";
-// Adresses de secours du site de production : si l'adresse principale ne
-// répond pas au démarrage, le launcher prend la première qui répond. Pas
-// utilisées pour le développement en local (localhost). Le vrai domaine d'abord (audit 14/10,
-// B8) : les liens d'invitation copiés reprennent l'adresse retenue, l'ancienne adresse
-// vercel.app ne sert qu'en dernier recours.
-const FALLBACK_SITE_URLS = ["https://omniscientlauncher.com", "https://omniscient-theta.vercel.app"];
-
-async function pickSiteUrl() {
-  if (!SITE_URL.startsWith("https://")) return;
-  const candidates = [SITE_URL, ...FALLBACK_SITE_URLS.filter((url) => url !== SITE_URL)];
-  for (const url of candidates) {
-    try {
-      const res = await fetch(`${url.replace(/\/$/, "")}/api/public/servers`, { signal: AbortSignal.timeout(4000) });
-      if (res.status < 500) {
-        SITE_URL = url.replace(/\/$/, "");
-        return;
-      }
-    } catch {
-      // Pas de réponse : on essaie l'adresse suivante.
-    }
-  }
-}
-// Pose la Content-Security-Policy une fois SITE_URL connu (voir pickSiteUrl) : les images
+// Plus d'adresse de secours ni de sonde au démarrage (audit 25/10) : l'ancienne adresse
+// vercel.app est retirée, et la fenêtre ne doit plus attendre jusqu'à 4 s par adresse avant de
+// s'ouvrir. Un build publié vise toujours https://omniscientlauncher.com (vérifié au build par
+// scripts/generate-env.js) ; en dev, MCHUB_SITE_URL=http://localhost:3000 reste accepté.
+const SITE_URL = (process.env.MCHUB_SITE_URL || generatedEnv.MCHUB_SITE_URL || "http://localhost:3000").trim().replace(/\/$/, "");
+// Pose la Content-Security-Policy (SITE_URL est fixe dès le chargement) : les images
 // de serveur (bannerUrl/iconUrl) viennent du site et doivent pouvoir se charger, mais
 // seulement depuis une adresse https, ou depuis SITE_URL lui-meme quand c'est localhost en
 // http (developpement local). Jamais de http: autorise en general, pour ne pas ouvrir la
@@ -265,6 +331,9 @@ const LAUNCHER_API_KEY = process.env.LAUNCHER_API_KEY || generatedEnv.LAUNCHER_A
 // Optionnel (voir discordPresence.js) : Rich Presence desactivee proprement
 // si absent, jamais une erreur bloquante comme LAUNCHER_API_KEY ci-dessus.
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || generatedEnv.DISCORD_CLIENT_ID;
+// Optionnel aussi (idee 3 du lancement, 19/10) : rapports d'erreurs Sentry, voir errorReports.js.
+const errorReports = require("./errorReports");
+errorReports.init({ dsn: process.env.SENTRY_DSN || generatedEnv.SENTRY_DSN, release: app.getVersion() });
 const REQUEST_TIMEOUT_MS = 8000;
 
 // En-tetes des routes /api/launcher/* qui agissent au nom du joueur connecte
@@ -286,6 +355,7 @@ const REQUEST_TIMEOUT_MS = 8000;
 // fois cette marge depassee, un nouvel echange est demande en arriere-plan
 // (voir requestLauncherSession) et le jeton Mojang est envoye en repli pour
 // cet appel-ci (et les suivants) jusqu'a ce que le nouvel echange reussisse.
+let featuresSessionUuid = null;
 let launcherSession = null; // { uuid, token, expiresAt (ms) }
 let launcherSessionRequest = null;
 // UUID du joueur qui vient de se connecter avec le bouton Microsoft (pas une reprise de
@@ -304,6 +374,8 @@ function usableLauncherSessionToken() {
 
 function requestLauncherSession() {
   if (!currentSession || launcherSessionRequest) return;
+  // Site sature (voir siteBusyUntil) : pas d'echange pour l'instant, repli sur le jeton Mojang.
+  if (Date.now() < siteBusyUntil) return;
   const uuid = currentSession.profile.id;
   const mojangToken = currentSession.authorization.access_token;
   const freshLogin = pendingFreshLoginUuid === uuid;
@@ -320,6 +392,7 @@ function requestLauncherSession() {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) {
+        if (res.status === 429 || (res.status === 503 && (await res.json().catch(() => null))?.busy === true)) markSiteBusy(res);
         logStore.pushLog({ level: "warn", source: "launcher", message: `Session launcher : échange refusé (HTTP ${res.status}), repli sur le jeton Mojang` });
         return;
       }
@@ -328,6 +401,12 @@ function requestLauncherSession() {
       // Joueur deconnecte pendant l'echange : on ne garde pas sa session.
       if (currentSession?.profile.id !== uuid) return;
       launcherSession = { uuid, token: data.token, expiresAt: data.expiresAt };
+      // Laboratoire : ce joueur est peut-être testeur, on relit ses fonctionnalités (une fois par
+      // compte : le rafraîchissement des 10 min suffit ensuite, audit du 25/10).
+      if (featuresSessionUuid !== uuid) {
+        featuresSessionUuid = uuid;
+        features.refresh();
+      }
       logStore.pushLog({ level: "debug", source: "launcher", message: `Session launcher : jeton obtenu, valable jusqu'à ${new Date(data.expiresAt).toLocaleTimeString("fr-FR")}` });
     } catch (error) {
       // Sans importance : les requetes continuent avec le jeton Mojang.
@@ -361,7 +440,7 @@ async function revokeLauncherSession() {
 function launcherAuthHeaders() {
   const sessionToken = usableLauncherSessionToken();
   if (sessionToken) {
-    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": sessionToken };
+    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Session": sessionToken, "X-Launcher-Version": app.getVersion() };
   }
   // Pas encore connecte (2026-10-11 : "Installer" peut maintenant s'utiliser
   // sans compte, voir server:install) — la cle du launcher seule suffit pour
@@ -371,10 +450,10 @@ function launcherAuthHeaders() {
   // etait lu sans garde, "Cannot read properties of null" des le premier
   // appel sans session (trouve en testant le bouton "Installer").
   if (!currentSession) {
-    return { Authorization: `Bearer ${LAUNCHER_API_KEY}` };
+    return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Launcher-Version": app.getVersion() };
   }
   requestLauncherSession();
-  return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Minecraft-Token": currentSession.authorization.access_token };
+  return { Authorization: `Bearer ${LAUNCHER_API_KEY}`, "X-Minecraft-Token": currentSession.authorization.access_token, "X-Launcher-Version": app.getVersion() };
 }
 
 // Session du joueur connecté (compte Microsoft/Minecraft), en mémoire.
@@ -390,6 +469,17 @@ function setSession(profile, authorization, { freshLogin = false } = {}) {
   clearServerCaches();
   pendingFreshLoginUuid = freshLogin ? profile.id : null;
   requestLauncherSession();
+  // Mode Jouer : reprend un envoi de mondes laissé en cours (worldCloud, défini plus bas).
+  setTimeout(() => {
+    try {
+      // État relu d'abord : la synchro ne démarre jamais sur un état ancien.
+      // Audit du 28/10 (correctif 6) : réponse reçue il y a moins d'une minute pour ce compte
+      // (écran de chargement, jeton de session) : reprise telle quelle, pas de 3e lecture.
+      features.recent(60_000).then(() => features.visible("worlds") && worldCloud.start()).catch(() => {});
+    } catch {
+      /* pas encore prêt au tout premier démarrage */
+    }
+  }, 5000);
   return profile;
 }
 
@@ -459,20 +549,106 @@ async function withSessionRetry(send) {
   }
 }
 
-async function fetchJson(url, options = {}) {
+const SITE_BUSY_MESSAGE = "Le site Omniscient est très demandé : réessaie dans une minute.";
+// Site sature (audit 25/10) : quand la base du site deborde, il repond 503 avec { busy: true } et
+// Retry-After (ou 429 quand un frein par adresse saute). Jusqu'a siteBusyUntil, les appels de fond
+// periodiques (presence, amis des listes, notifications, maintenance, liste des serveurs) ne
+// partent plus du tout : des milliers de launchers qui reessaient chaque minute empecheraient le
+// site de se remettre. Les actions du joueur (clic) partent quand meme, et renvoient l'erreur.
+const SITE_BUSY_DEFAULT_MS = 60_000;
+const SITE_BUSY_MAX_MS = 10 * 60_000;
+let siteBusyUntil = 0;
+
+// Le message est celui du site quand il en donne un (« réessaie dans une minute »...).
+function siteBusyError(message, status = 503) {
+  const error = new Error(message || `Réponse ${status} du site Omniscient`);
+  error.code = "busy";
+  error.status = status;
+  return error;
+}
+
+function markSiteBusy(res) {
+  const seconds = Number(res.headers.get("retry-after"));
+  const pauseMs = Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, SITE_BUSY_MAX_MS) : SITE_BUSY_DEFAULT_MS;
+  const until = Date.now() + pauseMs;
+  if (until > siteBusyUntil) {
+    siteBusyUntil = until;
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Site Omniscient saturé (HTTP ${res.status}) : appels de fond en pause ${Math.round(pauseMs / 1000)} s` });
+  }
+}
+
+// `options.background` : appel de fond periodique, saute tant que le site est sature.
+// Laboratoire (25/10) : fonctionnalités visibles pour ce launcher, voir features.js.
+const features = createFeatures({
+  cacheDir: app.getPath("userData"),
+  siteUrl: SITE_URL,
+  authHeaders: () => launcherAuthHeaders(),
+  currentUuid: () => currentSession?.profile?.id || null,
+  fetchJson: (url, options) => fetchJson(url, options),
+  log: (message, level = "info") => logStore.pushLog({ level, source: "launcher", message }),
+  onChange: (state) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("features:changed", state);
+    try {
+      if (state.worlds?.visible && currentSession) worldCloud.start();
+      else if (!state.worlds?.visible) rawWorldCloud.suspend();
+    } catch {
+      /* worldCloud pas encore prêt : setSession s'en charge */
+    }
+  },
+});
+ipcMain.handle("features:get", () => features.all());
+// Écran de chargement (retour de Rushi du 25/10 : une icône surgissait 3 s après l'affichage) :
+// le menu attend les droits de CE compte. Compte mémorisé : on laisse d'abord sa reprise de
+// session aboutir (au plus 1,5 s), puis au plus 3,5 s en tout ; sinon le dernier état connu.
+ipcMain.handle("features:ready", async () => {
+  const start = Date.now();
+  let remembered = false;
+  try {
+    remembered = !!sessionStore.loadAccounts().activeId;
+  } catch {
+    /* pas de compte lisible : visiteur */
+  }
+  while (remembered && !currentSession && Date.now() - start < 1500) await new Promise((r) => setTimeout(r, 100));
+  return features.ready(Math.max(500, 3500 - (Date.now() - start)));
+});
+app.whenReady().then(() => features.start());
+// Catalogue de bugs (31/10, Laboratoire « bugCatalog ») : fiches reçues du site, voir bugCatalog.js.
+const bugCatalog = createBugCatalog({
+  cacheDir: app.getPath("userData"),
+  siteUrl: SITE_URL,
+  authHeaders: () => launcherAuthHeaders(),
+  fetchJson: (url, options, extra) => fetchJson(url, options, extra),
+  isOn: () => features.visible("bugCatalog"),
+  log: (message, level = "info") => logStore.pushLog({ level, source: "launcher", message }),
+});
+app.whenReady().then(() => bugCatalog.start(features.recent(60_000)));
+
+async function fetchJson(url, { background = false, ...options } = {}, { withEtag = false } = {}) {
+  // Jamais affiche au joueur : les appels de fond echouent en silence (voir renderer.js).
+  if (background && Date.now() < siteBusyUntil) throw siteBusyError("Site Omniscient saturé : appel de fond reporté.");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
+    // 21/10 : « pas de changement » (le site a compare l'ETag envoye) : l'appelant garde ce qu'il a.
+    if (res.status === 304) return { notModified: true };
     if (!res.ok) {
       // Le site renvoie un message et parfois un code (ex. « frozen ») : on les garde.
       const body = await res.json().catch(() => null);
-      const error = new Error(body?.error || `Réponse ${res.status} du site Omniscient`);
+      // Audit de charge du 19/10 (B5) + audit 25/10 : site saturé (503 « busy », ou 429 du frein
+      // par adresse) -> appels de fond en pause et message clair au lieu de « Réponse 500 ».
+      const busy = res.status === 429 || (res.status === 503 && (body?.busy === true || body?.code === "busy"));
+      if (busy) {
+        markSiteBusy(res);
+        throw siteBusyError(body?.error || SITE_BUSY_MESSAGE, res.status);
+      }
+      const error = new Error(res.status === 503 ? SITE_BUSY_MESSAGE : body?.error || `Réponse ${res.status} du site Omniscient`);
       error.status = res.status;
-      error.code = body?.code;
+      error.code = busy ? "busy" : body?.code;
       throw error;
     }
-    return await res.json();
+    const data = await res.json();
+    return withEtag ? { etag: res.headers.get("etag"), data } : data;
   } catch (error) {
     if (error.name === "AbortError") throw new Error("Le site Omniscient n'a pas répondu à temps.");
     throw error;
@@ -547,6 +723,43 @@ function ensureWindowVisible(win) {
   if (fitted.x !== b.x || fitted.y !== b.y || fitted.width !== b.width || fitted.height !== b.height) win.setBounds(fitted);
 }
 
+// Dev (npm start) sous Windows : la fenetre appartient a electron.exe, dont Windows prend le nom
+// et le logo. On donne a chaque fenetre l'id, l'icone et le nom d'Omniscient pour la barre des
+// taches. La version installee n'en a pas besoin (son .exe porte deja l'icone et le nom).
+function applyDevTaskbarIdentity(win) {
+  if (process.platform !== "win32" || app.isPackaged) return;
+  win.setAppDetails({
+    appId: APP_USER_MODEL_ID,
+    appIconPath: WINDOW_ICON,
+    appIconIndex: 0,
+    relaunchCommand: `"${process.execPath}" "${app.getAppPath()}"`,
+    relaunchDisplayName: "Omniscient Launcher (dev)",
+  });
+}
+
+// Raccourci « Omniscient Launcher (dev) » dans le menu Demarrer, recree seulement s'il manque ou a
+// change : sans lui, Windows affiche les notifications sous « Electron » avec son logo.
+function ensureDevStartMenuShortcut() {
+  if (process.platform !== "win32" || app.isPackaged) return;
+  const shortcutPath = path.join(app.getPath("appData"), "Microsoft", "Windows", "Start Menu", "Programs", "Omniscient Launcher (dev).lnk");
+  const options = {
+    target: process.execPath,
+    args: `"${app.getAppPath()}"`,
+    cwd: app.getAppPath(),
+    icon: WINDOW_ICON,
+    iconIndex: 0,
+    appUserModelId: APP_USER_MODEL_ID,
+    description: "Omniscient Launcher (version de dev, npm start)",
+  };
+  try {
+    const current = fs.existsSync(shortcutPath) ? shell.readShortcutLink(shortcutPath) : null;
+    if (current && current.target === options.target && current.args === options.args && current.icon === options.icon && current.appUserModelId === options.appUserModelId) return;
+    shell.writeShortcutLink(shortcutPath, current ? "replace" : "create", options);
+  } catch (error) {
+    logStore.pushLog({ source: "launcher", level: "warn", message: `Raccourci de dev du menu Démarrer non créé : ${error instanceof Error ? error.message : error}` });
+  }
+}
+
 const expandedWindows = new WeakSet();
 
 function createWindow() {
@@ -559,7 +772,7 @@ function createWindow() {
     resizable: false,
     backgroundColor: "#070c16",
     frame: false,
-    icon: path.join(__dirname, "..", "build", "icon.png"),
+    icon: WINDOW_ICON,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -567,6 +780,7 @@ function createWindow() {
       sandbox: true,
     },
   });
+  applyDevTaskbarIdentity(win);
   // Sans barre de titre native (frame: false), l'etat maximise/restaure
   // n'est visible nulle part ailleurs : le renderer doit le connaitre pour
   // afficher la bonne icone sur son propre bouton.
@@ -597,6 +811,17 @@ function createWindow() {
     if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.close();
   });
 
+  // Ctrl+Shift+D (Cmd+Shift+D sur macOS) : console de debug. Seulement quand la fenetre du
+  // launcher a le focus (audit 25/10) : l'ancien raccourci global (globalShortcut) volait cette
+  // combinaison a toutes les autres applis du PC, Minecraft compris.
+  win.webContents.on("before-input-event", (event, input) => {
+    const modifier = process.platform === "darwin" ? input.meta : input.control;
+    if (input.type === "keyDown" && modifier && input.shift && !input.alt && input.key.toLowerCase() === "d") {
+      event.preventDefault();
+      createConsoleWindow();
+    }
+  });
+
   lockAppNavigation(win.webContents);
   win.loadFile(path.join(__dirname, "index.html"));
 
@@ -623,7 +848,7 @@ function createConsoleWindow() {
     minHeight: 360,
     backgroundColor: "#161826",
     frame: false,
-    icon: path.join(__dirname, "..", "build", "icon.png"),
+    icon: WINDOW_ICON,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -631,6 +856,7 @@ function createConsoleWindow() {
       sandbox: true,
     },
   });
+  applyDevTaskbarIdentity(consoleWindow);
 
   const sendMaximizedState = () => {
     if (!consoleWindow.isDestroyed()) consoleWindow.webContents.send("window:maximized-changed", consoleWindow.isMaximized());
@@ -673,8 +899,9 @@ function wireAutoUpdater(win) {
 
   autoUpdater.on("checking-for-update", () => send({ phase: "checking" }));
   autoUpdater.on("update-available", (info) => {
-    // Canal bêta : la dernière bêta publiée est toujours prise, quel que soit son
-    // numéro (la bêta fait autorité). Canal stable : seule une version plus
+    // Canal bêta : la dernière bêta publiée est prise si son numéro est plus récent
+    // (electron-updater écarte déjà les numéros plus bas, allowDowngrade étant faux sur ce
+    // canal depuis l'audit 25/10, voir checkForUpdates). Canal stable : seule une version plus
     // récente est prise, SAUF quand le joueur vient de décocher le canal bêta
     // alors qu'une bêta tourne (ex. 0.4.0-beta.1) : il revient alors sur la
     // dernière version stable publiée (ex. 0.3.3), même si son numéro est plus bas.
@@ -758,9 +985,13 @@ function checkForUpdates() {
     const betaChannel = settings.betaChannelChosen ? !!settings.betaChannel : settings.betaChannel || app.getVersion().includes("-beta");
     autoUpdater.channel = betaChannel ? "beta" : "latest";
     autoUpdater.allowPrerelease = betaChannel;
-    // Le setter de channel active déjà allowDowngrade ; on le fixe explicitement
-    // car le retour bêta -> stable est un retour à un numéro plus bas.
-    autoUpdater.allowDowngrade = true;
+    // Le setter de channel active déjà allowDowngrade ; on le fixe explicitement après.
+    // Retour à un numéro plus bas autorisé SEULEMENT pendant le retour bêta -> stable choisi
+    // par le joueur (case décochée alors qu'une bêta tourne). Avant (audit 25/10), il était
+    // permis en permanence, donc aussi sur le canal bêta : n'importe quelle version plus
+    // ancienne publiée pouvait y être réinstallée.
+    const leavingBeta = !betaChannel && app.getVersion().includes("-");
+    autoUpdater.allowDowngrade = leavingBeta;
     updateCheckResolve = resolve;
     autoUpdater.checkForUpdates().catch(() => resolve());
   });
@@ -786,7 +1017,7 @@ ipcMain.handle("logs:copyLatest", () => {
 // dans l'explorateur pour etre joint facilement a un message de support.
 ipcMain.handle("diagnostics:exportReport", async () => {
   const settings = settingsStore.loadSettings();
-  const info = await diagnostics.getSystemInfo({ ...settings, gameRoot: GAME_ROOT, appVersion: app.getVersion() });
+  const info = { ...(await diagnostics.getSystemInfo({ ...settings, gameRoot: GAME_ROOT, appVersion: app.getVersion() })), ...(await gamesFolderInfo()) };
   let recentLog = "";
   try {
     recentLog = fs.readFileSync(logStore.todayLogPath(), "utf8").split("\n").slice(-200).join("\n");
@@ -802,6 +1033,7 @@ ipcMain.handle("diagnostics:exportReport", async () => {
     `Java        : ${info.java || "non détecté"}`,
     `Mémoire     : ${info.memory}`,
     `GPU         : ${info.gpu || "inconnu"}`,
+    `Jeux        : ${info.gamesFolder}${info.gamesFree ? ` (${info.gamesFree} libres)` : ""}`,
     "",
     "--- Journal recent ---",
     recentLog,
@@ -812,17 +1044,29 @@ ipcMain.handle("diagnostics:exportReport", async () => {
   return { ok: true, path: reportPath };
 });
 
-ipcMain.handle("diagnostics:getSystemInfo", () =>
-  diagnostics.getSystemInfo({ ...settingsStore.loadSettings(), gameRoot: GAME_ROOT, appVersion: app.getVersion() }),
-);
+// Infos systeme + dossier des jeux et sa place libre (serie 2, idee 9).
+ipcMain.handle("diagnostics:getSystemInfo", async () => ({
+  ...(await diagnostics.getSystemInfo({ ...settingsStore.loadSettings(), gameRoot: GAME_ROOT, appVersion: app.getVersion() })),
+  ...(await gamesFolderInfo()),
+}));
 ipcMain.handle("diagnostics:getCacheSizeBytes", () => diagnostics.getCacheSizeBytes());
+// Refuses pendant une partie, un lancement ou une installation (audit 25/10) : versions/,
+// libraries/ et assets/ sont partages par tous les serveurs, les effacer a ce moment-la casse le
+// jeu en cours ou laisse une installation a moitie ecrite. Meme garde que « Supprimer les
+// fichiers » d'une instance (instanceBusy, ici pour n'importe quel serveur).
 ipcMain.handle("diagnostics:repair", () => {
+  const busy = instanceBusy(null);
+  if (busy) return { ok: false, code: busy };
   diagnostics.repairGameFiles();
   logStore.pushLog({ source: "launcher", message: "Fichiers du jeu réparés (versions/libraries effacés)." });
+  return { ok: true };
 });
 ipcMain.handle("diagnostics:clearCache", () => {
+  const busy = instanceBusy(null);
+  if (busy) return { ok: false, code: busy };
   diagnostics.clearCache();
   logStore.pushLog({ source: "launcher", message: "Cache vidé (assets/téléchargements)." });
+  return { ok: true };
 });
 
 // Toutes les requêtes réseau vers le site passent par le processus principal
@@ -834,15 +1078,20 @@ ipcMain.handle("diagnostics:clearCache", () => {
 // Une panne réseau n'est jamais gardée. Vidé quand le joueur agit (rejoindre, quitter,
 // Actualiser, test de publication, changement de compte) : voir clearServerCaches. Le lancement
 // et l'installation lisent toujours le site en direct.
-const SERVER_CACHE_MS = 60_000;
+const SERVER_CACHE_MS = REFRESH.SERVER_DETAIL_CACHE_MS;
 const SERVER_MISS_CACHE_MS = 30_000;
+// Liste d'amis lue pour les listes de serveurs (« Un ami y joue », appel de fond) : gardée
+// 5 minutes (audit 25/10, charge du site). La page Amis, elle, reste à une minute.
+const FRIENDS_BACKGROUND_CACHE_MS = 5 * 60_000;
 const serverCache = new Map();
 // Demandes en cours : deux pages qui veulent la même fiche au même moment n'en font qu'une.
 const serverInFlight = new Map();
+// Derniere liste de l'annuaire et son ETag (voir fetchServerListFromSite).
+let lastServerList = null;
 
-async function cachedFetch(key, load) {
+async function cachedFetch(key, load, ttlMs = SERVER_CACHE_MS) {
   const hit = serverCache.get(key);
-  if (hit && Date.now() - hit.at < (hit.error ? SERVER_MISS_CACHE_MS : SERVER_CACHE_MS)) {
+  if (hit && Date.now() - hit.at < (hit.error ? SERVER_MISS_CACHE_MS : ttlMs)) {
     if (hit.error) throw hit.error;
     return hit.data;
   }
@@ -866,7 +1115,11 @@ async function cachedFetch(key, load) {
   return pending;
 }
 
+// Monte a chaque vidage des amis (ajouter / accepter / retirer) : une liste partie avant n'est
+// ni remise en cache ni renvoyee au renderer (voir presence:heartbeat).
+let friendsCacheGeneration = 0;
 function clearFriendsCache() {
+  friendsCacheGeneration++;
   for (const key of serverCache.keys()) if (key.startsWith("friends:")) serverCache.delete(key);
   for (const key of serverInFlight.keys()) if (key.startsWith("friends:")) serverInFlight.delete(key);
 }
@@ -876,6 +1129,7 @@ let serverCacheGeneration = 0;
 
 function clearServerCaches() {
   serverCacheGeneration++;
+  lastServerList = null;
   serverCache.clear();
   serverInFlight.clear();
 }
@@ -885,21 +1139,113 @@ ipcMain.handle("servers:clearCache", () => {
   return { ok: true };
 });
 
-ipcMain.handle("servers:list", async () => {
+// 21/10 (cache des fiches) : le site repond 304 « pas de changement » si la liste n'a pas bouge
+// depuis la derniere recue (lastServerList, avec son empreinte ETag) : on garde alors celle-ci,
+// sans la retelecharger. Gardee en memoire REFRESH.LIST_CACHE_MS (3 min) ; « Actualiser » vide tout.
+async function fetchServerListFromSite({ background = false } = {}) {
+  const previous = lastServerList;
+  const res = await fetchJson(`${SITE_URL}/api/public/servers`, { background, ...(previous?.etag ? { headers: { "If-None-Match": previous.etag } } : {}) }, { withEtag: true });
+  if (res.notModified && previous) return previous.data;
+  if (res.notModified) return fetchJson(`${SITE_URL}/api/public/servers`, { background });
+  lastServerList = res.etag ? { etag: res.etag, data: res.data } : null;
+  return res.data;
+}
+
+ipcMain.handle("servers:list", async (_event, opts) => {
   try {
-    const data = await cachedFetch("list", () => fetchJson(`${SITE_URL}/api/public/servers`));
+    const data = await cachedFetch("list", () => fetchServerListFromSite({ background: !!opts?.background }), REFRESH.LIST_CACHE_MS);
+    forgetRemovedServers(data.servers);
     return { ok: true, servers: data.servers };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
 
+// Serveurs du joueur absents de l'annuaire public (privé, en pause, en attente de vérification),
+// retenus via « Mes serveurs » ou après un premier 404 : leur fiche publique est demandée avec la
+// preuve du propriétaire (voir servers:get), la route propriétaire restant le secours.
+const ownerOnlySlugs = new Set();
+
+async function fetchOwnerServer(slug) {
+  const data = await cachedFetch(`owner:${currentSession.profile.id}:${slug}`, () =>
+    fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
+      headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+    }),
+  );
+  const { ip: _ip, ...server } = data.server || {};
+  // Cette route ne renvoie pas le slug : sans lui, « Jouer » partait avec un slug
+  // undefined (GET /api/launcher/servers/undefined vu dans les logs du 14/10).
+  return data.server ? { ...server, slug } : null;
+}
+
+// « Petit serveur du jour » (19/10, variante A validee par Rushi) : choisi par le site, un par jour
+// (heure de Bruxelles). server peut etre null ; le renderer retombe alors sur l'ancien choix.
+ipcMain.handle("servers:featured", async () => {
+  try {
+    const data = await cachedFetch("featured", () => fetchJson(`${SITE_URL}/api/launcher/servers/featured`, { headers: launcherAuthHeaders() }));
+    return { ok: true, server: data.server || null, launches7d: data.launches7d ?? null, fillPercent: data.fillPercent ?? null, automatic: data.automatic !== false };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+// Serveur retiré du site (20/10, Bubule Land en 404 à chaque ouverture de Ma bibliothèque : son
+// instance est encore sur le disque, donc l'onglet Installés redemandait sa fiche à chaque fois).
+// Un vrai 404 (joueur connecté, route propriétaire essayée aussi) est retenu dans
+// settings.removedServers et la fiche n'est redemandée qu'une fois toutes les 12 h. Le serveur
+// redevient normal dès qu'il revient dans l'annuaire. Les fichiers de l'instance ne sont jamais touchés.
+// 23/10 (Rushi : « pas de demandes à la con au site ») : une fois par jour au plus, et sans
+// session le 404 public est retenu en mémoire jusqu'à la fermeture du launcher (pas enregistré :
+// le serveur privé d'un propriétaire déconnecté ne doit pas passer pour retiré au démarrage suivant).
+const REMOVED_SERVER_RECHECK_MS = 24 * 60 * 60 * 1000;
+const SLUG_KEY_RE = /^[a-z0-9-]{1,80}$/;
+const guestRemovedSlugs = new Set();
+
+function isRecentlyRemoved(slug) {
+  if (!currentSession && guestRemovedSlugs.has(slug)) return true;
+  const at = settingsStore.loadSettings().removedServers?.[slug];
+  return typeof at === "number" && Date.now() - at < REMOVED_SERVER_RECHECK_MS;
+}
+
+// Retiré du site d'après un vrai 404 déjà vu (enregistré, ou en mémoire sans session) : seule
+// condition pour que « Supprimer les fichiers » accepte aussi le marqueur d'un serveur vanilla.
+function isKnownRemoved(slug) {
+  return guestRemovedSlugs.has(slug) || typeof settingsStore.loadSettings().removedServers?.[slug] === "number";
+}
+
+function markRemovedServer(slug, removed) {
+  if (typeof slug !== "string" || !SLUG_KEY_RE.test(slug)) return;
+  const current = settingsStore.loadSettings().removedServers || {};
+  if (!removed && !Object.prototype.hasOwnProperty.call(current, slug)) return;
+  const next = { ...current };
+  if (removed) next[slug] = Date.now();
+  else delete next[slug];
+  settingsStore.saveSettings({ removedServers: next });
+}
+
+function forgetRemovedServers(servers) {
+  const removed = settingsStore.loadSettings().removedServers || {};
+  for (const server of servers || []) {
+    if (server?.slug && Object.prototype.hasOwnProperty.call(removed, server.slug)) markRemovedServer(server.slug, false);
+  }
+}
+
 ipcMain.handle("servers:get", async (_event, slug) => {
+  if (isRecentlyRemoved(slug)) return { ok: false, error: "Serveur retiré", frozen: false, notFound: true, removed: true };
+  // Fiche complete d'un de SES serveurs pas encore dans l'annuaire (19/10, Hypixel « en attente »
+  // vu vide par Rushi) : la route propriétaire ne renvoie que de quoi lancer (ni bannière, ni
+  // description, ni page). La fiche publique est donc demandée avec la preuve du propriétaire
+  // (jeton de session) ; la route propriétaire ne sert plus que de secours, marquée « partielle ».
+  const asOwner = Boolean(currentSession && ownerOnlySlugs.has(slug));
   try {
     // Serveur privé rejoint : le code d'invitation est nécessaire pour voir la fiche.
-    const data = await cachedFetch(`public:${slug}`, () =>
-      fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, { headers: inviteHeaders(slug) }),
+    const data = await cachedFetch(asOwner ? `public-owner:${currentSession.profile.id}:${slug}` : `public:${slug}`, () =>
+      fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, {
+        headers: asOwner ? { ...launcherAuthHeaders(), ...inviteHeaders(slug) } : inviteHeaders(slug),
+      }),
     );
+    markRemovedServer(slug, false);
+    guestRemovedSlugs.delete(slug);
     return { ok: true, server: data.server };
   } catch (publicError) {
     let error = publicError;
@@ -910,15 +1256,13 @@ ipcMain.handle("servers:get", async (_event, slug) => {
     // le lancement ; l'IP est retirée, comme dans la fiche publique.
     if (publicError?.status === 404 && publicError?.code !== "frozen" && currentSession) {
       try {
-        const data = await cachedFetch(`owner:${currentSession.profile.id}:${slug}`, () =>
-          fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}`, {
-            headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
-          }),
-        );
-        const { ip: _ip, ...server } = data.server || {};
-        // Cette route ne renvoie pas le slug : sans lui, « Jouer » partait avec un slug
-        // undefined (GET /api/launcher/servers/undefined vu dans les logs du 14/10).
-        if (data.server) return { ok: true, server: { ...server, slug } };
+        const server = await fetchOwnerServer(slug);
+        if (server) {
+          ownerOnlySlugs.add(slug);
+          markRemovedServer(slug, false);
+          // partial : le renderer explique pourquoi la fiche est incomplète au lieu d'une page vide.
+          return { ok: true, server: { ...server, partial: true } };
+        }
       } catch (ownerError) {
         error = ownerError;
       }
@@ -926,6 +1270,10 @@ ipcMain.handle("servers:get", async (_event, slug) => {
     // Serveur gelé : signalé pour afficher « gelé » plutôt que « introuvable ». notFound
     // distingue un vrai 404 (fiche supprimée, voir resolveServersBySlug côté renderer) d'une
     // panne réseau/timeout, qu'il ne faut surtout pas confondre avec une suppression.
+    if (error?.status === 404 && error?.code !== "frozen") {
+      if (currentSession) markRemovedServer(slug, true);
+      else guestRemovedSlugs.add(slug);
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Erreur inconnue",
@@ -944,6 +1292,7 @@ ipcMain.handle("servers:get", async (_event, slug) => {
 // vanilla (ecrit par prepareServerFiles ci-dessus) — on teste les deux sans
 // avoir besoin de connaitre le type a l'avance.
 ipcMain.handle("servers:installStatus", async (_event, slug) => {
+  if (!isValidInstanceSlug(slug)) return { installed: false };
   if (await isInstalled(GAME_ROOT, slug)) return { installed: true };
   const ready = await fsp
     .access(path.join(GAME_ROOT, "instances", slug, ".omniscient-ready.json"))
@@ -975,6 +1324,17 @@ ipcMain.handle("servers:mine", async () => {
         ),
       );
       logStore.pushLog({ level: "debug", source: "launcher", message: `Mes instances : ${fresh.servers?.length ?? 0} serveur(s) chargé(s)` });
+      // Ses serveurs qui ne sont pas dans l'annuaire public : fiche ouverte directement par la
+      // route propriétaire (voir ownerOnlySlugs plus haut).
+      for (const owned of fresh.servers || []) {
+        // Gelé : jamais ici, la route publique dit « gelé » et la fiche l'affiche comme tel.
+        if (owned?.slug && !owned.frozenAt && (!owned.published || owned.isPrivate || owned.verificationStatus !== "approved")) {
+          ownerOnlySlugs.add(owned.slug);
+        } else if (owned?.slug && ownerOnlySlugs.delete(owned.slug)) {
+          // Redevenu public (republié, validé) : sa fiche publique en cache est peut-être un 404.
+          serverCache.delete(`public:${owned.slug}`);
+        }
+      }
       return fresh;
     });
     return { ok: true, servers: data.servers };
@@ -1005,8 +1365,21 @@ ipcMain.handle("instances:listInstalled", async () => {
 // Rien n'est configurable dans le launcher : la console de gestion d'un
 // serveur (Mes instances) et la creation d'une nouvelle instance ouvrent
 // toujours le site dans le navigateur par defaut, jamais une fenetre interne.
-ipcMain.handle("servers:openManage", (_event, serverId) => {
-  if (typeof serverId === "string" && serverId) shell.openExternal(`${SITE_URL}/manage/${encodeURIComponent(serverId)}`);
+// 26/10 : section « reports » = page Signalements du serveur (clic sur une notification de
+// nouveau signalement). Seule valeur acceptee, jamais une adresse venue du renderer.
+ipcMain.handle("servers:openManage", (_event, serverId, section) => {
+  if (typeof serverId !== "string" || !serverId) return;
+  const suffix = section === "reports" ? "/reports" : "";
+  shell.openExternal(`${SITE_URL}/manage/${encodeURIComponent(serverId)}${suffix}`);
+});
+
+// Teams (19/10) : le renderer ne donne qu'un type et un slug (verifie ici), jamais une adresse.
+//   team  : page de la team (/team/<slug>) ;
+//   claim : page Contact avec le sujet « C'est mon serveur » et la fiche deja indiquee.
+ipcMain.handle("site:openTeamLink", (_event, kind, slug) => {
+  if (typeof slug !== "string" || !/^[a-z0-9-]{1,80}$/.test(slug)) return;
+  if (kind === "team") shell.openExternal(`${SITE_URL}/team/${slug}`);
+  else if (kind === "claim") shell.openExternal(`${SITE_URL}/contact?sujet=claim&serveur=${slug}`);
 });
 
 // Parametres > Divers > A propos (exige par les regles Discord pour developpeurs : la politique
@@ -1018,6 +1391,10 @@ const LEGAL_URLS = {
   privacy: "https://omniscientlauncher.com/confidentialite",
 };
 ipcMain.handle("app:openLegal", (_event, page) => {
+  // « Récupérer mes données » (Mon compte, 23/10) : la page Paramètres du site, où le bouton existe
+  // déjà (même logique que « Supprimer mon compte », qui vit sur le site). SITE_URL pour suivre
+  // le site local pendant les tests.
+  if (page === "myData") return shell.openExternal(`${SITE_URL}/dashboard/parametres#mes-donnees`);
   const url = Object.hasOwn(LEGAL_URLS, page) ? LEGAL_URLS[page] : null;
   if (url) shell.openExternal(url);
 });
@@ -1084,6 +1461,8 @@ function modpackErrorFields(error) {
   if (error?.code !== "manual_mods" || !Array.isArray(error.manualMods)) return {};
   return {
     code: "manual_mods",
+    // Noms des mods bloques retrouves sur Modrinth (liste « Installés depuis Modrinth », point 4).
+    fromModrinthMods: Array.isArray(error.fromModrinthMods) ? error.fromModrinthMods.slice(0, 200).map((name) => String(name).slice(0, 120)) : [],
     manualMods: error.manualMods.slice(0, 200).map((mod) => ({
       fileId: mod.fileId,
       modName: mod.modName || null,
@@ -1099,6 +1478,16 @@ function modpackErrorFields(error) {
 // Page CurseForge d'un mod bloque : uniquement https://www.curseforge.com. Le lien vient de
 // modpack.js (page exacte du fichier donnee par le site, sinon page du projet par son id). Plus
 // de recherche par nom (14/10, Rushi) : plusieurs mods peuvent porter le meme nom.
+// Lien de page de mod accepte seulement vers https://www.curseforge.com (lot 5, rapport au site).
+function safeModPageUrl(pageUrl) {
+  try {
+    const parsed = new URL(String(pageUrl || ""));
+    return parsed.protocol === "https:" && parsed.hostname === "www.curseforge.com" ? parsed.href.slice(0, 300) : null;
+  } catch {
+    return null;
+  }
+}
+
 ipcMain.handle("modpack:openModPage", (_event, pageUrl) => {
   try {
     const parsed = new URL(pageUrl);
@@ -1184,15 +1573,21 @@ ipcMain.handle("servers:setWatch", async (_event, { slug, notifyOnStatusChange }
 // juste une session Microsoft active (pas de preuve de propriete a verifier ici) — l'UUID et le
 // pseudo envoyes au site sont ceux du profil DEJA connu du launcher (currentSession), jamais
 // saisis par l'utilisateur.
-ipcMain.handle("friends:list", async () => {
+ipcMain.handle("friends:list", async (_event, opts) => {
+  const background = !!opts?.background;
   if (!currentSession) {
     return { ok: false, error: "Pas de compte Microsoft connecté." };
   }
   try {
     const uuid = currentSession.profile.id;
-    // Même règle d'une minute que les serveurs ; vidé après ajouter / accepter / retirer.
-    const data = await cachedFetch(`friends:${uuid}`, () =>
-      fetchJson(`${SITE_URL}/api/launcher/friends?minecraftUuid=${encodeURIComponent(uuid)}`, { headers: launcherAuthHeaders() }),
+    // Page Amis : même règle d'une minute que les serveurs. Listes de serveurs (background) :
+    // 5 minutes. Vidé après ajouter / accepter / retirer.
+    const data = await cachedFetch(
+      `friends:${uuid}`,
+      () => fetchJson(`${SITE_URL}/api/launcher/friends?minecraftUuid=${encodeURIComponent(uuid)}`, { headers: launcherAuthHeaders(), background }),
+      // Audit du 28/10 (correctif 2) : un nombre. Avant, un objet { maxAgeMs } : la comparaison
+      // de cachedFetch etait toujours fausse et la liste etait redemandee au site a chaque fois.
+      background ? FRIENDS_BACKGROUND_CACHE_MS : SERVER_CACHE_MS,
     );
     return { ok: true, friends: data.friends ?? [], incoming: data.incoming ?? [], outgoing: data.outgoing ?? [] };
   } catch (error) {
@@ -1214,7 +1609,9 @@ ipcMain.handle("friends:add", async (_event, minecraftUsername) => {
     await fetchJson(`${SITE_URL}/api/launcher/friends`, {
       method: "POST",
       headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, targetUsername: minecraftUsername }),
+      // `query` = pseudo OU code d'ami (reglage « Qui peut m'ajouter », 18/10) ; targetUsername garde
+      // pour un site plus ancien.
+      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, targetUsername: minecraftUsername, query: minecraftUsername }),
     });
     clearFriendsCache();
     return { ok: true };
@@ -1222,6 +1619,40 @@ ipcMain.handle("friends:add", async (_event, minecraftUsername) => {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
+// « Qui peut m'ajouter en ami » (variante C, 18/10) : meme reglage que sur le site (page Amis et
+// Parametres > Confidentialite). friendPolicy = "all" | "code" | "none", friendCode = « K7Q-9XM ».
+ipcMain.handle("friends:getSettings", async () => {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  try {
+    const uuid = currentSession.profile.id;
+    const data = await fetchJson(`${SITE_URL}/api/launcher/friends/settings?minecraftUuid=${encodeURIComponent(uuid)}`, { headers: launcherAuthHeaders() });
+    return { ok: true, friendPolicy: data.friendPolicy || "code", friendCode: data.friendCode || null };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+async function patchFriendSettings(body) {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  try {
+    const uuid = currentSession.profile.id;
+    const data = await fetchJson(`${SITE_URL}/api/launcher/friends/settings`, {
+      method: "PATCH",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ minecraftUuid: uuid, ...body }),
+    });
+    return { ok: true, friendPolicy: data.friendPolicy || "code", friendCode: data.friendCode || null };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+}
+
+ipcMain.handle("friends:setPolicy", (_event, policy) => {
+  if (!["all", "code", "none"].includes(policy)) return { ok: false, error: "Réglage inconnu." };
+  return patchFriendSettings({ friendPolicy: policy });
+});
+ipcMain.handle("friends:newCode", () => patchFriendSettings({ regenerateCode: true }));
+
 // Accepter une demande recue (seul le destinataire peut, verifie cote site).
 ipcMain.handle("friends:accept", async (_event, friendUserId) => {
   if (!currentSession) {
@@ -1258,23 +1689,47 @@ ipcMain.handle("friends:remove", async (_event, friendUserId) => {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
-// Heartbeat de presence (voir lib/presence.ts cote site) : greffe sur le cycle de 60s existant
-// du launcher (REFRESH_INTERVAL_MS/scheduleRefresh dans renderer.js), jamais un intervalle a
-// part. Echec silencieux cote renderer (voir sendPresenceHeartbeat la-bas) : un heartbeat rate
+// Heartbeat de presence (voir lib/presence.ts cote site) : envoye par le renderer
+// (schedulePresence : 3 min hors partie, 5 min fenetre reduite ou en jeu, depuis le 28/10).
+// Echec silencieux cote renderer (voir sendPresenceHeartbeat la-bas) : un heartbeat rate
 // ne fait que retarder un peu le passage "hors ligne" d'un ami, jamais a signaler au joueur.
-ipcMain.handle("presence:heartbeat", async () => {
+// Idee 2 du lancement (19/10) : ce meme appel passe par /api/launcher/pulse, qui renvoie en plus
+// l'etat de maintenance (lu en cache cote site) et, si withNotifications, les notifications.
+// Le renderer evite ainsi deux appels separes. Site pas encore a jour (404) : ancienne route
+// /api/launcher/presence, retenue pour toute la session.
+// Correctif 3 de l'audit du 28/10 : si withFriends, le site renvoie aussi la liste d'amis (meme
+// forme que GET /api/launcher/friends), gardee dans le meme cache que friends:list. Un site plus
+// ancien ignore la demande : le renderer garde alors l'appel a part.
+let pulseUnsupported = false;
+ipcMain.handle("presence:heartbeat", async (_event, opts) => {
   if (!currentSession) {
     return { ok: false, error: "Pas de compte Microsoft connecté." };
   }
   try {
     const uuid = currentSession.profile.id;
-    const result = await fetchJson(`${SITE_URL}/api/launcher/presence`, {
-      method: "POST",
-      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
-      // playingSlug (16/10, « Un ami y joue ») : le serveur du jeu lancé, dans le même appel que
-      // d'habitude. Le site ne le garde que s'il est dans l'annuaire public (jamais un privé).
-      body: JSON.stringify({ minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, playingSlug: getRunningGame()?.slug ?? null }),
-    });
+    // playingSlug (16/10, « Un ami y joue ») : le serveur du jeu lancé, dans le même appel que
+    // d'habitude. Le site ne le garde que s'il est dans l'annuaire public (jamais un privé).
+    const payload = { minecraftUuid: uuid, minecraftUsername: currentSession.profile.name, playingSlug: publicPlayingSlug() };
+    const post = (route, body) =>
+      fetchJson(`${SITE_URL}/api/launcher/${route}`, {
+        method: "POST",
+        background: true,
+        headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    let result = null;
+    const withFriends = opts?.withFriends === true;
+    const cacheGeneration = serverCacheGeneration;
+    const friendsGeneration = friendsCacheGeneration;
+    if (!pulseUnsupported) {
+      try {
+        result = await post("pulse", { ...payload, withNotifications: opts?.withNotifications === true, withFriends });
+      } catch (error) {
+        if (error.status !== 404) throw error;
+        pulseUnsupported = true;
+      }
+    }
+    if (!result) result = await post("presence", payload);
     // Compte Omniscient supprime par le joueur (sur le site) alors que le launcher etait encore
     // connecte : le site ne le recree pas tout seul. On deconnecte et on oublie ce compte, pour
     // que seule une vraie connexion Microsoft le recree (freshLogin, voir setSession).
@@ -1289,7 +1744,36 @@ ipcMain.handle("presence:heartbeat", async () => {
       pendingFreshLoginUuid = null;
       currentSession = null;
       sessionRemembered = false;
+      await clearMicrosoftLoginStorage();
       return { ok: true, accountDeleted: true };
+    }
+    let friends;
+    const overview = withFriends ? result?.friends : null;
+    if (
+      overview &&
+      Array.isArray(overview.friends) &&
+      currentSession?.profile.id === uuid &&
+      cacheGeneration === serverCacheGeneration &&
+      friendsGeneration === friendsCacheGeneration
+    ) {
+      friends = { friends: overview.friends, incoming: overview.incoming ?? [], outgoing: overview.outgoing ?? [] };
+      serverCache.set(`friends:${uuid}`, { at: Date.now(), data: friends });
+    }
+    if (result?.maintenance) {
+      return {
+        ok: true,
+        grouped: true,
+        maintenance: {
+          active: !!result.maintenance.active,
+          message: result.maintenance.message || "",
+          system: result.maintenance.system || null,
+          startsAt: result.maintenance.startsAt || null,
+          endsAt: result.maintenance.endsAt || null,
+        },
+        disruption: result.disruption || null,
+        notifications: Array.isArray(result.notifications) ? result.notifications : undefined,
+        friends,
+      };
     }
     return { ok: true };
   } catch (error) {
@@ -1300,6 +1784,7 @@ ipcMain.handle("presence:heartbeat", async () => {
 // Pour construire le lien d'invitation (copie dans le presse-papier depuis
 // "Mes instances") sans dupliquer la logique SITE_URL cote renderer.
 ipcMain.handle("app:getSiteUrl", () => SITE_URL);
+ipcMain.handle("app:reportError", (_event, info) => errorReports.reportRendererError(info));
 ipcMain.handle("app:restart", () => {
   app.relaunch();
   app.exit(0);
@@ -1313,12 +1798,21 @@ ipcMain.handle("app:restart", () => {
 // launcherAuthHeaders() dereferencerait currentSession (null avant toute connexion) —
 // exactement le moment ou l'ecran de maintenance doit pouvoir bloquer (voir audit 2026-10-10,
 // §3.3 : le TypeError resultant etait avale par le catch ci-dessous, fail-open silencieux).
-ipcMain.handle("maintenance:check", async () => {
+ipcMain.handle("maintenance:check", async (_event, opts) => {
   try {
     const data = await fetchJson(`${SITE_URL}/api/launcher/maintenance`, {
       headers: { Authorization: `Bearer ${LAUNCHER_API_KEY}` },
+      background: !!opts?.background,
     });
-    return { ok: true, active: !!data.active, message: data.message || "" };
+    return {
+      ok: true,
+      active: !!data.active,
+      message: data.message || "",
+      system: data.system || null,
+      startsAt: data.startsAt || null,
+      endsAt: data.endsAt || null,
+      disruption: data.disruption || null,
+    };
   } catch (error) {
     // Site injoignable : ne bloque jamais le launcher pour ca, seule une vraie reponse
     // "active: true" du site doit bloquer. On garde une trace pour distinguer ce cas d'une
@@ -1392,6 +1886,8 @@ async function joinServerByCode(code) {
     if (resolveRes.status === 404) return { ok: false, error: "Ce code d'invitation est invalide." };
     if (!resolveRes.ok) throw new Error(`HTTP ${resolveRes.status}`);
     const { slug } = await resolveRes.json();
+    // Le slug sert ensuite de nom de dossier (instances/<slug>) : jamais pris tel quel.
+    if (!isValidInstanceSlug(slug)) return { ok: false, error: "Serveur invalide." };
 
     const data = await fetchJson(`${SITE_URL}/api/public/servers/${encodeURIComponent(slug)}`, {
       headers: { "X-Invite-Code": trimmed },
@@ -1416,12 +1912,17 @@ ipcMain.handle("servers:leaveJoined", (_event, slug) => {
 // Serveur moddé : son dossier instances/<slug>. Vanilla : les fichiers du jeu sont partagés
 // (GAME_ROOT), instances/<slug> ne contient qu'un marqueur — rien de propre à supprimer.
 const INSTANCE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,80}$/i;
+// Tout handler qui construit instances/<slug> verifie d'abord le slug (audit 25/10) : un slug
+// comme "../x" sortirait sinon du dossier des instances.
+function isValidInstanceSlug(slug) {
+  return typeof slug === "string" && INSTANCE_SLUG_RE.test(slug);
+}
 // Toujours gardés (mondes solo) ; « captures et réglages » gardés si la case est cochée.
 const INSTANCE_ALWAYS_KEEP = ["saves"];
 const INSTANCE_PERSONAL_KEEP = ["screenshots", "options.txt", "optionsof.txt", "optionsshaders.txt"];
 
 async function instanceDirs(slug) {
-  if (typeof slug !== "string" || !INSTANCE_SLUG_RE.test(slug)) throw new Error("Serveur invalide.");
+  if (!isValidInstanceSlug(slug)) throw new Error("Serveur invalide.");
   const instanceDir = path.join(GAME_ROOT, "instances", slug);
   const modded = !!(await readInstalledState(instanceDir));
   return { instanceDir, modded, gameDir: modded ? instanceDir : GAME_ROOT };
@@ -1452,11 +1953,19 @@ async function removableEntries(instanceDir, keepPersonal) {
   return entries;
 }
 
+// slug null : n'importe quel serveur (Reparer / Vider le cache, fichiers partages).
 function instanceBusy(slug) {
+  if (gamesMove.active) return "moving";
   if (getRunningGame()) return "running";
   if (gameLaunchInProgress) return "launching";
-  if ([...installTasks.values()].some((t) => t.slug === slug && (t.status === "active" || t.status === "paused"))) return "installing";
+  if ([...installTasks.values()].some((t) => (slug === null || t.slug === slug) && (t.status === "active" || t.status === "paused"))) return "installing";
   return null;
+}
+
+// Mode Jouer : le slug interne "play:<id>" n'est pas un serveur de l'annuaire, on ne l'envoie pas au site.
+function publicPlayingSlug() {
+  const slug = getRunningGame()?.slug ?? null;
+  return slug && String(slug).startsWith("play:") ? null : slug;
 }
 
 ipcMain.handle("game:status", () => {
@@ -1506,6 +2015,18 @@ ipcMain.handle("instances:openLogsFolder", async (_event, slug) => {
   }
 });
 
+// Taille sur le disque de chaque serveur installe (Ma bibliotheque > Installes, lot 3). Lue en
+// arriere-plan apres l'affichage de la liste.
+ipcMain.handle("instances:sizes", async (_event, slugs) => {
+  const out = {};
+  if (!Array.isArray(slugs)) return out;
+  for (const slug of slugs.slice(0, 200)) {
+    if (typeof slug !== "string" || !/^[a-z0-9-]{1,80}$/i.test(slug)) continue;
+    out[slug] = await pathSize(path.join(GAME_ROOT, "instances", slug));
+  }
+  return out;
+});
+
 ipcMain.handle("instances:filesInfo", async (_event, slug) => {
   try {
     const { instanceDir, modded } = await instanceDirs(slug);
@@ -1524,11 +2045,21 @@ ipcMain.handle("instances:filesInfo", async (_event, slug) => {
 // « Supprimer les fichiers » : retire mods/config/ressources de l'instance, le serveur reste dans
 // la liste (tout revient au prochain « Rejoindre »). Refusé tant que le jeu tourne ou qu'une
 // installation de ce serveur est en cours (fichiers verrouillés / à moitié écrits).
-ipcMain.handle("instances:deleteFiles", async (_event, slug, { keepPersonal = true } = {}) => {
+ipcMain.handle("instances:deleteFiles", async (_event, slug, { keepPersonal = true, uninstall = false } = {}) => {
   try {
     const busy = instanceBusy(slug);
     if (busy) return { ok: false, code: busy };
     const { instanceDir, modded } = await instanceDirs(slug);
+    // Serveur vanilla retiré du site (23/10) : son dossier n'a que le marqueur « prêt » ; le retirer
+    // suffit pour qu'il quitte Ma bibliothèque. Jamais pour un serveur encore en ligne, sauf
+    // « Désinstaller » (26/10, demande de Rushi) : les fichiers du jeu sont partagés, seul le
+    // marqueur part ; mondes, réglages et dossier partagé ne sont pas touchés.
+    if (!modded && (uninstall || isKnownRemoved(slug))) {
+      await fsp.rm(path.join(instanceDir, ".omniscient-ready.json"), { force: true });
+      await fsp.rmdir(instanceDir).catch(() => {});
+      logStore.pushLog({ source: "launcher", message: `Serveur retiré "${slug}" : marqueur vanilla supprimé.` });
+      return { ok: true, freedBytes: 0 };
+    }
     if (!modded) return { ok: false, code: "vanilla" };
     const entries = await removableEntries(instanceDir, keepPersonal);
     let freedBytes = 0;
@@ -1542,6 +2073,92 @@ ipcMain.handle("instances:deleteFiles", async (_event, slug, { keepPersonal = tr
   } catch (error) {
     logStore.pushLog({ level: "error", source: "launcher", message: `Suppression des fichiers de "${slug}" échouée : ${error instanceof Error ? error.message : error}` });
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// --- Suppression en masse avec corbeille et Annuler (serie 2, idee 7, version A) ---------------
+// Les fichiers de chaque instance cochee partent d'abord dans GAME_ROOT/.corbeille/<lot>/<slug>
+// (simple deplacement sur le meme disque : instantane, et « Annuler » les remet en place). Passe
+// le delai d'Annuler, le lot part dans la corbeille de Windows (encore recuperable tant qu'on ne
+// la vide pas). Un lot oublie (launcher ferme pendant le delai) y part au demarrage suivant.
+const TRASH_ROOT = path.join(GAME_ROOT, ".corbeille");
+
+ipcMain.handle("instances:trashFiles", async (_event, slugs, { keepPersonal = true } = {}) => {
+  if (!Array.isArray(slugs) || !slugs.length) return { ok: false, error: "Rien à supprimer." };
+  const batch = `lot-${Date.now()}`;
+  const done = [];
+  const refused = [];
+  let freedBytes = 0;
+  const runningSlug = getRunningGame()?.slug || null;
+  for (const slug of slugs.slice(0, 200)) {
+    try {
+      if (slug === runningSlug) {
+        refused.push({ slug, code: "running" });
+        continue;
+      }
+      if ([...installTasks.values()].some((t) => t.slug === slug && (t.status === "active" || t.status === "paused" || t.status === "queued"))) {
+        refused.push({ slug, code: "installing" });
+        continue;
+      }
+      const { instanceDir, modded } = await instanceDirs(slug);
+      if (!modded) {
+        refused.push({ slug, code: "vanilla" });
+        continue;
+      }
+      const target = path.join(TRASH_ROOT, batch, slug);
+      await fsp.mkdir(target, { recursive: true });
+      for (const entry of await removableEntries(instanceDir, keepPersonal)) {
+        await fsp.rename(path.join(instanceDir, entry.name), path.join(target, entry.name));
+        freedBytes += entry.bytes;
+      }
+      done.push(slug);
+    } catch (error) {
+      refused.push({ slug, code: "error", error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  clearServerCaches();
+  logStore.pushLog({ source: "launcher", message: `Suppression en masse : ${done.length} instance(s) mises de côté (${Math.round(freedBytes / 1024 / 1024)} Mo), lot ${batch}.` });
+  return { ok: true, batch, done, refused, freedBytes };
+});
+
+ipcMain.handle("instances:undoTrash", async (_event, batch) => {
+  if (typeof batch !== "string" || !/^lot-\d+$/.test(batch)) return { ok: false };
+  const batchDir = path.join(TRASH_ROOT, batch);
+  const slugs = await fsp.readdir(batchDir).catch(() => []);
+  for (const slug of slugs) {
+    const { instanceDir } = await instanceDirs(slug);
+    const from = path.join(batchDir, slug);
+    for (const name of await fsp.readdir(from).catch(() => [])) {
+      // Un fichier recree entre-temps (nouvelle installation) n'est jamais ecrase.
+      await fsp.rename(path.join(from, name), path.join(instanceDir, name)).catch(() => {});
+    }
+  }
+  await fsp.rm(batchDir, { recursive: true, force: true }).catch(() => {});
+  clearServerCaches();
+  logStore.pushLog({ source: "launcher", message: `Suppression annulée : lot ${batch} remis en place.` });
+  return { ok: true, slugs };
+});
+
+async function finalizeTrashBatch(batch) {
+  const batchDir = path.join(TRASH_ROOT, batch);
+  try {
+    await shell.trashItem(batchDir);
+  } catch {
+    // Corbeille Windows indisponible (disque reseau, corbeille desactivee) : suppression simple.
+    await fsp.rm(batchDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+ipcMain.handle("instances:finalizeTrash", async (_event, batch) => {
+  if (typeof batch !== "string" || !/^lot-\d+$/.test(batch)) return { ok: false };
+  await finalizeTrashBatch(batch);
+  return { ok: true };
+});
+
+// Lots restes de la derniere session (launcher ferme pendant le delai d'Annuler).
+app.whenReady().then(async () => {
+  for (const batch of await fsp.readdir(TRASH_ROOT).catch(() => [])) {
+    if (/^lot-\d+$/.test(batch)) await finalizeTrashBatch(batch);
   }
 });
 
@@ -1595,16 +2212,66 @@ ipcMain.handle("reports:submit", async (_event, { slug, category, issue, behavio
   }
 });
 
+// « Prévenir le serveur » (design 17/10, point 6) : rapport d'echec d'installation/lancement envoye
+// au proprietaire, seulement apres le clic du joueur sur « Envoyer » ou « Prévenir le serveur ».
+// Audit du 19/10 (L-B1) : plus aucune ligne du journal (il contenait le chat du jeu, l'adresse
+// d'autres serveurs, parfois prives, et le nom de la session Windows). Ne partent que le type
+// d'erreur, une phrase lisible, un court detail nettoye (mod concerne, message d'erreur) et les
+// versions. Jamais l'e-mail ni le compte Microsoft : seul l'UUID Minecraft sert a compter les
+// joueurs touches (verifie par le site).
+function scrubReportText(text) {
+  let out = String(text || "");
+  // Tout ce qui suivrait un message du chat (« [CHAT] <Joueur> ... ») : jamais envoye.
+  out = out.replace(/\[CHAT\][^\n]*/gi, "[chat]");
+  const home = os.homedir();
+  if (home) {
+    for (const form of [home, home.replace(/\\/g, "/"), encodeURI(home.replace(/\\/g, "/"))]) {
+      out = out.replace(new RegExp(form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "~");
+    }
+  }
+  return out
+    // Filet de securite : tout autre dossier de session Windows (C:\Users\<nom>).
+    .replace(/[A-Za-z]:[\\/]+Users[\\/]+[^\\/"'<>\n]+/gi, "~")
+    // Adresses de serveurs : IP (avec ou sans port), nom d'hote suivi d'un port.
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, "[adresse]")
+    .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)+:\d{2,5}\b/gi, "[adresse]")
+    .replace(/Connecting to [^\n,]+,\s*\d+/gi, "Connecting to [adresse]")
+    .slice(0, 300);
+}
+
+ipcMain.handle("servers:reportInstallProblem", async (_event, { slug, kind, summary, detail, minecraftVersion } = {}) => {
+  if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
+  if (typeof slug !== "string" || !slug) return { ok: false, error: "Serveur inconnu." };
+  try {
+    const res = await fetch(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/install-problem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+      body: JSON.stringify({
+        reporterMinecraftUuid: currentSession.profile.id,
+        kind,
+        summary: scrubReportText(summary).slice(0, 200),
+        detail: detail ? scrubReportText(detail) || null : null,
+        launcherVersion: app.getVersion(),
+        minecraftVersion: typeof minecraftVersion === "string" ? minecraftVersion.slice(0, 40) : null,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
 // Cloche de notifications : alertes personnelles (reponse/resolution de
 // signalement) pour le joueur connecte, voir renderer.js/refreshNotifications
 // et site/src/app/api/launcher/notifications/route.ts.
-ipcMain.handle("notifications:list", async () => {
+ipcMain.handle("notifications:list", async (_event, opts) => {
   if (!currentSession) return { ok: true, notifications: [] };
   try {
     const data = await withSessionRetry(() =>
       fetchJson(
         `${SITE_URL}/api/launcher/notifications?minecraftUuid=${encodeURIComponent(currentSession.profile.id)}`,
-        { headers: launcherAuthHeaders() },
+        { headers: launcherAuthHeaders(), background: !!opts?.background },
       ),
     );
     return { ok: true, notifications: data.notifications };
@@ -1613,16 +2280,27 @@ ipcMain.handle("notifications:list", async () => {
   }
 });
 
-ipcMain.handle("notifications:markRead", async () => {
+ipcMain.handle("notifications:markRead", async (_event, id) => {
   if (!currentSession) return { ok: false, error: "Pas de compte Microsoft connecté." };
   try {
     const res = await fetch(`${SITE_URL}/api/launcher/notifications/read`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...launcherAuthHeaders() },
-      body: JSON.stringify({ minecraftUuid: currentSession.profile.id }),
+      body: JSON.stringify({ minecraftUuid: currentSession.profile.id, ...(typeof id === "string" ? { id } : {}) }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+  }
+});
+
+// Article complet d'une actualite (centre de notifications, 25/10) :
+// site/src/app/api/launcher/news/[id]/route.ts.
+ipcMain.handle("news:get", async (_event, id) => {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/news/${encodeURIComponent(String(id))}`, { headers: launcherAuthHeaders() });
+    return { ok: true, news: { title: String(data.news.title || ""), body: String(data.news.body || "") } };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
@@ -1684,7 +2362,8 @@ ipcMain.handle("auth:signIn", async (_event, remember) => {
     if (error instanceof msAuth.PendingApprovalError) {
       return { ok: false, pendingApproval: true, error: error.message };
     }
-    return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
+    // network : pas d'internet (voir msAuth.js) — le renderer peut alors lancer en solo hors ligne.
+    return { ok: false, network: error?.code === "network", error: error instanceof Error ? error.message : "Erreur inconnue" };
   }
 });
 
@@ -1737,6 +2416,14 @@ ipcMain.handle("auth:tryRestore", async () => {
   }
 });
 
+// Cookies Microsoft de la fenetre de connexion effaces a la deconnexion et a la suppression d'un
+// compte (voir msAuth.clearLoginStorage) : un echec est seulement journalise.
+async function clearMicrosoftLoginStorage() {
+  if (!(await msAuth.clearLoginStorage())) {
+    logStore.pushLog({ level: "warn", source: "launcher", message: "Déconnexion : cookies Microsoft de la fenêtre de connexion non effacés" });
+  }
+}
+
 ipcMain.handle("auth:signOut", async () => {
   // Ne retire pas le compte de la liste mémorisée (juste désactive la
   // reprise automatique) : on peut y rebasculer rapidement depuis la page
@@ -1748,6 +2435,8 @@ ipcMain.handle("auth:signOut", async () => {
   }
   await revokeLauncherSession();
   currentSession = null;
+  features.refresh();
+  await clearMicrosoftLoginStorage();
   return { ok: true };
 });
 
@@ -1798,6 +2487,7 @@ ipcMain.handle("account:remove", async (_event, id) => {
       await revokeLauncherSession();
       currentSession = null;
     }
+    await clearMicrosoftLoginStorage();
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erreur inconnue" };
@@ -1862,6 +2552,72 @@ ipcMain.handle("account:resetSkin", async () => {
 // Boutons de la barre de titre custom (fenêtre sans cadre natif, voir
 // createWindow) — chaque handler agit sur la fenêtre de l'appelant, jamais
 // une fenêtre codée en dur, au cas où plusieurs fenêtres existeraient.
+// Clic sur une notification Windows (« prêt à jouer », point 4) : ramene la fenetre devant.
+ipcMain.handle("window:focus", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
+// Place libre sur le disque du dossier du jeu (ecran avant la 1re installation, point 4).
+ipcMain.handle("system:diskFree", async () => {
+  try {
+    await fsp.mkdir(GAME_ROOT, { recursive: true });
+    const stats = await fsp.statfs(GAME_ROOT);
+    return { ok: true, freeBytes: Number(stats.bavail) * Number(stats.bsize) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// Debut du nom d'un fichier de mod, avant sa version : "anima" pour "Anima-1.0.3+Neoforge-26.1.2.jar",
+// "ancient_remnants" pour "ancient_remnants-1.0.2.2-26.1.2.jar". Sert seulement a reconnaitre une
+// autre version du meme mod dans Telechargements, jamais a accepter un fichier.
+function modFileStem(fileName) {
+  const stem = String(fileName).toLowerCase().split(/[-+\s]|(?=\d)/)[0].replace(/[_.]+$/, "");
+  return stem.length >= 3 ? stem : null;
+}
+
+// Mods a ajouter a la main (point 4, L3-F) : quels fichiers attendus sont deja arrives dans le
+// dossier Telechargements. Seul le nom est regarde ici (pour cocher la ligne) ; « Réessayer »
+// verifie ensuite taille et empreinte avant de s'en servir.
+// 26/10 (Rushi, pack FTB) : le joueur prenait le gros bouton Download de CurseForge et recevait une
+// autre version, refusee sans explication. `wrong` donne, pour chaque fichier attendu, le fichier
+// du meme mod mais d'une autre version trouve dans Telechargements, pour que la fenetre le dise.
+// Un doublon renomme par le navigateur (« nom (1).jar ») compte comme trouve.
+ipcMain.handle("modpack:findInDownloads", async (_event, fileNames) => {
+  if (!Array.isArray(fileNames)) return { found: [], wrong: {} };
+  const wanted = new Set(fileNames.filter((name) => typeof name === "string" && name && name === path.basename(name)).slice(0, 200));
+  const found = new Set();
+  const others = [];
+  for (const dir of manualModsSearchDirs()) {
+    let names;
+    try {
+      names = await fsp.readdir(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (wanted.has(name)) found.add(name);
+      else if (/\.(jar|zip)$/i.test(name)) {
+        const unduplicated = name.replace(/ \(\d+\)(\.(jar|zip))$/i, "$1");
+        if (wanted.has(unduplicated)) found.add(unduplicated);
+        else others.push(name);
+      }
+    }
+  }
+  const wrong = {};
+  for (const expected of wanted) {
+    if (found.has(expected)) continue;
+    const stem = modFileStem(expected);
+    const other = stem && others.find((name) => modFileStem(name) === stem);
+    if (other) wrong[expected] = other;
+  }
+  return { found: [...found], wrong };
+});
+
 ipcMain.handle("window:minimize", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
@@ -2095,7 +2851,19 @@ function serializeTask(task) {
     id: task.id,
     slug: task.slug,
     name: task.name,
-    status: task.status, // "active" | "paused" | "complete" | "error" | "cancelled"
+    status: task.status, // "queued" | "active" | "paused" | "complete" | "error" | "cancelled"
+    // Place dans la file d'attente des installations (1 = la prochaine), 0 hors file.
+    queuePosition: installQueue.indexOf(task.id) + 1,
+    // "launch" (Rejoindre), "install" (bouton Installer) ou "selftest" — la pilule ne propose
+    // « Lancer le jeu quand c'est fini » que pour une simple installation.
+    kind: task.kind,
+    // Etapes visibles du panneau de la pilule (design 17/10, point 4).
+    step: task.step,
+    modded: task.modded,
+    blocked: task.blocked,
+    origins: task.origins || null,
+    modsDone: task.modsDone,
+    modsTotal: task.modsTotal,
     text: task.text,
     bytes: task.bytes,
     totalBytes: task.totalBytes,
@@ -2104,6 +2872,48 @@ function serializeTask(task) {
   };
 }
 
+// File d'attente des installations (serie 2, idee 4, version A validee) : les boutons « Installer »
+// passent un par un, dans l'ordre des clics. « Passer en premier » place un serveur juste apres
+// celui en cours (qui continue), ✕ le retire de la file. « Rejoindre » n'attend pas dans cette file.
+const installQueue = [];
+let installRunning = null;
+
+function waitForInstallTurn(task) {
+  if (!installRunning) {
+    installRunning = task.id;
+    return Promise.resolve();
+  }
+  task.status = "queued";
+  installQueue.push(task.id);
+  return new Promise((resolve, reject) => {
+    task.queueResolve = resolve;
+    task.queueReject = reject;
+  });
+}
+
+function releaseInstallTurn(task) {
+  if (installRunning !== task.id) return;
+  installRunning = null;
+  const nextId = installQueue.shift();
+  const next = nextId ? installTasks.get(nextId) : null;
+  if (next) {
+    installRunning = next.id;
+    next.status = "active";
+    next.lastTickAt = Date.now();
+    next.queueResolve?.();
+  }
+  broadcastTasks();
+}
+
+ipcMain.handle("tasks:moveFirst", (_event, id) => {
+  const at = installQueue.indexOf(id);
+  if (at < 0) return { ok: false };
+  installQueue.splice(at, 1);
+  installQueue.unshift(id);
+  broadcastTasks();
+  return { ok: true };
+});
+
 function broadcastTasks() {
   const tasks = [...installTasks.values()].map(serializeTask);
   for (const win of BrowserWindow.getAllWindows()) {
@@ -2111,11 +2921,17 @@ function broadcastTasks() {
   }
 }
 
-function createInstallTask(slug, name) {
+function createInstallTask(slug, name, kind = "launch") {
   const task = {
     id: nextTaskId++,
     slug,
     name: name || slug,
+    kind,
+    step: "prepare",
+    modded: null,
+    blocked: null,
+    modsDone: 0,
+    modsTotal: 0,
     status: "active",
     text: "",
     bytes: 0,
@@ -2139,6 +2955,16 @@ function createInstallTask(slug, name) {
 // installFiles dans modpack.js, qui appellent onProgress a chaque morceau.
 function updateTaskFromProgress(task, status) {
   if (status.text) task.text = status.text;
+  if (status.step) task.step = status.step;
+  if (typeof status.modded === "boolean") task.modded = status.modded;
+  if (status.name) task.name = status.name;
+  if (status.blocked) task.blocked = status.blocked;
+  // Pack FTB (21/10) : nombre de mods venus de CurseForge / Modrinth / serveurs FTB (modpack.js).
+  if (status.origins) task.origins = status.origins;
+  if (status.type === "mods" && typeof status.task === "number") {
+    task.modsDone = status.task;
+    task.modsTotal = status.total || task.modsTotal;
+  }
   if (typeof status.bytes === "number") {
     const now = Date.now();
     const elapsed = now - task.lastTickAt;
@@ -2185,6 +3011,17 @@ ipcMain.handle("tasks:resume", (_event, id) => {
 ipcMain.handle("tasks:cancel", (_event, id) => {
   const task = installTasks.get(id);
   if (!task) return { ok: false };
+  // Encore dans la file : il suffit de l'en retirer (rien n'a commence).
+  const queued = installQueue.indexOf(id);
+  if (queued >= 0) {
+    installQueue.splice(queued, 1);
+    task.status = "cancelled";
+    const abort = new Error("Annulé");
+    abort.name = "AbortError";
+    task.queueReject?.(abort);
+    broadcastTasks();
+    return { ok: true };
+  }
   task.controller.abort();
   // Si la tache etait en pause, il faut aussi la lever : sinon le worker
   // reste bloque a attendre une reprise qui ne viendra jamais, sans jamais
@@ -2227,6 +3064,8 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
         headers: inviteHeaders(slug),
       });
   const server = data.server;
+  // Nom et type du serveur pour le panneau de la pilule (etapes moddé / vanilla).
+  onProgress({ name: server.name, modded: server.type === "modded" && Boolean(server.curseforgeModpackId) });
   const settings = settingsStore.loadSettings();
   // `memoryOverride` sert un lancement "juste cette fois" avec la RAM
   // recommandee du serveur (voir applyRecommendedRamIfNeeded cote
@@ -2256,6 +3095,7 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
       signal,
       waitIfPaused,
       manualSearchDirs: manualModsSearchDirs(),
+      onWarning: (message) => logStore.pushLog({ level: "warn", source: "launcher", message }),
     });
     logStore.pushLog({
       source: "launcher",
@@ -2268,6 +3108,7 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
   let gameJava = modded?.javaPath;
   if (!gameJava) {
     try {
+      onProgress({ step: "java" });
       const vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
       gameJava = await javaManager.ensureJavaForMajor(vanilla.javaVersion?.majorVersion ?? 8, {
         preferredPath: settings.javaPath || undefined,
@@ -2301,15 +3142,19 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
 // peuvent tourner en parallele pour des serveurs differents, affichees comme
 // autant de taches dans le panneau — voir installTasks ci-dessus.
 ipcMain.handle("server:install", async (event, slug, displayName) => {
-  const already = [...installTasks.values()].find((t) => t.slug === slug && (t.status === "active" || t.status === "paused"));
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
+  const already = [...installTasks.values()].find((t) => t.slug === slug && (t.status === "active" || t.status === "paused" || t.status === "queued"));
+  if (!isValidInstanceSlug(slug)) return { ok: false, error: "Serveur invalide." };
   if (already) {
     return { ok: false, error: "Une installation est déjà en cours pour ce serveur.", taskId: already.id };
   }
 
-  const task = createInstallTask(slug, displayName);
+  const task = createInstallTask(slug, displayName, "install");
   broadcastTasks();
   logStore.pushLog({ source: "launcher", message: `Demande d'installation pour "${slug}"` });
   try {
+    await waitForInstallTurn(task);
+    broadcastTasks();
     const onProgress = (status) => {
       updateTaskFromProgress(task, status);
       broadcastTasks();
@@ -2330,10 +3175,14 @@ ipcMain.handle("server:install", async (event, slug, displayName) => {
     }
     logStore.pushLog({ level: "error", source: "launcher", message: `Échec de l'installation de "${slug}" : ${task.error}` });
     return { ok: false, error: task.error, frozen: error?.code === "frozen", ...modpackErrorFields(error) };
+  } finally {
+    releaseInstallTurn(task);
   }
 });
 
 ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
+  if (!isValidInstanceSlug(slug)) return { ok: false, error: "Serveur invalide." };
   if (!currentSession) {
     return { ok: false, error: "Connecte-toi avec ton compte Microsoft avant de rejoindre un serveur." };
   }
@@ -2349,7 +3198,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
   // aussi (voir prepareServerFiles), donc apparait dans le meme panneau — la tache
   // se termine des que les fichiers sont prets, avant launchMinecraft() (qui, lui,
   // reste suivi par la barre de progression existante, pas une tache de telechargement).
-  const task = createInstallTask(slug, null);
+  const task = createInstallTask(slug, null, "launch");
   broadcastTasks();
 
   logStore.pushLog({ source: "launcher", message: `Demande de lancement pour "${slug}"` });
@@ -2367,20 +3216,23 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
     });
     task.name = server.name;
     task.status = "complete";
+    task.step = "start";
     task.bytes = task.totalBytes || task.bytes;
     broadcastTasks();
+    // Derniere etape du panneau : « Vérification et démarrage » (bibliotheques, assets, ouverture).
+    event.sender.send("game:progress", { step: "start" });
 
     await launchMinecraft({
       // Jeu lance / ferme : les fenetres ralentissent leurs interrogations pendant la partie.
-      onGameState: (running) => {
+      onGameState: (running, exitCode) => {
         for (const win of BrowserWindow.getAllWindows()) {
-          if (!win.isDestroyed()) win.webContents.send("game:state", running);
+          if (!win.isDestroyed()) win.webContents.send("game:state", running, exitCode ?? null);
         }
         // Jeu ferme : Discord revient sur « Parcourt les serveurs » (audit 14/10, K3).
         if (!running) discordPresence.setBrowsingActivity();
         // Le launcher s'était caché pendant la partie (réglage « garder le launcher ouvert » décoché) :
         // il se réaffiche tout seul quand le jeu se ferme.
-        if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
+        if (!running && settingsStore.shouldRestoreAfterPlaying()) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
             if (win.isMinimized()) win.restore();
@@ -2394,6 +3246,7 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
       serverIp: server.ip,
       serverName: server.name,
       autoConnect: server.autoConnect,
+      addToServerList: server.addToServerList !== false,
       onProgress,
       memory: { min: `${memoryMinGB}G`, max: `${memoryMaxGB}G` },
       // Serveur moddé : le Java demandé par sa version de Minecraft (Forge plante
@@ -2441,12 +3294,14 @@ ipcMain.handle("game:launch", async (event, slug, memoryOverride) => {
 // Partage gameLaunchInProgress avec game:launch : les deux lancent reellement Minecraft, un
 // seul a la fois quel que soit le chemin.
 ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
+  if (!isValidInstanceSlug(slug)) return { ok: false, error: "Serveur invalide." };
   if (gameLaunchInProgress) {
     return { ok: false, error: "Un lancement du jeu est déjà en cours." };
   }
   gameLaunchInProgress = true;
 
-  const task = createInstallTask(slug, null);
+  const task = createInstallTask(slug, null, "launch");
   broadcastTasks();
   logStore.pushLog({ source: "launcher", message: `Demande de lancement hors ligne pour "${slug}"` });
 
@@ -2541,7 +3396,7 @@ ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
           if (!win.isDestroyed()) win.webContents.send("game:state", running);
         }
         if (!running) discordPresence.setBrowsingActivity();
-        if (!running && settingsStore.loadSettings().keepLauncherOpenWhilePlaying === false) {
+        if (!running && settingsStore.shouldRestoreAfterPlaying()) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
             if (win.isMinimized()) win.restore();
@@ -2584,6 +3439,2598 @@ ipcMain.handle("game:launchOffline", async (event, slug, memoryOverride) => {
   }
 });
 
+// --- Mode « Jouer » (bêta, 24/10) ---------------------------------------------------------
+// Jouer à n'importe quelle version sans serveur, en vanilla ou avec un pack officiel, et garder
+// ses mondes sauvegardés. Tout le travail sur le disque est dans playMode.js ; ici : les appels
+// du renderer, le lancement (même verrou et même panneau de tâches que « Rejoindre ») et les
+// sauvegardes à la fermeture du jeu.
+const playMode = createPlayMode({ gameRoot: GAME_ROOT, appDataDir: app.getPath("appData") });
+const omniPack = createOmniPack({ playMode });
+playMode.setModsFor((v, mc) => omniPack.modsFor(v, mc));
+
+// Packs officiels publiés (site) : gardés 10 min en mémoire et sur le disque, pour pouvoir
+// relancer une version avec pack même si le site est injoignable.
+const PLAY_PACKS_CACHE = path.join(playMode.PLAY_ROOT, "packs-cache.json");
+let playPacksCache = null;
+async function fetchPlayPacks({ force = false } = {}) {
+  if (!force && playPacksCache && Date.now() - playPacksCache.at < 10 * 60_000) return playPacksCache.data;
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/public/play/packs`, { headers: launcherAuthHeaders() });
+    playPacksCache = { at: Date.now(), data };
+    fsp.mkdir(playMode.PLAY_ROOT, { recursive: true }).then(() => fsp.writeFile(PLAY_PACKS_CACHE, JSON.stringify(data))).catch(() => {});
+    return data;
+  } catch (error) {
+    try {
+      const data = JSON.parse(await fsp.readFile(PLAY_PACKS_CACHE, "utf8"));
+      return { ...data, offline: true };
+    } catch {
+      // Pas de cache : le badge bêta reste affiché, aucun pack proposé (Vanilla seulement).
+      return { beta: true, packs: [], offline: true, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+}
+// Nom du pack d'une version : pack officiel ({ fr, en }) ou Mon pack / pack CurseForge (texte).
+const playPackName = (pack) => (pack ? (typeof pack.name === "string" ? pack.name : pack.name?.fr || pack.slug) : null);
+// Mêmes fonctions de modpack.js / javaManager.js pour toutes les préparations de version.
+const PLAY_DEPS = { ensureVanillaVersion, ensureJavaForMajor: (...a) => javaManager.ensureJavaForMajor(...a), installLoader, prepareLaunchVersion, installFiles };
+// Version publiée d'un pack, aplatie pour playMode.createVersion (packId, versionId, files…).
+function flattenPackVersion(pack, version) {
+  return {
+    packId: pack.id,
+    slug: pack.slug,
+    name: pack.name,
+    versionId: version.id,
+    loaderVersion: version.loaderVersion,
+    files: version.files,
+    updatedAt: version.updatedAt,
+  };
+}
+
+// Synchro cloud des mondes (Supporter ; voir worldCloud.js) : envoi en arrière-plan, en pause
+// pendant le jeu, reprise au prochain démarrage. L'état est poussé au renderer (« cloud:update »).
+// Monde téléchargé d'un autre PC : on retrouve son pack et sa version (meta.json du zip).
+async function ensureVersionForMeta(meta) {
+  const mc = meta?.minecraftVersion;
+  if (!mc) return null;
+  const versions = playMode.listVersions();
+  if (meta.pack) {
+    const local = versions.find((v) => v.minecraftVersion === mc && v.pack && (v.pack.packId === meta.pack.packId || v.pack.slug === meta.pack.slug));
+    if (local) return local.id;
+    const data = await fetchPlayPacks();
+    const p = (data.packs || []).find((x) => x.id === meta.pack.packId || x.slug === meta.pack.slug);
+    const v = p?.versions?.find((x) => x.minecraftVersion === mc);
+    if (p && v) return (await playMode.createVersion({ minecraftVersion: mc, pack: flattenPackVersion(p, v) })).id;
+  }
+  const vanilla = versions.find((v) => v.minecraftVersion === mc && !v.pack);
+  if (vanilla) return vanilla.id;
+  await playMode.listMinecraftVersions().catch(() => {});
+  return (await playMode.createVersion({ minecraftVersion: mc })).id;
+}
+// Plusieurs PC : identité de cet appareil pour le site (verrou « monde ouvert », version envoyée).
+// Nom = nom de l'ordinateur ; en dev, MCHUB_DEVICE_NAME le remplace, et un profil jetable
+// (MCHUB_USER_DATA_DIR) a son propre identifiant : de quoi simuler un 2e PC sur le même ordinateur.
+function loadDevice() {
+  const file = path.join(app.getPath("userData"), "device.json");
+  let id = null;
+  try {
+    id = JSON.parse(fs.readFileSync(file, "utf8")).id;
+  } catch {
+    /* premier lancement */
+  }
+  if (!/^[\w-]{8,64}$/.test(id || "")) {
+    id = require("node:crypto").randomUUID();
+    try {
+      fs.writeFileSync(file, JSON.stringify({ id }));
+    } catch {
+      /* dossier en lecture seule : identifiant de cette session seulement */
+    }
+  }
+  const name = ((isDev && process.env.MCHUB_DEVICE_NAME) || os.hostname() || "PC").slice(0, 60);
+  return { id, name };
+}
+// Version d'un monde téléchargé : installée en arrière-plan (Minecraft, Java, pack). Un « Jouer »
+// sur la même version attend la fin, pour ne jamais installer deux fois les mêmes fichiers.
+const versionInstalls = new Map();
+let downloadedCount = 0;
+function installVersionInBackground(versionId) {
+  if (versionInstalls.has(versionId)) return versionInstalls.get(versionId);
+  const run = (async () => {
+    const settings = settingsStore.loadSettings();
+    await playMode.prepareVersion(versionId, {
+      deps: PLAY_DEPS,
+      javaPreferred: settings.javaPath || undefined,
+      gameDir: await playMode.launchDir(versionId, null, { strict: features.visible("strictDirs") }),
+    });
+  })().finally(() => versionInstalls.delete(versionId));
+  versionInstalls.set(versionId, run);
+  return run;
+}
+const rawWorldCloud = createWorldCloud({
+  playMode,
+  siteUrl: SITE_URL,
+  authHeaders: launcherAuthHeaders,
+  currentUuid: () => currentSession?.profile?.id || null,
+  log: (level, message) => logStore.pushLog({ level, source: "launcher", message }),
+  onUpdate: (job) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("cloud:update", job);
+  },
+  onDownload: (djob) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("cloud:downloadUpdate", djob);
+    // Un monde de plus arrivé sur ce PC : la liste se met à jour (une fois par monde).
+    const arrived = djob ? djob.items.filter((i) => i.phase === "install" || i.done).length : 0;
+    if (arrived !== downloadedCount) {
+      downloadedCount = arrived;
+      if (arrived) for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+    }
+  },
+  ensureVersionForMeta,
+  installVersion: installVersionInBackground,
+  device: loadDevice(),
+});
+// Laboratoire (25/10) : « Mondes en ligne » coupé pour ce joueur = aucune méthode de la synchro ne
+// tourne (aucun appel au site, aucun minuteur, aucun téléchargement), d'où qu'elle soit appelée.
+const worldCloud = new Proxy(rawWorldCloud, {
+  get(target, prop) {
+    const value = target[prop];
+    // setGameRunning ne fait que noter l'état du jeu (audit du 25/10) : toujours transmis, sinon il
+    // restait « en jeu » si l'interrupteur changeait pendant une partie.
+    if (typeof value !== "function" || prop === "suspend" || prop === "setGameRunning") return value;
+    return (...args) => {
+      if (features.visible("worlds")) return value.apply(target, args);
+      return prop === "downloadJob" || prop === "lastStatus" || prop === "isTracked" ? null : Promise.resolve({ ok: false, code: "feature_off" });
+    };
+  },
+});
+// Versions miroir : la limite d'un monde sur ce PC s'applique aussi à ses versions en ligne.
+playMode.onBackupsPruned((key, drop) => worldCloud.dropPruned(key, drop));
+// Sauvegarde pendant la partie (F6, Maj+F6, toutes les X min, sortie d'un monde) : voir liveSave.js.
+const liveSave = createLiveSave({
+  playMode,
+  overlay: createSaveOverlay({ lockNavigation: lockAppNavigation, log: (entry) => logStore.pushLog(entry) }),
+  globalShortcut,
+  onBackup: (key, backup) => {
+    worldCloud.queueBackup(key, backup);
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+  },
+  onActivity: sendSaveActivity,
+  log: (entry) => logStore.pushLog(entry),
+  getLocale: () => settingsStore.loadSettings().locale,
+  getToastEnabled: () => settingsStore.loadSettings().playSaveToast !== false,
+  getDiscreet: () => settingsStore.loadSettings().discreetMode === true,
+  trackWindow: trackGameWindow,
+});
+const cloudError = (error) => ({ ok: false, error: error instanceof Error ? error.message : String(error), code: error?.code });
+ipcMain.handle("cloud:status", async (_event, opts) => {
+  if (!currentSession) return { ok: false, code: "session" };
+  try {
+    return await worldCloud.status({ force: opts?.force === true });
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:testConnection", () => worldCloud.testConnection());
+ipcMain.handle("cloud:sync", async (_event, keys) => {
+  try {
+    return await worldCloud.sync(Array.isArray(keys) ? keys.filter((k) => typeof k === "string") : []);
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:remove", (_event, key) => worldCloud.remove(String(key || "")));
+ipcMain.handle("cloud:pause", () => worldCloud.pause());
+ipcMain.handle("cloud:resume", () => worldCloud.resume());
+ipcMain.handle("cloud:stop", () => worldCloud.stop());
+// « Versions en ligne » (25/10) : ☁ Envoyer / ✕ Retirer du cloud sur une sauvegarde.
+ipcMain.handle("cloud:sendBackup", (_e, key, backupId) => worldCloud.sendBackup(String(key || ""), String(backupId || "")));
+ipcMain.handle("cloud:uncloudBackup", (_e, key, backupId) => worldCloud.uncloudBackup(String(key || ""), String(backupId || "")));
+// Plusieurs PC (voir worldCloud.js) : vérification avant « Jouer », récupération de la dernière
+// version, attente qu'un monde soit fermé ailleurs, choix entre deux versions, téléchargements.
+const sendAll = (channel, payload) => {
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(channel, payload);
+};
+ipcMain.handle("cloud:beforePlay", async (_event, key, opts) => {
+  try {
+    return await worldCloud.beforePlay(String(key || ""), { force: opts?.force === true });
+  } catch (error) {
+    // Site injoignable : on ne bloque pas la partie (rien n'est écrasé : un split est détecté à l'envoi).
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Cloud : vérification avant de jouer impossible (${error.message})` });
+    return { ok: true, conflict: null, offline: true };
+  }
+});
+ipcMain.handle("cloud:fetchLatest", async (_event, key) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  try {
+    const out = await worldCloud.fetchLatest(String(key || ""));
+    sendAll("play:worldsChanged");
+    return out;
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:waitClosed", (_event, key) => {
+  const k = String(key || "");
+  return worldCloud.waitClosed(k, (result) => {
+    sendAll("cloud:waitDone", { key: k, ...result });
+    if (result.fetched) sendAll("play:worldsChanged");
+  });
+});
+ipcMain.handle("cloud:cancelWait", (_event, key) => {
+  worldCloud.cancelWait(String(key || ""));
+  return { ok: true };
+});
+ipcMain.handle("cloud:resolveSplit", async (_event, key, versionId) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  const out = await worldCloud.resolveSplit(String(key || ""), String(versionId || ""));
+  if (out.ok) sendAll("play:worldsChanged");
+  return out;
+});
+ipcMain.handle("cloud:downloadMany", async (_event, ids) => {
+  try {
+    return await worldCloud.downloadMany(Array.isArray(ids) ? ids.filter((x) => typeof x === "string") : []);
+  } catch (error) {
+    return cloudError(error);
+  }
+});
+ipcMain.handle("cloud:downloadJob", () => worldCloud.downloadJob());
+ipcMain.handle("cloud:download", async (_event, worldId) => {
+  if (playRunning) return { ok: false, error: "Quitte le jeu d'abord." };
+  const out = await worldCloud.download(String(worldId || ""));
+  if (out.ok) for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+  return out;
+});
+
+const playError = (error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) });
+
+ipcMain.handle("play:packs", async (_event, { force = false } = {}) => {
+  const data = await fetchPlayPacks({ force });
+  return { ok: true, ...data };
+});
+ipcMain.handle("play:mcVersions", async () => {
+  try {
+    return { ok: true, versions: await playMode.listMinecraftVersions() };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Archive d'un Pack Omniscient publié : liens signés (R2, quelques minutes) donnés par le site, morceaux
+// mis bout à bout puis vérifiés (SHA-256) avant l'installation.
+async function installPublishedOmni(p, minecraftVersion) {
+  const info = await fetchJson(`${SITE_URL}/api/launcher/play/omnipack?packId=${encodeURIComponent(p.id)}`, { headers: launcherAuthHeaders() });
+  const parts = Array.isArray(info?.parts) ? info.parts : [];
+  if (!parts.length || !/^[0-9a-f]{64}$/.test(info?.sha256 || "")) throw new Error("Archive du pack introuvable sur le site.");
+  const tmp = path.join(os.tmpdir(), `omnipack-${crypto.randomBytes(4).toString("hex")}.omnipack`);
+  const hash = crypto.createHash("sha256");
+  const out = fs.createWriteStream(tmp);
+  try {
+    for (const url of parts) {
+      const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+      if (!res.ok) throw new Error(`Téléchargement du pack impossible (${res.status}).`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      hash.update(buf);
+      await new Promise((resolve, reject) => out.write(buf, (e) => (e ? reject(e) : resolve())));
+    }
+    await new Promise((resolve) => out.end(resolve));
+    if (hash.digest("hex") !== info.sha256) throw new Error("Archive du pack abîmée pendant le téléchargement.");
+    const r = await omniPack.installOmni(tmp, { only: minecraftVersion, pub: { packId: p.id, slug: p.slug, name: p.name }, worlds: null });
+    return r.created[0];
+  } finally {
+    out.destroy();
+    await fsp.rm(tmp, { force: true });
+  }
+}
+// « Tester dans le launcher » (31/10) : l'admin du site clique sur un pack proposé par un joueur, le
+// site ouvre omniscient://test-pack/<jeton>. Une fenêtre du launcher demande « Installer ce pack pour
+// le tester ? » : Annuler = rien ne se passe ; Installer = téléchargement vérifié (SHA-256, avec une
+// barre de progression), puis le pack apparaît dans Jouer avec la mention « Test Omnipack ».
+// Accepter ou refuser le pack se fait sur le site, pas ici. Rien n'est publié.
+let testPackBusy = false;
+let testPackAnswer = null;
+ipcMain.handle("testPack:answer", (_event, yes) => {
+  const done = testPackAnswer;
+  testPackAnswer = null;
+  done?.(!!yes);
+  return { ok: true };
+});
+const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function testPackUi(payload) {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (win && !win.isDestroyed()) win.webContents.send("testPack:event", payload);
+}
+async function installTestPack(token) {
+  await app.whenReady();
+  if (testPackBusy) return testPackUi({ kind: "error", message: "Un test de pack est déjà en cours." });
+  testPackBusy = true;
+  const tmp = path.join(os.tmpdir(), `omnipack-test-${crypto.randomBytes(4).toString("hex")}.omnipack`);
+  try {
+    // Launcher fermé au clic : au démarrage le Laboratoire n'est pas encore lu (session pas encore
+    // reprise) et la fenêtre n'est pas prête. On attend (30 s au plus) avant de conclure.
+    for (let i = 0; i < 20 && !features.visible("omniPack"); i++) {
+      await features.recent(30_000).catch(() => {});
+      if (!features.visible("omniPack")) await sleepMs(1500);
+    }
+    for (let i = 0; i < 120 && !serverLinkRendererReady; i++) await sleepMs(500);
+    if (!features.visible("omniPack")) return testPackUi({ kind: "error", message: "Pack Omniscient est coupé dans le Laboratoire pour ton compte." });
+    let info;
+    try {
+      info = await fetchJson(`${SITE_URL}/api/launcher/play/omnipack?testToken=${encodeURIComponent(token)}`, { headers: launcherAuthHeaders() });
+    } catch (error) {
+      return testPackUi({ kind: "error", message: `Impossible de récupérer le pack (${error.message}). Connecte-toi au launcher puis reclique sur « Tester dans le launcher » depuis le site (le lien dure 10 minutes).` });
+    }
+    const parts = Array.isArray(info?.parts) ? info.parts : [];
+    if (!parts.length || !/^[0-9a-f]{64}$/.test(info?.sha256 || "")) return testPackUi({ kind: "error", message: "Archive du pack introuvable sur le site." });
+    const name = String(info.name || "Pack").slice(0, 80);
+    // 1) La question : Annuler = rien ne se passe.
+    const yes = await new Promise((resolve) => {
+      testPackAnswer = resolve;
+      testPackUi({ kind: "ask", name });
+    });
+    if (!yes) return;
+    // 2) Téléchargement vérifié, avec progression.
+    const hash = crypto.createHash("sha256");
+    const out = fs.createWriteStream(tmp);
+    try {
+      for (const [i, url] of parts.entries()) {
+        testPackUi({ kind: "progress", name, step: "download", part: i + 1, parts: parts.length, pct: Math.round((i / parts.length) * 70) });
+        const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+        if (!res.ok) throw new Error(`Téléchargement du pack impossible (${res.status}).`);
+        const buf = Buffer.from(await res.arrayBuffer());
+        hash.update(buf);
+        await new Promise((resolve, reject) => out.write(buf, (e) => (e ? reject(e) : resolve())));
+      }
+      await new Promise((resolve) => out.end(resolve));
+    } finally {
+      out.destroy();
+    }
+    if (hash.digest("hex") !== info.sha256) throw new Error("Archive du pack abîmée pendant le téléchargement.");
+    // 3) Installation (toutes les versions du pack), marquées « Test Omnipack ».
+    testPackUi({ kind: "progress", name, step: "install", pct: 70 });
+    const r = await omniPack.installOmni(tmp, {
+      worlds: [],
+      onProgress: (p) => {
+        const o = p?.detail?.overall;
+        if (typeof o === "number") testPackUi({ kind: "progress", name, step: "install", pct: 70 + Math.round(o * 28) });
+      },
+    });
+    for (const c of r.created) {
+      const ver = playMode.getVersion(c.id);
+      if (ver) ver.testPack = true;
+    }
+    await playMode.saveState();
+    for (const c of r.created) installVersionInBackground(c.id).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Test de pack : préparation impossible (${error.message}).` }));
+    sendAll("play:worldsChanged");
+    testPackUi({ kind: "done", name: r.name || name, versions: r.created.map((c) => c.mc) });
+  } catch (error) {
+    testPackUi({ kind: "error", message: `Test du pack impossible : ${error.message}` });
+  } finally {
+    testPackBusy = false;
+    await fsp.rm(tmp, { force: true }).catch(() => {});
+  }
+}
+ipcMain.handle("play:listVersions", () => ({ ok: true, versions: playMode.listVersions() }));
+ipcMain.handle("play:createVersion", async (_event, { minecraftVersion, packId = null, name = "", omni = false } = {}) => {
+  try {
+    let pack = null;
+    if (packId) {
+      const data = await fetchPlayPacks();
+      const p = (data.packs || []).find((x) => x.id === packId);
+      const v = p?.versions?.find((x) => x.minecraftVersion === minecraftVersion);
+      if (!p || !v) return { ok: false, error: "Ce pack n'est pas encore prêt pour cette version." };
+      // Pack Omniscient publié (27/10) : son archive vient du site, on installe cette version.
+      if (p.kind === "omni") {
+        if (!features.visible("omniPack")) return pageOff;
+        const created = await installPublishedOmni(p, minecraftVersion);
+        installVersionInBackground(created.id).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Pack Omniscient : préparation impossible (${error.message}).` }));
+        sendAll("play:worldsChanged");
+        return { ok: true, version: playMode.listVersions().find((x) => x.id === created.id) };
+      }
+      pack = flattenPackVersion(p, v);
+    }
+    // « Créer un Pack Omniscient » en vanilla : la version a son dossier et son groupe de versions.
+    const om = omni && !packId && features.visible("omniPack") ? { base: true, tested: true } : null;
+    return { ok: true, version: await playMode.createVersion({ minecraftVersion, pack, name, omni: om }) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:renameVersion", async (_event, id, name) => ({ ok: await playMode.renameVersion(id, name) }));
+ipcMain.handle("play:removeVersion", async (_event, id, worlds) => {
+  if (playRunning?.versionId === id) return { ok: false, error: "Cette version est en train de tourner." };
+  // Case « Retirer aussi ses mondes » (27/10) : chaque monde part à la Corbeille avec ses sauvegardes,
+  // sans sauvegarde avant (rien ne reste dans le launcher, sauf une Version d'origine).
+  let removed = 0;
+  try {
+    for (const key of Array.isArray(worlds) ? worlds : []) {
+      await liveSave.enqueue(() => playMode.removeItem(String(id), { kind: "w", key: String(key) }, { trash: trashItem, deps: PLAY_DEPS, withBackups: true }));
+      removed++;
+    }
+  } catch (error) {
+    if (removed) sendAll("play:worldsChanged");
+    return playError(error);
+  }
+  const ok = await playMode.removeVersion(id);
+  if (removed) sendAll("play:worldsChanged");
+  return { ok, worlds: removed };
+});
+// Séparation stricte (Laboratoire « strictDirs », 26/10) : la première fois qu'elle est active
+// pendant ce démarrage (jeu fermé), chaque monde qui a déjà une version va dans le dossier de cette
+// version, après une sauvegarde. Les autres seront rangés à leur premier lancement.
+let strictMigration = null;
+function ensureStrictLayout() {
+  if (!features.visible("strictDirs") || getRunningGame() || gameLaunchInProgress || gamesMove.active) return Promise.resolve();
+  if (!strictMigration) {
+    strictMigration = liveSave
+      .enqueue(() => playMode.migrateToInstances())
+      .then((moved) => moved.length && logStore.pushLog({ source: "launcher", message: `Jouer : ${moved.length} monde(s) rangé(s) dans le dossier de leur version (${moved.slice(0, 5).join(", ")}).` }))
+      .catch((error) => {
+        strictMigration = null;
+        logStore.pushLog({ level: "warn", source: "launcher", message: `Jouer : rangement des mondes par version impossible (${error.message}).` });
+      });
+  }
+  return strictMigration;
+}
+ipcMain.handle("play:listWorlds", async () => {
+  try {
+    await ensureStrictLayout();
+    // gone : mondes supprimés dans le jeu dont les sauvegardes sont encore sur le PC (26/10).
+    const [worlds, gone] = await Promise.all([playMode.listWorlds(), playMode.listGone().catch(() => [])]);
+    return { ok: true, worlds, gone, running: playRunning ? { versionId: playRunning.versionId } : null };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:setWorldBackup", async (_event, key, on, opts) => {
+  try {
+    return await playMode.setWorldBackup(key, on, opts);
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Mettre à jour une installation (27/10, preview validée par Rushi, Laboratoire « versionGuard ») :
+// ses mondes sont sauvegardés 🛡 « Avant X » et vérifiés AVANT, puis l'installation change de version.
+ipcMain.handle("play:updateCheck", async (_event, id, mc) => {
+  if (!features.visible("versionGuard")) return { ok: false, error: "Fonction pas encore disponible." };
+  try {
+    return { ok: true, ...(await playMode.updateCheck(String(id || ""), String(mc || ""))) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:updateVersion", async (event, id, opts) => {
+  if (!features.visible("versionGuard")) return { ok: false, error: "Fonction pas encore disponible." };
+  const busy = playGameBusy();
+  if (busy) return busy;
+  const o = opts && typeof opts === "object" ? opts : {};
+  try {
+    let freeBytes = null;
+    try {
+      const st = await fsp.statfs(playMode.PLAY_ROOT);
+      freeBytes = Number(st.bavail) * Number(st.bsize);
+    } catch {
+      /* place libre inconnue : on tente quand même, une sauvegarde ratée arrête tout */
+    }
+    const out = await liveSave.enqueue(() =>
+      playMode.updateVersion(String(id || ""), { minecraftVersion: String(o.minecraftVersion || ""), keepCopy: !!o.keepCopy, modsOff: !!o.modsOff }, {
+        freeBytes,
+        onStep: (st) => !event.sender.isDestroyed() && event.sender.send("play:updateStep", st),
+      }),
+    );
+    for (const b of out.backups) if (b.backup) worldCloud.queueBackup(b.key, b.backup);
+    logStore.pushLog({ level: "info", source: "launcher", message: `Jouer : installation mise à jour ${out.from} → ${out.to} (${out.backups.length} monde(s) sauvegardé(s) avant${out.copyId ? ", copie gardée" : ""}).` });
+    sendAll("play:worldsChanged");
+    return out;
+  } catch (error) {
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Jouer : mise à jour de l'installation arrêtée : ${error.message}` });
+    return { ...playError(error), missing: error.missing || null };
+  }
+});
+ipcMain.handle("play:listBackups", async (_event, key) => ({ ok: true, backups: key ? await playMode.listBackups(key) : [], keep: playMode.keepConfig() }));
+// Limite des sauvegardes gardées sur ce PC, monde par monde (nombre ou taille). Dans la file des
+// sauvegardes : jamais pendant qu'une sauvegarde en jeu écrit la liste du même monde.
+ipcMain.handle("play:testOverlay", async (event) => {
+  await liveSave.testOverlay(BrowserWindow.fromWebContents(event.sender)?.getBounds() || null);
+  return { ok: true };
+});
+// Réglages des sauvegardes, les mêmes pour tous les mondes (25/10) : `key` n'est plus utilisé.
+ipcMain.handle("play:setBackupLimit", async (_event, _key, cfg) => {
+  if (!cfg || typeof cfg !== "object") return { ok: false, error: "Réglage invalide." };
+  try {
+    const out = await liveSave.enqueue(() => playMode.setKeepConfig(cfg));
+    // Partiel : les versions en trop sortent du cloud (restent sur le PC) ; Toutes : celles qui
+    // manquent en ligne partent.
+    worldCloud.applySettings().catch(() => {});
+    return out;
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+// Une sauvegarde ou une restauration ne touche jamais un monde pendant que le jeu tourne.
+function playGameBusy() {
+  // Audit du 25/10 : pendant le déplacement du dossier des jeux, rien n'écrit dans les mondes
+  // (l'ancien dossier est vidé à la fin).
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
+  return getRunningGame() || gameLaunchInProgress ? { ok: false, code: "gameRunning", error: "Ferme Minecraft d'abord : on ne touche pas à un monde ouvert." } : null;
+}
+// Sauvegarde en cours, montrée dans la pilule en haut à droite (play.js, retour de Rushi du 25/10).
+function sendSaveActivity(activity) {
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:saveActivity", activity);
+}
+ipcMain.handle("play:backupNow", async (_event, key, label) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  sendSaveActivity({ key, label: label || null, phase: "start" });
+  try {
+    // Dans la file des sauvegardes (audit du 25/10) : jamais en même temps que celle de fin de partie.
+    const result = await liveSave.enqueue(() => playMode.backupWorld(key, { reason: "manual", label, force: true }));
+    if (result.backup) worldCloud.queueBackup(key, result.backup);
+    sendSaveActivity({ key, label: label || null, phase: result.backup ? "done" : "skip" });
+    return result;
+  } catch (error) {
+    sendSaveActivity({ key, label: label || null, phase: "fail" });
+    return playError(error);
+  }
+});
+// Supprimer une sauvegarde à la main (confirmée en tapant « supprimer ») : sur ce PC, et aussi dans
+// le cloud (versions miroir), sauf la version à continuer, que le site garde.
+ipcMain.handle("play:deleteBackup", async (_event, key, backupId) => {
+  if (typeof key !== "string" || typeof backupId !== "string") return { ok: false, error: "Sauvegarde introuvable." };
+  try {
+    const b = await liveSave.enqueue(() => playMode.deleteBackup(key, backupId));
+    worldCloud.dropPruned(key, [b], { explicit: true });
+    return { ok: true };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:restoreBackup", async (_event, key, backupId) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  try {
+    return await liveSave.enqueue(() => playMode.restoreBackup(key, backupId));
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:scanImport", async (_event, dir) => {
+  try {
+    const out = await playMode.scanImportable(dir || null);
+    // Dossier d'une instance de l'appli CurseForge (…\Instances\<nom>\saves) : le launcher conseille
+    // d'importer le pack avec (export .zip), pour que le monde garde ses mods.
+    const inst = /[\\/]Instances[\\/]([^\\/]+)[\\/]saves[\\/]?$/i.exec(out.dir || "");
+    const cfInstance = inst && fs.existsSync(path.join(out.dir, "..", "minecraftinstance.json")) ? { name: inst[1].slice(0, 60) } : null;
+    return { ok: true, ...out, cfInstance };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("play:pickImportDir", async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showOpenDialog(win, {
+    title: "Dossier de mondes Minecraft (saves)",
+    defaultPath: playMode.defaultMinecraftSaves(),
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+  return { ok: true, dir: result.filePaths[0] };
+});
+// Version d'origine en cours d'écriture, par monde : « Jouer » attend qu'elle soit finie, pour
+// qu'elle soit toujours le monde tel qu'il était à l'import (26/10).
+const importBackups = new Map();
+ipcMain.handle("play:import", async (event, dir, folders) => {
+  try {
+    const imported = await playMode.importWorlds(dir || null, Array.isArray(folders) ? folders : [], {
+      onProgress: (p) => !event.sender.isDestroyed() && event.sender.send("play:importProgress", p),
+    });
+    // Sauvegarde activée par défaut : une première sauvegarde de chaque copie (la Version d'origine).
+    for (const w of imported) {
+      const job = playMode
+        .backupWorld(w.key, { reason: "import" })
+        .then((r) => r.backup && worldCloud.queueBackup(w.key, r.backup))
+        .catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Première sauvegarde de « ${w.name} » impossible : ${error.message}` }))
+        .finally(() => importBackups.delete(w.key));
+      importBackups.set(w.key, job);
+    }
+    return { ok: true, imported };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Copie d'essai d'un monde modé, ouverte à la place de l'original (26/10).
+ipcMain.handle("play:copyWorld", async (_event, key, opts) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  if (typeof key !== "string") return { ok: false, error: "Monde introuvable." };
+  try {
+    await importBackups.get(key);
+    return await liveSave.enqueue(() => playMode.copyWorld(key, { name: typeof opts?.name === "string" ? opts.name.slice(0, 80) : "" }));
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Suppression définitive (26/10) : monde, toutes ses sauvegardes (Version d'origine comprise) et
+// ses versions dans le cloud. La fenêtre a déjà demandé le mot et attendu 10 secondes.
+// Audit du 28/10 (correctif 4) : suppression de plusieurs mondes d'un coup : l'etat du cloud est
+// lu une fois pour tout le lot (avant, une lecture forcee par monde : ~6 appels a la base chacun).
+// `sameBatch` : envoye par la selection multiple a partir du 2e monde ; au-dela de 2 min, relu.
+let foreverCloudStatus = null;
+ipcMain.handle("play:deleteWorldForever", async (_event, key, opts) => {
+  const busy = playGameBusy();
+  if (busy) return busy;
+  if (typeof key !== "string") return { ok: false, error: "Monde introuvable." };
+  try {
+    await importBackups.get(key);
+    let cloudError = null;
+    if (features.visible("worlds")) {
+      const reuse = opts?.sameBatch === true && foreverCloudStatus?.status && Date.now() - foreverCloudStatus.at < 2 * 60_000;
+      if (!reuse) foreverCloudStatus = { at: Date.now(), status: await worldCloud.status({ force: true }).catch(() => null) };
+      const status = foreverCloudStatus.status;
+      if (status?.worlds?.some((x) => x.worldKey === key)) {
+        const r = await worldCloud.remove(key);
+        if (!r?.ok) cloudError = r?.error || "cloud";
+      }
+    }
+    const out = await liveSave.enqueue(() => playMode.deleteWorldForever(key));
+    return { ...out, cloudError };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Aide au crash : le texte à copier pour demander de l'aide (fin du journal + rapport de crash).
+let lastCrash = null;
+ipcMain.handle("play:crashLogs", async () => {
+  if (!lastCrash) return { ok: false };
+  return { ok: true, text: await crashHelp.logsForHelp(lastCrash.files) };
+});
+ipcMain.handle("play:openCrashFolder", () => {
+  const f = lastCrash?.files?.crash || lastCrash?.files?.log;
+  if (f) shell.showItemInFolder(f);
+});
+// Catalogue de bugs : un signal du launcher (problème évité ou fenêtre à montrer), une fois par session.
+function bugSignal(code, ctx) {
+  const entry = bugCatalog.signal(code, ctx);
+  if (!entry) return;
+  logStore.pushLog({ level: "info", source: "launcher", message: `Catalogue de bugs : ${entry.slug} (${code}).` });
+  bugCatalog.stat(entry.slug, "seen");
+  sendAll("bugs:found", { entry, canRepair: false, hasLogs: false });
+}
+require("./modpack").setBugSignal(bugSignal);
+playPacks.setBugSignal(bugSignal);
+// Les seuls signaux que l'interface peut envoyer.
+ipcMain.handle("bugs:signal", (_event, code) => {
+  if (code === "manual_download_required") bugSignal(code);
+});
+ipcMain.handle("bugs:refused", (_event, slug) => {
+  if (bugCatalog.bySlug(String(slug))) bugCatalog.stat(String(slug), "refused");
+});
+ipcMain.handle("bugs:openPage", (_event, slug) => {
+  if (/^[a-z0-9-]{1,80}$/.test(String(slug))) shell.openExternal(`${SITE_URL}/aide/bugs/${slug}`);
+});
+// « Corriger » : le geste vient de la fiche gardée ici, jamais de l'interface.
+ipcMain.handle("bugs:repair", async (_event, slug, versionId) => {
+  const entry = bugCatalog.bySlug(String(slug));
+  if (!entry || !features.visible("bugCatalog")) return pageOff;
+  const id = String(versionId || "");
+  const busy = packBusy(id);
+  if (busy) return busy;
+  try {
+    const out = await repairBug(
+      entry,
+      id,
+      {
+        getVersion: (x) => playMode.getVersion(x),
+        modsDirOf: (x) => playMode.modsDirOf(x),
+        setLoaderVersion: (x, v) => playMode.setLoaderVersion(x, v),
+        addMods: (x, slugOrId) => playMode.addPackMods(x, [{ slug: slugOrId }], { deps: PLAY_DEPS }),
+        removeItem: (x, item) => playMode.removeItem(x, item, { trash: trashItem, deps: PLAY_DEPS }),
+        updateMod: async (x, mod) => {
+          const v = playMode.getVersion(x);
+          const m = (v.mods || []).find((o) => o.source === "mr" && (o.id === mod || o.slug === mod));
+          if (!m) throw new Error(`Mod introuvable dans ce pack : ${mod}.`);
+          const latest = (await playPacks.mrVersions(m.projectId, v.minecraftVersion, v.pack.loader))[0];
+          if (!latest) throw new Error("Aucune version compatible sur Modrinth.");
+          return playMode.setPackMod(x, m.id, { version: latest.v }, { deps: PLAY_DEPS });
+        },
+        syncFiles: (x) => playMode.syncPackFiles(playMode.getVersion(x), { deps: PLAY_DEPS }),
+        clearCache: async () => diagnostics.clearCache(),
+      },
+      (step) => sendAll("bugs:repairStep", step),
+    );
+    bugCatalog.stat(entry.slug, "repaired");
+    logStore.pushLog({ level: "info", source: "launcher", message: `Catalogue de bugs : ${entry.slug} réparé (sauvegarde : ${out.backup || "aucun dossier mods"}).` });
+    return { ok: true };
+  } catch (error) {
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Catalogue de bugs : réparation impossible (${entry.slug}) : ${error.message}` });
+    return playError(error);
+  }
+});
+// « Essayer dans le launcher » : au démarrage, le Laboratoire n'est pas encore lu (même attente que test-pack).
+async function showBugTest(slug) {
+  for (let i = 0; i < 20 && !(features.visible("bugCatalog") && serverLinkRendererReady); i++) await new Promise((r) => setTimeout(r, 1500));
+  if (!features.visible("bugCatalog")) return;
+  if (!bugCatalog.bySlug(slug)) await bugCatalog.refresh();
+  const entry = bugCatalog.bySlug(slug);
+  if (entry) sendAll("bugs:found", { entry, test: true, canRepair: false, hasLogs: false });
+  else logStore.pushLog({ level: "warn", source: "launcher", message: `Essai de fiche : ${slug} n'est pas dans les fiches publiées.` });
+}
+ipcMain.handle("play:openWorldFolder", async (_event, key) => {
+  const found = key ? await playMode.worldDir(key) : null;
+  return shell.openPath(found ? found.dir : playMode.SAVES);
+});
+
+// --- Mon pack et import d'un pack CurseForge (26/10, Laboratoire « myPack », « myPackCf », « cfImport ») ---
+// Mon pack : mods de Modrinth (téléchargés), plus une liste CurseForge que le JOUEUR télécharge :
+// « Ouvrir la page », il télécharge, le launcher trouve le fichier dans Téléchargements, le vérifie
+// (empreinte SHA-1 quand on la connaît, sinon le contenu du .jar) et le range dans le pack. Jamais
+// de téléchargement depuis CurseForge pour Mon pack, même pour un mod nécessaire.
+const cfAllowed = () => features.visible("myPackCf") || features.visible("cfImport");
+const packBusy = (id) => (playRunning?.versionId === id ? { ok: false, code: "gameRunning", error: "Ce pack est en train de tourner : ferme Minecraft d'abord." } : null);
+ipcMain.handle("myPack:get", async (_event, id, opts) => {
+  if (!pageAllowed(id)) return pageOff;
+  try {
+    return { ok: true, pack: await playMode.packInfo(String(id || ""), { quick: opts?.quick === true }) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:searchModrinth", async (_event, q, opts) => {
+  try {
+    const loader = playPacks.LOADER_IDS.includes(opts?.loader) ? opts.loader : "fabric";
+    return { ok: true, mods: await playPacks.searchModrinth(String(q || ""), { mc: String(opts?.mc || ""), loader, fr: settingsStore.loadSettings().locale !== "en" }) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Recherche CurseForge par le site (clé de l'API CurseForge côté site) : nom, page, fichier conseillé.
+// Audit du 28/10 (correctif 5) : la fenêtre « Créer Mon pack » se redessine à chaque clic (ajouter,
+// changer de version...) et relançait la même recherche : réponse gardée 5 min par recherche.
+const cfSearchCache = new Map();
+const CF_SEARCH_CACHE_MS = 5 * 60_000;
+ipcMain.handle("myPack:searchCurseForge", async (_event, q, opts) => {
+  if (!features.visible("myPackCf")) return { ok: false, code: "feature_off", mods: [] };
+  const text = String(q || "").trim().slice(0, 80);
+  const cacheKey = JSON.stringify([text.toLowerCase(), String(opts?.mc || ""), String(opts?.loader || "")]);
+  const hit = cfSearchCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < CF_SEARCH_CACHE_MS) return { ok: true, mods: hit.mods };
+  try {
+    const params = new URLSearchParams(text ? { q: text } : {});
+    if (opts?.mc) params.set("mc", String(opts.mc));
+    if (opts?.loader) params.set("loader", String(opts.loader));
+    const data = await fetchJson(`${SITE_URL}/api/launcher/curseforge/mods?${params}`, { headers: launcherAuthHeaders() });
+    const mods = (Array.isArray(data?.mods) ? data.mods : []).slice(0, 30).map((m) => ({
+      slug: `cf-${Number(m.projectId) || 0}`,
+      projectId: Number(m.projectId) || null,
+      name: String(m.name || "?").slice(0, 80),
+      author: String(m.author || "").slice(0, 60),
+      fileId: Number(m.fileId) || null,
+      fileName: typeof m.fileName === "string" ? m.fileName.slice(0, 120) : null,
+      pageUrl: safeModPageUrl(m.pageUrl),
+    }));
+    if (cfSearchCache.size >= 50) cfSearchCache.delete(cfSearchCache.keys().next().value);
+    cfSearchCache.set(cacheKey, { at: Date.now(), mods });
+    return { ok: true, mods };
+  } catch (error) {
+    return { ...playError(error), mods: [] };
+  }
+});
+// Mods d'un monde Forge/NeoForge (liste lue dans level.dat) : trouvés sur Modrinth, ou à la main.
+ipcMain.handle("myPack:scanWorld", async (_event, key) => {
+  try {
+    const found = await playMode.worldDir(String(key || ""));
+    const world = found?.world;
+    const mods = world?.modded;
+    const ids = (mods?.ids || []).filter((x) => typeof x === "string" && /^[a-z0-9_.-]{2,64}$/.test(x) && !["minecraft", "forge", "neoforge", "fml", "mcp"].includes(x)).slice(0, 80);
+    const loader = playPacks.LOADER_IDS.includes(mods?.loader) ? mods.loader : "forge";
+    const mr = [];
+    const cf = [];
+    let i = 0;
+    const worker = async () => {
+      while (i < ids.length) {
+        const id = ids[i++];
+        let hit = null;
+        for (const slug of [...new Set([id, id.replace(/_/g, "-")])]) {
+          const vers = await playPacks.mrVersions(slug, world.minecraftVersion, loader).catch(() => []);
+          if (vers.length) {
+            hit = { slug, name: id };
+            break;
+          }
+        }
+        (hit ? mr : cf).push(hit || { slug: `cf-${id}`, name: id, search: id });
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    return { ok: true, total: ids.length, mr, cf };
+  } catch (error) {
+    return playError(error);
+  }
+});
+
+// Fichiers trouvés dans Téléchargements avant que le pack existe (fenêtre « Mon pack »).
+const stagedCfFiles = new Map();
+const cfWatchers = new Map();
+async function sha1Of(file) {
+  const hash = crypto.createHash("sha1");
+  await require("node:stream/promises").pipeline(fs.createReadStream(file), hash);
+  return hash.digest("hex");
+}
+/**
+ * Ouvre la page CurseForge d'un mod et attend (15 min au plus) son fichier dans Téléchargements.
+ * `want` : { sha1, size, fileName, depId } ; un fichier n'est pris que s'il a la bonne empreinte,
+ * ou (empreinte inconnue) le bon nom exact, ou (mod cherché par son id) un .jar récent qui
+ * déclare cet id. `want.ext` : extension cherchée (.jar par défaut, .zip pour les packs de ressources,
+ * shaders, maps et data packs). Renvoie { file, sha1, size, fileName, meta } ou null.
+ */
+function watchDownloads(watchKey, want) {
+  cfWatchers.get(watchKey)?.cancel();
+  const started = Date.now();
+  let stop = false;
+  const p = (async () => {
+    const seen = new Map();
+    while (!stop && Date.now() - started < 15 * 60_000) {
+      for (const dir of manualModsSearchDirs()) {
+        const names = await fsp.readdir(dir).catch(() => []);
+        for (const name of names) {
+          if (!(want.ext || /\.jar$/i).test(name)) continue;
+          const file = path.join(dir, name);
+          const st = await fsp.stat(file).catch(() => null);
+          if (!st || !st.isFile()) continue;
+          const sig = `${st.size}|${st.mtimeMs}`;
+          if (seen.get(file) === sig) continue;
+          seen.set(file, sig);
+          const plain = name.replace(/ \(\d+\)(\.\w+)$/i, "$1");
+          // Autre version du même mod (30/10) : jamais prise, mais signalée au joueur, une fois par fichier.
+          if (want.onWrong && want.fileName && st.mtimeMs >= started - 10 * 60_000 && plain !== want.fileName && modFileStem(plain) && modFileStem(plain) === modFileStem(want.fileName)) {
+            want.onWrong(plain);
+            continue;
+          }
+          if (want.sha1) {
+            // Seule l'empreinte compte (31/10 : une taille annoncée fausse d'un octet refusait le bon fichier).
+            const sha1 = await sha1Of(file).catch(() => null);
+            if (sha1 !== want.sha1) continue;
+            return { file, sha1, size: st.size, fileName: want.fileName || plain, meta: want.ext ? null : await playPacks.readJarMeta(file).catch(() => null) };
+          }
+          if (want.fileName && plain === want.fileName) {
+            return { file, sha1: await sha1Of(file), size: st.size, fileName: plain, meta: want.ext ? null : await playPacks.readJarMeta(file).catch(() => null) };
+          }
+          if (want.depId && !want.ext && st.mtimeMs >= started - 10 * 60_000) {
+            const meta = await playPacks.readJarMeta(file).catch(() => null);
+            if (meta && [...meta.ids, ...meta.provides].includes(want.depId)) return { file, sha1: await sha1Of(file), size: st.size, fileName: plain, meta };
+          }
+        }
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    return null;
+  })().finally(() => cfWatchers.delete(watchKey));
+  cfWatchers.set(watchKey, { cancel: () => (stop = true) });
+  return p;
+}
+function curseforgePageFor(info) {
+  return (
+    safeModPageUrl(info.pageUrl) ||
+    (Number(info.projectId) > 0 ? `https://www.curseforge.com/projects/${Number(info.projectId)}` : null) ||
+    `https://www.curseforge.com/minecraft/search?page=1&pageSize=20&sortBy=relevancy&class=mc-mods&search=${encodeURIComponent(String(info.search || info.name || "").slice(0, 60))}`
+  );
+}
+// Empreinte et taille du fichier attendu, par le site (route des packs des serveurs).
+async function cfFileInfo(fileId) {
+  if (!(Number(fileId) > 0)) return null;
+  const data = await fetchJson(`${SITE_URL}/api/launcher/curseforge/files`, {
+    method: "POST",
+    headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ fileIds: [Number(fileId)] }),
+  }).catch(() => null);
+  return data?.files?.find((f) => f.id === Number(fileId)) || null;
+}
+// « Corriger le pack » (30/10, Rushi : « il ouvre la page normale, pas celle de la bonne version ») :
+// fichiers CurseForge d'un mod pour la version et le chargeur du pack (route du site, avec la page
+// exacte et l'empreinte de chaque fichier). Gardés 10 min.
+const cfModFilesCache = new Map();
+async function cfModFiles(projectId, mc, loader) {
+  if (!(Number(projectId) > 0)) return [];
+  const key = `${projectId}|${mc}|${loader}`;
+  const hit = cfModFilesCache.get(key);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.files;
+  const params = new URLSearchParams({ projectId: String(Number(projectId)) });
+  if (mc) params.set("mc", String(mc));
+  if (loader) params.set("loader", String(loader));
+  const data = await fetchJson(`${SITE_URL}/api/launcher/curseforge/modfiles?${params}`, { headers: launcherAuthHeaders() });
+  const files = (Array.isArray(data?.files) ? data.files : []).slice(0, 50).map((f) => ({
+    fileId: Number(f.fileId) || 0,
+    fileName: String(f.fileName || ""),
+    sha1: /^[0-9a-f]{40}$/i.test(f.sha1 || "") ? f.sha1.toLowerCase() : null,
+    size: Number(f.fileLength) || null,
+    pageUrl: safeModPageUrl(f.pageUrl),
+  })).filter((f) => f.fileId && f.fileName);
+  cfModFilesCache.set(key, { at: Date.now(), files });
+  return files;
+}
+// Fichier à prendre pour une ligne CurseForge de l'assistant. Mise à jour (« demande X ou plus ») :
+// le fichier le plus récent pour cette version de Minecraft et ce chargeur, s'il est différent de
+// celui du pack ; sinon `none` (aucune version ne va : l'assistant propose les autres solutions).
+// Mod du pack pas encore téléchargé : son propre fichier. Retenu pour « Ouvrir la page ».
+const cfTargets = new Map();
+ipcMain.handle("myPack:cfTarget", async (_event, id, problem) => {
+  if (!cfAllowed()) return { ok: false, code: "feature_off" };
+  try {
+    const modId = String(problem?.fix?.modId || "");
+    const info = playMode.cfPending(String(id), modId);
+    if (!info) return { ok: false };
+    if (!problem.fix.update) return { ok: true, fileName: info.fileName || null };
+    const v = playMode.getVersion(String(id));
+    const files = await cfModFiles(info.projectId, v?.minecraftVersion, v?.pack?.loader);
+    const best = files[0];
+    if (!best || best.fileId === info.fileId || best.sha1 === info.sha1) return { ok: true, none: true };
+    cfTargets.set(`${id}|${modId}`, best);
+    bugSignal("cf_wrong_file"); // catalogue de bugs : le launcher a trouvé le bon fichier à la place de l'ancien
+    return { ok: true, fileName: best.fileName, pageUrl: best.pageUrl };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// « Changer la version de {mod} » pour un mod CurseForge : ses fichiers pour cette version de
+// Minecraft et ce chargeur, celui du pack marqué `current`.
+ipcMain.handle("myPack:cfFiles", async (_event, id, modId) => {
+  if (!cfAllowed()) return { ok: false, code: "feature_off", files: [] };
+  try {
+    const info = playMode.cfPending(String(id), String(modId || ""));
+    if (!info) return { ok: true, files: [] };
+    const v = playMode.getVersion(String(id));
+    const files = await cfModFiles(info.projectId, v?.minecraftVersion, v?.pack?.loader);
+    return { ok: true, files: files.map((f) => ({ ...f, current: f.fileId === info.fileId || (!!f.sha1 && f.sha1 === info.sha1) })) };
+  } catch (error) {
+    return { ...playError(error), files: [] };
+  }
+});
+// `arg` : { packId, modId } (mod du pack), { packId, depId, name } (mod manquant cherché par son id)
+// ou, pendant la création, { slug, name, projectId, fileId, fileName, pageUrl } (sans pack).
+ipcMain.handle("myPack:openCurseForge", async (_event, arg) => {
+  if (!cfAllowed()) return { ok: false, code: "feature_off" };
+  try {
+    const packId = typeof arg?.packId === "string" ? arg.packId : null;
+    let info = packId && arg.modId ? playMode.cfPending(packId, String(arg.modId)) : null;
+    // 30/10 : un fichier précis (liste des versions), ou le bon fichier d'une mise à jour, plutôt que
+    // le fichier déjà dans le pack (avant : page de l'ancien fichier, et c'est lui qu'on attendait).
+    const target = packId && arg.modId && !arg.fileId ? cfTargets.get(`${packId}|${arg.modId}`) : null;
+    if (info && target) info = { ...info, fileId: target.fileId, fileName: target.fileName, sha1: target.sha1, size: target.size, pageUrl: target.pageUrl };
+    else if (info && Number(arg.fileId) > 0) info = { ...info, fileId: Number(arg.fileId), fileName: arg.fileName, sha1: null, size: null, pageUrl: safeModPageUrl(arg.pageUrl) };
+    if (!info) info = { name: arg?.name, projectId: arg?.projectId, fileId: arg?.fileId, fileName: arg?.fileName, pageUrl: arg?.pageUrl, search: arg?.search || arg?.depId };
+    if (!info.sha1 && info.fileId) {
+      const f = await cfFileInfo(info.fileId);
+      if (f) Object.assign(info, { sha1: /^[0-9a-f]{40}$/i.test(f.sha1 || "") ? f.sha1.toLowerCase() : null, size: f.fileLength || null, fileName: f.fileName || info.fileName, pageUrl: info.pageUrl || f.pageUrl });
+    }
+    shell.openExternal(curseforgePageFor(info));
+    const watchKey = `${packId || "new"}|${arg?.modId || arg?.depId || arg?.slug || info.name}`;
+    const wrongSeen = new Set();
+    const onWrong = arg?.modId
+      ? (fileName) => {
+          if (wrongSeen.has(fileName)) return;
+          wrongSeen.add(fileName);
+          sendAll("myPack:cfWrong", { modId: String(arg.modId), fileName });
+        }
+      : null;
+    const got = await watchDownloads(watchKey, { sha1: info.sha1 || null, size: info.size || null, fileName: info.fileName || null, depId: arg?.depId || null, onWrong });
+    if (!got) return { ok: true, found: false };
+    if (!packId) {
+      const token = crypto.randomUUID();
+      stagedCfFiles.set(token, got);
+      return { ok: true, found: true, token, name: got.meta?.name || info.name };
+    }
+    const modId = arg.modId || `cf-${String(arg.depId || got.meta?.ids?.[0] || "mod").slice(0, 60)}`;
+    const out = await playMode.acceptManualJar(packId, modId, got.file, { ...got, fileId: info.fileId || null, pageUrl: info.pageUrl || null });
+    cfTargets.delete(`${packId}|${arg.modId}`);
+    sendAll("play:worldsChanged");
+    return { ok: true, found: true, name: out.name };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:create", async (_event, o) => {
+  try {
+    const loader = playPacks.LOADER_IDS.includes(o?.loader) ? o.loader : null;
+    if (!loader) return { ok: false, error: "Choisis un chargeur de mods." };
+    const mc = String(o?.minecraftVersion || "");
+    const loaderVersion = await playPacks.latestLoaderVersion(loader, mc);
+    const list = Array.isArray(o?.mods) ? o.mods.slice(0, 300) : [];
+    const wanted = list.filter((m) => m.source !== "cf" && typeof m.slug === "string").map((m) => ({ slug: m.slug, version: m.version || null }));
+    const mods = wanted.length ? await playPacks.resolveModrinth(wanted, { mc, loader }) : [];
+    // Pack Omniscient (27/10) : Modrinth seulement, jamais de CurseForge ; la version est la base du pack.
+    const omni = o?.omni && features.visible("omniPack") ? { base: true, tested: true } : null;
+    if (!omni && !features.visible("myPack")) return pageOff;
+    const v = await playMode.createCustomVersion({ kind: "mine", name: o?.name, minecraftVersion: mc, loader, loaderVersion, mods, omni });
+    const cf = features.visible("myPackCf") && !omni ? list.filter((m) => m.source === "cf") : [];
+    if (cf.length) {
+      await playMode.addPackMods(
+        v.id,
+        cf.map((c) => ({ ...c, source: "cf", id: c.projectId ? `cf-${c.projectId}` : String(c.slug || "").slice(0, 80) })),
+      );
+      for (const c of cf) {
+        const got = c.token && stagedCfFiles.get(c.token);
+        if (!got) continue;
+        stagedCfFiles.delete(c.token);
+        await playMode.acceptManualJar(v.id, c.projectId ? `cf-${c.projectId}` : String(c.slug), got.file, got).catch(() => {});
+      }
+    }
+    if (typeof o?.worldKey === "string" && o.worldKey) await playMode.setWorldVersion(o.worldKey, v.id);
+    installVersionInBackground(v.id).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Mon pack : préparation impossible (${error.message}).` }));
+    sendAll("play:worldsChanged");
+    return { ok: true, version: v, name: v.pack.name };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// « + Ajouter des mods » sur la page d'un pack.
+ipcMain.handle("myPack:add", async (_event, id, list) => {
+  const busy = packBusy(id);
+  if (busy) return busy;
+  try {
+    const mods = (Array.isArray(list) ? list.slice(0, 200) : [])
+      .filter((m) => m.source !== "cf" || features.visible("myPackCf"))
+      .map((m) => (m.source === "cf" ? { ...m, id: m.projectId ? `cf-${m.projectId}` : String(m.slug || "") } : { slug: m.slug, version: m.version || null }));
+    await playMode.addPackMods(String(id), mods, { deps: PLAY_DEPS });
+    for (const m of list || []) {
+      const got = m.token && stagedCfFiles.get(m.token);
+      if (!got) continue;
+      stagedCfFiles.delete(m.token);
+      await playMode.acceptManualJar(String(id), m.projectId ? `cf-${m.projectId}` : String(m.slug), got.file, got).catch(() => {});
+    }
+    return { ok: true };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// « J'ai le fichier (.jar) » dans « Corriger le pack » (27/10) : copie, jamais déplacé ni supprimé.
+ipcMain.handle("myPack:addJar", async (event, id, opts) => {
+  const busy = packBusy(id);
+  if (busy) return busy;
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showOpenDialog(win, {
+      title: "Fichier du mod (.jar)",
+      defaultPath: manualModsSearchDirs()[0],
+      filters: [{ name: "Mod Minecraft", extensions: ["jar"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+    const out = await playMode.addLooseJar(String(id), result.filePaths[0]);
+    const depId = typeof opts?.depId === "string" ? opts.depId : null;
+    sendAll("play:worldsChanged");
+    return { ok: true, name: out.name, matches: !depId || out.ids.includes(depId) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:setMod", async (_event, id, modId, patch) => {
+  const busy = packBusy(id);
+  if (busy) return busy;
+  try {
+    const clean = {};
+    if (typeof patch?.on === "boolean") clean.on = patch.on;
+    if (typeof patch?.version === "string") clean.version = patch.version.slice(0, 80);
+    return await playMode.setPackMod(String(id), String(modId), clean, { deps: PLAY_DEPS });
+  } catch (error) {
+    return playError(error);
+  }
+});
+// « Corriger » : la solution trouvée par packProblems (Modrinth). CurseForge passe par openCurseForge.
+ipcMain.handle("myPack:fix", async (_event, id, problem) => {
+  const busy = packBusy(id);
+  if (busy) return busy;
+  const fix = problem?.fix;
+  try {
+    if (fix?.action === "version") return await playMode.setPackMod(String(id), String(fix.modId), { version: String(fix.to) }, { deps: PLAY_DEPS });
+    if (fix?.action === "enable") return await playMode.setPackMod(String(id), String(fix.modId), { on: true }, { deps: PLAY_DEPS });
+    if (fix?.action === "add") {
+      return await playMode.addPackMods(String(id), [{ slug: String(fix.slug), version: fix.versionId || fix.version, pinned: true, by: problem?.a?.id ? [String(problem.a.id)] : [] }], { deps: PLAY_DEPS });
+    }
+    return { ok: false, error: "Pas de correction automatique pour ce problème." };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:setResourcePack", async (_event, id, file, on) => {
+  try {
+    return await playMode.setResourcePack(String(id), file, on);
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:setShader", async (_event, id, file) => {
+  try {
+    return await playMode.setShader(String(id), file || null);
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Dossier du pack, ou un de ses sous-dossiers (resourcepacks, shaderpacks, config…).
+ipcMain.handle("myPack:openFolder", async (_event, id, sub) => {
+  if (!pageAllowed(id)) return pageOff;
+  const dir = playMode.pageDir(String(id || ""));
+  const name = typeof sub === "string" && sub === path.basename(sub) && sub !== ".." ? sub : "";
+  const target = name ? path.join(dir, name) : dir;
+  if (name && ["resourcepacks", "shaderpacks", "mods"].includes(name)) await fsp.mkdir(target, { recursive: true }).catch(() => {});
+  return shell.openPath(fs.existsSync(target) ? target : dir);
+});
+
+
+// --- Page d'une version, Pack Omniscient (27/10, preview v22 validée par Rushi) ----------------------
+// Laboratoire : « vanillaPage » (page des versions vanilla), « dataPacks » (onglet Data packs),
+// « packFiles » (explorateur de fichiers), « omniPack » (Pack Omniscient), « packExport » (export
+// .mrpack pour un ami). Tout passe par myPack:* (voir FEATURE_IPC) puis par ces vérifications.
+const pageAllowed = (id) => {
+  const v = playMode.getVersion(String(id || ""));
+  if (!v) return false;
+  if (v.omni && !features.visible("omniPack")) return false;
+  return v.pack ? features.visible("myPack") || v.pack.kind === "omnipub" : features.visible("vanillaPage") || (!!v.omni && features.visible("omniPack"));
+};
+const pageOff = { ok: false, code: "feature_off", error: "Cette fonction est coupée pour le moment." };
+const trashItem = (abs) => shell.trashItem(abs);
+async function pickZipFile(event, title, name = "Fichier .zip") {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showOpenDialog(win, { title, defaultPath: manualModsSearchDirs()[0], filters: [{ name, extensions: ["zip"] }], properties: ["openFile"] });
+  return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
+}
+ipcMain.handle("myPack:remove", async (_event, id, item) => {
+  if (!pageAllowed(id)) return pageOff;
+  const busy = packBusy(id);
+  if (busy) return busy;
+  const kind = String(item?.kind || "");
+  if (kind === "dp" && !features.visible("dataPacks")) return pageOff;
+  try {
+    // Un monde ou un data pack touche aux mondes : dans la file des sauvegardes (jamais en même temps).
+    const out = await liveSave.enqueue(() => playMode.removeItem(String(id), { kind, key: String(item?.key || "") }, { trash: trashItem, deps: PLAY_DEPS }));
+    if (kind === "w") sendAll("play:worldsChanged");
+    return { ok: true, ...out };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:searchContent", async (_event, id, kind, q, opts) => {
+  if (!pageAllowed(id)) return pageOff;
+  try {
+    const v = playMode.getVersion(String(id));
+    const fr = settingsStore.loadSettings().locale !== "en";
+    if (opts?.src === "cf") return { ok: true, items: await cfContentSearch(kind, String(q || ""), v.minecraftVersion, fr) };
+    return { ok: true, items: await playPacks.searchContent(kind === "sh" ? "sh" : "rp", String(q || ""), { mc: v.minecraftVersion, fr }) };
+  } catch (error) {
+    return { ...playError(error), items: [] };
+  }
+});
+// Fenêtre « Ajouter » commune (28/10, preview validée par Rushi, Laboratoire « contentCf ») : packs
+// de ressources, shaders, mondes et data packs CurseForge, cherchés par le site (notre clé). Un
+// fichier que son auteur réserve à l'appli CurseForge (`blocked`) n'est jamais téléchargé : le
+// joueur ouvre sa page, télécharge, puis « Importer un fichier .zip ».
+const CF_CONTENT_KINDS = ["rp", "sh", "w", "dp"];
+const cfContentCache = new Map();
+async function cfContentSearch(kind, q, mc, fr) {
+  if (!features.visible("contentCf")) throw Object.assign(new Error("CurseForge est coupé ici pour le moment."), { code: "feature_off" });
+  if (!CF_CONTENT_KINDS.includes(kind)) throw new Error("Type de contenu inconnu.");
+  if (!currentSession) throw new Error("Connecte-toi avec ton compte Microsoft d'abord : CurseForge passe par le site Omniscient.");
+  const text = q.trim().slice(0, 80);
+  const key = JSON.stringify([kind, text.toLowerCase(), mc]);
+  const hit = cfContentCache.get(key);
+  if (hit && Date.now() - hit.at < CF_SEARCH_CACHE_MS) return hit.items;
+  const params = new URLSearchParams({ kind, q: text, mc: String(mc || "") });
+  const data = await fetchJson(`${SITE_URL}/api/launcher/curseforge/content?${params}`, { headers: launcherAuthHeaders() });
+  const items = (Array.isArray(data?.items) ? data.items : []).slice(0, 30).map((x) => ({
+    slug: `cf-${Number(x.projectId) || 0}-${Number(x.fileId) || 0}`,
+    src: "cf",
+    name: String(x.name || "?").slice(0, 80),
+    author: String(x.author || "").slice(0, 60),
+    downloads: playPacks.fmtDownloads ? playPacks.fmtDownloads(Number(x.downloads) || 0, fr) : String(x.downloads || ""),
+    icon: /^https:\/\/media\.forgecdn\.net\//.test(x.iconUrl || "") ? x.iconUrl : null,
+    blocked: !!x.blocked || !(Number(x.fileId) > 0),
+    page: safeModPageUrl(x.pageUrl),
+  }));
+  if (cfContentCache.size >= 50) cfContentCache.delete(cfContentCache.keys().next().value);
+  cfContentCache.set(key, { at: Date.now(), items });
+  return items;
+}
+// Télécharge le fichier conseillé d'un résultat CurseForge (`cf-<projet>-<fichier>`) dans un dossier
+// temporaire : lien du site, seulement sur *.forgecdn.net, SHA-1 vérifié. Renvoie le chemin du .zip.
+async function cfContentDownload(slug) {
+  if (!features.visible("contentCf")) throw Object.assign(new Error("CurseForge est coupé ici pour le moment."), { code: "feature_off" });
+  const fileId = Number(/^cf-\d+-(\d+)$/.exec(String(slug || ""))?.[1]) || 0;
+  const f = await cfFileInfo(fileId);
+  let okUrl = false;
+  try {
+    const url = new URL(f?.downloadUrl || "");
+    okUrl = url.protocol === "https:" && url.hostname.endsWith(".forgecdn.net") && !url.username;
+  } catch {
+    okUrl = false;
+  }
+  if (!f || !okUrl) throw Object.assign(new Error("Son auteur réserve ce fichier à l'appli CurseForge : ouvre sa page, télécharge-le, puis « Importer un fichier .zip »."), { code: "no_download" });
+  const base = String(f.fileName || "").replace(/[^\w.+() \[\]!'&,-]/g, "_");
+  if (!/\.zip$/i.test(base)) throw new Error("Ce fichier CurseForge n'est pas un .zip.");
+  const dir = path.join(browseDir(), `cf-${fileId}`);
+  await fs.promises.mkdir(dir, { recursive: true });
+  cleanBrowseDir().catch(() => {});
+  await installFiles({ entries: [{ path: base, url: f.downloadUrl, sha1: /^[0-9a-f]{40}$/i.test(f.sha1 || "") ? f.sha1.toLowerCase() : null, size: Number(f.fileLength) || null }], instanceDir: dir, previousFiles: [] });
+  return path.join(dir, base);
+}
+ipcMain.handle("myPack:addContent", async (event, id, o) => {
+  if (!pageAllowed(id)) return pageOff;
+  const busy = packBusy(id);
+  if (busy) return busy;
+  try {
+    const kind = o?.kind === "sh" ? "sh" : "rp";
+    let sourceFile = null;
+    if (o?.from === "cf") sourceFile = await cfContentDownload(o.slug);
+    else if (o?.from !== "mr") {
+      sourceFile = await pickZipFile(event, kind === "sh" ? "Shader (.zip)" : "Pack de ressources (.zip)");
+      if (!sourceFile) return { ok: false, cancelled: true };
+    }
+    return { ok: true, ...(await playMode.addContent(String(id), { kind, from: o?.from === "mr" ? "mr" : "file", slug: String(o?.slug || ""), sourceFile })) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// CurseForge (packs de ressources, shaders, maps) : seulement la page de recherche, le joueur
+// télécharge lui-même (jamais de téléchargement par le launcher).
+const CF_CLASS = { rp: "texture-packs", sh: "shaders", w: "worlds", dp: "data-packs" };
+ipcMain.handle("myPack:openCurseForgePage", async (_event, o) => {
+  const page = safeModPageUrl(o?.url);
+  if (page) {
+    shell.openExternal(page);
+    return { ok: true };
+  }
+  const cls = CF_CLASS[o?.kind] || "texture-packs";
+  const mc = /^[\w.+-]+$/.test(o?.minecraftVersion || "") ? o.minecraftVersion : "";
+  shell.openExternal(`https://www.curseforge.com/minecraft/search?class=${cls}${mc ? `&gameVersion=${encodeURIComponent(mc)}` : ""}`);
+  return { ok: true };
+});
+// Fichier CurseForge réservé à l'appli CurseForge (28/10, Rushi : « dès qu'il télécharge, ça le détecte
+// et ça le déplace ») : on ouvre la page du fichier exact, puis on attend (15 min au plus) ce fichier
+// dans Téléchargements, comme pour les mods. Il n'est pris que s'il a la bonne empreinte (ou, sans
+// empreinte connue, le bon nom). Il est copié, installé, puis retiré de Téléchargements (avec ses
+// doublons identiques « nom (1).zip »). Le launcher ne télécharge rien lui-même.
+ipcMain.handle("myPack:watchCfContent", async (_event, id, o) => {
+  if (!pageAllowed(id) || !features.visible("contentCf")) return pageOff;
+  const kind = CF_CONTENT_KINDS.includes(o?.kind) ? o.kind : null;
+  const fileId = Number(/^cf-\d+-(\d+)$/.exec(String(o?.slug || ""))?.[1]) || 0;
+  if (!kind || !fileId) return { ok: false, error: "Fichier CurseForge inconnu." };
+  if (kind === "dp" && !features.visible("dataPacks")) return pageOff;
+  try {
+    const f = await cfFileInfo(fileId);
+    const sha1 = /^[0-9a-f]{40}$/i.test(f?.sha1 || "") ? f.sha1.toLowerCase() : null;
+    const fileName = String(f?.fileName || "");
+    if (!sha1 && !fileName) return { ok: false, error: "Fichier CurseForge introuvable." };
+    if (!/\.zip$/i.test(fileName || ".zip")) return { ok: false, error: "Ce fichier CurseForge n'est pas un .zip." };
+    shell.openExternal(safeModPageUrl(f?.pageUrl) || safeModPageUrl(o?.url) || `https://www.curseforge.com/minecraft/search?class=${CF_CLASS[kind]}`);
+    const got = await watchDownloads(`content|${id}|${fileId}`, { sha1, size: Number(f?.fileLength) || null, fileName: fileName || null, ext: /\.zip$/i });
+    if (!got) return { ok: true, found: false };
+    const busy = packBusy(id);
+    if (busy) return busy;
+    const base = String(got.fileName || `cf-${fileId}.zip`).replace(/[^\w.+() \[\]!'&,-]/g, "_");
+    const dir = path.join(browseDir(), `cf-${fileId}`);
+    await fsp.mkdir(dir, { recursive: true });
+    const copy = path.join(dir, base);
+    await fsp.copyFile(got.file, copy);
+    if ((await sha1Of(copy)) !== got.sha1) throw new Error("La copie du fichier a échoué, réessaie.");
+    let out;
+    if (kind === "w") out = await importMapFile(id, copy);
+    else if (kind === "dp") out = { ok: true, ...(await liveSave.enqueue(() => playMode.addDatapack(String(id), { from: "file", slug: "", sourceFile: copy, worldKey: null }))) };
+    else out = { ok: true, ...(await playMode.addContent(String(id), { kind, from: "file", slug: "", sourceFile: copy })) };
+    // Installé : on le retire de Téléchargements, lui et ses doublons identiques, 30 s plus tard
+    // (28/10 : le navigateur fait analyser le fichier par l'antivirus juste après le téléchargement,
+    // et le retirer pendant l'analyse affichait « Échec, erreur de l'analyse antivirus »).
+    const stem = base.replace(/\.zip$/i, "");
+    setTimeout(async () => {
+      for (const d of manualModsSearchDirs()) {
+        for (const name of await fsp.readdir(d).catch(() => [])) {
+          const file = path.join(d, name);
+          if (file !== got.file && name.replace(/ \(\d+\)(\.zip)$/i, "$1") !== `${stem}.zip`) continue;
+          if ((await sha1Of(file).catch(() => null)) !== got.sha1) continue;
+          await fsp.unlink(file).catch(() => {});
+        }
+      }
+    }, 30_000);
+    sendAll("play:worldsChanged");
+    return { ...out, found: true };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:openMapsPage", async (_event, mc) => {
+  const v = /^[\w.+-]+$/.test(mc || "") ? mc : "";
+  shell.openExternal(`https://www.curseforge.com/minecraft/search?class=worlds${v ? `&gameVersion=${encodeURIComponent(v)}` : ""}`);
+  return { ok: true };
+});
+// Basculer une installation vanilla en version modée (28/10, preview validée par Rushi, Laboratoire
+// « vanillaModded ») : pour lancer des shaders, ou charger un data pack dans tous les mondes. Seuls
+// les mods qui existent sur Modrinth pour CETTE version de Minecraft (et leur chargeur) sont proposés.
+const SWITCH_CHOICES = {
+  sh: [
+    { loader: "fabric", slug: "iris", mod: "Iris Shaders", with: ["sodium"], fr: "Le plus utilisé, va avec Sodium (plus d'images par seconde).", en: "The most used, comes with Sodium (more FPS)." },
+    { loader: "neoforge", slug: "iris", mod: "Iris Shaders", with: ["sodium"], fr: "Si tu comptes ajouter des mods NeoForge plus tard.", en: "If you plan to add NeoForge mods later." },
+    { loader: "forge", slug: "oculus", mod: "Oculus", with: ["embeddium"], fr: "Iris pour Forge.", en: "Iris for Forge." },
+  ],
+  dp: [
+    { loader: "fabric", slug: "paxi", mod: "Paxi", with: [], fr: "Simple, charge aussi les packs de ressources.", en: "Simple, also loads resource packs." },
+    { loader: "fabric", slug: "globalpacks", mod: "Global Packs", with: [], fr: "Alternative, mêmes fonctions.", en: "Alternative, same features." },
+    { loader: "neoforge", slug: "paxi", mod: "Paxi", with: [], fr: "Si tu comptes ajouter des mods NeoForge plus tard.", en: "If you plan to add NeoForge mods later." },
+    { loader: "forge", slug: "paxi", mod: "Paxi", with: [], fr: "Pour Forge.", en: "For Forge." },
+  ],
+};
+const switchAllowed = (id) => {
+  const v = playMode.getVersion(String(id || ""));
+  return !!v && !v.pack && pageAllowed(id) && features.visible("vanillaModded");
+};
+ipcMain.handle("myPack:loaderOptions", async (_event, id, need) => {
+  if (!switchAllowed(id)) return { ...pageOff, options: [] };
+  const list = SWITCH_CHOICES[need === "dp" ? "dp" : "sh"];
+  const mc = playMode.getVersion(String(id)).minecraftVersion;
+  const fr = settingsStore.loadSettings().locale !== "en";
+  try {
+    const found = [];
+    for (const c of list) {
+      const ok = (await playPacks.mrVersions(c.slug, mc, c.loader).catch(() => [])).length > 0 && !!(await playPacks.latestLoaderVersion(c.loader, mc).catch(() => null));
+      if (ok) found.push({ loader: c.loader, slug: c.slug, mod: c.mod, info: fr ? c.fr : c.en });
+    }
+    if (found[0]) found[0].rec = true;
+    return { ok: true, options: found };
+  } catch (error) {
+    return { ...playError(error), options: [] };
+  }
+});
+ipcMain.handle("myPack:switchToModded", async (_event, id, o) => {
+  if (!switchAllowed(id)) return pageOff;
+  const busy = packBusy(id);
+  if (busy) return busy;
+  const choice = Object.values(SWITCH_CHOICES).flat().find((c) => c.loader === o?.loader && c.slug === o?.mod);
+  if (!choice) return { ok: false, error: "Choix inconnu." };
+  try {
+    const v = playMode.getVersion(String(id));
+    const loaderVersion = await playPacks.latestLoaderVersion(choice.loader, v.minecraftVersion);
+    await liveSave.enqueue(() => playMode.switchToModded(String(id), { loader: choice.loader, loaderVersion }));
+    await playMode.addPackMods(String(id), [choice.slug, ...choice.with].map((slug) => ({ slug })), { deps: PLAY_DEPS });
+    installVersionInBackground(String(id)).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Version modée : préparation impossible (${error.message}).` }));
+    sendAll("play:worldsChanged");
+    return { ok: true };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Shader sans mod de shaders : Iris (+ Sodium) pour Fabric/Quilt, Oculus (+ Embeddium) pour Forge.
+const SHADER_LOADERS = { iris: ["iris", "sodium"], oculus: ["oculus", "embeddium"] };
+ipcMain.handle("myPack:addShaderLoader", async (_event, id, which) => {
+  if (!pageAllowed(id)) return pageOff;
+  const busy = packBusy(id);
+  if (busy) return busy;
+  const slugs = SHADER_LOADERS[which];
+  if (!slugs) return { ok: false, error: "Mod de shaders inconnu." };
+  try {
+    await playMode.addPackMods(String(id), slugs.map((slug) => ({ slug })), { deps: PLAY_DEPS });
+    return { ok: true };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:searchDatapacks", async (_event, id, q) => {
+  if (!pageAllowed(id) || !features.visible("dataPacks")) return { ...pageOff, packs: [] };
+  try {
+    const v = playMode.getVersion(String(id));
+    return { ok: true, packs: await playPacks.searchContent("dp", String(q || ""), { mc: v.minecraftVersion, fr: settingsStore.loadSettings().locale !== "en" }) };
+  } catch (error) {
+    return { ...playError(error), packs: [] };
+  }
+});
+ipcMain.handle("myPack:addDatapack", async (event, id, o) => {
+  if (!pageAllowed(id) || !features.visible("dataPacks")) return pageOff;
+  const busy = packBusy(id);
+  if (busy) return busy;
+  try {
+    let sourceFile = null;
+    if (o?.from === "cf") sourceFile = await cfContentDownload(o.slug);
+    else if (o?.from !== "mr") {
+      sourceFile = await pickZipFile(event, "Data pack (.zip)", "Data pack");
+      if (!sourceFile) return { ok: false, cancelled: true };
+    }
+    const worldKey = typeof o?.worldKey === "string" && o.worldKey ? o.worldKey : null;
+    const out = await liveSave.enqueue(() => playMode.addDatapack(String(id), { from: o?.from === "mr" ? "mr" : "file", slug: String(o?.slug || ""), sourceFile, worldKey }));
+    return { ok: true, ...out };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:setDatapack", async (_event, id, file, o) => {
+  if (!pageAllowed(id) || !features.visible("dataPacks")) return pageOff;
+  const busy = packBusy(id);
+  if (busy) return busy;
+  try {
+    // « Tous les mondes » sans chargeur : on ajoute d'abord Paxi ou Global Packs (Modrinth).
+    const loader = o?.loader && playPacks.DP_LOADERS[o.loader];
+    if (o?.auto && loader && !playMode.loaderOf(playMode.getVersion(String(id)))) await playMode.addPackMods(String(id), [{ slug: loader.slug }], { deps: PLAY_DEPS });
+    const worlds = Array.isArray(o?.worlds) ? o.worlds.filter((k) => typeof k === "string").slice(0, 200) : [];
+    return await liveSave.enqueue(() => playMode.setDatapack(String(id), String(file || ""), { worlds, auto: !!o?.auto }));
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("myPack:importMap", async (event, id) => {
+  if (!pageAllowed(id)) return pageOff;
+  const busy = packBusy(id);
+  if (busy) return busy;
+  try {
+    const zip = await pickZipFile(event, "Map Minecraft (.zip)", "Map");
+    if (!zip) return { ok: false, cancelled: true };
+    return await importMapFile(id, zip);
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Map CurseForge (28/10, fenêtre « Ajouter un monde », Laboratoire « contentCf ») : même chemin
+// qu'un .zip choisi par le joueur, après le téléchargement vérifié.
+ipcMain.handle("myPack:addMap", async (_event, id, o) => {
+  if (!pageAllowed(id)) return pageOff;
+  const busy = packBusy(id);
+  if (busy) return busy;
+  try {
+    return await importMapFile(id, await cfContentDownload(o?.slug));
+  } catch (error) {
+    return playError(error);
+  }
+});
+async function importMapFile(id, zip) {
+  {
+    const w = await playMode.importMap(String(id), zip);
+    // Première sauvegarde « Version d'origine » (comme un monde importé).
+    const run = liveSave
+      .enqueue(() => playMode.backupWorld(w.key, { reason: "import" }))
+      .then((r) => r.backup && worldCloud.queueBackup(w.key, r.backup))
+      .catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Première sauvegarde de « ${w.name} » impossible : ${error.message}` }))
+      .finally(() => importBackups.delete(w.key));
+    importBackups.set(w.key, run);
+    sendAll("play:worldsChanged");
+    // Un monde arrive dans une installation qui n'en avait pas : les data packs en attente y vont.
+    if (features.visible("dataPacks")) await applyPendingDp(String(id));
+    return { ok: true, name: w.name, key: w.key };
+  }
+}
+// Data packs en attente du premier monde (28/10) : posés dans le plus récent, sauvegarde avant.
+async function applyPendingDp(versionId) {
+  const done = await liveSave.enqueue(() => playMode.applyPendingDatapacks(versionId)).catch((error) => {
+    logStore.pushLog({ level: "warn", source: "launcher", message: `Data packs en attente : ${error.message}` });
+    return [];
+  });
+  if (done.length) sendAll("play:dpApplied", done);
+  return done;
+}
+// Explorateur de fichiers de la version (Laboratoire « packFiles »).
+const filesGate = (id) => (pageAllowed(id) && features.visible("packFiles") ? null : pageOff);
+const filesCall = (fn) => async (_event, id, rel, ...rest) => {
+  const off = filesGate(id);
+  if (off) return off;
+  try {
+    return await fn(String(id), String(rel || ""), ...rest);
+  } catch (error) {
+    return playError(error);
+  }
+};
+ipcMain.handle("myPack:filesList", filesCall(async (id, rel) => ({ ok: true, entries: await playMode.filesList(id, rel) })));
+ipcMain.handle("myPack:filesRead", filesCall((id, rel) => playMode.filesRead(id, rel)));
+ipcMain.handle("myPack:filesWrite", filesCall((id, rel, text) => (packBusy(id) || playMode.filesWrite(id, rel, String(text ?? "")))));
+ipcMain.handle("myPack:filesRename", filesCall((id, rel, name) => (packBusy(id) || playMode.filesRename(id, rel, name))));
+ipcMain.handle("myPack:filesMkdir", filesCall((id, rel) => playMode.filesMkdir(id, rel)));
+ipcMain.handle("myPack:filesTrash", filesCall(async (id, rel) => {
+  const busy = packBusy(id);
+  if (busy) return busy;
+  if (!rel) return { ok: false, error: "Chemin refusé." };
+  await shell.trashItem(playMode.filePath(id, rel));
+  return { ok: true };
+}));
+ipcMain.handle("myPack:filesOpenExternal", filesCall(async (id, rel) => {
+  const err = await shell.openPath(playMode.filePath(id, rel));
+  return err ? { ok: false, error: err } : { ok: true };
+}));
+ipcMain.handle("myPack:filesShow", filesCall(async (id, rel) => {
+  const abs = playMode.filePath(id, rel);
+  await fsp.mkdir(playMode.pageDir(id), { recursive: true });
+  if (!rel) shell.openPath(abs);
+  else shell.showItemInFolder(abs);
+  return { ok: true };
+}));
+
+// --- Pack Omniscient : générer, exporter (Laboratoire « omniPack », « packExport ») ----------------
+// Génération en arrière-plan : une seule à la fois, une version à la fois ; l'avancement est envoyé
+// à toutes les fenêtres (« omniPack:job ») pour la petite carte de la page du pack.
+let omniJob = null;
+const omniJobView = () => (omniJob ? { baseId: omniJob.baseId, list: omniJob.list, results: omniJob.results, running: omniJob.running, done: omniJob.done, stopped: omniJob.stopped } : null);
+ipcMain.handle("omniPack:targets", async (_event, id) => {
+  try {
+    return { ok: true, versions: await omniPack.targetVersions(String(id)) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("omniPack:job", () => ({ ok: true, job: omniJobView() }));
+ipcMain.handle("omniPack:generate", async (_event, id, o) => {
+  if (omniJob && !omniJob.done) return { ok: false, error: "Une génération est déjà en cours." };
+  const v = playMode.getVersion(String(id));
+  if (!v) return { ok: false, error: "Cette version n'existe plus." };
+  const targets = (Array.isArray(o?.targets) ? o.targets : []).filter((x) => typeof x === "string").slice(0, 80);
+  const keep = (Array.isArray(o?.keep) ? o.keep : []).filter((x) => typeof x === "string").slice(0, 300);
+  if (!targets.length) return { ok: false, error: "Choisis au moins une version." };
+  omniJob = { baseId: v.id, list: targets, results: [], running: null, done: false, stopped: false, stop: false };
+  const job = omniJob;
+  const push = () => sendAll("omniPack:job", omniJobView());
+  omniPack
+    .generate(v.id, { targets, keep }, {
+      deps: PLAY_DEPS,
+      isStopped: () => job.stop,
+      onEvent: (ev) => {
+        if (ev.type === "run") job.running = ev.mc;
+        if (ev.type === "done") {
+          job.running = null;
+          job.results.push({ mc: ev.mc, kind: ev.kind, miss: ev.miss || [], keepMiss: ev.keepMiss || [], added: ev.added || [], id: ev.id || null, noLoader: !!ev.noLoader, error: ev.error || null, stale: ev.stale || null });
+        }
+        if (ev.type === "end") {
+          job.done = true;
+          job.stopped = !!ev.stopped;
+        }
+        push();
+      },
+    })
+    .catch((error) => {
+      job.done = true;
+      job.error = error.message;
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Pack Omniscient : génération impossible (${error.message}).` });
+      push();
+    })
+    .finally(() => sendAll("play:worldsChanged"));
+  push();
+  return { ok: true };
+});
+ipcMain.handle("omniPack:stop", () => {
+  if (omniJob && !omniJob.done) omniJob.stop = true;
+  return { ok: true };
+});
+ipcMain.handle("omniPack:clearJob", () => {
+  if (omniJob?.done) omniJob = null;
+  return { ok: true };
+});
+ipcMain.handle("omniPack:exportPreview", async (_event, id) => {
+  try {
+    return { ok: true, ...(await omniPack.exportPreview(String(id))) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+async function saveDialog(event, { title, name, ext, label }) {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const clean = String(name || "pack").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim().slice(0, 60) || "pack";
+  const result = await dialog.showSaveDialog(win, { title, defaultPath: path.join(app.getPath("downloads"), `${clean}.${ext}`), filters: [{ name: label, extensions: [ext] }] });
+  return result.canceled || !result.filePath ? null : result.filePath;
+}
+ipcMain.handle("omniPack:export", async (event, id, o) => {
+  const v = playMode.getVersion(String(id));
+  if (!v?.omni) return { ok: false, error: "Ce n'est pas un Pack Omniscient." };
+  try {
+    const out = await saveDialog(event, { title: "Exporter pour Omniscient", name: v.name || v.pack?.name || v.minecraftVersion, ext: "omnipack", label: "Pack Omniscient" });
+    if (!out) return { ok: false, cancelled: true };
+    const r = await omniPack.exportOmni(v.id, out, { parts: o?.parts || {}, worlds: Array.isArray(o?.worlds) ? o.worlds : [] });
+    shell.showItemInFolder(out);
+    return { ok: true, name: path.basename(out), size: r.size, versions: r.versions };
+  } catch (error) {
+    return { ...playError(error), mods: error?.mods || null };
+  }
+});
+ipcMain.handle("omniPack:exportFriend", async (event, id, o) => {
+  if (!features.visible("packExport")) return pageOff;
+  const v = playMode.getVersion(String(id));
+  if (!v) return { ok: false, error: "Cette version n'existe plus." };
+  try {
+    // Menus d'ajout (31/10) : .mrpack ou .zip CurseForge, avec les .jar hors liens dans le fichier.
+    const fresh = features.visible("addMenus");
+    const zip = fresh && o?.format === "zip" && !!v.pack;
+    const out = await saveDialog(event, zip ? { title: "Exporter pour un ami", name: v.name || v.pack?.name || v.minecraftVersion, ext: "zip", label: "Pack CurseForge" } : { title: "Exporter pour un ami", name: v.name || v.pack?.name || v.minecraftVersion, ext: "mrpack", label: "Pack Modrinth" });
+    if (!out) return { ok: false, cancelled: true };
+    const opts = { parts: o?.parts || {}, worlds: Array.isArray(o?.worlds) ? o.worlds : [] };
+    const plan = fresh ? await omniPack.friendMods(v.id, { cfMatch: currentSession && features.visible("myPackCf") ? cfFingerprintMatch : null }) : null;
+    const r = zip ? await omniPack.exportCfZip(v.id, out, { ...opts, plan }) : await omniPack.exportMrpack(v.id, out, { ...opts, plan });
+    shell.showItemInFolder(out);
+    return { ok: true, name: path.basename(out), size: r.size, manual: r.manual };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Liste de l'export « Pour un ami » pour les deux formats (la fenêtre change de liste sans relire).
+ipcMain.handle("omniPack:friendPlan", async (_event, id) => {
+  if (!features.visible("packExport") || !features.visible("addMenus")) return pageOff;
+  try {
+    const cfOk = !!currentSession && features.visible("myPackCf");
+    const plan = await omniPack.friendMods(String(id), { cfMatch: cfOk ? cfFingerprintMatch : null });
+    return {
+      ok: true,
+      zipOk: !!plan.v.pack,
+      cfChecked: cfOk,
+      mods: plan.mods.map((x) => ({ name: x.name.slice(0, 80), source: x.source, file: x.file, mrpack: x.mrpack, zip: x.zip, page: x.page })),
+    };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Empreintes CurseForge → projet et fichier (route du site, notre clé). Map fingerprint → infos.
+async function cfFingerprintMatch(fps) {
+  const out = new Map();
+  const list = [...new Set(fps.filter((x) => Number.isInteger(x) && x >= 0))];
+  for (let i = 0; i < list.length; i += 500) {
+    // Site injoignable : les mods restent « .jar dans le fichier », l'export ne casse pas.
+    const data = await fetchJson(`${SITE_URL}/api/launcher/curseforge/fingerprints`, {
+      method: "POST",
+      headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ fingerprints: list.slice(i, i + 500) }),
+    }).catch(() => null);
+    for (const m of Array.isArray(data?.matches) ? data.matches : []) {
+      if (Number(m.projectId) > 0 && Number(m.fileId) > 0) out.set(Number(m.fingerprint), { projectId: Number(m.projectId), fileId: Number(m.fileId) });
+    }
+  }
+  return out;
+}
+
+// --- Nouveaux menus d'ajout (31/10, preview validée par Rushi, Laboratoire « addMenus ») ----------
+// Recherche (Modrinth en direct, CurseForge par le site avec notre clé), fiche d'un élément, et
+// vérification avant « Créer une copie en … ». Le renderer ne reçoit que du texte et des liens https.
+const ADD_KINDS = ["mods", "rp", "sh", "dp", "w", "mp"];
+const addCfCache = new Map();
+const forgeImg = (u) => {
+  try {
+    const url = new URL(String(u || ""));
+    return url.protocol === "https:" && url.hostname === "media.forgecdn.net" ? url.href : null;
+  } catch {
+    return null;
+  }
+};
+const httpsOnly = (u) => {
+  try {
+    const url = new URL(String(u || ""));
+    return url.protocol === "https:" && !url.username && !url.password ? url.href.slice(0, 400) : null;
+  } catch {
+    return null;
+  }
+};
+function cleanAv(av) {
+  const out = {};
+  for (const [k, vs] of Object.entries(av && typeof av === "object" ? av : {})) {
+    if (!["mc", ...playPacks.LOADER_IDS].includes(k) || !Array.isArray(vs)) continue;
+    out[k] = vs.filter((v) => /^\d+\.\d+(\.\d+)?$/.test(String(v))).slice(0, 300).map(String);
+  }
+  return out;
+}
+async function addCfSearch(kind, text, mc, loader) {
+  const key = JSON.stringify([kind, text.toLowerCase(), mc, loader]);
+  const hit = addCfCache.get(key);
+  if (hit && Date.now() - hit.at < CF_SEARCH_CACHE_MS) return hit.items;
+  let list;
+  if (kind === "mods") {
+    const params = new URLSearchParams({ q: text, all: "1" });
+    if (mc) params.set("mc", mc);
+    if (loader) params.set("loader", loader);
+    list = (await fetchJson(`${SITE_URL}/api/launcher/curseforge/mods?${params}`, { headers: launcherAuthHeaders() }))?.mods;
+  } else if (kind === "mp") {
+    const params = new URLSearchParams(text ? { q: text } : {});
+    list = ((await fetchJson(`${SITE_URL}/api/launcher/curseforge/modpacks?${params}`, { headers: launcherAuthHeaders() }))?.packs || []).map((p) => ({ ...p, projectId: p.id }));
+  } else {
+    const params = new URLSearchParams({ kind, q: text, mc: String(mc || ""), all: "1" });
+    list = (await fetchJson(`${SITE_URL}/api/launcher/curseforge/content?${params}`, { headers: launcherAuthHeaders() }))?.items;
+  }
+  const items = (Array.isArray(list) ? list : []).slice(0, 30).map((x) => {
+    const files = {};
+    for (const [k, f] of Object.entries(x.files && typeof x.files === "object" ? x.files : {}).slice(0, 400)) {
+      if (/^[a-z]+\|\d+\.\d+(\.\d+)?$/.test(k) && Number(f?.fileId) > 0) files[k] = { fileId: Number(f.fileId), fileName: typeof f.fileName === "string" ? f.fileName.slice(0, 160) : null };
+    }
+    return {
+      src: "cf",
+      id: String(Number(x.projectId) || 0),
+      name: String(x.name || "?").slice(0, 80),
+      author: String(x.author || "").slice(0, 60),
+      desc: String(x.summary || "").slice(0, 300),
+      dl: Number(x.downloads) || 0,
+      icon: forgeImg(x.iconUrl),
+      av: cleanAv(x.av),
+      files,
+      blocked: !!x.blocked,
+      images: (Array.isArray(x.images) ? x.images : []).map(forgeImg).filter(Boolean).slice(0, 3),
+      updated: typeof x.updated === "string" ? x.updated : null,
+      page: safeModPageUrl(x.websiteUrl || x.pageUrl),
+      fileId: Number(x.fileId) || null,
+      fileName: typeof x.fileName === "string" ? x.fileName.slice(0, 160) : null,
+      filePage: safeModPageUrl(x.pageUrl),
+      links: { source: httpsOnly(x.sourceUrl), wiki: httpsOnly(x.wikiUrl), issues: httpsOnly(x.issuesUrl) },
+    };
+  });
+  if (addCfCache.size >= 60) addCfCache.delete(addCfCache.keys().next().value);
+  addCfCache.set(key, { at: Date.now(), items });
+  return items;
+}
+ipcMain.handle("addMenu:search", async (_event, o) => {
+  if (!features.visible("addMenus")) return { ...pageOff, items: [] };
+  const kind = ADD_KINDS.includes(o?.kind) ? o.kind : null;
+  if (!kind) return { ok: false, error: "Type de contenu inconnu.", items: [] };
+  const text = String(o?.q || "").trim().slice(0, 80);
+  const mc = /^\d+\.\d+(\.\d+)?$/.test(String(o?.mc || "")) ? String(o.mc) : null;
+  const loader = playPacks.LOADER_IDS.includes(o?.loader) ? o.loader : null;
+  try {
+    if (o?.src === "cf") {
+      const allowed = kind === "mods" ? features.visible("myPackCf") : kind === "mp" ? features.visible("packBrowse") : features.visible("contentCf");
+      if (!allowed) return { ok: false, code: "feature_off", items: [] };
+      if (!currentSession) return { ok: false, code: "signed_out", error: "Connecte-toi avec ton compte Microsoft : CurseForge passe par le site Omniscient.", items: [] };
+      return { ok: true, items: await addCfSearch(kind, text, mc, loader) };
+    }
+    if (kind === "w") return { ok: true, items: [] }; // Modrinth n'a pas de maps.
+    return { ok: true, ...(await playPacks.addSearch(kind, text, { mc, loader, offset: o?.offset })) };
+  } catch (error) {
+    return { ...playError(error), items: [] };
+  }
+});
+ipcMain.handle("addMenu:sheet", async (_event, o) => {
+  if (!features.visible("addMenus")) return pageOff;
+  try {
+    const kind = ADD_KINDS.includes(o?.kind) ? o.kind : "mods";
+    const mc = /^\d+\.\d+(\.\d+)?$/.test(String(o?.mc || "")) ? String(o.mc) : null;
+    const loader = playPacks.LOADER_IDS.includes(o?.loader) ? o.loader : null;
+    return { ok: true, sheet: await playPacks.addSheet(kind, String(o?.id || ""), { mc, loader }) };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Avant « Créer une copie en … » : quels mods du pack existent pour le nouveau chargeur et la
+// nouvelle version. Modrinth : par l'empreinte du fichier (une requête). CurseForge et mods perso :
+// « à vérifier » (copiés, le joueur les retrouve dans « Corriger le pack »).
+ipcMain.handle("addMenu:copyCheck", async (_event, id, o) => {
+  if (!features.visible("addMenus") || !pageAllowed(id)) return pageOff;
+  try {
+    const v = playMode.getVersion(String(id));
+    if (!v?.pack) return { ok: false, error: "Ce pack n'a pas de mods." };
+    const mc = /^\d+\.\d+(\.\d+)?$/.test(String(o?.mc || "")) ? String(o.mc) : null;
+    const loader = playPacks.LOADER_IDS.includes(o?.loader) ? o.loader : null;
+    if (!mc || !loader) return { ok: false, error: "Version invalide." };
+    const mods = (v.mods || []).filter((m) => !m.auto);
+    const found = await playPacks.copyCheck(mods.filter((m) => m.source === "mr" && m.file?.sha1).map((m) => m.file.sha1), { mc, loader });
+    return {
+      ok: true,
+      mods: mods.map((m) => {
+        const hit = m.source === "mr" && m.file?.sha1 ? found.get(m.file.sha1) : null;
+        return { id: m.id, name: String(m.name || m.id).slice(0, 80), source: m.source === "cf" ? "cf" : m.source === "mr" ? "mr" : "local", ok: m.source === "mr" ? !!hit : null, projectId: hit?.projectId || m.projectId || null, version: hit?.version || null, cf: m.source === "cf" ? { projectId: m.projectId || null, pageUrl: m.cf?.pageUrl || null } : null };
+      }),
+    };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Liens donnés par l'auteur dans une fiche (page, don, code source, Discord) : https seulement.
+ipcMain.handle("addMenu:openLink", (_event, u) => {
+  const url = httpsOnly(u);
+  if (!url) return { ok: false };
+  shell.openExternal(url);
+  return { ok: true };
+});
+
+// --- Importer un export CurseForge (.zip « Exporter le profil ») avec ses mondes -------------------
+// Comme les packs des serveurs : les mods dont l'auteur autorise le téléchargement passent par le
+// site ; ceux qui ont exactement le même fichier sur Modrinth sont pris là ; les autres, le joueur les
+// télécharge (« Ouvrir la page »). Le .zip n'est jamais modifié.
+const cfReads = new Map();
+// Pack Modrinth (.mrpack, 27/10) : tout vient de Modrinth (ou GitHub/GitLab, comme le prévoit le
+// format), aucun mod à télécharger à la main, pas besoin du site.
+const PACK_EXT = /\.(zip|mrpack|omnipack)$/i;
+ipcMain.handle("cfPack:pickZip", async (event, kind) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  // 27/10 (Rushi) : chaque carte ne montre que son type de fichier (.omnipack, .mrpack ou .zip).
+  const k = kind === "omni" && features.visible("omniPack") ? "omni" : kind === "mr" && features.visible("mrImport") ? "mr" : "cf";
+  const filter = { omni: { name: "Pack Omniscient", extensions: ["omnipack"] }, mr: { name: "Pack Modrinth", extensions: ["mrpack"] }, cf: { name: "Export CurseForge", extensions: ["zip"] } }[k];
+  const result = await dialog.showOpenDialog(win, {
+    title: { omni: "Pack Omniscient (.omnipack)", mr: "Pack Modrinth (.mrpack)", cf: "Export CurseForge (.zip)" }[k],
+    defaultPath: manualModsSearchDirs()[0],
+    filters: [filter],
+    properties: ["openFile"],
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+  // Le fichier choisi décide, pas la carte cliquée (« le launcher reconnaît le fichier tout seul »).
+  const found = await playPacks.packKindOf(result.filePaths[0]).catch(() => null);
+  return { ok: true, path: result.filePaths[0], kind: found || k };
+});
+// Logo d'un .mrpack publié sur Modrinth (27/10) : null si introuvable ou hors ligne. PNG et JPEG
+// sont réduits à 128 px ; WebP et GIF (que nativeImage ne lit pas) sont gardés tels quels s'ils sont petits.
+async function mrpackIcon(zip) {
+  try {
+    const buf = await playPacks.mrPackIcon(await sha1Of(zip));
+    if (!buf) return null;
+    const head = buf.subarray(0, 12).toString("latin1");
+    if (head.startsWith("RIFF") && head.slice(8, 12) === "WEBP") return buf.length <= 150_000 ? `data:image/webp;base64,${buf.toString("base64")}` : null;
+    if (head.startsWith("GIF8")) return buf.length <= 150_000 ? `data:image/gif;base64,${buf.toString("base64")}` : null;
+    const img = nativeImage.createFromBuffer(buf);
+    if (img.isEmpty()) return null;
+    const { width } = img.getSize();
+    return (width > 128 ? img.resize({ width: 128, quality: "best" }) : img).toDataURL();
+  } catch {
+    return null;
+  }
+}
+async function readMrpackForImport(zip, src) {
+  if (!features.visible("mrImport")) return { ok: false, error: "L'import des packs Modrinth est coupé pour le moment." };
+  const pack = await playPacks.readMrpack(zip, { readLevel: readLevelBuffer });
+  // Pack sans mods (vanilla, ex. « Pour un ami » d'une version vanilla, 27/10) : accepté.
+  if (!pack.loader && (pack.mods.length || pack.overrideJars.length)) return { ok: false, error: "Ce pack n'a pas de chargeur de mods connu (NeoForge, Forge, Fabric ou Quilt)." };
+  const id = crypto.randomUUID();
+  const icon = await mrpackIcon(zip);
+  cfReads.set(id, { kind: "mr", zip, pack, mods: pack.mods, worldKey: typeof src?.worldKey === "string" ? src.worldKey : null, versionId: null, icon });
+  return {
+    ok: true,
+    id,
+    from: "mrpack",
+    path: zip,
+    name: pack.name,
+    minecraftVersion: pack.minecraftVersion,
+    loader: pack.loader,
+    loaderVersion: pack.loaderVersion,
+    modCount: pack.mods.length + pack.overrideJars.length,
+    // Mods déjà dans le fichier du pack (overrides/mods) : copiés, pas téléchargés (27/10).
+    packedJars: pack.overrideJars.length,
+    manual: [],
+    configFiles: pack.configFiles,
+    resourcepacks: pack.resourcepacks,
+    shaders: pack.shaders,
+    worlds: pack.worlds,
+    icon,
+  };
+}
+ipcMain.handle("cfPack:read", async (_event, src) => {
+  try {
+    const zip = String(src?.zip || "");
+    if (!PACK_EXT.test(zip) || !fs.existsSync(zip)) return { ok: false, error: "Fichier introuvable." };
+    const kind = await playPacks.packKindOf(zip);
+    if (kind === "mr") return await readMrpackForImport(zip, src);
+    if (kind === "omni") {
+      // Pack Omniscient (.omnipack, 27/10) : toutes ses versions sont installées.
+      if (!features.visible("omniPack")) return { ok: false, error: "Les Packs Omniscient sont coupés pour le moment." };
+      const d = await omniPack.describeForImport(zip);
+      const id = crypto.randomUUID();
+      cfReads.set(id, { kind: "omni", zip, pack: { ...d, worlds: d.worlds }, mods: [], worldKey: null, versionId: null });
+      const { json, ...view } = d;
+      return { ok: true, id, from: "omnipack", path: zip, ...view, manual: [], icon: null };
+    }
+    if (!kind) return { ok: false, error: "Ce fichier n'est ni un pack Modrinth (.mrpack) ni un export CurseForge (.zip)." };
+    if (!features.visible("cfImport")) return { ok: false, error: "Ce fichier n'est pas un pack Modrinth (.mrpack). Sur la page du pack Modrinth : « Télécharger »." };
+    const pack = await playPacks.readCfExport(zip, { readLevel: readLevelBuffer });
+    if (!pack.loader) return { ok: false, error: "Ce pack n'a pas de chargeur de mods connu (NeoForge, Forge, Fabric ou Quilt)." };
+    if (!currentSession) return { ok: false, error: "Connecte-toi avec ton compte Microsoft d'abord : la liste des mods passe par le site Omniscient." };
+    const infos = new Map();
+    const ids = pack.files.map((f) => f.fileID);
+    // Audit du 28/10 (correctif 7) : lots de 500, le maximum accepte par le site (MAX_FILE_IDS de
+    // /api/launcher/curseforge/files) ; avant 100 (ATM10, 414 mods : 5 appels au lieu de 1).
+    for (let i = 0; i < ids.length; i += 500) {
+      const data = await fetchJson(`${SITE_URL}/api/launcher/curseforge/files`, {
+        method: "POST",
+        headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ fileIds: ids.slice(i, i + 500) }),
+      });
+      for (const f of data?.files || []) infos.set(f.id, f);
+    }
+    const mods = [];
+    const blocked = [];
+    for (const f of pack.files) {
+      const info = infos.get(f.fileID);
+      const name = (typeof info?.modName === "string" && info.modName) || info?.fileName || `fichier ${f.fileID}`;
+      const mod = {
+        id: `cf-${f.projectID}`,
+        name: String(name).slice(0, 80),
+        source: "cf",
+        projectId: f.projectID,
+        version: info?.fileName || "",
+        file: info ? { filename: path.basename(info.fileName), url: info.downloadUrl || null, sha1: info.sha1 || null, size: info.fileLength || null } : null,
+        cf: { fileID: f.fileID, pageUrl: safeModPageUrl(info?.pageUrl) || `https://www.curseforge.com/projects/${f.projectID}`, got: info?.downloadUrl ? "api" : null },
+        auto: false,
+        by: [],
+        on: true,
+      };
+      mods.push(mod);
+      if (!info?.downloadUrl && mod.file) blocked.push({ mod, entry: { sha1: mod.file.sha1, size: mod.file.size } });
+    }
+    // Même fichier (empreinte et taille) sur Modrinth : pris là-bas, comme pour les packs des serveurs.
+    await findOnModrinth(blocked).catch(() => 0);
+    for (const b of blocked) {
+      if (!b.ready) continue;
+      b.mod.file.url = b.entry.url;
+      b.mod.cf.got = "api";
+    }
+    const manual = mods.filter((m) => !m.file?.url);
+    const id = crypto.randomUUID();
+    const icon = browseIcons.get(zip) || null;
+    cfReads.set(id, { zip, pack, mods, worldKey: typeof src?.worldKey === "string" ? src.worldKey : null, versionId: null, icon });
+    return {
+      ok: true,
+      id,
+      from: "zip",
+      path: zip,
+      name: pack.name,
+      minecraftVersion: pack.minecraftVersion,
+      loader: pack.loader,
+      loaderVersion: pack.loaderVersion,
+      modCount: mods.length + pack.overrideJars.length,
+      packedJars: pack.overrideJars.length,
+      manual: manual.map((m) => ({ packId: id, modId: m.id, name: m.name, fileName: m.file?.filename || "", pageUrl: m.cf.pageUrl })),
+      configFiles: pack.configFiles,
+      resourcepacks: pack.resourcepacks,
+      shaders: pack.shaders,
+      worlds: pack.worlds,
+      icon,
+    };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// --- « Un pack existant » (28/10, preview B validée par Rushi, Laboratoire « packBrowse ») ---------
+// Chercher un modpack public (Modrinth, CurseForge, FTB) puis le préparer en fichier de pack local :
+// la suite est exactement l'import d'un fichier (cfPack:read puis cfPack:install), avec les mêmes
+// règles. Modrinth : le .mrpack de cdn.modrinth.com. CurseForge : le .zip du pack, seulement si son
+// auteur autorise les autres launchers (lien donné par le site) ; ses mods passent ensuite par la
+// route du site et les mods bloqués se prennent à la main. FTB : la liste de la version (API publique
+// de FTB) est rangée en export CurseForge (manifest.json + overrides/) : les mods CurseForge passent
+// donc aussi par le site, jamais par les liens edge.forgecdn.net que donne FTB ; les autres fichiers
+// viennent seulement des serveurs de FTB, SHA-1 vérifié.
+const browseIcons = new Map();
+const browseDir = () => path.join(app.getPath("userData"), "pack-downloads");
+const browseOk = (src) => features.visible("packBrowse") && (src === "mr" ? features.visible("mrImport") : src === "cf" || src === "ftb" ? features.visible("cfImport") : false);
+const BROWSE_OFF = { ok: false, code: "feature_off", error: "Cette source de packs est coupée pour le moment." };
+const FTB_FILE_HOSTS = new Set(["files.feed-the-beast.com", "cdn.feed-the-beast.com"]);
+const BROWSE_LOADERS = ["neoforge", "forge", "fabric", "quilt"];
+// Fichiers préparés il y a plus d'un jour : retirés (un import se fait juste après la préparation).
+async function cleanBrowseDir() {
+  const dir = browseDir();
+  for (const name of await fs.promises.readdir(dir).catch(() => [])) {
+    const abs = path.join(dir, name);
+    const st = await fs.promises.stat(abs).catch(() => null);
+    if (st && Date.now() - st.mtimeMs > 24 * 3600_000) await fs.promises.rm(abs, { recursive: true, force: true }).catch(() => {});
+  }
+}
+// Logo d'un pack (lien d'image vérifié) en data: URL, comme mrpackIcon.
+async function browseIconData(u) {
+  try {
+    const url = new URL(String(u || ""));
+    if (url.protocol !== "https:" || !["cdn.modrinth.com", "media.forgecdn.net", "cdn.feed-the-beast.com"].includes(url.hostname)) return null;
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > 1024 * 1024) return null;
+    const head = buf.subarray(0, 12).toString("latin1");
+    if (head.startsWith("RIFF") && head.slice(8, 12) === "WEBP") return buf.length <= 150_000 ? `data:image/webp;base64,${buf.toString("base64")}` : null;
+    if (head.startsWith("GIF8")) return buf.length <= 150_000 ? `data:image/gif;base64,${buf.toString("base64")}` : null;
+    const img = nativeImage.createFromBuffer(buf);
+    if (img.isEmpty()) return null;
+    const { width } = img.getSize();
+    return (width > 128 ? img.resize({ width: 128, quality: "best" }) : img).toDataURL();
+  } catch {
+    return null;
+  }
+}
+const browseMc = (v) => (typeof v === "string" && /^\d+\.\d+(\.\d+)?$/.test(v) ? v : "");
+ipcMain.handle("packBrowse:sources", () => ({ ok: true, on: features.visible("packBrowse"), mr: browseOk("mr"), cf: browseOk("cf"), ftb: browseOk("ftb") }));
+ipcMain.handle("packBrowse:search", async (_event, src, query, opts) => {
+  if (!browseOk(src)) return { ...BROWSE_OFF, packs: [] };
+  const text = String(query || "").trim().slice(0, 80);
+  const mc = browseMc(opts?.mc);
+  const loader = BROWSE_LOADERS.includes(opts?.loader) ? opts.loader : "";
+  try {
+    if (src === "mr") return { ok: true, packs: await playPacks.searchModrinthPacks(text, { mc, loader }) };
+    if (src === "ftb") return { ok: true, packs: await playPacks.searchFtbPacks(text, { mc, loader }) };
+    if (!currentSession) return { ok: false, code: "signed_out", error: "Connecte-toi avec ton compte Microsoft : la recherche CurseForge passe par le site Omniscient.", packs: [] };
+    const params = new URLSearchParams();
+    if (text) params.set("q", text);
+    if (mc) params.set("mc", mc);
+    if (loader) params.set("loader", loader);
+    const data = await fetchJson(`${SITE_URL}/api/launcher/curseforge/modpacks?${params}`, { headers: launcherAuthHeaders() });
+    const img = (u) => {
+      try {
+        const url = new URL(String(u || ""));
+        return url.protocol === "https:" && url.hostname === "media.forgecdn.net" ? url.href : null;
+      } catch {
+        return null;
+      }
+    };
+    const packs = (Array.isArray(data?.packs) ? data.packs : []).slice(0, 30).map((p) => ({
+      src: "cf",
+      id: String(Number(p.id) || 0),
+      name: String(p.name || "?").slice(0, 80),
+      author: String(p.author || "").slice(0, 60),
+      desc: String(p.summary || "").slice(0, 300),
+      dl: Number(p.downloads) || 0,
+      icon: img(p.iconUrl),
+      mc: browseMc(p.minecraftVersion) || null,
+      loader: BROWSE_LOADERS.includes(p.loader) ? p.loader : null,
+      page: safeModPageUrl(p.pageUrl),
+      // Menus d'ajout (31/10) : versions où le pack existe et images, pour sa fiche.
+      av: cleanAv(p.av),
+      images: (Array.isArray(p.images) ? p.images : []).map(forgeImg).filter(Boolean).slice(0, 3),
+    }));
+    return { ok: true, packs };
+  } catch (error) {
+    return { ...playError(error), packs: [] };
+  }
+});
+// Versions proposées dans la fiche d'un pack (Modrinth et FTB ; CurseForge : sa dernière version).
+ipcMain.handle("packBrowse:versions", async (_event, src, id) => {
+  if (!browseOk(src)) return { ...BROWSE_OFF, versions: [] };
+  try {
+    if (src === "mr") return { ok: true, versions: (await playPacks.modrinthPackVersions(String(id || ""))).map(({ file, ...v }) => ({ ...v, size: file.size || null })) };
+    if (src === "ftb") return { ok: true, versions: (await playPacks.ftbPack(String(id || "")))?.versions || [] };
+    return { ok: true, versions: [] };
+  } catch (error) {
+    return { ...playError(error), versions: [] };
+  }
+});
+async function ftbAsCurseforgeExport(packId, versionId, progress) {
+  const ver = await playPacks.ftbVersionFiles(packId, versionId);
+  if (!ver.mc) throw new Error("Ce pack FTB n'indique pas sa version de Minecraft.");
+  let loaderVersion = ver.loaderVersion || "";
+  if (ver.loader === "forge" && loaderVersion.startsWith(`${ver.mc}-`)) loaderVersion = loaderVersion.slice(ver.mc.length + 1);
+  const pack = await playPacks.ftbPack(packId).catch(() => null);
+  const work = path.join(browseDir(), `ftb-${Number(packId)}-${Number(versionId)}`);
+  await fs.promises.rm(work, { recursive: true, force: true });
+  await fs.promises.mkdir(work, { recursive: true });
+  const files = [];
+  const entries = [];
+  let skipped = 0;
+  for (const f of ver.files) {
+    if (!f || f.serveronly || !f.name) continue;
+    const rel = path.posix.normalize(`${String(f.path || ".").replace(/\\/g, "/")}/${String(f.name)}`).replace(/^(\.\/)+/, "");
+    if (!rel || rel.startsWith("../") || path.posix.isAbsolute(rel)) continue;
+    const cfFile = Number(f.curseforge?.file);
+    if (f.curseforge && Number.isInteger(cfFile) && cfFile > 0) {
+      // Mods CurseForge : par le site, comme un export CurseForge. Packs de ressources ou shaders
+      // CurseForge du pack (pas des mods) : laissés de côté, le pack se lance sans eux.
+      if (f.type === "mod") files.push({ projectID: Number(f.curseforge.project) || 0, fileID: cfFile, required: true });
+      else skipped++;
+      continue;
+    }
+    let host = null;
+    try {
+      const url = new URL(f.url);
+      if (url.protocol === "https:") host = url.hostname;
+    } catch {
+      host = null;
+    }
+    if (!host || !FTB_FILE_HOSTS.has(host)) {
+      skipped++;
+      continue;
+    }
+    entries.push({ path: `overrides/${rel}`, url: f.url, sha1: /^[0-9a-f]{40}$/i.test(f.sha1 || "") ? f.sha1.toLowerCase() : null, size: Number.isInteger(f.size) && f.size > 0 ? f.size : null });
+  }
+  await installFiles({
+    entries,
+    instanceDir: work,
+    previousFiles: [],
+    onProgress: (p) => {
+      if (p?.type === "mods-bytes") progress({ step: "ftb", bytes: p.bytes, total: p.totalBytes });
+      else if (p?.type === "mods") progress({ step: "ftb", files: p.task, filesOf: entries.length, bytes: p.bytes, total: p.totalBytes });
+    },
+  });
+  const manifest = {
+    minecraft: { version: ver.mc, modLoaders: ver.loader ? [{ id: `${ver.loader}-${loaderVersion}`, primary: true }] : [] },
+    manifestType: "minecraftModpack",
+    manifestVersion: 1,
+    name: (pack?.name || "Pack FTB").slice(0, 60),
+    version: ver.name.slice(0, 40),
+    author: pack?.author || "FTB",
+    files,
+    overrides: "overrides",
+  };
+  const manifestFile = path.join(work, "manifest.json");
+  await fs.promises.writeFile(manifestFile, JSON.stringify(manifest));
+  const zip = path.join(browseDir(), `ftb-${Number(packId)}-${Number(versionId)}.zip`);
+  progress({ step: "zip" });
+  await writeZip(zip, [{ abs: manifestFile, rel: "manifest.json", mtimeMs: Date.now() }, ...entries.map((e) => ({ abs: path.join(work, e.path), rel: e.path, mtimeMs: Date.now() }))]);
+  await fs.promises.rm(work, { recursive: true, force: true }).catch(() => {});
+  if (skipped) logStore.pushLog({ level: "info", source: "launcher", message: `Pack FTB ${manifest.name} : ${skipped} fichier(s) hors mods non repris (packs de ressources CurseForge ou hôte inconnu).` });
+  return { zip, icon: pack?.icon || null, skipped };
+}
+ipcMain.handle("packBrowse:prepare", async (event, src, id, versionId, extra) => {
+  if (!browseOk(src)) return BROWSE_OFF;
+  const progress = (step) => !event.sender.isDestroyed() && event.sender.send("packBrowse:progress", step);
+  try {
+    await fs.promises.mkdir(browseDir(), { recursive: true });
+    cleanBrowseDir().catch(() => {});
+    let zip;
+    let iconUrl = typeof extra?.icon === "string" ? extra.icon : null;
+    if (src === "mr") {
+      const v = (await playPacks.modrinthPackVersions(String(id || ""))).find((x) => x.id === String(versionId || ""));
+      if (!v) return { ok: false, error: "Cette version du pack n'existe plus sur Modrinth." };
+      const name = `mr-${v.id}.mrpack`;
+      await installFiles({
+        entries: [{ path: name, url: v.file.url, sha1: v.file.sha1, sha512: v.file.sha512, size: v.file.size }],
+        instanceDir: browseDir(),
+        previousFiles: [],
+        onProgress: (p) => p?.type === "mods-bytes" && progress({ step: "dl", bytes: p.bytes, total: p.totalBytes }),
+      });
+      zip = path.join(browseDir(), name);
+      iconUrl = null; // retrouvé par son SHA-1 à la lecture (mrpackIcon)
+    } else if (src === "cf") {
+      if (!currentSession) return { ok: false, error: "Connecte-toi avec ton compte Microsoft d'abord : CurseForge passe par le site Omniscient." };
+      const params = new URLSearchParams({ id: String(Number(id) || 0), name: String(extra?.name || "").slice(0, 80) });
+      let data;
+      try {
+        data = await fetchJson(`${SITE_URL}/api/launcher/curseforge/modpacks?${params}`, { headers: launcherAuthHeaders() });
+      } catch (error) {
+        return { ok: false, code: "no_download", error: error instanceof Error ? error.message : String(error) };
+      }
+      const f = data?.file;
+      let okUrl = false;
+      try {
+        const url = new URL(f?.downloadUrl || "");
+        okUrl = url.protocol === "https:" && url.hostname.endsWith(".forgecdn.net") && !url.username;
+      } catch {
+        okUrl = false;
+      }
+      if (!f || !okUrl) return { ok: false, code: "no_download", error: "L'auteur de ce pack ne permet pas de le télécharger depuis un autre launcher." };
+      const name = `cf-${Number(f.id) || 0}.zip`;
+      await installFiles({
+        entries: [{ path: name, url: f.downloadUrl, sha1: /^[0-9a-f]{40}$/i.test(f.sha1 || "") ? f.sha1.toLowerCase() : null, size: Number(f.fileLength) || null }],
+        instanceDir: browseDir(),
+        previousFiles: [],
+        onProgress: (p) => p?.type === "mods-bytes" && progress({ step: "dl", bytes: p.bytes, total: p.totalBytes }),
+      });
+      zip = path.join(browseDir(), name);
+    } else {
+      const r = await ftbAsCurseforgeExport(id, versionId, progress);
+      zip = r.zip;
+      iconUrl = r.icon || iconUrl;
+    }
+    if (iconUrl) {
+      const icon = await browseIconData(iconUrl);
+      if (icon) browseIcons.set(zip, icon);
+    }
+    return { ok: true, path: zip, kind: src === "mr" ? "mr" : "cf" };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("packBrowse:openPage", (_event, u) => {
+  try {
+    const url = new URL(String(u || ""));
+    if (url.protocol === "https:" && ["modrinth.com", "www.curseforge.com", "www.feed-the-beast.com"].includes(url.hostname)) shell.openExternal(url.href);
+  } catch {
+    /* lien refusé */
+  }
+  return { ok: true };
+});
+// Progression détaillée des imports (27/10, preview « Progression des imports » C + B validée par
+// Rushi) : chaque étape reçoit fichiers et octets faits, le fichier en cours et la part de tout
+// l'import déjà faite (`overall`, 0 à 1, en octets). Envoyée au plus toutes les 150 ms.
+function importMeter(send, totalBytes) {
+  const parts = new Map();
+  let last = 0;
+  const overall = () => {
+    if (!(totalBytes > 0)) return null;
+    let done = 0;
+    for (const v of parts.values()) done += v;
+    return Math.min(0.99, done / totalBytes);
+  };
+  return {
+    set(key, bytes) {
+      parts.set(key, bytes);
+    },
+    add(key, bytes) {
+      parts.set(key, (parts.get(key) || 0) + bytes);
+    },
+    send(step, force = false) {
+      const now = Date.now();
+      if (!force && now - last < 150) return;
+      last = now;
+      send({ ...step, overall: overall() });
+    },
+  };
+}
+// Étape de la fenêtre d'import d'un fichier extrait du pack (chemin dans le dossier du jeu).
+const IMPORT_STEP_ORDER = ["packed", "cfg", "rp", "sh", "world"];
+function importStepOf(rel) {
+  const low = String(rel).toLowerCase();
+  if (low.startsWith("mods/")) return "packed";
+  if (low.startsWith("saves/")) return "world";
+  if (low.startsWith("resourcepacks/")) return "rp";
+  if (low.startsWith("shaderpacks/")) return "sh";
+  return "cfg";
+}
+ipcMain.handle("cfPack:install", async (event, id, opts) => {
+  const job = cfReads.get(String(id || ""));
+  if (!job) return { ok: false, error: "Relis le pack d'abord." };
+  if (job.versionId) return { ok: false, error: "Ce pack est déjà installé." };
+  const busy = playGameBusy();
+  if (busy) return busy;
+  const progress = (step) => !event.sender.isDestroyed() && event.sender.send("cfPack:progress", { id, ...step });
+  const parts = Array.isArray(opts?.parts) ? opts.parts.filter((x) => ["mods", "cfg", "rp", "sh"].includes(x)) : [];
+  const folders = (Array.isArray(opts?.worlds) ? opts.worlds : []).filter((f) => job.pack.worlds.some((w) => w.folder === f));
+  try {
+    if (job.kind === "omni") {
+      const r = await omniPack.installOmni(job.zip, { worlds: folders, parts: [...parts, "dp"], onProgress: (p) => p.detail && progress({ step: "omcopy", ...p.detail }) });
+      job.versionId = r.created[0]?.id || null;
+      for (const c of r.created) {
+        for (const w of c.worlds) {
+          const run = playMode
+            .backupWorld(w.key, { reason: "import" })
+            .then((b) => b.backup && worldCloud.queueBackup(w.key, b.backup))
+            .catch(() => {})
+            .finally(() => importBackups.delete(w.key));
+          importBackups.set(w.key, run);
+        }
+        installVersionInBackground(c.id).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Pack Omniscient : préparation impossible (${error.message}).` }));
+      }
+      progress({ step: "omcopy", n: r.created.length, done: true });
+      sendAll("play:worldsChanged");
+      return { ok: true, versionId: job.versionId, worldKey: r.created.flatMap((c) => c.worlds)[0]?.key || null };
+    }
+    const { pack } = job;
+    const withMods = parts.includes("mods");
+    const mr = job.kind === "mr";
+    const v = mr && !pack.loader
+      ? await playMode.createVersion({ minecraftVersion: pack.minecraftVersion, name: pack.name, own: true })
+      : await playMode.createCustomVersion({
+      kind: mr ? "mr" : "cf",
+      name: pack.name,
+      minecraftVersion: pack.minecraftVersion,
+      loader: pack.loader,
+      loaderVersion: pack.loaderVersion,
+      mods: withMods ? job.mods : [],
+      extra: mr ? { mrName: pack.name, packVersion: pack.packVersion } : { cfName: pack.name, packVersion: pack.packVersion },
+    });
+    job.versionId = v.id;
+    if (job.icon) await playMode.setVersionIcon(v.id, job.icon).catch(() => false);
+    const gameDir = playMode.gameDirOf(v.id);
+    // Ce qui sera fait, en octets : mods téléchargés, fichiers de l'index Modrinth, fichiers du pack.
+    const autoMods = withMods && v.pack ? job.mods.filter((m) => m.file?.url) : [];
+    const extras = mr ? pack.extras.filter((x) => parts.includes(playPacks.partOfPath(x.path))) : [];
+    const pick = playPacks.cfOverridePicker(pack.overridesPrefix, { parts, worlds: folders, shadow: pack.shadow });
+    const rank = (name) => {
+      const rel = pick(name);
+      return rel ? IMPORT_STEP_ORDER.indexOf(importStepOf(rel)) : 99;
+    };
+    const inZip = { packed: { files: 0, bytes: 0 }, cfg: { files: 0, bytes: 0 }, rp: { files: 0, bytes: 0 }, sh: { files: 0, bytes: 0 }, world: { files: 0, bytes: 0 } };
+    for (const e of await listZip(job.zip)) {
+      const rel = pick(e.name);
+      if (!rel || rel.endsWith("/")) continue;
+      const c = inZip[importStepOf(rel)];
+      c.files++;
+      c.bytes += e.size || 0;
+    }
+    const sum = (list, f) => list.reduce((a, x) => a + (Number(f(x)) || 0), 0);
+    const meter = importMeter(progress, sum(autoMods, (m) => m.file.size) + sum(extras, (x) => x.size) + sum(Object.values(inZip), (c) => c.bytes));
+    if (autoMods.length) {
+      let n = 0;
+      let bytes = 0;
+      let totalBytes = 0;
+      await playMode.syncPackFiles(playMode.getVersion(v.id), {
+        deps: PLAY_DEPS,
+        onProgress: (p) => {
+          if (p?.type === "mods-bytes") {
+            bytes = p.bytes;
+            totalBytes = p.totalBytes;
+          } else if (p?.type === "mods") n = Math.min(p.task, autoMods.length);
+          else return;
+          meter.set("dl", bytes);
+          meter.send({ step: "dl", n, bytes, total: totalBytes });
+        },
+      });
+      meter.set("dl", totalBytes);
+      progress({ step: "dl", n: autoMods.length, done: true });
+    } else if (withMods) progress({ step: "dl", n: 0, done: true });
+    // Pack Modrinth : packs de ressources, shaders et réglages listés dans l'index (même vérification
+    // d'empreinte que les mods). Une étape à la fois ; elle repasse « en attente » jusqu'à la copie
+    // des fichiers du pack qui la termine.
+    for (const part of ["cfg", "rp", "sh"]) {
+      const group = extras.filter((x) => playPacks.partOfPath(x.path) === part);
+      if (!group.length) continue;
+      const total = sum(group, (x) => x.size);
+      await PLAY_DEPS.installFiles({
+        entries: group,
+        instanceDir: gameDir,
+        previousFiles: [],
+        onProgress: (p) => {
+          if (p?.type === "mods-bytes") meter.set(`x-${part}`, p.bytes);
+          if (p?.type === "mods") meter.send({ step: part, files: p.task, filesOf: group.length, bytes: p.bytes, total, file: path.basename(group[Math.min(p.task, group.length - 1)].path) });
+        },
+      });
+      meter.set(`x-${part}`, total);
+      progress({ step: part, idle: true });
+    }
+    // Version neuve : avec « Réglages du pack », son options.txt (touches, packs de ressources) remplace
+    // la copie des réglages de Jouer (27/10, testé avec un vrai export ATM10). Extraction rangée par
+    // étape (mods du pack, réglages, ressources, shaders, mondes) pour que chaque ligne avance à son tour.
+    let cur = null;
+    const seen = { files: 0, bytes: 0, file: "" };
+    // Étapes sans rien à copier (pack sans shader…) : validées dès qu'on les dépasse, pas à la fin
+    // (27/10, Rushi). Le monde est validé après son enregistrement.
+    const skipEmpty = (from, to) => {
+      const a = from ? IMPORT_STEP_ORDER.indexOf(from) + 1 : 0;
+      const b = to ? IMPORT_STEP_ORDER.indexOf(to) : IMPORT_STEP_ORDER.length;
+      for (const k of IMPORT_STEP_ORDER.slice(a, b)) if (k !== "world") progress({ step: k, n: k === "packed" ? pack.overrideJars.length : undefined, done: true });
+    };
+    const tell = (force = false) => {
+      const c = inZip[cur];
+      meter.send({ step: cur, n: cur === "packed" ? Math.min(seen.files, pack.overrideJars.length) : undefined, files: seen.files, filesOf: c.files, bytes: seen.bytes, total: c.bytes, file: seen.file }, force);
+    };
+    await extractZip(job.zip, gameDir, {
+      pick,
+      order: (a, b) => rank(a.name) - rank(b.name),
+      onEntry: (entry, rel) => {
+        const st = importStepOf(rel);
+        const fresh = st !== cur;
+        if (fresh) {
+          if (cur) progress({ step: cur, n: cur === "packed" ? pack.overrideJars.length : undefined, done: true });
+          skipEmpty(cur, st);
+          cur = st;
+          seen.files = 0;
+          seen.bytes = 0;
+        }
+        seen.files++;
+        seen.file = rel;
+        tell(fresh);
+      },
+      // Gros fichier (région d'un monde) : la ligne avance aussi pendant sa copie.
+      onBytes: (n) => {
+        seen.bytes += n;
+        meter.add("zip", n);
+        tell();
+      },
+    });
+    if (cur && cur !== "world") progress({ step: cur, n: cur === "packed" ? pack.overrideJars.length : undefined, done: true });
+    skipEmpty(cur, null);
+    // Mods rangés dans le fichier du pack (overrides/mods) : copiés juste au-dessus.
+    if (withMods && pack.overrideJars?.length) progress({ step: "packed", n: pack.overrideJars.length, done: true });
+    for (const s of ["cfg", "rp", "sh"]) if (parts.includes(s)) progress({ step: s, done: true });
+    let worldKey = job.worldKey;
+    if (folders.length) {
+      const imported = await playMode.registerImported(v.id, folders);
+      for (const w of imported) {
+        const run = playMode
+          .backupWorld(w.key, { reason: "import" })
+          .then((r) => r.backup && worldCloud.queueBackup(w.key, r.backup))
+          .catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Première sauvegarde de « ${w.name} » impossible : ${error.message}` }))
+          .finally(() => importBackups.delete(w.key));
+        importBackups.set(w.key, run);
+      }
+      worldKey = worldKey || imported.find((w) => w.folder === folders[0])?.key || null;
+      progress({ step: "world", done: true });
+    }
+    if (job.worldKey) await playMode.setWorldVersion(job.worldKey, v.id);
+    const manual = withMods ? job.mods.filter((m) => !m.file?.url).length : 0;
+    progress({ step: "manual", n: 0, done: manual === 0 });
+    installVersionInBackground(v.id).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Pack ${mr ? "Modrinth" : "CurseForge"} : préparation impossible (${error.message}).` }));
+    sendAll("play:worldsChanged");
+    return { ok: true, versionId: v.id, worldKey };
+  } catch (error) {
+    return playError(error);
+  }
+});
+// Mod d'un export à télécharger à la main : sa page, puis Téléchargements (fichier exact).
+ipcMain.handle("cfPack:openManual", async (_event, item) => {
+  const job = cfReads.get(String(item?.packId || ""));
+  if (!job) return { ok: false, error: "Pack introuvable." };
+  for (let i = 0; !job.versionId && i < 600; i++) await new Promise((r) => setTimeout(r, 500));
+  if (!job.versionId) return { ok: false, error: "Le pack n'est pas encore installé." };
+  const info = playMode.cfPending(job.versionId, String(item.modId || ""));
+  if (!info) return { ok: false, error: "Mod introuvable dans le pack." };
+  shell.openExternal(curseforgePageFor(info));
+  const got = await watchDownloads(`${job.versionId}|${info.id}`, { sha1: info.sha1, size: info.size, fileName: info.fileName });
+  if (!got) return { ok: true, found: false };
+  await playMode.acceptManualJar(job.versionId, info.id, got.file, got);
+  return { ok: true, found: true };
+});
+
+// Partie en cours lancée depuis Jouer : version et heure de départ (mondes modifiés ensuite).
+let playRunning = null;
+
+ipcMain.handle("play:launch", async (event, { versionId, worldKey = null, force = false } = {}) => {
+  if (gamesMove.active) return { ok: false, error: GAMES_MOVE_BUSY };
+  if (!currentSession) return { ok: false, code: "signin", error: "Connecte-toi avec ton compte Microsoft pour jouer." };
+  if (gameLaunchInProgress || getRunningGame()) return { ok: false, code: "gameRunning", error: "Minecraft est déjà lancé." };
+  gameLaunchInProgress = true;
+  let task = null;
+  try {
+    let quickPlayWorld = null;
+    if (worldKey) {
+      // Version d'origine encore en cours d'écriture (monde juste importé) : on attend la fin.
+      await importBackups.get(worldKey);
+      // Toujours la version du monde (jamais une autre) : sinon « needVersion » / « chooseVersion »,
+      // et le launcher demande au joueur avant de lancer quoi que ce soit.
+      await ensureStrictLayout();
+      const chosen = await playMode.versionForWorld(worldKey, { pick: versionId || null });
+      versionId = chosen.versionId;
+      quickPlayWorld = chosen.world.folder;
+      // Restauration demandée sur le site : faite maintenant, avant d'ouvrir le monde.
+      await worldCloud.applyPendingRestore(worldKey).catch((error) =>
+        logStore.pushLog({ level: "warn", source: "launcher", message: `Restauration en attente non appliquée : ${error.message}` }),
+      );
+    }
+    const version = playMode.getVersion(versionId);
+    if (!version) return { ok: false, error: "Cette version n'existe plus dans Mes versions." };
+    // Dossier de jeu de cette version ; un monde d'un autre dossier y est rangé (sauvegarde avant).
+    const gameDir = await playMode.launchDir(versionId, worldKey, { strict: features.visible("strictDirs") });
+    if (worldKey) quickPlayWorld = await liveSave.enqueue(() => playMode.placeWorld(worldKey, gameDir));
+    // Bouclier (27/10, « versionGuard ») : sans monde choisi, le jeu peut ouvrir depuis son menu un
+    // monde plus ancien du même dossier et le convertir. On le sauvegarde d'abord.
+    if (!worldKey && features.visible("versionGuard")) {
+      const fr = settingsStore.loadSettings().locale !== "en";
+      const guarded = await liveSave.enqueue(() =>
+        playMode.guardBeforeLaunch(versionId, gameDir, {
+          onWorld: (w, i, n) =>
+            event.sender.send("game:progress", {
+              text: fr ? `🛡 Sauvegarde de « ${w.name} » (${w.minecraftVersion}) avant d'ouvrir ${version.minecraftVersion}… (${i + 1}/${n})` : `🛡 Backing up “${w.name}” (${w.minecraftVersion}) before opening ${version.minecraftVersion}… (${i + 1}/${n})`,
+              guard: fr ? `🛡 Sauvegarde ${i + 1}/${n}…` : `🛡 Backup ${i + 1}/${n}…`,
+            }),
+        }),
+      );
+      for (const g of guarded) {
+        if (g.backup) worldCloud.queueBackup(g.key, g.backup);
+        else if (g.error) logStore.pushLog({ level: "warn", source: "launcher", message: `Sauvegarde avant ${version.minecraftVersion} impossible : ${g.error}` });
+      }
+    }
+    const label = version.name || `${version.minecraftVersion}${version.pack ? ` · ${playPackName(version.pack)}` : ""}`;
+    task = createInstallTask(`play:${versionId}`, label, "launch");
+    broadcastTasks();
+    const onProgress = (status) => {
+      updateTaskFromProgress(task, status);
+      broadcastTasks();
+      event.sender.send("game:progress", status);
+    };
+    onProgress({ name: label, modded: !!version.pack });
+
+    // Pack : la liste des mods la plus récente publiée par l'équipe (sinon celle déjà connue).
+    if (version.pack && !version.pack.kind) {
+      const data = await fetchPlayPacks();
+      const p = (data.packs || []).find((x) => x.id === version.pack.packId);
+      const v = p?.versions?.find((x) => x.id === version.pack.versionId || x.minecraftVersion === version.minecraftVersion);
+      if (p && v) await playMode.refreshPackFiles(versionId, flattenPackVersion(p, v));
+    }
+
+    // Version d'un monde téléchargé encore en cours d'installation : on attend qu'elle finisse.
+    if (versionInstalls.has(versionId)) {
+      onProgress({ text: "Installation de la version du monde…" });
+      await versionInstalls.get(versionId).catch(() => {});
+    }
+    const settings = settingsStore.loadSettings();
+    const prepared = await playMode.prepareVersion(versionId, {
+      deps: PLAY_DEPS,
+      onProgress,
+      signal: task.controller.signal,
+      waitIfPaused: taskWaitIfPaused(task),
+      javaPreferred: settings.javaPath || undefined,
+      gameDir,
+    });
+    // Mon pack / pack CurseForge : vérification des mods AVANT de lancer (26/10). S'il reste un
+    // problème, le launcher le dit au lieu de laisser Minecraft planter (« Jouer quand même » passe
+    // `force`).
+    if (version.pack?.kind && !force) {
+      const problems = await playMode.packProblems(versionId, { network: false }).catch(() => []);
+      if (problems.length) {
+        task.status = "cancelled";
+        broadcastTasks();
+        event.sender.send("game:progress", { step: "idle" });
+        return { ok: false, code: "packProblems", versionId, count: problems.length };
+      }
+    }
+    task.status = "complete";
+    task.step = "start";
+    task.bytes = task.totalBytes || task.bytes;
+    broadcastTasks();
+    event.sender.send("game:progress", { step: "start" });
+
+    const startedAt = Date.now();
+    await launchMinecraft({
+      onGameState: (running, exitCode) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send("game:state", running, exitCode ?? null);
+        }
+        if (running) {
+          playRunning = { versionId, startedAt };
+          worldCloud.setGameRunning(true);
+          if (features.visible("liveSave")) liveSave.start({ startedAt, pid: getRunningGame()?.pid, worldKey });
+          return;
+        }
+        // Avant de réafficher les fenêtres : ferme le petit menu en jeu et libère F6.
+        const liveDone = liveSave.stop();
+        discordPresence.setBrowsingActivity();
+        if (settingsStore.shouldRestoreAfterPlaying()) {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (win.isDestroyed()) continue;
+            if (win.isMinimized()) win.restore();
+            win.show();
+            win.focus();
+          }
+        }
+        // Jeu fermé : plus rien n'écrit dans les mondes, on peut les sauvegarder.
+        const ended = playRunning;
+        playRunning = null;
+        // Pack Omniscient : fermé normalement et sans rapport de crash = version « testée ✓ ».
+        if (version.omni && exitCode === 0) {
+          fsp
+            .readdir(path.join(prepared.gameDirectory, "crash-reports"))
+            .catch(() => [])
+            .then(async (names) => {
+              for (const n of names) {
+                const st = await fsp.stat(path.join(prepared.gameDirectory, "crash-reports", n)).catch(() => null);
+                if (st && st.mtimeMs >= startedAt) return false;
+              }
+              return playMode.markTested(versionId);
+            })
+            .then((changed) => changed && sendAll("play:worldsChanged"))
+            .catch(() => {});
+        }
+        // Aide au crash v1 (Laboratoire « crashHelp ») : journal et rapport de crash de CETTE partie,
+        // lus à chaque fermeture (l'écran « mods incompatibles » n'est pas un crash).
+        if (features.visible("crashHelp")) {
+          crashHelp
+            .analyzeGame(prepared.gameDirectory, { startedAt, exitCode })
+            .then((found) => {
+              if (!found) return;
+              lastCrash = { files: found.files, versionId };
+              logStore.pushLog({ level: "warn", source: "launcher", message: `Jouer : problème détecté à la fermeture du jeu (${found.kind}).` });
+              const { files, texts, ...info } = found;
+              const packKind = version.pack?.kind || (version.pack ? "official" : null);
+              // Catalogue de bugs : une fiche reconnue remplace la fenêtre générale, sauf une fiche
+              // « se corrige toute seule » (le jeu vient quand même de s'arrêter).
+              const known = bugCatalog.game({ logText: texts.log, crashText: texts.crash, mc: version.minecraftVersion || prepared.minecraftVersion, loader: version.pack?.loader || "" });
+              if (known) {
+                bugCatalog.stat(known.slug, "seen");
+                logStore.pushLog({ level: "info", source: "launcher", message: `Catalogue de bugs : ${known.slug} reconnu.` });
+                sendAll("bugs:found", { entry: known, versionId, canRepair: canRepairKind(packKind), hasLogs: true });
+                if (known.status !== "auto") return;
+              }
+              sendAll("play:crashHelp", { ...info, versionId, packKind, hasCrash: !!files.crash });
+            })
+            .catch(() => {});
+        }
+        liveDone
+          .then(() => liveSave.enqueue(() => playMode.afterGame(ended?.versionId || versionId, ended?.startedAt || startedAt)))
+          .then((created) => {
+            for (const c of created) {
+              if (c.backup) worldCloud.queueBackup(c.key, c.backup);
+              else if (c.error) logStore.pushLog({ level: "warn", source: "launcher", message: `Sauvegarde du monde impossible : ${c.error}` });
+            }
+            for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+            if (features.visible("dataPacks")) applyPendingDp(ended?.versionId || versionId).catch(() => {});
+          })
+          .catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Sauvegarde après la partie impossible : ${error.message}` }))
+          .finally(() => worldCloud.setGameRunning(false));
+      },
+      authorization: currentSession.authorization,
+      version: prepared.minecraftVersion,
+      serverIp: null,
+      serverName: null,
+      autoConnect: false,
+      addToServerList: false,
+      onProgress,
+      memory: { min: `${settings.memoryMinGB}G`, max: `${settings.memoryMaxGB}G` },
+      javaPath: prepared.javaPath || settings.javaPath || undefined,
+      gameDirectory: prepared.gameDirectory,
+      customVersion: prepared.customVersion,
+      customJvmArgs: prepared.jvmArgs,
+      slug: `play:${versionId}`,
+      onGameLine: (text) => liveSave.line(text),
+      quickPlayWorld: quickPlayWorld && supportsQuickPlay(prepared.minecraftVersion) ? quickPlayWorld : null,
+    });
+    await playMode.touchVersion(versionId);
+    discordPresence.setPlayingActivity(`Minecraft ${prepared.minecraftVersion}`, playPackName(version.pack), { playMode: true });
+    return { ok: true, versionId };
+  } catch (error) {
+    const cancelled = error?.name === "AbortError";
+    // Lancement raté : le verrou « monde ouvert » pris avant (plusieurs PC) est rendu.
+    worldCloud.releaseLocks().catch(() => {});
+    if (task && (task.status === "active" || task.status === "paused")) {
+      task.status = cancelled ? "cancelled" : "error";
+      task.error = cancelled ? null : error instanceof Error ? error.message : "Erreur inconnue";
+      broadcastTasks();
+    }
+    if (cancelled) return { ok: false, cancelled: true };
+    if (error?.code === "needVersion" || error?.code === "chooseVersion") {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Jouer : ${error.message} Rien n'a été lancé.` });
+      return { ok: false, code: error.code, error: error.message, minecraftVersion: error.minecraftVersion || null, worldName: error.worldName || null };
+    }
+    logStore.pushLog({ level: "error", source: "launcher", message: `Échec du lancement (Jouer) : ${error instanceof Error ? error.message : error}` });
+    return playError(error);
+  } finally {
+    gameLaunchInProgress = false;
+  }
+});
+
 // "Tester pour publication" (Mes instances) : auto-test que le PROPRIETAIRE lance lui-meme
 // avant de pouvoir publier son serveur (voir le nouveau flux cote site, selfTestPassedAt).
 // Reutilise les memes briques que game:launch (ping, installModpack, launchMinecraft) —
@@ -2612,10 +6059,47 @@ ipcMain.handle("selftest:abort", async () => {
   if (!selfTestInProgress) return { ok: false, code: "not_running" };
   selfTestAbortRequested = true;
   selfTestTask?.controller.abort();
+  // Aide guidee ouverte pendant le test (lot 5) : l'annulation la referme comme « Plus tard ».
+  if (selfTestManualAnswer) {
+    const answer = selfTestManualAnswer;
+    selfTestManualAnswer = null;
+    answer("close");
+  }
   return { ok: true };
 });
 
+// Lot 5 (audit 17/10, choix de Rushi le 18/10 : « aide puis lancement ») : quand seuls des mods
+// bloques manquent, le test ouvre l'aide guidee pour le proprietaire. S'il ajoute les mods, le
+// test continue et lance le jeu ; sinon « Jeu démarré » reste « non testé » et la publication
+// reste possible avec l'avertissement. false = pas d'aide ni de lancement pendant le test.
+const SELFTEST_GUIDE_THEN_LAUNCH = true;
+let selfTestManualAnswer = null;
+ipcMain.handle("selftest:manualModsAnswer", (_event, answer) => {
+  const resolve = selfTestManualAnswer;
+  selfTestManualAnswer = null;
+  resolve?.(answer === "retry" ? "retry" : "close");
+  return { ok: true };
+});
+function askOwnerForManualMods(sender, fields) {
+  return new Promise((resolve) => {
+    // Filet : fenetre rechargee ou fermee sans reponse -> on continue comme « Plus tard ».
+    const timer = setTimeout(() => {
+      if (selfTestManualAnswer) {
+        selfTestManualAnswer = null;
+        resolve("close");
+      }
+    }, 20 * 60 * 1000);
+    selfTestManualAnswer = (answer) => {
+      clearTimeout(timer);
+      resolve(answer);
+    };
+    if (sender.isDestroyed()) return selfTestManualAnswer("close");
+    sender.send("selftest:manualMods", fields);
+  });
+}
+
 ipcMain.handle("selftest:run", async (event, slug) => {
+  if (!isValidInstanceSlug(slug)) return { ok: false, error: "Serveur invalide." };
   if (!currentSession) {
     return { ok: false, error: "Connecte-toi avec ton compte Microsoft avant de lancer le test.", code: "not_signed_in" };
   }
@@ -2628,7 +6112,7 @@ ipcMain.handle("selftest:run", async (event, slug) => {
 
   // Meme registre de taches que "Installer"/"Rejoindre" (2026-10-11) : le telechargement du
   // check #2 doit apparaitre dans le meme panneau, pas rester invisible pendant qu'il tourne.
-  const task = createInstallTask(slug, null);
+  const task = createInstallTask(slug, null, "selftest");
   selfTestTask = task;
   broadcastTasks();
   const onProgress = (status) => {
@@ -2640,6 +6124,9 @@ ipcMain.handle("selftest:run", async (event, slug) => {
   const report = (step, status, detail) => event.sender.send("selftest:progress", { step, status, detail });
   const checks = { reachable: false, modpackInstalled: false, gameStarted: false };
   let detectedVersion = null;
+  // Lot 5 : mods a ajouter a la main (tous « bloques ») — le test passe avec un avertissement.
+  let manualModsReport = null;
+  let fromModrinthMods = [];
 
   // Si le test a été annulé, marque le check en cours comme échoué/annulé et conclut
   // immédiatement — les checks suivants, jamais atteints, restent "pending" côté UI et
@@ -2698,26 +6185,50 @@ ipcMain.handle("selftest:run", async (event, slug) => {
     report("modpack", "running");
     let modded = null;
     let vanilla = null;
+    const runModpackInstall = () =>
+      installModpack({
+        config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: launcherAuthHeaders() },
+        slug,
+        gameRoot: GAME_ROOT,
+        javaPath: settings.javaPath || undefined,
+        resolveJava: (major, onJavaProgress) =>
+          javaManager.ensureJavaForMajor(major, { preferredPath: settings.javaPath || undefined, onProgress: onJavaProgress }),
+        onProgress,
+        signal: task.controller.signal,
+        waitIfPaused: taskWaitIfPaused(task),
+        manualSearchDirs: manualModsSearchDirs(),
+        onWarning: (message) => logStore.pushLog({ level: "warn", source: "launcher", message }),
+      });
     try {
       if (server.type === "modded" && server.curseforgeModpackId) {
-        modded = await installModpack({
-          config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: launcherAuthHeaders() },
-          slug,
-          gameRoot: GAME_ROOT,
-          javaPath: settings.javaPath || undefined,
-          resolveJava: (major, onJavaProgress) =>
-            javaManager.ensureJavaForMajor(major, { preferredPath: settings.javaPath || undefined, onProgress: onJavaProgress }),
-          onProgress,
-          signal: task.controller.signal,
-          waitIfPaused: taskWaitIfPaused(task),
-          manualSearchDirs: manualModsSearchDirs(),
-        });
+        modded = await runModpackInstall();
+        fromModrinthMods = modded?.fromModrinthMods || [];
       } else {
         vanilla = await ensureVanillaVersion(path.join(GAME_ROOT, "versions"), server.minecraftVersion);
       }
     } catch (error) {
-      // Mods bloques : la liste est montree au proprietaire sous le controle (14/10).
-      report("modpack", "fail", { error: error instanceof Error ? error.message : String(error), ...modpackErrorFields(error) });
+      const fields = modpackErrorFields(error);
+      const onlyBlocked = fields.code === "manual_mods" && fields.manualMods.length > 0 && fields.manualMods.every((mod) => mod.reason === "blocked");
+      if (onlyBlocked) {
+        // Lot 5 : ce n'est plus un echec. Les joueurs seront guides pas a pas pour ces mods.
+        manualModsReport = fields.manualMods;
+        fromModrinthMods = fields.fromModrinthMods || [];
+        checks.modpackInstalled = true;
+        report("modpack", "warn", fields);
+        if (SELFTEST_GUIDE_THEN_LAUNCH && !selfTestAbortRequested) {
+          const answer = await askOwnerForManualMods(event.sender, fields);
+          if (answer === "retry") {
+            try {
+              modded = await runModpackInstall();
+            } catch (retryError) {
+              logStore.pushLog({ source: "launcher", message: `Auto-test : mods encore manquants apres l'aide (${retryError instanceof Error ? retryError.message : retryError})` });
+            }
+          }
+        }
+      } else {
+        // Fichier retire de CurseForge ou autre erreur : vrai echec (liste montree sous le controle).
+        report("modpack", "fail", { error: error instanceof Error ? error.message : String(error), ...fields });
+      }
     }
     // Moddé : le téléchargement du modpack (mods inclus) est entièrement fini à cet instant — on
     // peut juger ce check tout de suite, sans attendre le lancement. Bug trouvé le 2026-10-13 (test
@@ -2726,9 +6237,9 @@ ipcMain.handle("selftest:run", async (event, slug) => {
     // (aucun rapport avec le modpack testé), et le succès de CE lancement de secours écrasait
     // l'échec pourtant réel du check modpack plus bas. Le vanilla, lui, reste décidé par le
     // lancement (ensureVanillaVersion ne télécharge que JSON+jar, pas bibliothèques/assets).
-    if (server.type === "modded" && server.curseforgeModpackId && modded) {
+    if (server.type === "modded" && server.curseforgeModpackId && modded && !manualModsReport) {
       checks.modpackInstalled = true;
-      report("modpack", "pass");
+      report("modpack", "pass", { fromModrinthMods });
     }
     if (bailIfAborted("gameStarted")) return { ok: true, checks, detectedVersion, allPassed: false, aborted: true };
 
@@ -2747,9 +6258,11 @@ ipcMain.handle("selftest:run", async (event, slug) => {
         task.error = "Modpack incomplet";
         broadcastTasks();
       }
-      report("gameStarted", "skipped", { incompletePack: true });
-      logStore.pushLog({ source: "launcher", message: `Auto-test de publication terminé pour "${slug}" : échoué (modpack incomplet)` });
-      return { ok: true, checks, detectedVersion, allPassed: false };
+      report("gameStarted", "skipped", { incompletePack: !manualModsReport, manualModsSkipped: !!manualModsReport });
+      // Seuls des mods a ajouter a la main manquent : publication possible avec l'avertissement.
+      const canPublish = !!manualModsReport && checks.reachable;
+      logStore.pushLog({ source: "launcher", message: `Auto-test de publication terminé pour "${slug}" : ${canPublish ? "publiable avec avertissement (mods à ajouter à la main)" : "échoué (modpack incomplet)"}` });
+      return { ok: true, checks, detectedVersion, allPassed: false, canPublish, manualMods: manualModsReport, fromModrinthMods };
     }
     report("gameStarted", "running");
     let gameJava = modded?.javaPath;
@@ -2785,6 +6298,7 @@ ipcMain.handle("selftest:run", async (event, slug) => {
         serverIp: server.ip,
         serverName: server.name,
         autoConnect: server.autoConnect,
+        addToServerList: server.addToServerList !== false,
         onProgress,
         memory: { min: `${settings.memoryMinGB}G`, max: `${settings.memoryMaxGB}G` },
         javaPath: gameJava || settings.javaPath || undefined,
@@ -2809,7 +6323,7 @@ ipcMain.handle("selftest:run", async (event, slug) => {
 
     const allPassed = checks.reachable && checks.modpackInstalled && checks.gameStarted;
     logStore.pushLog({ source: "launcher", message: `Auto-test de publication terminé pour "${slug}" : ${allPassed ? "réussi" : "échoué"}` });
-    return { ok: true, checks, detectedVersion, allPassed };
+    return { ok: true, checks, detectedVersion, allPassed, canPublish: allPassed, manualMods: manualModsReport, fromModrinthMods };
   } catch (error) {
     // Echec avant que l'etape 2 n'ait eu l'occasion de marquer la tache "complete"
     // (ex. fetchJson initial echoue) : evite de la laisser "active" pour toujours.
@@ -2832,12 +6346,20 @@ ipcMain.handle("selftest:run", async (event, slug) => {
 // Rapporte un test 100% réussi au site (voir /api/launcher/servers/[slug]/self-test) — seule la
 // fiche le stocke (selfTestPassedAt) et seulement si les 3 contrôles sont vrais ; le site
 // re-vérifie aussi côté serveur (jamais confiance au client seul pour débloquer la publication).
-ipcMain.handle("selftest:report", async (_event, { slug, checks, detectedVersion }) => {
+ipcMain.handle("selftest:report", async (_event, { slug, checks, detectedVersion, manualMods }) => {
   try {
+    // Lot 5 : mods a ajouter a la main, pour le badge « X mods à ajouter » de la fiche.
+    const list = Array.isArray(manualMods)
+      ? manualMods.slice(0, 200).map((mod) => ({
+          modName: mod?.modName ? String(mod.modName).slice(0, 120) : null,
+          fileName: mod?.fileName ? String(mod.fileName).slice(0, 200) : null,
+          pageUrl: safeModPageUrl(mod?.pageUrl),
+        }))
+      : [];
     const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/self-test`, {
       method: "POST",
       headers: { ...launcherAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ checks, detectedVersion }),
+      body: JSON.stringify({ checks, detectedVersion, manualMods: list }),
     });
     // 2026-10-11 : un test reussi envoie maintenant directement la fiche en file d'attente
     // (isPrivate passe a false cote site, voir self-test/route.ts) — sans vider le cache,
@@ -2851,7 +6373,6 @@ ipcMain.handle("selftest:report", async (_event, { slug, checks, detectedVersion
 });
 
 app.whenReady().then(async () => {
-  await pickSiteUrl();
   setContentSecurityPolicy();
   if (!LAUNCHER_API_KEY) {
     // Erreur visible (dialog) plutôt qu'un throw silencieux avant toute
@@ -2864,9 +6385,10 @@ app.whenReady().then(async () => {
     return;
   }
   logStore.setMinFileLevel(settingsStore.loadSettings().logLevel);
+  logStore.pruneOldLogs();
   logStore.pushLog({ source: "launcher", message: `Démarrage d'Omniscient Launcher ${app.getVersion()}` });
+  ensureDevStartMenuShortcut();
   createWindow();
-  globalShortcut.register("CommandOrControl+Shift+D", () => createConsoleWindow());
   const startupSettings = settingsStore.loadSettings();
   discordPresence.init(DISCORD_CLIENT_ID, {
     enabled: startupSettings.discordPresence !== false,
@@ -2888,7 +6410,6 @@ app.whenReady().then(async () => {
 });
 
 app.on("will-quit", () => {
-  globalShortcut.unregisterAll();
   discordPresence.shutdown();
 });
 
@@ -2898,4 +6419,186 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+// --- Dossier des jeux sur un autre disque (serie 2, idee 9, version validee) --------------------
+// Tout le dossier des jeux (instances, mondes, mods, Java, cache) part en entier : copier, verifier,
+// basculer (pointeur dans userData + redemarrage du launcher), puis effacer l'ancien au demarrage
+// suivant. Voir gamesLocation.js. Pendant le deplacement, rien ne peut s'installer ni se lancer.
+const GAMES_MOVE_BUSY = "Déplacement de tes jeux en cours : attends la fin pour jouer ou installer.";
+const gamesMove = { active: false, cancel: false, progress: null };
+let gamesJustMoved = null;
+let gamesSizeCache = null;
+
+function formatGB(bytes) {
+  return `${(bytes / 1024 ** 3).toFixed(1).replace(".", ",")} Go`;
+}
+
+async function gamesFolderInfo() {
+  const free = await gamesLocation.freeBytesOf(gamesLocation.GAMES_BASE).catch(() => null);
+  return { gamesFolder: gamesLocation.GAMES_BASE, gamesFree: free ? formatGB(free.free) : "" };
+}
+
+function broadcastGamesMove(payload) {
+  gamesMove.progress = payload;
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send("games:moveProgress", payload);
+  }
+}
+
+function gamesBusyReason() {
+  if (getRunningGame() || gameLaunchInProgress) return "gameRunning";
+  if ([...installTasks.values()].some((t) => t.status === "active" || t.status === "paused" || t.status === "queued")) return "installing";
+  return null;
+}
+
+ipcMain.handle("games:info", async () => {
+  const journal = gamesLocation.readJournal();
+  const interrupted = journal && journal.stage !== "switched" && !gamesMove.active ? journal : null;
+  return {
+    base: gamesLocation.GAMES_BASE,
+    drive: gamesLocation.driveOf(gamesLocation.GAMES_BASE),
+    isDefault: gamesLocation.samePath(gamesLocation.GAMES_BASE, gamesLocation.USER_DATA),
+    missingRoot: gamesLocation.MISSING_ROOT,
+    interrupted: interrupted ? { to: interrupted.to, toDrive: gamesLocation.driveOf(interrupted.to), copiedBytes: interrupted.copiedBytes || 0, totalBytes: interrupted.totalBytes || 0 } : null,
+    justMoved: gamesJustMoved,
+    moving: gamesMove.active ? gamesMove.progress : null,
+  };
+});
+
+ipcMain.handle("games:size", async (_event, { refresh = false } = {}) => {
+  if (!gamesSizeCache || refresh) {
+    const { files, bytes } = await gamesLocation.listFiles(gamesLocation.GAMES_BASE);
+    gamesSizeCache = { bytes, files: files.length };
+  }
+  return gamesSizeCache;
+});
+
+ipcMain.handle("games:drives", async () => {
+  const drives = await gamesLocation.listDrives();
+  const current = gamesLocation.driveOf(gamesLocation.GAMES_BASE);
+  return drives.map((drive) => ({ ...drive, current: drive.drive === current, target: gamesLocation.targetForDrive(drive.drive) }));
+});
+
+ipcMain.handle("games:openFolder", () => shell.openPath(gamesLocation.GAMES_BASE));
+
+ipcMain.handle("games:move", async (_event, { drive, deleteOld = true, resume = false } = {}) => {
+  if (gamesMove.active) return { ok: false, code: "moving" };
+  const from = gamesLocation.GAMES_BASE;
+  const journal = gamesLocation.readJournal();
+  const to = resume && journal ? journal.to : gamesLocation.targetForDrive(drive);
+  if (!to) return { ok: false, code: "badDrive" };
+  if (gamesLocation.samePath(to, from)) return { ok: false, code: "sameDrive" };
+  if (gamesLocation.isInside(to, from) || gamesLocation.isInside(from, to)) return { ok: false, code: "nested" };
+  const busy = gamesBusyReason();
+  if (busy) return { ok: false, code: busy };
+
+  const toIsHome = gamesLocation.samePath(to, gamesLocation.USER_DATA);
+  const ours = toIsHome || fs.existsSync(path.join(to, gamesLocation.MARKER));
+  if (!ours && fs.existsSync(to) && (await fsp.readdir(to).catch(() => [])).length) return { ok: false, code: "targetNotEmpty", target: to };
+
+  gamesMove.active = true;
+  gamesMove.cancel = false;
+  const keepDelete = resume && journal ? journal.deleteOld !== false : deleteOld !== false;
+  try {
+    broadcastGamesMove({ stage: "scan", doneBytes: 0, totalBytes: 0, to, drive: gamesLocation.driveOf(to) });
+    const { files, bytes } = await gamesLocation.listFiles(from);
+    // Place necessaire : ce qui n'est pas deja copie (reprise) + 300 Mo de marge.
+    let already = 0;
+    if (ours) {
+      for (const file of files) {
+        const stat = await fsp.stat(path.join(to, file.rel)).catch(() => null);
+        if (stat && stat.size === file.size) already += file.size;
+      }
+    }
+    const space = await gamesLocation.freeBytesOf(to);
+    const need = bytes - already + 300 * 1024 ** 2;
+    if (space.free < need) return { ok: false, code: "noSpace", needBytes: need, freeBytes: space.free };
+
+    await fsp.mkdir(to, { recursive: true });
+    if (!toIsHome) await fsp.writeFile(path.join(to, gamesLocation.MARKER), "Dossier des jeux d'Omniscient Launcher. Ne pas supprimer ce fichier.\n");
+    gamesLocation.writeJournal({ from, to, deleteOld: keepDelete, stage: "copy", totalBytes: bytes, startedAt: new Date().toISOString() });
+    logStore.pushLog({ source: "launcher", message: `Déplacement des jeux : ${from} -> ${to} (${formatGB(bytes)})` });
+
+    let lastJournal = 0;
+    await gamesLocation.copyAndVerify({
+      from,
+      to,
+      files,
+      totalBytes: bytes,
+      isCancelled: () => gamesMove.cancel,
+      onProgress: (progress) => {
+        broadcastGamesMove({ ...progress, to, drive: gamesLocation.driveOf(to) });
+        if (Date.now() - lastJournal > 3000) {
+          lastJournal = Date.now();
+          gamesLocation.writeJournal({ from, to, deleteOld: keepDelete, stage: progress.stage, totalBytes: bytes, copiedBytes: progress.doneBytes });
+        }
+      },
+    });
+    // Bascule : le pointeur designe le nouveau dossier ; l'ancien sera efface au redemarrage.
+    gamesLocation.writeJournal({ from, to, deleteOld: keepDelete, stage: "switched", totalBytes: bytes, copiedBytes: bytes });
+    gamesLocation.setPointer(to);
+    logStore.pushLog({ source: "launcher", message: `Déplacement des jeux vérifié, bascule vers ${to}` });
+    broadcastGamesMove({ stage: "switched", doneBytes: bytes, totalBytes: bytes, to, drive: gamesLocation.driveOf(to) });
+    return { ok: true, to, drive: gamesLocation.driveOf(to) };
+  } catch (error) {
+    if (error?.code === "cancelled") {
+      // Annuler est sans risque : on n'a jamais touche a l'ancien dossier ; la copie a moitie
+      // faite est effacee (sauf vers userData, ou elle peut se meler a d'anciens fichiers).
+      if (!toIsHome) await gamesLocation.removeGamesFrom(to).catch(() => {});
+      gamesLocation.clearJournal();
+      logStore.pushLog({ source: "launcher", message: "Déplacement des jeux annulé" });
+      return { ok: false, code: "cancelled" };
+    }
+    const code = error?.code === "ENOSPC" ? "noSpace" : ["ENOENT", "EIO", "ENODEV", "EBUSY", "EPERM", "EACCES", "UNKNOWN"].includes(error?.code) && !fs.existsSync(to) ? "targetLost" : "failed";
+    logStore.pushLog({ level: "error", source: "launcher", message: `Échec du déplacement des jeux : ${error instanceof Error ? error.message : String(error)}` });
+    return { ok: false, code, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    gamesMove.active = false;
+    gamesSizeCache = null;
+  }
+});
+
+ipcMain.handle("games:cancelMove", () => {
+  if (gamesMove.active) gamesMove.cancel = true;
+  return { ok: true };
+});
+
+// Deplacement interrompu (launcher ferme, coupure) : « Annuler et rester ici » efface la copie a
+// moitie faite. « Reprendre » repasse par games:move avec resume.
+ipcMain.handle("games:abandonInterrupted", async () => {
+  const journal = gamesLocation.readJournal();
+  if (!journal || journal.stage === "switched" || gamesMove.active) return { ok: false };
+  if (!gamesLocation.samePath(journal.to, gamesLocation.USER_DATA) && !gamesLocation.samePath(journal.to, gamesLocation.GAMES_BASE)) {
+    await gamesLocation.removeGamesFrom(journal.to).catch(() => {});
+  }
+  gamesLocation.clearJournal();
+  return { ok: true };
+});
+
+ipcMain.handle("games:ackMoved", () => {
+  gamesJustMoved = null;
+});
+
+ipcMain.handle("games:restart", () => {
+  app.relaunch();
+  app.exit(0);
+});
+
+// Au demarrage : fin d'un deplacement bascule (effacer l'ancien dossier si demande).
+app.whenReady().then(async () => {
+  const journal = gamesLocation.readJournal();
+  if (!journal || journal.stage !== "switched") return;
+  if (!gamesLocation.samePath(gamesLocation.GAMES_BASE, journal.to)) return; // nouveau dossier introuvable : on garde tout
+  let deleted = false;
+  if (journal.deleteOld !== false && !gamesLocation.samePath(journal.from, journal.to)) {
+    try {
+      deleted = await gamesLocation.removeGamesFrom(journal.from);
+    } catch (error) {
+      logStore.pushLog({ level: "warn", source: "launcher", message: `Ancien dossier des jeux pas entièrement effacé : ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+  gamesLocation.clearJournal();
+  gamesJustMoved = { to: journal.to, drive: gamesLocation.driveOf(journal.to), fromDrive: gamesLocation.driveOf(journal.from), freedBytes: deleted ? journal.totalBytes || 0 : 0 };
+  logStore.pushLog({ source: "launcher", message: `Jeux maintenant dans ${journal.to}${deleted ? ", ancien dossier effacé" : ""}` });
 });

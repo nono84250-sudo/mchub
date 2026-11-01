@@ -31,7 +31,9 @@ export async function replyToReport(
   const owned = await getOwnedReport(reportId, session.user.id);
   if (!owned) return { error: "Ce signalement n'existe pas ou ne t'appartient pas." };
 
-  const reply = String(formData.get("reply") ?? "").trim();
+  // Meme plafond que le message d'origine (2000 caracteres, route de signalement du launcher) :
+  // la reponse part telle quelle en notification au joueur (audit 25/10).
+  const reply = String(formData.get("reply") ?? "").trim().slice(0, 2000);
   if (!reply) return { error: "La réponse ne peut pas être vide." };
 
   // Renvoyer un message sur un signalement deja resolu ne doit pas le

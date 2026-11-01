@@ -10,7 +10,8 @@ const { app } = require("electron");
 // parametres. On propose Eclipse Temurin (projet Eclipse Foundation,
 // build officiel d'OpenJDK, utilise par d'autres launchers du genre comme
 // Prism Launcher) plutot que de demander une installation manuelle.
-const RUNTIME_BASE = path.join(app.getPath("userData"), "runtime");
+// Java telecharge suit le dossier des jeux (serie 2, idee 9, gamesLocation.js).
+const RUNTIME_BASE = path.join(require("./gamesLocation").GAMES_BASE, "runtime");
 const RUNTIME_DIR = path.join(RUNTIME_BASE, "java");
 // Windows (historique) ou Linux (version de test personnelle de Rushi, 14/10) :
 // Adoptium sert un .zip pour Windows et un .tar.gz pour Linux, et l'executable
@@ -46,6 +47,8 @@ function parseJavaMajorVersion(versionString) {
 // seul binaire bloque bloquait tout le pipeline de lancement sans aucun message (audit du
 // 2026-10-10).
 const PROCESS_TIMEOUT_MS = 15_000;
+// Extraction de l'archive Java (Windows comme Linux), voir extractZip.
+const JAVA_EXTRACT_TIMEOUT_MS = 120_000;
 const FETCH_TIMEOUT_MS = 20_000;
 
 function detectJava(javaPath) {
@@ -129,11 +132,12 @@ function extractZip(zipPath, destDir) {
       clearTimeout(timer);
       fn();
     };
-    // Disque d'une machine virtuelle parfois lent : marge plus large sous Linux.
+    // 2 min partout (audit 25/10) : 15 s sous Windows ne suffisaient pas a Expand-Archive sur un
+    // disque lent ou avec un antivirus qui scanne chaque fichier de l'archive.
     const timer = setTimeout(() => {
       proc.kill();
       finish(() => reject(new Error("Extraction de Java : délai dépassé.")));
-    }, IS_WINDOWS ? PROCESS_TIMEOUT_MS : 120_000);
+    }, JAVA_EXTRACT_TIMEOUT_MS);
     proc.on("error", (error) => finish(() => reject(error)));
     proc.on("exit", (code) => finish(() => (code === 0 ? resolve() : reject(new Error(`Extraction échouée (code ${code}).`)))));
   });

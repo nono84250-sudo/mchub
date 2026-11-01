@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { createLauncherSession, identityErrorResponse, isAuthorizedLauncherRequest, normalizeMinecraftUuid, verifyMinecraftProfile } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Echange le jeton Mojang du joueur (X-Minecraft-Token, verifie aupres de Mojang)
 // contre un jeton de session signe de 15 min (X-Launcher-Session sur les autres
 // routes, voir LAUNCHER_SESSION_TTL_MS). Voir createLauncherSession dans lib/launcherAuth.ts.
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -50,3 +51,5 @@ export async function POST(request: Request) {
   }
   return NextResponse.json(session);
 }
+
+export const POST = withD1Busy(handlePOST);

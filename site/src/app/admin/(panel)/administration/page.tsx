@@ -23,7 +23,7 @@ export default async function Administration({ searchParams }: { searchParams: P
   }
 
   const params = await searchParams;
-  const accounts = await db.orm.public.AdminAccount.select("id", "username", "role", "mustChangeCredentials", "createdAt")
+  const accounts = await db.orm.public.AdminAccount.select("id", "username", "role", "mustChangeCredentials", "createdAt", "totpEnabledAt")
     .orderBy((a) => a.createdAt.desc())
     .all();
   const adminCount = accounts.filter((a) => a.role === "admin").length;
@@ -37,9 +37,11 @@ export default async function Administration({ searchParams }: { searchParams: P
       role: a.role === "admin" ? "admin" : "moderator",
       createdAt: a.createdAt,
       mustChangeCredentials: a.mustChangeCredentials,
+      totpEnabled: !!a.totpEnabledAt,
     })),
     adminCount,
     created: params.created ?? null,
+    reset2fa: params.reset2fa === "1",
     roleLabels,
   });
   return <DesignScreen name="administration" html={html} />;

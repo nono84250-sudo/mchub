@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, IMAGES_BUCKET } from "@/lib/r2";
 import { auth } from "@/auth";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rateLimit";
 
 // Contraintes autoritatives par champ (voir la maquette "02 Onboarding" —
 // dimensions/formats/poids affiches sous chaque zone de depot dans
@@ -35,6 +36,18 @@ export async function POST(request: Request): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
+  }
+  // Audit 25/10 : aucun plafond, un compte pouvait remplir le stockage R2 (et la facture).
+  // 60 envois par heure et par compte couvrent largement une fiche complete (banniere, icone,
+  // fond, galerie) refaite plusieurs fois ; 20 par minute et par adresse en plus.
+  const limitedByIp = rateLimitResponse(request, "upload", 20);
+  if (limitedByIp) return limitedByIp;
+  const perAccount = checkRateLimit(`upload-account:${session.user.id}`, 60, 60 * 60_000);
+  if (perAccount.limited) {
+    return NextResponse.json(
+      { error: "Trop d'images envoyées, réessaie plus tard." },
+      { status: 429, headers: { "Retry-After": String(perAccount.retryAfterSeconds) } },
+    );
   }
 
   const form = await request.formData();

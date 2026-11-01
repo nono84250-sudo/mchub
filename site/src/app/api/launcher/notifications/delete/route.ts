@@ -2,18 +2,19 @@ import { NextResponse } from "next/server";
 import { identityErrorResponse, isAuthorizedLauncherRequest, verifyLauncherIdentity } from "@/lib/launcherAuth";
 import { deleteNotification } from "@/lib/notifications";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Supprime une notification individuelle (croix sur une ligne du panneau) —
 // scope par minecraftUuid cote lib pour qu'un joueur ne puisse pas supprimer
 // la notification de quelqu'un d'autre en devinant un id.
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
   const limited = rateLimitResponse(request, "launcher-notif-delete", 60);
   if (limited) return limited;
 
-  const body = await request.json();
+  const body = (await request.json().catch(() => null)) ?? {};
   const minecraftUuid = String(body.minecraftUuid ?? "").trim();
   const id = String(body.id ?? "").trim();
   if (!minecraftUuid || !id) {
@@ -25,3 +26,5 @@ export async function POST(request: Request) {
   await deleteNotification(id, minecraftUuid);
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withD1Busy(handlePOST);

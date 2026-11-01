@@ -26,7 +26,12 @@ function isPrivateIPv4(ip: string): boolean {
     inRange("127.0.0.0", 8) || // loopback
     inRange("169.254.0.0", 16) || // link-local (inclut les metadonnees cloud, 169.254.169.254)
     inRange("172.16.0.0", 12) || // priv 20-bit
+    inRange("192.0.0.0", 24) || // affectations IETF
+    inRange("192.0.2.0", 24) || // documentation (TEST-NET-1)
     inRange("192.168.0.0", 16) || // priv 16-bit
+    inRange("198.18.0.0", 15) || // tests de performance
+    inRange("198.51.100.0", 24) || // documentation (TEST-NET-2)
+    inRange("203.0.113.0", 24) || // documentation (TEST-NET-3)
     inRange("224.0.0.0", 4) || // multicast
     inRange("240.0.0.0", 4) // reserve
   );

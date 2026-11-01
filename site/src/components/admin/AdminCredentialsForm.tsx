@@ -38,7 +38,8 @@ export function AdminCredentialsForm({ firstLogin, currentUsername }: { firstLog
     // 2026-10-12 : Administration est desactivee (perimetre admin reduit) — apres la
     // premiere connexion on va sur Serveurs ; depuis Parametres (changement ulterieur des
     // identifiants) on y reste plutot que de naviguer ailleurs.
-    router.push(firstLogin ? "/admin/servers" : "/admin/parametres");
+    // Premiere connexion d'un compte sans 2FA : la configuration de la 2FA suit (data.next).
+    router.push(data.next === "2fa" ? "/admin/double-authentification" : firstLogin ? "/admin/servers" : "/admin/parametres");
     router.refresh();
   }
 

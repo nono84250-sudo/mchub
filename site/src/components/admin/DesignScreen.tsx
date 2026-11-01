@@ -1,4 +1,3 @@
-import Script from "next/script";
 import { SCREENS } from "@/app/admin/design/screens";
 import { markAllSections, balancedEnd, markNavBadges, escapeHtml } from "@/app/admin/design/bind";
 import { countOpenBehaviorReports } from "@/lib/reports";
@@ -8,6 +7,10 @@ import { countPendingVerification } from "@/lib/verification";
 // MEME instance cache() pour qu'un seul des deux declenche vraiment une lecture D1.
 import { getCurrentAdmin } from "@/app/admin/design/guard";
 import { getStaffRoleLabels } from "@/lib/platformSettings";
+import { countPendingTagGroups } from "@/lib/tagRequests";
+import { countPendingTeamRequests } from "@/lib/teams";
+import { getPlayBeta } from "@/lib/playWorlds";
+import { featureState } from "@/lib/features";
 
 // Affiche un écran de la maquette "Omniscient Admin Dashboard" : même markup, même
 // style (feuille Nocturne), mêmes icônes (Phosphor). `html` remplace le modèle
@@ -16,8 +19,7 @@ export const WRAPPER_VARS = {
   "--muted": "color-mix(in srgb, var(--color-text) 55%, transparent)",
   "--muted2": "color-mix(in srgb, var(--color-text) 40%, transparent)",
   "--raised": "color-mix(in srgb, var(--color-text) 6%, var(--color-surface))",
-  "--danger": "#e08a8a",
-  "--success": "#5fd3a0",
+  // --danger/--success : plus figees ici (17/10), on garde celles de globals.css qui suivent le theme clair/sombre.
   background: "var(--color-bg)",
   color: "var(--color-text)",
   fontFamily: "var(--font-body)",
@@ -25,6 +27,7 @@ export const WRAPPER_VARS = {
 } as React.CSSProperties;
 
 const NAV_LINKS: Record<string, string> = {
+  Analytique: "/admin/analytique",
   Overview: "/admin/overview",
   Notifications: "/admin/notifications",
   News: "/admin/news",
@@ -32,10 +35,14 @@ const NAV_LINKS: Record<string, string> = {
   "Vérification": "/admin/verification",
   Players: "/admin/players",
   Reports: "/admin/reports",
-  "Packs curés": "/admin/packs",
+  Bugs: "/admin/bugs",
   Administration: "/admin/administration",
   "Paramètres": "/admin/parametres",
   Contact: "/admin/contact",
+  "Étiquettes": "/admin/etiquettes",
+  Teams: "/admin/teams",
+  "Packs officiels": "/admin/packs-officiels",
+  Laboratoire: "/admin/laboratoire",
 };
 
 // 2026-10-10 : /admin/parametres (identifiants du compte admin + interrupteurs des sources de
@@ -63,6 +70,82 @@ function addContactNavItem(html: string): string {
   return html.split(marker).join(item + marker);
 }
 
+// 2026-10-16 : /admin/etiquettes (demandes d'etiquettes des proprietaires, voir lib/tagRequests.ts)
+// — meme methode que addContactNavItem, inseree juste avant "Contact". Badge = nombre de mots
+// differents en attente (une decision par mot), masque a 0 comme celui de "Vérification".
+function addTagRequestsNavItem(html: string, pending: number): string {
+  const marker =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-envelope" style="font-size:17px;"></i><span style="flex:1">Contact</span></div>';
+  const badge = pending
+    ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--color-accent) 20%, transparent);color:var(--color-accent-100);">${pending}</span>`
+    : "";
+  const item = `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-tag" style="font-size:17px;"></i><span style="flex:1">Étiquettes</span>${badge}</div>`;
+  return html.split(marker).join(item + marker);
+}
+
+// 2026-10-19 : /admin/teams (demandes d'une team de plus, avec une preuve, voir lib/teams.ts) —
+// meme methode que addTagRequestsNavItem, inseree juste avant "Contact" (donc apres
+// « Étiquettes »). Badge = demandes en attente, masque a 0.
+function addTeamRequestsNavItem(html: string, pending: number): string {
+  const marker =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-envelope" style="font-size:17px;"></i><span style="flex:1">Contact</span></div>';
+  const badge = pending
+    ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--color-accent) 20%, transparent);color:var(--color-accent-100);">${pending}</span>`
+    : "";
+  const item = `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-users-three" style="font-size:17px;"></i><span style="flex:1">Teams</span>${badge}</div>`;
+  return html.split(marker).join(item + marker);
+}
+
+// 2026-10-24 : /admin/packs-officiels (packs du mode Jouer, voir lib/playPacks.ts) — meme methode,
+// inseree juste avant "Contact" (donc apres « Teams »). Badge « Bêta » tant que le reglage central
+// du mode Jouer est allume (le meme que dans le launcher et sur le site, voir getPlayBeta).
+function addPlayPacksNavItem(html: string, beta: boolean): string {
+  const marker =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-envelope" style="font-size:17px;"></i><span style="flex:1">Contact</span></div>';
+  const badge = beta
+    ? '<span style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 7px;border-radius:999px;background:color-mix(in srgb, var(--warn) 18%, transparent);color:var(--warn);">Bêta</span>'
+    : "";
+  const item = `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-cube" style="font-size:17px;"></i><span style="flex:1">Packs officiels</span>${badge}</div>`;
+  return html.split(marker).join(item + marker);
+}
+
+// 2026-10-25 : /admin/laboratoire (interrupteurs des fonctionnalités, voir lib/features.ts) —
+// même méthode, insérée juste avant "Paramètres" (après addContactNavItem) : Paramètres reste
+// la dernière ligne du menu.
+function addLabNavItem(html: string): string {
+  const marker =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-gear" style="font-size:17px;"></i><span style="flex:1">Paramètres</span></div>';
+  const item =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-flask" style="font-size:17px;"></i><span style="flex:1">Laboratoire</span></div>';
+  return html.split(marker).join(item + marker);
+}
+
+// 2026-10-31 : /admin/bugs (catalogue de bugs, voir lib/bugCatalog.ts), juste sous "Reports". Même
+// habillage que les autres entrées ; à passer avant linkNav, comme les autres.
+function addBugsNavItem(html: string): string {
+  const at = html.indexOf(">Reports<");
+  if (at < 0) return html;
+  const end = balancedEnd(html, html.lastIndexOf("<div", at), "div");
+  if (end < 0) return html;
+  const item =
+    '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-bug" style="font-size:17px;"></i><span style="flex:1">Bugs</span></div>';
+  return html.slice(0, end) + item + html.slice(end);
+}
+
+// 2026-10-31 : /admin/analytique (voir lib/analytics.ts) — même méthode, mais tout en HAUT du menu,
+// donc insérée juste avant "Overview" (première ligne de la maquette, cachée par hideNavItems).
+// Absente quand l'interrupteur du Laboratoire est sur « Cachée ».
+function addAnalyticsNavItem(html: string, show: boolean): string {
+  if (!show) return html;
+  const at = html.indexOf(">Overview<");
+  const start = at < 0 ? -1 : html.lastIndexOf("<div", at);
+  if (start < 0) return html;
+  const badge =
+    '<span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:1px 7px;border-radius:999px;background:var(--color-accent);color:#fff;">NOUVEAU</span>';
+  const item = `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);font-size:14px;color:var(--muted);"><i class="ph ph-chart-line-up" style="font-size:17px;"></i><span style="flex:1">Analytique</span>${badge}</div>`;
+  return html.slice(0, start) + item + html.slice(start);
+}
+
 // Rend le menu cliquable (même style, même libellés). "Amis" (maquette, sans page admin) reste
 // un simple libellé, de toute façon masqué par hideNavItems.
 function linkNav(html: string): string {
@@ -82,7 +165,11 @@ function linkNav(html: string): string {
 // sans que ce soit volontaire.
 // 2026-10-14 : "Players" retiree aussi (remise dans le menu, demande de Rushi) — la liste des
 // joueurs mene a la fiche joueur, qui porte le bouton « Récupérer les données du joueur ».
-const HIDDEN_NAV_LABELS = ["Overview", "Notifications", "News", "Packs curés", "Administration", "Amis"];
+// 2026-10-25 : "Notifications" retiree aussi (remise dans le menu, demande de Rushi) pour
+// pouvoir activer le mode maintenance du launcher. "News" reste cachee : c'est maintenant
+// l'onglet « Actualités » de Notifications. 25/10 : « Packs curés » supprimee (pages et
+// ecrans retires, choix de Rushi) ; le libelle reste dans le menu de la maquette, donc cache ici.
+const HIDDEN_NAV_LABELS = ["Overview", "News", "Packs curés", "Administration", "Amis"];
 
 function hideNavItems(html: string): string {
   let result = html;
@@ -159,11 +246,15 @@ function markUserCard(html: string, admin: Awaited<ReturnType<typeof getCurrentA
 // composants client interactifs, injectes via un portail React plutot que du HTML statique —
 // voir le commentaire la-bas) sans dupliquer tout ce pipeline de transformation.
 export async function buildScreenContent({ name, html, markAll }: { name: keyof typeof SCREENS; html?: string; markAll?: boolean | "proposal" }): Promise<string> {
-  const [verificationPending, reportsOpen, admin, roleLabels] = await Promise.all([
+  const [verificationPending, reportsOpen, admin, roleLabels, tagRequestsPending, teamRequestsPending, playBeta, analyticsState] = await Promise.all([
     countPendingVerification(),
     countOpenBehaviorReports(),
     getCurrentAdmin(),
     getStaffRoleLabels(),
+    countPendingTagGroups(),
+    countPendingTeamRequests(),
+    getPlayBeta().catch(() => true),
+    featureState("analytics"),
   ]);
   // markNavBadges, addSettingsNavItem et addContactNavItem doivent tourner avant linkNav :
   // celui-ci transforme le <span style="flex:1"> du libelle en <a>, ce qui change sa balise
@@ -171,7 +262,7 @@ export async function buildScreenContent({ name, html, markAll }: { name: keyof 
   let content = markUserCard(
     markTopbarBell(
       removeTopbarSearch(
-        hideNavItems(reorderNav(linkNav(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))))),
+        hideNavItems(reorderNav(linkNav(addAnalyticsNavItem(addBugsNavItem(addPlayPacksNavItem(addTeamRequestsNavItem(addTagRequestsNavItem(addLabNavItem(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))), tagRequestsPending), teamRequestsPending), playBeta)), analyticsState !== "hidden")))),
       ),
     ),
     admin,
@@ -187,7 +278,8 @@ export async function DesignScreen({ name, html, markAll }: { name: keyof typeof
     <>
       <link rel="stylesheet" href="/admin/nocturne.css" />
       <link rel="stylesheet" href="/admin/nb.css" />
-      <Script src="https://unpkg.com/@phosphor-icons/web@2.1.1" strategy="afterInteractive" />
+      {/* 25/10 : feuille de style des icones au lieu du script (le script faisait echouer l'hydratation en dev). */}
+      <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
       <div style={WRAPPER_VARS} dangerouslySetInnerHTML={{ __html: content }} />
     </>
   );

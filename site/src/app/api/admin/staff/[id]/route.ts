@@ -15,8 +15,17 @@ export async function POST(request: Request, ctx: RouteContext<"/api/admin/staff
     return NextResponse.json({ error: "Rôle invalide." }, { status: 400 });
   }
 
-  const target = await db.orm.public.AdminAccount.select("id", "role").where({ id }).first();
+  const target = await db.orm.public.AdminAccount.select("id", "role", "isOwner").where({ id }).first();
   if (!target) return NextResponse.json({ error: "Compte introuvable." }, { status: 404 });
+
+  // Proprietaire du site (23/10) : un autre admin ne peut ni le retrograder ni forcer la
+  // reinitialisation de ses identifiants.
+  if (target.isOwner && admin.id !== target.id) {
+    return NextResponse.json({ error: "Le compte du propriétaire du site ne peut pas être modifié par un autre compte." }, { status: 403 });
+  }
+  if (target.isOwner && role !== "admin") {
+    return NextResponse.json({ error: "Le propriétaire du site reste administrateur." }, { status: 400 });
+  }
 
   const resetCredentials = form.get("resetCredentials") === "on";
   // Garde "dernier administrateur" atomique (audit du 2026-10-10, §2.21) : l'ancienne version

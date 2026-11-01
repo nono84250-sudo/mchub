@@ -1,173 +1,158 @@
 import Link from "next/link";
-import { headers } from "next/headers";
 import { WindowsLogo, AppleLogo, LinuxLogo, ShieldCheck, ArrowRight } from "@phosphor-icons/react/ssr";
 import { getT } from "@/i18n/getDictionary";
-import { t } from "@/i18n/t";
+import { CopyLinkButton } from "@/components/CopyLinkButton";
+import { SmartScreenDemo } from "@/components/SmartScreenDemo";
+import { TrustBlock } from "@/components/TrustBlock";
+import { DownloadRevealProvider, DownloadLink, AfterDownloadClick } from "@/components/DownloadReveal";
+import { LAUNCHER_DOWNLOAD_URL, LAUNCHER_RELEASES_LIST_URL, detectPlatform, getLatestRelease } from "@/lib/launcherRelease";
 
 export const metadata = { title: "Télécharger — Omniscient" };
 
-// Releases publiques du launcher (repo séparé, public, sans le code source —
-// voir project_launcher_installer). Le nom de l'installeur (nsisWeb.artifactName
-// dans launcher/package.json) est volontairement sans espace ET sans numéro de
-// version : sans espace parce que GitHub (points) et le latest.yml
-// d'electron-builder (tirets) le sanitisaient chacun différemment, cassant
-// silencieusement la mise à jour automatique (électron-updater cherchait un
-// fichier qui n'existait pas) ; sans version pour que ce lien direct reste
-// valable à chaque nouvelle publication.
-const LAUNCHER_ASSET_NAME = "OmniscientLauncherSetup.exe";
-const LAUNCHER_DOWNLOAD_URL = `https://github.com/nono84250-sudo/omniscient-launcher/releases/latest/download/${LAUNCHER_ASSET_NAME}`;
-const LAUNCHER_RELEASES_LIST_URL = "https://github.com/nono84250-sudo/omniscient-launcher/releases";
-
-type PlatformId = "windows" | "macos" | "linux";
-
-async function detectPlatform(): Promise<PlatformId> {
-  const store = await headers();
-  const ua = store.get("user-agent") ?? "";
-  if (/mac os x|macintosh/i.test(ua)) return "macos";
-  if (/linux/i.test(ua) && !/android/i.test(ua)) return "linux";
-  return "windows";
-}
-
-// Version/taille lues depuis la release GitHub reelle (jamais figees en dur
-// ici — sinon ce texte se decale du binaire reellement servi a chaque nouvelle
-// publication). Echoue silencieusement (API GitHub indisponible, pas encore
-// de release) : la ligne "detecte : {os}" s'affiche seule dans ce cas.
-// Le LIEN de telechargement (LAUNCHER_DOWNLOAD_URL) n'est lui jamais mis en
-// cache : il se resout en direct cote GitHub a chaque clic, donc reste
-// toujours exact meme si ce texte-ci est momentanement en retard. Revalidate
-// court (5 min, pas l'heure par defaut) pour que ce retard ne dure jamais
-// longtemps apres une nouvelle publication — le tag permet en plus de forcer
-// un rafraichissement immediat juste apres une publication (invalidate_by_tags
-// cote Vercel) sans attendre ces 5 minutes.
-async function getLatestRelease(): Promise<{ version: string; sizeMB: number } | null> {
-  try {
-    const res = await fetch("https://api.github.com/repos/nono84250-sudo/omniscient-launcher/releases/latest", {
-      headers: { Accept: "application/vnd.github+json" },
-      next: { revalidate: 300, tags: ["launcher-latest-release"] },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const asset = data.assets?.find((a: { name: string }) => a.name === LAUNCHER_ASSET_NAME);
-    const version = typeof data.tag_name === "string" ? data.tag_name.replace(/^v/, "") : null;
-    if (!asset || !version) return null;
-    return { version, sizeMB: Math.round(asset.size / (1024 * 1024)) };
-  } catch {
-    return null;
-  }
-}
-
+// Design 2026-10-17, point 3 : page rassurante. Le bouton, puis « Apres le
+// clic » en 3 etapes (dont l'ecran bleu SmartScreen dessine et explique AVANT
+// qu'il apparaisse, sans jamais dire de couper l'antivirus), puis les 4
+// questions (desormais dans /faq). Mac et Linux passent en petites pastilles « bientot ».
+// Seul Windows a un build reel pour l'instant (voir project_launcher_installer).
 export default async function DownloadPage() {
   const { dict } = await getT();
-  const detected = await detectPlatform();
-  const release = await getLatestRelease();
+  const [platform, release] = await Promise.all([detectPlatform(), getLatestRelease()]);
+  const d = dict.download;
 
-  // Seul Windows a un build reel pour l'instant (voir project_launcher_installer) —
-  // macOS/Linux restent affiches mais desactives ("Bientot disponible").
-  const PLATFORMS = [
-    {
-      id: "windows" as const,
-      icon: WindowsLogo,
-      label: dict.download.osWindows,
-      requirement: dict.download.windowsRequirement,
-      downloadLabel: dict.download.downloadExe,
-      href: LAUNCHER_DOWNLOAD_URL,
-    },
-    {
-      id: "macos" as const,
-      icon: AppleLogo,
-      label: dict.download.osMac,
-      requirement: dict.download.macRequirement,
-      downloadLabel: dict.download.downloadDmg,
-      href: null,
-    },
-    {
-      id: "linux" as const,
-      icon: LinuxLogo,
-      label: dict.download.osLinux,
-      requirement: dict.download.linuxRequirement,
-      downloadLabel: dict.download.downloadAppImage,
-      href: null,
-    },
-  ];
+  const version = release ? (
+    <>
+      <span className="opacity-50">·</span>
+      <span>v{release.version}</span>
+    </>
+  ) : null;
 
-  const primary = PLATFORMS.find((p) => p.id === detected) ?? PLATFORMS[0];
-  const windows = PLATFORMS[0];
+  let cta;
+  if (platform === "phone") {
+    cta = (
+      <>
+        <CopyLinkButton path="/download" className="btn-big" />
+        <p className="max-w-[40ch] text-sm text-muted text-balance">{d.phoneNote}</p>
+      </>
+    );
+  } else if (platform === "windows") {
+    cta = (
+      <>
+        <DownloadLink href={LAUNCHER_DOWNLOAD_URL} className="btn-fill btn-big">
+          <WindowsLogo className="h-[18px] w-[18px]" weight="fill" />
+          {dict.home.ctaDownloadWindows}
+        </DownloadLink>
+        <p className="flex flex-wrap items-center justify-center gap-x-2.5 text-[0.8rem] text-muted">
+          <span>{d.free}</span>
+          {version}
+          <span className="opacity-50">·</span>
+          <span>{d.winReq}</span>
+        </p>
+      </>
+    );
+  } else {
+    cta = (
+      <>
+        <p className="max-w-[40ch] text-sm text-muted text-balance">{d.otherOsNote}</p>
+        <DownloadLink href={LAUNCHER_DOWNLOAD_URL} className="btn-primary btn-big">
+          <WindowsLogo className="h-[18px] w-[18px]" weight="fill" />
+          {d.winAnyway}
+        </DownloadLink>
+        <p className="flex flex-wrap items-center justify-center gap-x-2.5 text-[0.8rem] text-muted">
+          <span>{d.free}</span>
+          {version}
+        </p>
+      </>
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-20 sm:py-28">
-      <div className="text-center max-w-2xl mx-auto">
-        <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-foreground text-balance">
-          {dict.download.title} <span className="gradient-text">{dict.download.titleAccent}</span>
-        </h1>
-        <p className="mt-5 text-lg text-muted text-balance">{dict.download.subtitle}</p>
-
-        <div className="mt-9 flex flex-col items-center gap-3">
-          {primary.href ? (
-            <Link href={primary.href} className="btn-primary text-base px-6 py-3">
-              <primary.icon className="h-5 w-5" />
-              {t(dict, "download.ctaDownloadFor", { os: primary.label })}
-            </Link>
-          ) : (
-            <span className="btn-primary text-base px-6 py-3 opacity-45 cursor-not-allowed" aria-disabled="true">
-              <primary.icon className="h-5 w-5" />
-              {t(dict, "download.ctaComingSoonFor", { os: primary.label })}
-            </span>
-          )}
-
-          {primary.href ? (
-            <p className="text-xs text-muted">
-              {release
-                ? t(dict, "download.versionSizeDetected", { version: release.version, size: release.sizeMB, os: primary.label })
-                : t(dict, "download.detected", { os: primary.label })}
-            </p>
-          ) : (
-            <Link
-              href={windows.href!}
-              className="text-xs text-muted hover:text-foreground transition-colors underline underline-offset-2"
-            >
-              {dict.download.ctaDownloadWindowsInstead}
-            </Link>
-          )}
-        </div>
+    <DownloadRevealProvider>
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-20 flex flex-col gap-10">
+      <div className="flex flex-col items-center gap-3.5 text-center">
+        <h1 className="max-w-[20ch] text-3xl sm:text-[2.6rem] font-bold tracking-tight text-foreground text-balance">{d.newTitle}</h1>
+        <p className="max-w-[46ch] text-lg text-muted text-balance">{d.newSubtitle}</p>
+        <div className="mt-2 flex flex-col items-center gap-3">{cta}</div>
       </div>
 
-      <div className="mt-16 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {PLATFORMS.map((platform) => (
-          <div
-            key={platform.id}
-            className={`panel glow-card p-6 flex flex-col items-center text-center gap-3 ${!platform.href ? "opacity-60" : ""}`}
-            style={platform.id === detected ? { borderColor: "var(--accent)" } : undefined}
-          >
-            <div className="server-icon h-12 w-12">
-              <platform.icon className="h-6 w-6" />
-            </div>
-            <h3 className="font-heading font-semibold text-foreground">{platform.label}</h3>
-            <p className="text-sm text-muted">{platform.requirement}</p>
-            {platform.href ? (
-              <Link href={platform.href} className="btn-secondary mt-2 w-full justify-center">
-                {platform.downloadLabel}
-              </Link>
-            ) : (
-              <span className="tag-chip mt-2">{dict.download.comingSoon}</span>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* Inutile sur telephone (pas de .exe) : on garde seulement les questions. */}
+      {/* Variante choisie le 17/10 : « Apres le clic » n'apparait qu'une fois le bouton clique. */}
+      {platform !== "phone" ? (
+        <AfterDownloadClick href={LAUNCHER_DOWNLOAD_URL}>
+          <h2 className="text-xl font-semibold text-foreground">{d.afterTitle}</h2>
+          <ol className="mt-3.5 grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            <AfterStep n={1} title={d.after1Title}>
+              <p className="text-sm text-muted">{d.after1Body}</p>
+            </AfterStep>
+            <AfterStep n={2} title={d.after2Title}>
+              <SmartScreenDemo />
+              <p className="text-sm text-muted">{d.after2Body}</p>
+              <p className="border-t border-border pt-2 text-[0.8rem] text-muted">{d.after2Why}</p>
+            </AfterStep>
+            <AfterStep n={3} title={d.after3Title}>
+              <p className="text-sm text-muted">{d.after3Body}</p>
+            </AfterStep>
+          </ol>
+        </AfterDownloadClick>
+      ) : null}
 
-      <div className="panel mt-10 flex flex-col sm:flex-row items-start sm:items-center gap-4 p-5">
-        <ShieldCheck className="h-6 w-6 text-muted shrink-0" />
-        <div className="flex-1">
-          <p className="font-medium text-foreground text-sm">{dict.download.checksumsTitle}</p>
-          <p className="text-sm text-muted mt-0.5">{dict.download.checksumsBody}</p>
-        </div>
-        <Link
-          href={LAUNCHER_RELEASES_LIST_URL}
-          className="text-sm text-accent hover:underline shrink-0 inline-flex items-center gap-1"
-        >
-          {dict.download.releaseNotes}
-          <ArrowRight className="h-4 w-4" />
+      <TrustBlock />
+
+      {/* Les questions sont dans la page FAQ (validee le 17/10) : une seule ligne ici. */}
+      <p className="flex flex-wrap items-center gap-2.5 border-t border-border pt-3.5 text-sm text-muted">
+        {d.moreQuestions}
+        <Link href="/faq" className="font-medium text-accent hover:underline">
+          {d.faqLink}
         </Link>
+      </p>
+
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap justify-center gap-2.5 text-[0.8rem] text-muted">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent px-3 py-1 text-foreground">
+            <WindowsLogo className="h-3.5 w-3.5" weight="fill" />
+            Windows 10 · 11
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1">
+            <AppleLogo className="h-3.5 w-3.5" weight="fill" />
+            macOS · {d.soonPill}
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1">
+            <LinuxLogo className="h-3.5 w-3.5" />
+            Linux · {d.soonPill}
+          </span>
+        </div>
+
+        {platform !== "phone" ? (
+          <div className="panel flex flex-col sm:flex-row items-start sm:items-center gap-3 px-4 py-3.5">
+            <ShieldCheck className="h-6 w-6 text-muted shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium text-foreground text-sm">{d.checksumsTitle}</p>
+              <p className="text-sm text-muted mt-0.5">{d.checksumsBody}</p>
+            </div>
+            <Link
+              href={LAUNCHER_RELEASES_LIST_URL}
+              className="text-sm text-accent hover:underline shrink-0 inline-flex items-center gap-1"
+            >
+              {d.releaseNotes}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        ) : null}
       </div>
     </div>
+    </DownloadRevealProvider>
+  );
+}
+
+function AfterStep({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <li className="panel flex min-w-0 flex-col gap-2.5 p-4">
+      <div className="flex items-center gap-2.5">
+        <span className="grid h-[30px] w-[30px] flex-shrink-0 place-items-center rounded-full border-[1.5px] border-accent text-sm font-bold text-accent">
+          {n}
+        </span>
+        <h3 className="font-semibold text-foreground">{title}</h3>
+      </div>
+      {children}
+    </li>
   );
 }

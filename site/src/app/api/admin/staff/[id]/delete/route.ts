@@ -14,8 +14,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/admin/staff
     return NextResponse.json({ error: "Vous ne pouvez pas supprimer votre propre compte." }, { status: 400 });
   }
 
-  const target = await db.orm.public.AdminAccount.select("id", "role").where({ id }).first();
+  const target = await db.orm.public.AdminAccount.select("id", "role", "isOwner").where({ id }).first();
   if (!target) return NextResponse.json({ error: "Compte introuvable." }, { status: 404 });
+  // Proprietaire du site (audit du 25/10, comme staff/[id]/route.ts) : un autre admin n'y touche pas.
+  if (target.isOwner) {
+    return NextResponse.json({ error: "Le compte du propriétaire du site ne peut pas être modifié par un autre compte." }, { status: 403 });
+  }
 
   // Garde "dernier administrateur" atomique (meme raisonnement que staff/[id]/route.ts, audit du
   // 2026-10-10 §2.21) : une instruction SQL unique dont le WHERE reevalue le compte au moment de

@@ -1,5 +1,5 @@
 const crypto = require("node:crypto");
-const { BrowserWindow } = require("electron");
+const { BrowserWindow, session } = require("electron");
 
 // Connexion joueur via compte Microsoft -> Xbox Live -> Minecraft, suivant le
 // flux officiel documente par Microsoft/Mojang (OAuth2 + PKCE, sans secret
@@ -14,6 +14,8 @@ const REDIRECT_URI = "https://login.microsoftonline.com/common/oauth2/nativeclie
 const AUTHORITY = "https://login.microsoftonline.com/consumers";
 const SCOPE = "XboxLive.signin offline_access";
 const REQUEST_TIMEOUT_MS = 8000;
+// Cookies de la fenetre de connexion Microsoft (gardes sur disque entre deux connexions).
+const LOGIN_PARTITION = "persist:mchub-microsoft-account";
 
 // Sans ça, un serveur Microsoft/Xbox qui ne répond jamais bloquerait la
 // promesse indéfiniment — et comme boot() attend la restauration de session
@@ -24,7 +26,9 @@ async function fetchWithTimeout(url, options) {
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
-    if (error.name === "AbortError") throw new Error("Le serveur Microsoft n'a pas répondu à temps.");
+    if (error.name === "AbortError") throw Object.assign(new Error("Le serveur Microsoft n'a pas répondu à temps."), { code: "network" });
+    // fetch() qui echoue sans reponse (pas d'internet, DNS) : TypeError "fetch failed".
+    if (error instanceof TypeError) error.code = "network";
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -84,7 +88,7 @@ function openLoginWindow(authUrl, expectedState) {
       title: "Connexion Microsoft",
       autoHideMenuBar: true,
       webPreferences: {
-        partition: "persist:mchub-microsoft-account",
+        partition: LOGIN_PARTITION,
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
@@ -132,7 +136,7 @@ function openLoginWindow(authUrl, expectedState) {
       // vraie panne reseau, `finish` ignore de toute facon les appels une
       // fois la connexion deja resolue.
       if (errorCode === -3) return;
-      finish(reject, new Error("Impossible de contacter Microsoft — vérifie ta connexion internet."));
+      finish(reject, Object.assign(new Error("Impossible de contacter Microsoft — vérifie ta connexion internet."), { code: "network" }));
     });
     win.on("closed", () => finish(reject, new Error("Fenêtre de connexion fermée")));
 
@@ -329,4 +333,16 @@ async function refreshSession(refreshToken) {
   }
 }
 
-module.exports = { signIn, refreshSession, PendingApprovalError };
+// Deconnexion / suppression d'un compte (audit 25/10) : efface les cookies Microsoft de la
+// fenetre de connexion, pour que le compte ne reste pas ouvert sur ce PC. Ne rejette jamais :
+// la deconnexion elle-meme ne doit pas echouer pour ca. Renvoie false si l'effacement a rate.
+async function clearLoginStorage() {
+  try {
+    await session.fromPartition(LOGIN_PARTITION).clearStorageData();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { signIn, refreshSession, clearLoginStorage, PendingApprovalError };

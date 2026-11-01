@@ -7,8 +7,11 @@ import { useRouter } from "next/navigation";
 // sa fenêtre en deux étapes : choix des catégories, puis fichiers prêts (JSON + résumé texte).
 // Les fichiers sont générés par /api/admin/player-export, qui ajoute aussi la note de trace.
 // Monté dans la barre d'actions par SlotPortal (voir players/[id]/page.tsx).
+// Les chiffres de chaque catégorie (une dizaine de lectures D1) ne sont demandés qu'à
+// l'ouverture de la fenêtre, plus à chaque affichage de la fiche (audit quota D1, 23/10) :
+// /api/admin/player-export-counts.
 
-type Category = { key: string; title: string; desc: string; count: number };
+type Category = { key: string; title: string; desc: string; count?: number | null };
 type Result = { jsonName: string; txtName: string; json: string; summary: string };
 
 const TOP_BUTTON: React.CSSProperties = {
@@ -66,8 +69,25 @@ export function PlayerExportButton({
   const [result, setResult] = useState<Result | null>(null);
   const [tab, setTab] = useState<"txt" | "json">("txt");
   const [copied, setCopied] = useState(false);
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const traced = useRef(false);
   const outRef = useRef<HTMLPreElement>(null);
+
+  async function openDialog() {
+    setOpen(true);
+    if (counts) return;
+    try {
+      const response = await fetch("/api/admin/player-export-counts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: playerId }),
+      });
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.counts) setCounts(data.counts as Record<string, number>);
+    } catch {
+      // Chiffres facultatifs : la fenêtre marche sans (« … » à la place).
+    }
+  }
 
   function close() {
     setOpen(false);
@@ -183,7 +203,7 @@ export function PlayerExportButton({
                       <span style={{ fontSize: 13, fontWeight: 500 }}>{c.title}</span>
                       <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{c.desc}</span>
                     </span>
-                    <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{c.count}</span>
+                    <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{counts?.[c.key] ?? c.count ?? "…"}</span>
                   </label>
                 ))}
               </div>
@@ -206,8 +226,8 @@ export function PlayerExportButton({
                   <span>La demande d&apos;accès m&apos;est arrivée depuis cette adresse email. Sinon, laisse le champ vide : les messages d&apos;un tiers ne doivent jamais être envoyés.</span>
                 </label>
               ) : null}
-              <div style={{ display: "flex", gap: 10, padding: "10px 12px", borderRadius: "var(--radius-md)", fontSize: 12.5, lineHeight: 1.5, background: "color-mix(in srgb, #e0c28a 10%, transparent)", border: "1px solid color-mix(in srgb, #e0c28a 35%, transparent)" }}>
-                <i className="ph ph-shield-check" style={{ fontSize: 16, color: "#e0c28a", marginTop: 1 }} />
+              <div style={{ display: "flex", gap: 10, padding: "10px 12px", borderRadius: "var(--radius-md)", fontSize: 12.5, lineHeight: 1.5, background: "color-mix(in srgb, var(--warn) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)" }}>
+                <i className="ph ph-shield-check" style={{ fontSize: 16, color: "var(--warn)", marginTop: 1 }} />
                 <div>
                   <b style={{ fontWeight: 500 }}>Jamais inclus, même si coché</b>
                   <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
@@ -297,7 +317,7 @@ export function PlayerExportButton({
         onClick={() => {
           setStep(1);
           setError(null);
-          setOpen(true);
+          void openDialog();
         }}
         style={TOP_BUTTON}
       >

@@ -9,6 +9,11 @@ const scrypt = promisify(scryptCb) as (password: string, salt: Buffer, keylen: n
 
 export const ADMIN_COOKIE = "omni_admin";
 export const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+// Double authentification (2026-10-15) : un mot de passe correct ne donne plus qu'un jeton
+// "pending", dans un cookie a part et valable 10 minutes, qui ouvre SEULEMENT l'ecran du code
+// (/admin/double-authentification). La session complete ("full") n'est emise qu'apres le code.
+export const ADMIN_PENDING_COOKIE = "omni_admin_2fa";
+export const ADMIN_PENDING_TTL_MS = 10 * 60 * 1000;
 const MIN_SECRET_LENGTH = 32;
 const MIN_PASSWORD_LENGTH = 12;
 
@@ -16,7 +21,10 @@ export type AdminRole = "admin" | "moderator";
 // iat (emission) permet a adminSession.ts de revoquer une session emise avant le dernier
 // changement de mot de passe (adminAccount.passwordChangedAt) — sans ca, un cookie vole restait
 // valide jusqu'a 8h meme apres un changement de mot de passe (audit du 2026-10-10).
-export type AdminSession = { sub: string; role: AdminRole; exp: number; iat: number };
+// stage : "full" = connecte (mot de passe + code), "pending" = mot de passe seul. Un jeton sans
+// stage (emis avant la 2FA) est refuse : tout le monde repasse par le code apres la mise a jour.
+export type AdminSessionStage = "full" | "pending";
+export type AdminSession = { sub: string; role: AdminRole; exp: number; iat: number; stage: AdminSessionStage };
 
 function sessionSecret(): string | null {
   const secret = process.env.ADMIN_SESSION_SECRET;
@@ -52,17 +60,30 @@ export function passwordProblem(password: string): string | null {
   return null;
 }
 
-export function createAdminSession(sub: string, role: AdminRole, nowMs: number = Date.now()): string | null {
+function signSession(session: AdminSession): string | null {
   const secret = sessionSecret();
   if (!secret) return null;
-  const payload = Buffer.from(
-    JSON.stringify({ sub, role, exp: nowMs + ADMIN_SESSION_TTL_MS, iat: nowMs } satisfies AdminSession),
-  ).toString("base64url");
+  const payload = Buffer.from(JSON.stringify(session)).toString("base64url");
   const sig = createHmac("sha256", secret).update(payload).digest("base64url");
   return `${payload}.${sig}`;
 }
 
-export function readAdminSession(token: string | undefined, nowMs: number = Date.now()): AdminSession | null {
+// Session complete : a n'emettre qu'apres verification du code 2FA (ou pour prolonger une
+// session deja complete, comme le fait la route credentials).
+export function createAdminSession(sub: string, role: AdminRole, nowMs: number = Date.now()): string | null {
+  return signSession({ sub, role, exp: nowMs + ADMIN_SESSION_TTL_MS, iat: nowMs, stage: "full" });
+}
+
+// Mot de passe correct, code 2FA pas encore saisi.
+export function createPendingAdminSession(sub: string, role: AdminRole, nowMs: number = Date.now()): string | null {
+  return signSession({ sub, role, exp: nowMs + ADMIN_PENDING_TTL_MS, iat: nowMs, stage: "pending" });
+}
+
+export function readAdminSession(
+  token: string | undefined,
+  nowMs: number = Date.now(),
+  stage: AdminSessionStage = "full",
+): AdminSession | null {
   const secret = sessionSecret();
   if (!secret || !token) return null;
   const [payload, sig] = token.split(".");
@@ -74,6 +95,7 @@ export function readAdminSession(token: string | undefined, nowMs: number = Date
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as AdminSession;
     if (typeof data.sub !== "string" || (data.role !== "admin" && data.role !== "moderator")) return null;
     if (typeof data.exp !== "number" || data.exp <= nowMs) return null;
+    if (data.stage !== stage) return null;
     // Jeton emis avant l'ajout de "iat" (deploiement de ce correctif) : 0 plutot que de le
     // rejeter — force juste une revocation au prochain changement de mot de passe au lieu
     // d'aucune revocation possible, jamais une deconnexion immediate de tout le monde.

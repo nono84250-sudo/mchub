@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { useI18n } from "@/i18n/I18nProvider";
 
 // Bouton "Demander un second avis" (manage/[id]/page.tsx, serveur gelé sans recours en cours) —
 // même convention que ManageActions.tsx : confirmation avant l'action, erreur affichée inline,
@@ -19,9 +21,11 @@ export function AppealRequestButton({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
+  const { t } = useI18n();
 
   async function run() {
-    if (!window.confirm(confirmText)) return;
+    if (!(await confirm({ tone: "ok", title: t("manage.appealConfirmTitle"), body: confirmText, confirmLabel: t("manage.appealConfirmBtn") }))) return;
     setPending(true);
     setError(null);
     try {
@@ -38,6 +42,7 @@ export function AppealRequestButton({
 
   return (
     <div className="flex flex-col gap-1.5">
+      {dialog}
       {error ? <p className="text-xs text-danger">{error}</p> : null}
       <button type="button" disabled={pending} onClick={run} className="btn-secondary text-sm self-start">
         {pending ? "..." : label}

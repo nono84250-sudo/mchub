@@ -142,13 +142,13 @@ function statusChips(s: { published: boolean; isPrivate: boolean; frozen: boolea
   // propriétaire a laissé son interrupteur "published" sur oui — l'admin doit le voir ici,
   // pas croire que le serveur est déjà en ligne.
   const listed = s.frozen
-    ? `<span style="${CHIP}background:color-mix(in srgb, #8ac3e0 16%, transparent);color:#8ac3e0;">Gelé</span>`
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--frozen) 16%, transparent);color:var(--frozen);">Gelé</span>`
     : s.verificationStatus === "pending"
-    ? `<span style="${CHIP}background:color-mix(in srgb, #e0c28a 16%, transparent);color:#e0c28a;">En attente de validation</span>`
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--warn) 16%, transparent);color:var(--warn);">En attente de validation</span>`
     : s.verificationStatus === "rejected"
     ? `<span style="${CHIP}background:color-mix(in srgb, var(--danger) 16%, transparent);color:var(--danger);">Refusé</span>`
     : s.published
-    ? `<span style="${CHIP}background:color-mix(in srgb, #5fd3a0 16%, transparent);color:#5fd3a0;">Publié</span>`
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--success) 16%, transparent);color:var(--success);">Publié</span>`
     : `<span style="${CHIP}background:color-mix(in srgb, var(--color-text) 10%, transparent);color:var(--muted);">Masqué</span>`;
   const priv = s.isPrivate ? `<span style="${CHIP}background:color-mix(in srgb, var(--color-accent) 18%, transparent);color:var(--color-accent-100);">Privé</span>` : "";
   return listed + priv;
@@ -333,7 +333,9 @@ function pagerHtml2(action: string, f: PlayerFilters, from: number, to: number, 
 // 2FA) sont retires, pas marques (2026-10-14 : rien de factice en production).
 export type PlayerServerRow = { name: string; slug: string; address: string; published: boolean; isPrivate: boolean; frozen: boolean; openReports: number };
 export type PlayerWarningRow = { id: string; reason: string; createdBy: string; createdAt: string };
-export type AdminNoteRow = { id: string; text: string; createdBy: string; createdAt: string };
+// kind : "note" (ecrite par le staff) ou "export" (trace automatique d'un export des donnees,
+// verrouillee : personne ne peut la supprimer, voir api/admin/note-delete).
+export type AdminNoteRow = { id: string; text: string; createdBy: string; createdAt: string; kind: string };
 
 // Abonnements : pas encore construits (tout est gratuit). La carte "Subscription" de la fiche
 // joueur reste dans la maquette mais n'est affichee qu'une fois ce drapeau active.
@@ -359,6 +361,8 @@ export function playerDetailHtml(data: {
   lockedAt: string | null;
   warnings: PlayerWarningRow[];
   notes: AdminNoteRow[];
+  canDeleteNotes: boolean;
+  noteDeleted: boolean;
 }): string {
   let html = SCREENS["player-detail"];
 
@@ -483,7 +487,7 @@ function playerServersSectionHtml(data: {
 }): string {
   const row = (s: PlayerServerRow) => {
     const status = s.frozen
-      ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, #8ac3e0 16%, transparent);color:#8ac3e0;">Gelé</span>`
+      ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--frozen) 16%, transparent);color:var(--frozen);">Gelé</span>`
       : s.published
         ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Publié</span>`
         : `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:var(--raised);color:var(--muted);border:1px solid var(--color-divider);">Masqué</span>`;
@@ -519,13 +523,13 @@ function playerServersSectionHtml(data: {
 // Pop-up « Message » depuis la fiche joueur : pas de type "Gel" ici (rien ne gele un compte
 // joueur aujourd'hui), contrairement au message depuis une fiche serveur.
 function playerMessageHtml(data: { id: string; name: string }): string {
-  const COLORS = `{info:'#9184d9',warning:'#e8c547',error:'#e5484d'}`;
+  const COLORS = `{info:'var(--accent)',warning:'var(--warn)',error:'var(--danger)'}`;
   const field = "display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);";
   const locked = "display:flex;align-items:center;height:36px;padding:0 10px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:var(--radius-md);font-size:13.5px;color:var(--color-text);";
   return (
     `<button type="button" popovertarget="player-message-${escapeHtml(data.id)}" style="${TOP_BUTTON}"><i class="ph ph-chat-circle" style="font-size:14.5px;"></i>Message</button>` +
     `<div id="player-message-${escapeHtml(data.id)}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:460px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
-    `<div data-stripe style="height:4px;background:#9184d9;"></div>` +
+    `<div data-stripe style="height:4px;background:var(--accent);"></div>` +
     `<form method="post" action="/api/admin/players/${escapeHtml(data.id)}/message" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
     `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Message à ${escapeHtml(data.name)}</h2>` +
     `<label style="${field}">Type de message<select name="kind" class="input" style="height:36px;" onchange="this.form.querySelector('[data-stripe]').style.background=${COLORS}[this.value]"><option value="info">Information</option><option value="warning">Avertissement</option><option value="error">Erreur</option></select></label>` +
@@ -583,7 +587,7 @@ function lockAccountPopoverHtml(data: { id: string; name: string }, kind: "freez
   const anchor = `${kind}-account-${id}`;
   const label = isLock ? "Verrouiller le compte" : "Geler le compte";
   const icon = isLock ? "ph-lock-simple" : "ph-snowflake";
-  const color = isLock ? "var(--danger)" : "#8ac3e0";
+  const color = isLock ? "var(--danger)" : "var(--frozen)";
   const buttonStyle = isLock
     ? `border:1px solid color-mix(in srgb, var(--danger) 55%, transparent);color:var(--danger);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;`
     : `${TOP_BUTTON}color:${color};border-color:${color};`;
@@ -609,15 +613,15 @@ function freezeOrLockAccountHtml(data: { id: string; name: string }): string {
 function unlockAccountHtml(data: { id: string; name: string }): string {
   const id = escapeHtml(data.id);
   return (
-    `<button type="button" popovertarget="unlock-account-${id}" style="${TOP_BUTTON}color:#8ac3e0;border-color:#8ac3e0;"><i class="ph ph-lock-simple-open" style="font-size:14.5px;"></i>Déverrouiller le compte</button>` +
+    `<button type="button" popovertarget="unlock-account-${id}" style="${TOP_BUTTON}color:var(--frozen);border-color:var(--frozen);"><i class="ph ph-lock-simple-open" style="font-size:14.5px;"></i>Déverrouiller le compte</button>` +
     `<div id="unlock-account-${id}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:440px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
-    `<div style="height:4px;background:#8ac3e0;"></div>` +
+    `<div style="height:4px;background:var(--frozen);"></div>` +
     `<form method="post" action="/api/admin/players/${id}/unlock" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
     `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Déverrouiller ${escapeHtml(data.name)} ?</h2>` +
     `<p style="margin:0;font-size:13px;color:var(--muted);line-height:1.55;">Le compte pourra de nouveau se connecter au launcher.</p>` +
     `<div style="display:flex;gap:10px;justify-content:flex-end;">` +
     `<button type="button" popovertarget="unlock-account-${id}" popovertargetaction="hide" style="${CANCEL}">Annuler</button>` +
-    `<button type="submit" style="${CONFIRM}color:#8ac3e0;border-color:#8ac3e0;">Déverrouiller</button></div>` +
+    `<button type="submit" style="${CONFIRM}color:var(--frozen);border-color:var(--frozen);">Déverrouiller</button></div>` +
     `</form></div>`
   );
 }
@@ -629,7 +633,7 @@ function addNoteHtml(data: { id: string; name: string }): string {
   return (
     `<button type="button" popovertarget="add-note-${id}" style="border:1px solid var(--color-divider);color:var(--color-text);background:transparent;padding:6px 12px;border-radius:var(--radius-md);font:500 12.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;"><i class="ph ph-plus" style="font-size:13.5px;"></i>Add note</button>` +
     `<div id="add-note-${id}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:440px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
-    `<div style="height:4px;background:#9184d9;"></div>` +
+    `<div style="height:4px;background:var(--accent);"></div>` +
     `<form method="post" action="/api/admin/players/${id}/notes" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
     `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Note sur ${escapeHtml(data.name)}</h2>` +
     `<label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);">Note interne (pas affichée au joueur ; peut lui être communiquée s'il demande ses données)<textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:90px;font-size:13.5px;"></textarea></label>` +
@@ -640,16 +644,47 @@ function addNoteHtml(data: { id: string; name: string }): string {
   );
 }
 
-function noteRowHtml(note: AdminNoteRow): string {
+// Note du staff. Trace d'export : cadenas, jamais de bouton. Autres notes : bouton « Supprimer »
+// avec confirmation, seulement pour le proprietaire du site (demande de Rushi, 23/10).
+function noteRowHtml(note: AdminNoteRow, canDelete: boolean): string {
   const date = new Date(note.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
-  return `<div style="min-height:70px;padding:10px 12px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:var(--radius-md);font-size:13.5px;line-height:1.6;text-wrap:pretty;">${escapeHtml(note.text)} — ${escapeHtml(note.createdBy)}, ${date}</div>`;
+  const trace = note.kind === "export";
+  const id = escapeHtml(note.id);
+  const lockIcon = `<i class="ph ph-lock-simple" style="font-size:13px;"></i>`;
+  const side = trace
+    ? `<span title="Note créée automatiquement lors d'un export des données. Personne ne peut la supprimer, même le propriétaire." style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;font-size:11.5px;font-weight:500;color:#e8c547;white-space:nowrap;padding:3px 8px;border-radius:999px;border:1px solid color-mix(in srgb, #e8c547 40%, transparent);">${lockIcon}Trace verrouillée</span>`
+    : canDelete
+      ? `<button type="button" popovertarget="delete-note-${id}" style="border:1px solid transparent;color:var(--muted);background:transparent;padding:4px 10px;border-radius:var(--radius-md);font:500 12.5px var(--font-heading);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0;"><i class="ph ph-trash" style="font-size:13.5px;"></i>Supprimer</button>` +
+        `<div id="delete-note-${id}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:440px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
+        `<div style="height:4px;background:var(--danger);"></div>` +
+        `<form method="post" action="/api/admin/note-delete" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
+        `<input type="hidden" name="id" value="${id}">` +
+        `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Supprimer cette note ?</h2>` +
+        `<p style="margin:0;font-size:13px;color:var(--muted);line-height:1.55;">Elle sera supprimée pour de bon, personne ne pourra la récupérer.</p>` +
+        `<div style="display:flex;gap:10px;justify-content:flex-end;">` +
+        `<button type="button" popovertarget="delete-note-${id}" popovertargetaction="hide" style="${CANCEL}">Annuler</button>` +
+        `<button type="submit" style="${CONFIRM}color:var(--danger);border-color:var(--danger);">Oui, supprimer</button></div>` +
+        `</form></div>`
+      : "";
+  const box = trace
+    ? "border:1px solid color-mix(in srgb, #e8c547 45%, transparent);background:color-mix(in srgb, #e8c547 8%, var(--color-bg));"
+    : "border:1px solid var(--color-divider);background:var(--color-bg);";
+  return (
+    `<div style="min-height:70px;padding:10px 12px;${box}border-radius:var(--radius-md);font-size:13.5px;line-height:1.6;display:flex;gap:12px;align-items:flex-start;">` +
+    `<div style="flex:1;min-width:0;text-wrap:pretty;overflow-wrap:anywhere;">${escapeHtml(note.text)} — ${escapeHtml(note.createdBy)}, ${date}</div>` +
+    side +
+    `</div>`
+  );
 }
 
-function playerNotesSectionHtml(data: { id: string; name: string; notes: AdminNoteRow[] }): string {
+function playerNotesSectionHtml(data: { id: string; name: string; notes: AdminNoteRow[]; canDeleteNotes: boolean; noteDeleted: boolean }): string {
+  const done = data.noteDeleted
+    ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Note supprimée.</div>`
+    : "";
   const body = data.notes.length
-    ? `<div style="display:flex;flex-direction:column;gap:10px;">${data.notes.map(noteRowHtml).join("")}</div>`
+    ? `<div style="display:flex;flex-direction:column;gap:10px;">${data.notes.map((n) => noteRowHtml(n, data.canDeleteNotes)).join("")}</div>`
     : `<p style="margin:0;font-size:13px;color:var(--muted);">Aucune note.</p>`;
-  return body + addNoteHtml(data);
+  return done + body + addNoteHtml(data);
 }
 
 // Composer de message diffuse — portee reduite par rapport a la maquette (voir la route
@@ -657,71 +692,137 @@ function playerNotesSectionHtml(data: { id: string; name: string; notes: AdminNo
 // audiences (Tout le monde, Proprietaires de serveur — "Un joueur" existe deja depuis la fiche
 // joueur, pas la peine de le dupliquer ici), envoi immediat, pas de brouillon ni de
 // programmation.
+// Onglets « Messages » / « Actualités » (25/10 : les News sont rangees dans Notifications, demande
+// de Rushi). Liens simples : chaque onglet est sa propre page, sans JavaScript.
+function notificationsTabsHtml(active: "messages" | "news", newsCount: number): string {
+  const tab = (href: string, label: string, on: boolean, count: number | null) =>
+    `<a href="${href}" style="display:inline-flex;align-items:center;gap:8px;padding:9px 12px;font-size:13.5px;text-decoration:none;border-bottom:2px solid ${on ? "var(--color-accent)" : "transparent"};color:${on ? "var(--color-text)" : "var(--muted)"};">${label}` +
+    (count !== null ? `<span style="font-size:11px;padding:1px 7px;border-radius:999px;background:var(--raised);color:var(--muted);">${fmt(count)}</span>` : "") +
+    `</a>`;
+  return (
+    `<div style="display:flex;gap:4px;border-bottom:1px solid var(--color-divider);">` +
+    tab("/admin/notifications", "Messages", active === "messages", null) +
+    tab("/admin/notifications?tab=news", "Actualités", active === "news", newsCount) +
+    `</div>`
+  );
+}
+
+const NOTIFICATIONS_SUBTITLE = "Send a message to players, server owners or a single account.</p></div>";
+
+function notificationsHeader(html: string, active: "messages" | "news", newsCount: number): string {
+  html = replaceOnce(html, ">Notifications / New message</span>", ">Notifications</span>");
+  const at = html.indexOf(NOTIFICATIONS_SUBTITLE);
+  if (at < 0) return html;
+  const headerStart = html.lastIndexOf('<div style="display:flex;align-items:flex-end;', at);
+  const headerEnd = balancedEnd(html, headerStart, "div");
+  if (headerStart < 0 || headerEnd < 0) return html;
+  const header = html
+    .slice(headerStart, headerEnd)
+    .replace("Send a message to players, server owners or a single account.", "Messages aux joueurs, maintenance et articles d'actualité.");
+  return html.slice(0, headerStart) + header + notificationsTabsHtml(active, newsCount) + html.slice(headerEnd);
+}
+
+// Composer de message diffuse — portee reduite par rapport a la maquette (voir la route
+// /api/admin/notifications/send) : un seul canal reel (boite de reception du launcher), deux
+// audiences (Tout le monde, Proprietaires de serveur — "Un joueur" existe deja depuis la fiche
+// joueur, pas la peine de le dupliquer ici).
+// 25/10 (demande de Rushi) : plus de bloc « Activer la maintenance » a part. Type Maintenance =
+// systeme + debut (maintenant ou programme) + fin (date et heure, ou pas de fin). Seuls « Tout »
+// et « Launcher » bloquent le launcher avec un code ; le code s'affiche dans « Maintenance » une
+// fois qu'elle a commence.
 export function notificationsHtml(data: {
   sentCount: number | null;
   scheduledConfirmed: boolean;
   activeBanner: { type: string; text: string } | null;
-  maintenance: { active: boolean; code: string; message: string } | null;
+  maintenance: { code: string; message: string; system: string; startsAt: string; endsAt: string | null; phase: "scheduled" | "active" | "ended" } | null;
   pendingScheduled: { id: string; type: string; audience: string; text: string; scheduledAt: string; blockLauncher: boolean }[];
+  newsCount: number;
 }): string {
-  let html = SCREENS.notifications;
-  html = replaceOnce(html, ">Notifications / New message</span>", ">Notifications</span>");
+  let html = notificationsHeader(SCREENS.notifications, "messages", data.newsCount);
 
-  const sentBanner = data.sentCount !== null
-    ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Message envoyé à ${fmt(data.sentCount)} compte(s).</div>`
-    : data.scheduledConfirmed
-      ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Message programmé.</div>`
-      : "";
+  const ok = (text: string) =>
+    `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>${text}</div>`;
+  const sentBanner = data.sentCount !== null ? ok(`Message envoyé à ${fmt(data.sentCount)} compte(s).`) : data.scheduledConfirmed ? ok("Message programmé.") : "";
   const activeBannerNotice = data.activeBanner
     ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;">` +
       `<i class="ph ph-browser" style="font-size:16px;color:var(--muted)"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Bannière active : ${escapeHtml(data.activeBanner.text)}</span>` +
       `<form method="post" action="/api/admin/notifications/banner/clear"><button type="submit" style="${BUTTON}">Retirer</button></form></div>`
     : "";
 
-  // Mode maintenance du launcher : bloque l'ecran d'accueil pour tout le monde, sauf code.
-  const maintenanceBox = data.maintenance?.active
-    ? `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid #e8c547;background:color-mix(in srgb, #e8c547 8%, transparent);font-size:13px;">` +
-      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:#e8c547"></i><strong>Maintenance du launcher active</strong></div>` +
-      `<span style="color:var(--muted);">${escapeHtml(data.maintenance.message)}</span>` +
-      `<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--muted);">Code d'accès :</span><code style="font:600 16px ui-monospace,Menlo,monospace;letter-spacing:.08em;padding:4px 10px;border-radius:var(--radius-md);background:var(--color-bg);border:1px solid var(--color-divider);">${escapeHtml(data.maintenance.code)}</code></div>` +
-      `<form method="post" action="/api/admin/notifications/maintenance/clear"><button type="submit" style="${BUTTON}">Désactiver la maintenance</button></form>` +
-      `</div>`
-    : `<form method="post" action="/api/admin/notifications/maintenance/activate" style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;">` +
-      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:var(--muted)"></i><strong>Mode maintenance du launcher</strong></div>` +
-      `<span style="color:var(--muted);">Bloque l'écran d'accueil du launcher pour tout le monde, sauf qui a le code généré ici.</span>` +
-      `<textarea class="input" name="message" required minlength="3" maxlength="500" placeholder="Message affiché pendant la maintenance" style="min-height:60px;font-size:13px;"></textarea>` +
-      `<button type="submit" style="${BUTTON}width:fit-content;">Activer la maintenance</button>` +
-      `</form>`;
-
   const field = "display:flex;flex-direction:column;gap:6px;min-width:0;";
   const label = "font-size:12px;color:var(--muted)";
+  const box = "display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);";
+  const systems = ["Tout", "Launcher", "Site", "CurseForge", "Modrinth", "FTB"];
+  // Bascule sans rechargement entre « message » et « maintenance » (memes attributs inline que
+  // ownerMessageHtml) : montre les champs de maintenance et renomme les boutons.
+  const onType =
+    "var m=this.value==='maintenance',f=this.form;f.querySelectorAll('[data-maint]').forEach(function(e){e.hidden=!m});" +
+    "f.querySelector('[data-now]').textContent=m?'Commencer maintenant':'Envoyer maintenant';" +
+    "f.querySelectorAll('[data-plain]').forEach(function(e){e.hidden=m});" +
+    "f.querySelector('[data-text-label]').textContent=m?'Message en plus (facultatif)':'Message'";
+  const onEnd = "this.form.querySelector('[data-end-row]').hidden=this.value!=='end'";
+  const maintenanceFields =
+    `<div data-maint hidden style="display:flex;flex-direction:column;gap:16px;">` +
+    `<label style="${field}"><span style="${label}">Système concerné</span><select name="system" class="input" style="height:36px;">` +
+    systems.map((s) => `<option value="${s}">${s}${s === "Tout" || s === "Launcher" ? " · bloque le launcher" : ""}</option>`).join("") +
+    `</select></label>` +
+    `<div style="${box}"><span style="${label}">Début de la maintenance (heure de Belgique) — seulement si tu la programmes</span>` +
+    `<div style="display:flex;gap:10px;"><input type="date" name="startDate" class="input" style="height:36px;flex:1;"><input type="time" name="startTime" class="input" style="height:36px;flex:1;"></div>` +
+    `<span style="font-size:12px;color:var(--muted);">« Commencer maintenant » ignore ces champs.</span></div>` +
+    `<div style="${box}"><span style="${label}">Fin de la maintenance</span>` +
+    `<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="radio" name="endMode" value="end" onchange="${onEnd}" style="accent-color:var(--color-accent);margin:0;">Jusqu'à une date et une heure (débloque tout seul)</label>` +
+    `<div data-end-row hidden style="display:flex;gap:10px;"><input type="date" name="endDate" class="input" style="height:36px;flex:1;"><input type="time" name="endTime" class="input" style="height:36px;flex:1;"></div>` +
+    `<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="radio" name="endMode" value="none" checked onchange="${onEnd}" style="accent-color:var(--color-accent);margin:0;">Pas de fin prévue (durée indéterminée, tu la termines toi-même)</label>` +
+    `</div>` +
+    `<div style="${box}font-size:13px;color:var(--muted);">` +
+    `<span><strong style="color:var(--color-text);">Tout</strong> et <strong style="color:var(--color-text);">Launcher</strong> bloquent le launcher : écran « Maintenance en cours » pour tout le monde (même ceux déjà connectés, dans la minute), sauf avec le code. Le code s'affiche à droite quand la maintenance commence.</span>` +
+    `<span>Les autres systèmes laissent le launcher ouvert : il affiche un bandeau « Perturbations ».</span>` +
+    `<span>Les joueurs reçoivent tout de suite : « ⚠ Maintenance … le 27/10 à 15h00. Durée prévue : 3 h. » (ou « Durée indéterminée »).</span></div>` +
+    `</div>`;
+
   const body =
     sentBanner +
     activeBannerNotice +
-    maintenanceBox +
     `<form method="post" action="/api/admin/notifications/send" style="display:flex;flex-direction:column;gap:16px;">` +
-    `<label style="${field}"><span style="${label}">Type</span><select name="type" class="input" style="height:36px;" required>` +
+    `<label style="${field}"><span style="${label}">Type</span><select name="type" class="input" style="height:36px;" required onchange="${onType}">` +
     `<option value="announcement">Annonce</option><option value="maintenance">Maintenance</option><option value="alert">Alerte</option><option value="promotion">Promotion</option></select></label>` +
     `<label style="${field}"><span style="${label}">Audience</span><select name="audience" class="input" style="height:36px;" required>` +
     `<option value="everyone">Tout le monde</option><option value="owners">Propriétaires de serveur</option></select></label>` +
-    `<label style="${field}"><span style="${label}">Système concerné (si Maintenance)</span><select name="system" class="input" style="height:36px;">` +
-    `<option value="">—</option><option value="Site">Site</option><option value="Launcher">Launcher</option><option value="CurseForge">CurseForge</option><option value="Modrinth">Modrinth</option><option value="Tout">Tout</option></select></label>` +
-    `<label style="${field}"><span style="${label}">Message</span><textarea class="input" name="text" required minlength="3" maxlength="1000" style="min-height:110px;font-size:13.5px;"></textarea></label>` +
+    maintenanceFields +
+    `<label style="${field}"><span style="${label}" data-text-label>Message</span><textarea class="input" name="text" maxlength="1000" style="min-height:110px;font-size:13.5px;"></textarea></label>` +
     `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;"><input type="checkbox" name="banner" style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Aussi afficher en bannière sur le site (remplace la bannière active)</label>` +
-    `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;"><input type="checkbox" name="blockLauncher" style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Activer le mode maintenance du launcher à cette heure (si Type = Maintenance)</label>` +
-    `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);">` +
+    `<div data-plain style="${box}">` +
     `<span style="${label}">Programmer (heure de Belgique, la tienne) — laisser vide pour un envoi immédiat</span>` +
     `<div style="display:flex;gap:10px;">` +
     `<input type="date" name="scheduledDate" class="input" style="height:36px;flex:1;">` +
     `<input type="time" name="scheduledTime" class="input" style="height:36px;flex:1;">` +
     `</div></div>` +
     `<div style="display:flex;justify-content:flex-end;gap:10px;">` +
-    `<button type="submit" name="when" value="now" style="${CONFIRM}">Envoyer maintenant</button>` +
+    `<button type="submit" name="when" value="now" data-now style="${CONFIRM}">Envoyer maintenant</button>` +
     `<button type="submit" name="when" value="schedule" style="${BUTTON}">Programmer</button>` +
     `</div>` +
     `</form>`;
 
   html = replaceSectionBody(html, ">Compose</h2>", body);
+
+  // Colonne de droite, 1er bloc : la maintenance (a venir ou en cours) avec son code.
+  const m = data.maintenance && data.maintenance.phase !== "ended" ? data.maintenance : null;
+  const blocks = m ? m.system === "Tout" || m.system === "Launcher" : false;
+  const maintenanceBody = m
+    ? `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--radius-md);border:1px solid ${m.phase === "active" ? "var(--warn)" : "var(--color-divider)"};background:${m.phase === "active" ? "color-mix(in srgb, var(--warn) 8%, transparent)" : "var(--color-bg)"};font-size:13px;">` +
+      `<div style="display:flex;align-items:center;gap:8px;"><i class="ph ph-wrench" style="font-size:16px;color:${m.phase === "active" ? "var(--warn)" : "var(--muted)"}"></i><strong>${m.phase === "active" ? "En cours" : "Programmée"} · ${escapeHtml(m.system)}${blocks ? " · bloque le launcher" : ""}</strong></div>` +
+      `<span style="color:var(--muted);">${escapeHtml(m.message)}</span>` +
+      `<span style="color:var(--muted);">Début : ${formatAdminTime(m.startsAt)}<br>Fin : ${m.endsAt ? formatAdminTime(m.endsAt) : "pas de fin prévue"}</span>` +
+      (blocks
+        ? m.phase === "active"
+          ? `<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--muted);">Code d'accès :</span><code style="font:600 16px ui-monospace,Menlo,monospace;letter-spacing:.08em;padding:4px 10px;border-radius:var(--radius-md);background:var(--color-bg);border:1px solid var(--color-divider);">${escapeHtml(m.code)}</code></div>`
+          : `<span style="color:var(--muted);">Le code d'accès s'affichera ici au début.</span>`
+        : "") +
+      `<form method="post" action="/api/admin/notifications/maintenance/clear"><button type="submit" style="${BUTTON}">${m.phase === "active" ? "Terminer la maintenance" : "Annuler la maintenance"}</button></form>` +
+      `</div>`
+    : `<span style="color:var(--muted);font-size:13px;">Aucune maintenance en cours ou programmée.</span>`;
+  html = replaceSectionBody(html, ">Launcher preview</h2>", maintenanceBody);
+  html = replaceOnce(html, ">Launcher preview</h2>", ">Maintenance</h2>");
 
   const TYPE_LABELS: Record<string, string> = { announcement: "Annonce", maintenance: "Maintenance", alert: "Alerte", promotion: "Promotion" };
   const AUDIENCE_LABELS: Record<string, string> = { everyone: "Tout le monde", owners: "Propriétaires de serveur" };
@@ -740,9 +841,8 @@ export function notificationsHtml(data: {
         )
         .join("")
     : `<span style="color:var(--muted);font-size:13px;">Aucun message programmé.</span>`;
-  html = replaceSectionBody(html, ">Launcher preview</h2>", pendingBody);
-  html = replaceOnce(html, ">Launcher preview</h2>", ">Programmés</h2>");
-  html = markSectionNotBuilt(html, ">Recent</h2>", "nb");
+  html = replaceOnce(html, '>Recent</h2><div style="margin-left:auto;display:flex;align-items:center;gap:8px;"><a href="#" style="font-size:12.5px;">History</a></div>', '>Programmés</h2><div style="margin-left:auto;display:flex;align-items:center;gap:8px;"></div>');
+  html = replaceSectionBody(html, ">Programmés</h2>", pendingBody);
   return html;
 }
 
@@ -752,13 +852,13 @@ const TOP_BUTTON =
 // Pop-up « Message au propriétaire » (native, sans script : popover). Depuis la fiche, le serveur
 // est fixe ; si le serveur est gelé, le type est fixe aussi (Gel). Sinon le type se choisit.
 function ownerMessageHtml(data: { id: string; slug: string; name: string; frozen: boolean }): string {
-  const COLORS = `{info:'#9184d9',warning:'#e8c547',error:'#e5484d'}`;
+  const COLORS = `{info:'var(--accent)',warning:'var(--warn)',error:'var(--danger)'}`;
   const field = "display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);";
   const locked = "display:flex;align-items:center;height:36px;padding:0 10px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:var(--radius-md);font-size:13.5px;color:var(--color-text);";
   const typeField = data.frozen
     ? `<input type="hidden" name="kind" value="gel"><div style="${field}">Type de message<span style="${locked}">Gel</span></div>`
     : `<label style="${field}">Type de message<select name="kind" class="input" style="height:36px;" onchange="this.form.querySelector('[data-stripe]').style.background=${COLORS}[this.value]"><option value="info">Information</option><option value="warning">Avertissement</option><option value="error">Erreur</option></select></label>`;
-  const stripe = data.frozen ? "#8ac3e0" : "#9184d9";
+  const stripe = data.frozen ? "var(--frozen)" : "var(--accent)";
   return (
     `<button type="button" popovertarget="owner-message-${escapeHtml(data.id)}" style="${TOP_BUTTON}">Message au propriétaire</button>` +
     `<div id="owner-message-${escapeHtml(data.id)}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:460px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
@@ -837,8 +937,8 @@ export function serverDetailHtml(data: {
     const when = data.frozenAt ? escapeHtml(new Date(data.frozenAt).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })) : "";
     const title = blindAppealReview ? `Gelé le ${when}` : `Gelé par ${escapeHtml(data.frozenBy ?? "—")} · ${when}`;
     const banner =
-      `<div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb, #8ac3e0 35%, transparent);background:color-mix(in srgb, #8ac3e0 7%, transparent);">` +
-      `<i class="ph ph-snowflake" style="font-size:18px;color:#8ac3e0;margin-top:1px"></i>` +
+      `<div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb, var(--frozen) 35%, transparent);background:color-mix(in srgb, var(--frozen) 7%, transparent);">` +
+      `<i class="ph ph-snowflake" style="font-size:18px;color:var(--frozen);margin-top:1px"></i>` +
       `<div style="display:flex;flex-direction:column;gap:3px;font-size:13px;"><span style="font-weight:500;">${title}</span>` +
       `<span style="color:var(--muted);line-height:1.5;">Masqué de l'annuaire et de la recherche. Les connexions sont bloquées dans le launcher, y compris depuis les favoris et raccourcis. Motif : ${escapeHtml(data.frozenReason ?? "")}</span></div></div>` +
       (appealPending ? appealReviewHtml({ id: data.id, blindReview: blindAppealReview, hasAssignedAdmin: data.appealAssignedAdminId !== null, history: data.appealHistory }) : "");
@@ -851,7 +951,7 @@ export function serverDetailHtml(data: {
     const barEnd = balancedEnd(html, barStart, "div");
     const freeze = frozen
       ? unfreezeHtml({ id: data.id, name: data.name })
-      : `<a href="/admin/servers/${escapeHtml(data.slug)}/geler" style="${TOP_BUTTON}color:#8ac3e0;border-color:#8ac3e0;">Geler le serveur</a>`;
+      : `<a href="/admin/servers/${escapeHtml(data.slug)}/geler" style="${TOP_BUTTON}color:var(--frozen);border-color:var(--frozen);">Geler le serveur</a>`;
     const newBar =
       `<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">` +
       `<a href="/servers/${escapeHtml(data.slug)}" style="${TOP_BUTTON}">Voir la fiche publique</a>` +
@@ -1268,7 +1368,7 @@ function appealReviewHtml(data: { id: string; blindReview: boolean; hasAssignedA
     `<div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--muted);">${historyRows}</div>` +
     `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
     `<form method="post" action="/api/admin/servers/${id}/appeal-confirm"><button type="submit" style="border:1px solid transparent;color:var(--danger);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;">Confirmer le gel</button></form>` +
-    `<form method="post" action="/api/admin/servers/${id}/unfreeze"><input type="hidden" name="notify" value="on" /><button type="submit" style="${CONFIRM}color:#8ac3e0;border-color:#8ac3e0;">Annuler le gel</button></form>` +
+    `<form method="post" action="/api/admin/servers/${id}/unfreeze"><input type="hidden" name="notify" value="on" /><button type="submit" style="${CONFIRM}color:var(--frozen);border-color:var(--frozen);">Annuler le gel</button></form>` +
     `</div></div>`
   );
 }
@@ -1278,16 +1378,16 @@ function appealReviewHtml(data: { id: string; blindReview: boolean; hasAssignedA
 function unfreezeHtml(data: { id: string; name: string }): string {
   const id = escapeHtml(data.id);
   return (
-    `<button type="button" popovertarget="unfreeze-${id}" style="${TOP_BUTTON}color:#8ac3e0;border-color:#8ac3e0;">Dégeler le serveur</button>` +
+    `<button type="button" popovertarget="unfreeze-${id}" style="${TOP_BUTTON}color:var(--frozen);border-color:var(--frozen);">Dégeler le serveur</button>` +
     `<div id="unfreeze-${id}" popover style="position:fixed;inset:0;margin:auto;height:fit-content;width:440px;max-width:calc(100vw - 32px);padding:0;border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);overflow:hidden;">` +
-    `<div style="height:4px;background:#8ac3e0;"></div>` +
+    `<div style="height:4px;background:var(--frozen);"></div>` +
     `<form method="post" action="/api/admin/servers/${id}/unfreeze" style="display:flex;flex-direction:column;gap:14px;padding:22px 24px;">` +
     `<h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:18px;">Dégeler ${escapeHtml(data.name)} ?</h2>` +
     `<p style="margin:0;font-size:13px;color:var(--muted);line-height:1.55;">Le serveur revient dans l'annuaire et les joueurs peuvent à nouveau le rejoindre.</p>` +
     `<label style="display:flex;align-items:center;gap:10px;font-size:13.5px;"><input type="checkbox" name="notify" value="on" checked />Envoyer un message au propriétaire</label>` +
     `<div style="display:flex;gap:10px;justify-content:flex-end;">` +
     `<button type="button" popovertarget="unfreeze-${id}" popovertargetaction="hide" style="${CANCEL}">Annuler</button>` +
-    `<button type="submit" style="${CONFIRM}color:#8ac3e0;border-color:#8ac3e0;">Dégeler le serveur</button></div>` +
+    `<button type="submit" style="${CONFIRM}color:var(--frozen);border-color:var(--frozen);">Dégeler le serveur</button></div>` +
     `</form></div>`
   );
 }
@@ -1368,24 +1468,31 @@ function newsRowHtml(n: NewsRow): string {
     `<div style="min-width:0;display:flex;gap:10px;align-items:center;">` +
     `<a href="/admin/news/${escapeHtml(n.id)}" style="color:var(--color-accent);text-decoration:none;font-size:12.5px;">Modifier</a>` +
     `<form method="post" action="/api/admin/news/${escapeHtml(n.id)}/${n.published ? "unpublish" : "publish"}"><button type="submit" style="border:none;background:transparent;color:var(--muted);font-size:12.5px;cursor:pointer;padding:0;">${n.published ? "Dépublier" : "Publier"}</button></form>` +
-    `<form method="post" action="/api/admin/news/${escapeHtml(n.id)}/delete" onsubmit="return confirm('Supprimer cet article ?')"><button type="submit" style="border:none;background:transparent;color:var(--danger);font-size:12.5px;cursor:pointer;padding:0;">Supprimer</button></form>` +
+    `<form method="post" action="/api/admin/news/${escapeHtml(n.id)}/delete" data-confirm-title="Supprimer cet article ?" data-confirm-body="L'article disparaîtra du site et du launcher. On ne pourra pas revenir en arrière." data-confirm-btn="Supprimer l'article" data-confirm-tone="danger"><button type="submit" style="border:none;background:transparent;color:var(--danger);font-size:12.5px;cursor:pointer;padding:0;">Supprimer</button></form>` +
     `</div></div>`
   );
 }
 
-export function newsHtml(data: { rows: NewsRow[] }): string {
-  const chrome = SCREENS.news;
+// 25/10 : affichee comme onglet « Actualités » du panneau Notifications (meme menu, meme en-tete),
+// plus comme panneau News a part.
+export function newsHtml(data: { rows: NewsRow[]; saved?: boolean }): string {
+  const chrome = replaceOnce(SCREENS.notifications, ">Notifications / New message</span>", ">Notifications / Actualités</span>");
   const mainStart = chrome.indexOf("<main");
   const html = chrome.slice(0, mainStart);
+  const title =
+    `<div style="display:flex;flex-direction:column;gap:4px;min-width:0;"><h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:24px;letter-spacing:-.01em;">Notifications</h1>` +
+    `<p style="margin:0;font-size:13.5px;color:var(--muted);">Messages aux joueurs, maintenance et articles d'actualité.</p></div>`;
   const header =
-    `<div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;">` +
-    `<div style="display:flex;flex-direction:column;gap:4px;min-width:0;"><h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:24px;letter-spacing:-.01em;">News</h1>` +
-    `<p style="margin:0;font-size:13.5px;color:var(--muted);">Articles affichés sur la page « Actualités » du tableau de bord, une fois publiés.</p></div>` +
+    `<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">` +
+    `<p style="margin:0;font-size:13.5px;color:var(--muted);">Articles affichés sur la page « Actualités » du tableau de bord, une fois publiés.</p>` +
     `<div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><a href="/admin/news/nouveau" style="border:1px solid var(--color-accent);color:var(--color-accent);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex-shrink:0;text-decoration:none;"><i class="ph ph-plus" style="font-size:14.5px;"></i>Nouvel article</a></div></div>`;
+  const saved = data.saved
+    ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Article enregistré.</div>`
+    : "";
   const list = data.rows.length
-    ? `<section style="display:flex;flex-direction:column;gap:16px;padding:12px 8px 4px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;"><div style="overflow-x:auto;"><div style="display:grid;min-width:640px;grid-template-columns:minmax(0,2.4fr) 120px 110px 170px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Titre</span><span>Statut</span><span>Date</span><span>Actions</span></div>${data.rows.map(newsRowHtml).join("")}</div></div></section>`
-    : `<section style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:40px 22px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;min-height:160px;"><i class="ph ph-newspaper" style="font-size:22px;color:var(--muted2);"></i><p style="margin:0;font-size:13px;color:var(--muted);">Aucun article pour le moment.</p></section>`;
-  return html + `<main style="flex:1;min-width:0;padding:28px 32px 40px;display:flex;flex-direction:column;gap:22px;">${header}${list}</main></div></div>`;
+    ? `<section style="display:flex;flex-direction:column;gap:16px;padding:12px 8px 4px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;"><div style="overflow-x:auto;"><div style="display:grid;min-width:640px;grid-template-columns:minmax(0,2.4fr) 120px 110px 170px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Titre</span><span>Statut</span><span>Date</span><span>Actions</span></div>${data.rows.map(newsRowHtml).join("")}</div></section>`
+    : `<section style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:40px 22px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-surface);min-width:0;min-height:160px;"><i class="ph ph-newspaper" style="font-size:22px;color:var(--muted2);"></i><p style="margin:0;font-size:13px;color:var(--muted);">Aucun article pour le moment.</p><p style="margin:0;font-size:13px;color:var(--muted);">Écris le premier avec « Nouvel article ».</p></section>`;
+  return html + `<main style="flex:1;min-width:0;padding:28px 32px 40px;display:flex;flex-direction:column;gap:22px;">${title}${notificationsTabsHtml("news", data.rows.length)}${header}${saved}${list}</main></div></div>`;
 }
 
 // Editeur (creation et edition) : titre + texte brut (pas d'editeur riche) + case Publie.
@@ -1398,20 +1505,24 @@ export function newsEditorHtml(data: { id: string | null; title: string; body: s
   html = replaceOnce(
     html,
     ">News / New article</span>",
-    data.id ? ">News / Modifier</span>" : ">News / Nouvel article</span>",
+    data.id ? ">Notifications / Actualités / Modifier</span>" : ">Notifications / Actualités / Nouvel article</span>",
   );
   const action = data.id ? `/api/admin/news/${escapeHtml(data.id)}` : "/api/admin/news";
   const field = "display:flex;flex-direction:column;gap:6px;min-width:0;";
   const label = "font-size:12px;color:var(--muted)";
   const deleteForm = data.id
-    ? `<form method="post" action="/api/admin/news/${escapeHtml(data.id)}/delete" onsubmit="return confirm('Supprimer cet article ?')" style="margin-top:4px;"><button type="submit" style="border:1px solid var(--danger);color:var(--danger);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;">Supprimer</button></form>`
+    ? `<form method="post" action="/api/admin/news/${escapeHtml(data.id)}/delete" data-confirm-title="Supprimer cet article ?" data-confirm-body="L'article disparaîtra du site et du launcher. On ne pourra pas revenir en arrière." data-confirm-btn="Supprimer l'article" data-confirm-tone="danger" style="margin-top:4px;"><button type="submit" style="border:1px solid var(--danger);color:var(--danger);background:transparent;padding:8px 16px;border-radius:var(--radius-md);font:500 13.5px var(--font-heading);cursor:pointer;">Supprimer</button></form>`
     : "";
   const form =
     `<form method="post" action="${action}" style="display:flex;flex-direction:column;gap:16px;max-width:720px;">` +
     `<label style="${field}"><span style="${label}">Titre</span><input class="input" name="title" required minlength="1" maxlength="200" value="${escapeHtml(data.title)}" style="height:36px;font-size:13.5px;"></label>` +
     `<label style="${field}"><span style="${label}">Texte</span><textarea class="input" name="body" required minlength="1" maxlength="20000" style="min-height:260px;font-size:13.5px;line-height:1.6;">${escapeHtml(data.body)}</textarea></label>` +
     `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;width:fit-content;"><input type="checkbox" name="published" ${data.published ? "checked" : ""} style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Publié</label>` +
-    `<div style="display:flex;gap:10px;"><button type="submit" style="${CONFIRM}">Enregistrer</button><a href="/admin/news" style="${CANCEL}">Annuler</a></div>` +
+    // 25/10 : prevenir les joueurs dans le launcher, seulement la 1re fois que l'article est publie.
+    (data.published
+      ? ""
+      : `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-divider);background:var(--color-bg);font-size:13px;width:fit-content;"><input type="checkbox" name="notify" checked style="accent-color:var(--color-accent);width:16px;height:16px;margin:0;">Prévenir les joueurs dans le launcher à la publication</label>`) +
+    `<div style="display:flex;gap:10px;"><button type="submit" style="${CONFIRM}">Enregistrer</button><a href="/admin/notifications?tab=news" style="${CANCEL}">Annuler</a></div>` +
     `</form>` +
     deleteForm;
   return (
@@ -1495,12 +1606,19 @@ export function markAllSections(html: string, kind: "nb" | "pr" = "nb"): string 
 // Page Administration : gestion des comptes staff (admin/moderateur). La maquette propose une
 // matrice de permissions fine (Owner/Admin/Moderator/Editor/Support) qui n'a pas d'equivalent
 // ici (seulement deux roles, voir adminAuth.ts) : cette section reste donc "non branchee".
-export type StaffAccountRow = { id: string; username: string; role: "admin" | "moderator"; createdAt: string; mustChangeCredentials: boolean };
+export type StaffAccountRow = { id: string; username: string; role: "admin" | "moderator"; createdAt: string; mustChangeCredentials: boolean; totpEnabled: boolean };
 export type StaffRoleLabels = { admin: string; moderator: string };
+
+// Double authentification (obligatoire pour le staff, configuree a la premiere connexion).
+function staffTotpChip(totpEnabled: boolean): string {
+  return totpEnabled
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Activée</span>`
+    : `<span style="${CHIP}background:color-mix(in srgb, #e0c28a 16%, transparent);color:#e0c28a;">À configurer</span>`;
+}
 
 function staffStatusChip(mustChangeCredentials: boolean): string {
   return mustChangeCredentials
-    ? `<span style="${CHIP}background:color-mix(in srgb, #e0c28a 16%, transparent);color:#e0c28a;">En attente</span>`
+    ? `<span style="${CHIP}background:color-mix(in srgb, var(--warn) 16%, transparent);color:var(--warn);">En attente</span>`
     : `<span style="${CHIP}background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);">Actif</span>`;
 }
 
@@ -1524,9 +1642,15 @@ function manageStaffHtml(row: StaffAccountRow, isSelf: boolean, lastAdmin: boole
   const resetCredentials =
     `<form method="post" action="/api/admin/staff/${id}"><input type="hidden" name="role" value="${escapeHtml(row.role)}"><input type="hidden" name="resetCredentials" value="on">` +
     `<button type="submit" style="${item}">Forcer le changement des identifiants</button></form>`;
+  // Remise a zero de la 2FA (telephone ET codes de secours perdus) : le membre la reconfigure a
+  // sa prochaine connexion. Pas sur son propre compte (voir api/admin/staff/[id]/2fa-reset).
+  const reset2fa =
+    !isSelf && row.totpEnabled
+      ? `<form method="post" action="/api/admin/staff/${id}/2fa-reset" onsubmit="return confirm('${escapeHtml(row.username)} devra refaire la configuration (QR code) à sa prochaine connexion. Ses anciens codes ne marcheront plus. Continuer ?')"><button type="submit" style="${item}">Réinitialiser la double authentification</button></form>`
+      : "";
   const deleteItem =
     !isSelf && !lastAdmin
-      ? `<form method="post" action="/api/admin/staff/${id}/delete" onsubmit="return confirm('Supprimer le compte ${escapeHtml(row.username)} ?')"><button type="submit" style="${item}color:var(--danger);">Supprimer le compte</button></form>`
+      ? `<form method="post" action="/api/admin/staff/${id}/delete" data-confirm-title="Supprimer le compte ${escapeHtml(row.username)} ?" data-confirm-body="Cette personne n'aura plus accès au panel. On ne pourra pas revenir en arrière." data-confirm-btn="Supprimer le compte" data-confirm-tone="danger"><button type="submit" style="${item}color:var(--danger);">Supprimer le compte</button></form>`
       : isSelf
         ? `<p style="margin:0;padding:9px 14px;font-size:12px;color:var(--muted);">Tu ne peux pas supprimer ton propre compte.</p>`
         : `<p style="margin:0;padding:9px 14px;font-size:12px;color:var(--muted);">Dernier administrateur : suppression impossible.</p>`;
@@ -1537,6 +1661,7 @@ function manageStaffHtml(row: StaffAccountRow, isSelf: boolean, lastAdmin: boole
     `<div style="position:absolute;right:0;top:100%;margin-top:4px;z-index:20;min-width:260px;padding:6px 0;border-radius:var(--radius-md);background:var(--color-surface);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg);">` +
     changeRole +
     resetCredentials +
+    reset2fa +
     divider +
     deleteItem +
     `</div></details>`
@@ -1569,13 +1694,14 @@ function staffRowHtml(row: StaffAccountRow, isSelf: boolean, lastAdmin: boolean,
   const initial = escapeHtml(row.username.charAt(0).toUpperCase());
   const created = new Date(row.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
   return (
-    `<div style="display:grid;min-width:640px;grid-template-columns:minmax(0,1.8fr) 150px 140px 110px 40px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;">` +
+    `<div style="display:grid;min-width:760px;grid-template-columns:minmax(0,1.8fr) 150px 140px 120px 110px 40px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13px;">` +
     `<div style="min-width:0;"><div style="display:flex;align-items:center;gap:12px;min-width:0;">` +
     `<span style="width:32px;height:32px;flex-shrink:0;border-radius:50%;background:var(--color-accent-800);color:var(--color-accent-100);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;">${initial}</span>` +
     `<span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(row.username)}${isSelf ? ` <span style="color:var(--muted);font-weight:400;">(toi)</span>` : ""}</span>` +
     `</div></div>` +
     `<div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">${escapeHtml(roleLabels[row.role])}</span></div>` +
     `<div style="min-width:0;"><span style="color:var(--muted);white-space:nowrap;">${created}</span></div>` +
+    `<div style="min-width:0;">${staffTotpChip(row.totpEnabled)}</div>` +
     `<div style="min-width:0;">${staffStatusChip(row.mustChangeCredentials)}</div>` +
     `<div style="min-width:0;display:flex;justify-content:flex-end;">${manageStaffHtml(row, isSelf, lastAdmin, roleLabels)}</div>` +
     `</div>`
@@ -1637,7 +1763,7 @@ function roleRowHtml(role: "admin" | "moderator", accountCount: number, roleLabe
   );
 }
 
-export function administrationHtml(data: { selfId: string; accounts: StaffAccountRow[]; adminCount: number; created: string | null; roleLabels: StaffRoleLabels }): string {
+export function administrationHtml(data: { selfId: string; accounts: StaffAccountRow[]; adminCount: number; created: string | null; reset2fa?: boolean; roleLabels: StaffRoleLabels }): string {
   let html = SCREENS.administration;
 
   html = replaceOnce(
@@ -1650,13 +1776,15 @@ export function administrationHtml(data: { selfId: string; accounts: StaffAccoun
 
   const createdNotice = data.created
     ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Compte « ${escapeHtml(data.created)} » créé.</div>`
-    : "";
+    : data.reset2fa
+      ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--success);background:color-mix(in srgb, var(--success) 10%, transparent);color:var(--success);font-size:13px;"><i class="ph ph-check-circle" style="font-size:16px;"></i>Double authentification réinitialisée : le membre la reconfigurera à sa prochaine connexion.</div>`
+      : "";
 
   const rows = data.accounts.map((a) => staffRowHtml(a, a.id === data.selfId, a.role === "admin" && data.adminCount <= 1, data.roleLabels));
   const table =
     `<div class="srv-table">` +
     createdNotice +
-    `<div style="display:grid;min-width:640px;grid-template-columns:minmax(0,1.8fr) 150px 140px 110px 40px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Member</span><span>Role</span><span>Created</span><span>Status</span><span></span></div>` +
+    `<div style="display:grid;min-width:760px;grid-template-columns:minmax(0,1.8fr) 150px 140px 120px 110px 40px;gap:14px;padding:0 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);border-bottom:1px solid var(--color-divider);"><span>Member</span><span>Role</span><span>Created</span><span>Double auth.</span><span>Status</span><span></span></div>` +
     (rows.length ? rows.join("") : `<p style="margin:0;padding:14px;font-size:13px;color:var(--muted);">Aucun compte staff.</p>`) +
     `</div>` +
     // Ferme le menu "..." au clic exterieur — <details> seul ne le fait pas nativement.

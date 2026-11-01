@@ -6,6 +6,7 @@ import { listReportsForServer, getReportDetail, type ReportStatus, type ReportIs
 import { ReportReplyForm } from "@/components/ReportReplyForm";
 import { MarkReportResolvedButton } from "@/components/MarkReportResolvedButton";
 import { getT } from "@/i18n/getDictionary";
+import { listInstallProblemGroups } from "@/lib/installProblems";
 
 export const metadata = { title: "Signalements — Omniscient" };
 
@@ -34,7 +35,7 @@ export default async function ManageServerReportsPage({ params, searchParams }: 
   const { dict } = await getT();
   const reportsDict = dict.reports as unknown as Record<string, string>;
 
-  const allReports = await listReportsForServer(server.id);
+  const [allReports, installProblems] = await Promise.all([listReportsForServer(server.id), listInstallProblemGroups(server.id)]);
   const tab = query.tab === "resolved" ? "resolved" : "open";
   const filtered = allReports.filter((r) => (tab === "resolved" ? r.status === "resolved" : r.status !== "resolved"));
   const openCount = allReports.filter((r) => r.status !== "resolved").length;
@@ -66,6 +67,42 @@ export default async function ManageServerReportsPage({ params, searchParams }: 
           </Link>
         </div>
       </div>
+
+      {/* « Prévenir le serveur » (launcher, 17/10) : echecs d'installation envoyes en un clic. */}
+      <section className="panel mb-5 flex flex-col gap-3 p-4">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">{dict.reports.installProblemsTitle}</h2>
+          <p className="text-xs text-muted">{dict.reports.installProblemsHelp}</p>
+        </div>
+        {installProblems.length === 0 ? (
+          <p className="text-sm text-muted">{dict.reports.installProblemsNone}</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {installProblems.map((group) => (
+              <details key={`${group.kind}|${group.summary}`} className="rounded-md border px-3 py-2" style={{ borderColor: "color-mix(in srgb, var(--danger) 35%, transparent)", background: "color-mix(in srgb, var(--danger) 6%, transparent)" }}>
+                <summary className="cursor-pointer text-sm">
+                  <span className="font-medium text-foreground">{group.summary}</span>
+                  <span className="text-muted">
+                    {" · "}
+                    {(group.players === 1 ? dict.reports.installProblemsPlayersOne : dict.reports.installProblemsPlayers).replace("{count}", String(group.players))}
+                    {" · "}
+                    {new Date(group.lastAt).toLocaleString()}
+                  </span>
+                </summary>
+                <div className="mt-2 flex flex-col gap-2 text-xs">
+                  {group.detail ? <p className="text-muted">{group.detail}</p> : null}
+                  <p className="font-mono text-muted">
+                    {dict.reports.diagnosticsLauncher} {group.launcherVersion ?? "—"} · Minecraft {group.minecraftVersion ?? "—"}
+                  </p>
+                  {group.logTail ? (
+                    <pre className="max-h-64 overflow-auto rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap">{group.logTail}</pre>
+                  ) : null}
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
 
       {filtered.length === 0 ? (
         <p className="text-sm text-muted">{tab === "resolved" ? dict.reports.emptyResolved : dict.reports.empty}</p>

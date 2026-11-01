@@ -1,15 +1,35 @@
 import { after } from "next/server";
+import { revalidateTag } from "next/cache";
 import { db, or } from "@/lib/db";
 import { pingMinecraftServer } from "@/lib/mc-ping";
 
-// Durée pendant laquelle un statut mesuré reste valable avant qu'on
-// interroge de nouveau le serveur Minecraft.
-export const SERVER_STATUS_TTL_MS = 60_000;
+// Durée pendant laquelle un statut mesuré reste valable avant qu'une visite
+// (fiche, liste, launcher) déclenche une nouvelle mesure du serveur Minecraft.
+// 5 min au lieu de 60 s (audit de charge 25/10) : chaque mesure coûte 2 appels D1
+// par serveur, et le cron (/api/cron/recheck-reachability) remesure déjà tout
+// toutes les 5 min. Les visites ne servent plus que de filet si le cron s'arrête.
+export const SERVER_STATUS_TTL_MS = 5 * 60_000;
 
-// Un serveur qui ne répond pas n'est re-mesuré que toutes les 5 minutes (au lieu
-// de 60 s) : une mesure qui échoue attend jusqu'à 3 s, inutile d'y revenir aussi
+// Un serveur qui ne répond pas n'est re-mesuré que toutes les 10 minutes par les
+// visites : une mesure qui échoue attend jusqu'à 3 s, inutile d'y revenir aussi
 // souvent. Voir refreshOne (lastPingedAt est alors repoussé dans le futur).
-const FAILED_PING_RETRY_MS = 5 * 60_000;
+const FAILED_PING_RETRY_MS = 10 * 60_000;
+
+// Audit de charge du 19/10 (B1) : la tâche automatique (cron recheck-reachability, toutes les
+// 5 min) mesure déjà tous les serveurs publics. Les mesures déclenchées par les visites faisaient
+// doublon (jusqu'à 60-80 appels D1/min). Une visite ne relance donc une mesure que si la
+// dernière date de plus de 12 min, c'est-à-dire si la tâche automatique a raté au moins deux
+// passages (pas encore déployée, en panne...) : filet de secours, plus doublon.
+// 25/10 (statuts « Inconnu » ou très lents) : la tâche automatique n'est PAS encore déployée
+// (cron-worker pointe sur localhost), les visites sont donc la SEULE source de mesure. Ramené à
+// 5 min (= SERVER_STATUS_TTL_MS) tant que le cron ne tourne pas ; remettre 12 min après son
+// déploiement. Coût : au plus 2 appels D1 par serveur affiché et par tranche de 5 min.
+const VISIT_FALLBACK_AFTER_MS = SERVER_STATUS_TTL_MS;
+
+function needsVisitRefresh(lastPingedAt: string | null): boolean {
+  if (!lastPingedAt) return true;
+  return Date.now() - new Date(lastPingedAt).getTime() > VISIT_FALLBACK_AFTER_MS;
+}
 
 // Mesures simultanées au maximum par instance du site, et serveurs traités au
 // maximum par affichage de page : borne le travail et la charge sur la base, même
@@ -26,7 +46,18 @@ type CachedStatus = {
 export type ServerStatus = {
   playerCount: number | null;
   playerCapacity: number | null;
+  // Contacte au moins une fois (sans reponse = « Hors ligne », sinon « Inconnu »).
+  pinged: boolean;
 };
+
+// 25/10 : resultat de la derniere mesure faite par cette instance, lu par getServerStatus quand il
+// attend la toute premiere mesure d'un serveur (jamais mesure = « Inconnu » sinon).
+const freshResults = new Map<string, { playerCount: number | null; playerCapacity: number | null }>();
+const awaitingFirst = new Set<string>();
+// Mesure en cours par serveur : un 2e affichage simultane (ex. titre + contenu de la fiche) attend
+// la meme mesure au lieu d'en relancer une.
+const pendingById = new Map<string, Promise<void>>();
+const FIRST_PING_WAIT_MS = 4500;
 
 export function isStatusStale(lastPingedAt: string | null): boolean {
   if (!lastPingedAt) return true;
@@ -38,7 +69,7 @@ export function isStatusStale(lastPingedAt: string | null): boolean {
 const inFlight = new Set<string>();
 
 // Les listes viennent d'un cache (voir public-servers.ts) : leur `lastPingedAt`
-// peut rester périmé jusqu'à une minute. Sans ceci, chaque visite reprogrammerait
+// peut avoir jusqu'à une minute de retard. Sans ceci, chaque visite reprogrammerait
 // la même mesure (une requête de réservation par serveur et par visite, pour rien).
 const RESCHEDULE_AFTER_MS = 15_000;
 const recentlyScheduled = new Map<string, number>();
@@ -64,11 +95,15 @@ async function refreshOne(id: string, ip: string): Promise<void> {
       // Réservation atomique en base : si une autre instance (ou visite) vient de
       // mesurer ce serveur, la mise à jour ne touche aucune ligne et on s'arrête.
       const claimed = await db.orm.public.Server.where({ id })
-        .where((s) => or(s.lastPingedAt.isNull(), s.lastPingedAt.lt(new Date(now - SERVER_STATUS_TTL_MS).toISOString())))
+        .where((s) => or(s.lastPingedAt.isNull(), s.lastPingedAt.lt(new Date(now - VISIT_FALLBACK_AFTER_MS).toISOString())))
         .update({ lastPingedAt: new Date(now).toISOString() });
       if (!claimed) return;
 
       const result = await pingMinecraftServer(ip);
+      if (awaitingFirst.has(id)) {
+        freshResults.set(id, result ? { playerCount: result.online, playerCapacity: result.max } : { playerCount: null, playerCapacity: null });
+        setTimeout(() => freshResults.delete(id), 10_000);
+      }
       await db.orm.public.Server.where({ id }).update(
         result
           ? { playerCount: result.online, playerCapacity: result.max }
@@ -76,9 +111,17 @@ async function refreshOne(id: string, ip: string): Promise<void> {
               playerCount: null,
               playerCapacity: null,
               // Pas de réponse : la prochaine mesure aura lieu dans FAILED_PING_RETRY_MS.
-              lastPingedAt: new Date(Date.now() + FAILED_PING_RETRY_MS - SERVER_STATUS_TTL_MS).toISOString(),
+              lastPingedAt: new Date(Date.now() + FAILED_PING_RETRY_MS - VISIT_FALLBACK_AFTER_MS).toISOString(),
             },
       );
+      // 21/10 : chiffres visibles a la prochaine lecture. "servers-live" = SERVERS_LIVE_CACHE_TAG
+      // (pas importe : public-servers.ts importe deja ce fichier). Peut etre refuse hors d'une
+      // requete : le cache des joueurs se renouvelle alors seul au bout de 5 min.
+      try {
+        revalidateTag("servers-live", { expire: 0 });
+      } catch {
+        // sans gravite
+      }
     });
   } catch {
     // Un échec de mesure ne doit jamais casser une page : le chiffre reste celui de la dernière mesure.
@@ -94,13 +137,13 @@ async function refreshOne(id: string, ip: string): Promise<void> {
  * `ip` n'est utilisée que côté serveur pour ouvrir la connexion de ping — elle
  * n'est jamais renvoyée à l'appelant.
  */
-export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; lastPingedAt: string | null }>): void {
+export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; lastPingedAt: string | null }>): Promise<void> | null {
   const now = Date.now();
   const todo = servers
-    .filter((s) => isStatusStale(s.lastPingedAt) && !inFlight.has(s.id) && now - (recentlyScheduled.get(s.id) ?? 0) > RESCHEDULE_AFTER_MS)
+    .filter((s) => needsVisitRefresh(s.lastPingedAt) && !inFlight.has(s.id) && now - (recentlyScheduled.get(s.id) ?? 0) > RESCHEDULE_AFTER_MS)
     .sort((a, b) => (a.lastPingedAt ?? "").localeCompare(b.lastPingedAt ?? ""))
     .slice(0, MAX_SERVERS_PER_SCHEDULE);
-  if (!todo.length) return;
+  if (!todo.length) return null;
 
   if (recentlyScheduled.size > 2000) {
     for (const [id, at] of recentlyScheduled) if (now - at > RESCHEDULE_AFTER_MS) recentlyScheduled.delete(id);
@@ -109,12 +152,20 @@ export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; l
     inFlight.add(s.id);
     recentlyScheduled.set(s.id, now);
   }
-  const work = Promise.all(todo.map((s) => refreshOne(s.id, s.ip)));
+  const work = Promise.all(
+    todo.map((s) => {
+      const one = refreshOne(s.id, s.ip).finally(() => pendingById.delete(s.id));
+      pendingById.set(s.id, one);
+      return one;
+    }),
+  ).then(() => undefined);
   try {
     after(() => work);
   } catch {
     // Hors d'une requête : la mesure tourne quand même, sans être attendue.
   }
+  // Rendue pour l'espace propriétaire, qui peut l'attendre un court instant (voir dashboard).
+  return work;
 }
 
 /**
@@ -123,6 +174,17 @@ export function scheduleStatusRefresh(servers: Array<{ id: string; ip: string; l
  * après l'envoi de la page (elle apparaîtra à la visite suivante).
  */
 export async function getServerStatus(serverId: string, ip: string, cached: CachedStatus): Promise<ServerStatus> {
-  scheduleStatusRefresh([{ id: serverId, ip, lastPingedAt: cached.lastPingedAt }]);
-  return { playerCount: cached.playerCount, playerCapacity: cached.playerCapacity };
+  if (cached.lastPingedAt == null) awaitingFirst.add(serverId);
+  const work = scheduleStatusRefresh([{ id: serverId, ip, lastPingedAt: cached.lastPingedAt }]) ?? pendingById.get(serverId);
+  // 25/10 : serveur JAMAIS mesure (fiche privee, en attente...) : on attend sa premiere mesure au
+  // plus FIRST_PING_WAIT_MS, une seule fois, au lieu d'afficher « Inconnu » jusqu'a la visite
+  // suivante. Les autres affichages n'attendent jamais.
+  if (work && cached.lastPingedAt == null) {
+    const done = await Promise.race([work.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), FIRST_PING_WAIT_MS))]);
+    const fresh = done ? freshResults.get(serverId) : undefined;
+    awaitingFirst.delete(serverId);
+    if (fresh) return { ...fresh, pinged: true };
+  }
+  awaitingFirst.delete(serverId);
+  return { playerCount: cached.playerCount, playerCapacity: cached.playerCapacity, pinged: cached.lastPingedAt != null };
 }

@@ -5,6 +5,9 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getT } from "@/i18n/getDictionary";
 import { FROZEN_CHIP_STYLE, PENDING_CHIP_STYLE } from "@/lib/frozen";
+import { serverState } from "@/lib/playerGauge";
+import { ServerStatePill } from "@/components/ServerStatePill";
+import { scheduleStatusRefresh } from "@/lib/server-status";
 
 export const metadata = { title: "Mon espace — Omniscient" };
 
@@ -13,7 +16,7 @@ export default async function DashboardPage() {
   if (!session?.user?.id) redirect("/login");
   const { dict } = await getT();
 
-  const servers = await db.orm.public.Server.select(
+  const loadServers = () => db.orm.public.Server.select(
     "id",
     "slug",
     "name",
@@ -23,23 +26,49 @@ export default async function DashboardPage() {
     "frozenAt",
     "verificationStatus",
     "createdAt",
+    "playerCount",
+    "playerCapacity",
+    "lastPingedAt",
+    "ip",
   )
     .where({ ownerId: session.user.id })
     .orderBy((s) => s.createdAt.desc())
     .all();
+  let servers = await loadServers();
+
+  // 25/10 : cette page ne mesurait jamais les serveurs. Un serveur prive (absent de l'annuaire)
+  // restait donc « Inconnu » tant que son proprietaire n'ouvrait pas sa page « Gerer ». Les
+  // statuts perimes sont maintenant re-mesures ; pour un serveur jamais mesure, on attend la
+  // mesure au plus 5 s (une seule fois, ensuite elle est en base) puis on relit la liste. Si la
+  // mesure n'a pas fini a temps, on garde « Inconnu » (jamais un faux « Hors ligne »).
+  // L'ip ne sert qu'au ping cote serveur, elle n'est pas affichee.
+  const work = scheduleStatusRefresh(servers);
+  if (work && servers.some((s) => s.lastPingedAt == null)) {
+    const done = await Promise.race([work.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000))]);
+    if (done) servers = await loadServers();
+  }
 
   return (
     <div>
       <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <h1 className="text-[26px] font-bold tracking-tight text-foreground">{dict.dashboard.myServers}</h1>
-        <Link href="/dashboard/servers/new" className="btn-primary justify-center sm:self-auto">
+        <Link href="/dashboard/servers/new" className="btn-fill justify-center sm:self-auto">
           <Plus className="h-4 w-4" />
           {dict.dashboard.newServer}
         </Link>
       </div>
 
       {servers.length === 0 ? (
-        <div className="panel mt-8 p-8 text-center text-muted">{dict.dashboard.empty}</div>
+        <div className="panel mt-8 flex min-h-40 flex-col items-center justify-center gap-2 p-6 text-center text-[13.5px] text-muted">
+          <span className="server-icon h-10 w-10 rounded-[10px]">
+            <Plus className="h-5 w-5" />
+          </span>
+          <b className="text-[15px] font-semibold text-foreground">{dict.dashboard.emptyTitle}</b>
+          <span>{dict.dashboard.emptyBody}</span>
+          <Link href="/dashboard/servers/new" className="btn-fill mt-1">
+            {dict.dashboard.emptyCta}
+          </Link>
+        </div>
       ) : (
         <ul className="mt-8 flex flex-col gap-2.5">
           {servers.map((server) => (
@@ -53,7 +82,15 @@ export default async function DashboardPage() {
                     {server.name.trim().charAt(0).toUpperCase() || "?"}
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">{server.name}</p>
+                    {/* 19/10 (Rushi) : pastille joueurs/etat a droite du nom, comme dans le launcher. */}
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate font-medium text-foreground">{server.name}</p>
+                      <ServerStatePill
+                        state={serverState(server.playerCount, server.playerCapacity, server.lastPingedAt != null)}
+                        count={server.playerCount}
+                        capacity={server.playerCapacity}
+                      />
+                    </div>
                     <p className="text-[13px] text-muted">
                       {server.type === "modded" ? dict.dashboard.modded : dict.dashboard.vanilla}
                     </p>

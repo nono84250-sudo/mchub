@@ -8,9 +8,9 @@ import type { Locale } from "@/i18n/locales";
 // à mettre à jour à chaque fonction qui touche aux données (amis et présence, suppression de compte
 // en libre-service, formulaire de contact...). La version de travail complète, avec les points à
 // faire relire par un avocat, est Legal/DOCUMENTS_LEGAUX_OMNISCIENT.md.
-export const LEGAL_EDITOR = "Rushifa";
+export const LEGAL_EDITOR = "Bruno Catoire (Rushifa)";
 export const LEGAL_EMAIL = "omniscient.launchermc@gmail.com";
-const UPDATED = { fr: "Dernière mise à jour : 14 octobre 2026", en: "Last updated: October 14, 2026" };
+const UPDATED = { fr: "Dernière mise à jour : 1er novembre 2026", en: "Last updated: November 1, 2026" };
 
 type LegalPage = { title: string; updated: string; intro: ReactNode; sections: LegalSection[] };
 
@@ -176,6 +176,13 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 modération d&apos;Omniscient le voit.
               </>,
               <>
+                <B>« Prévenir le serveur »</B> (launcher, seulement si vous cliquez) : quand l&apos;installation ou le
+                lancement d&apos;un serveur échoue, le propriétaire reçoit le type de problème, le mod concerné
+                s&apos;il y en a un, un court message d&apos;erreur nettoyé et les versions du jeu et du launcher. Votre
+                UUID sert seulement à compter les joueurs touchés : le propriétaire ne voit ni votre pseudo, ni votre
+                chat, ni votre nom Windows, ni les adresses d&apos;autres serveurs.
+              </>,
+              <>
                 <B>Notifications</B> (cloche du launcher) : UUID du destinataire, nom du serveur, type, message.
               </>,
               <>
@@ -232,7 +239,7 @@ export function privacyPolicy(locale: Locale): LegalPage {
               </>,
               <>
                 Le launcher contacte directement des services tiers, qui voient votre adresse IP : Mojang, les dépôts des
-                chargeurs de mods, CurseForge et Modrinth (modpacks), Eclipse Adoptium (Java), GitHub (vérification de
+                chargeurs de mods, CurseForge, Modrinth et FTB (modpacks), Eclipse Adoptium (Java), GitHub (vérification de
                 mise à jour à chaque démarrage), les services dont il affiche l&apos;état et Cloudflare si vous lancez le
                 test de débit.
               </>,
@@ -296,6 +303,12 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 <B>Cloudflare, Inc.</B> : base de données, stockage des images et tâches planifiées.
               </>,
               <>
+                <B>Sentry</B> (Functional Software, Inc., données stockées dans l&apos;Union européenne) : rapports
+                d&apos;erreurs du site et du launcher, pour corriger les pannes. Ils contiennent le message d&apos;erreur,
+                la page ou l&apos;écran concerné, le navigateur ou le système et la version, jamais votre adresse IP, votre
+                pseudo ni votre adresse e-mail.
+              </>,
+              <>
                 <B>Microsoft</B> (Xbox Live, Minecraft) : connexion, en tant que responsable distinct de votre compte
                 Microsoft.
               </>,
@@ -319,7 +332,7 @@ export function privacyPolicy(locale: Locale): LegalPage {
         title: "8. Transferts hors de l'Union européenne",
         body: (
           <p>
-            Vercel, Cloudflare, Google et GitHub sont des sociétés américaines : l&apos;accès de leurs équipes ou
+            Vercel, Cloudflare, Sentry, Google et GitHub sont des sociétés américaines : l&apos;accès de leurs équipes ou
             l&apos;acheminement du trafic peut impliquer les États-Unis. Ces transferts sont encadrés par les garanties de ces prestataires
             (Data Privacy Framework UE–États-Unis et clauses contractuelles types).
           </p>
@@ -383,6 +396,11 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 <>Cookies techniques de connexion Microsoft (sécurité de la connexion) : quelques minutes.</>,
                 <>« NEXT_LOCALE » (langue choisie) : 1 an.</>,
                 <>« theme » (thème clair ou sombre, stockage local du navigateur) : jusqu&apos;à ce que vous l&apos;effaciez.</>,
+                <>
+                  « omni-visitor » (mesure d&apos;audience, stockage local du navigateur) : un identifiant au hasard, changé à
+                  chaque visite. Sans adresse IP ; relié à votre compte seulement si vous êtes connecté. Nos serveurs
+                  l&apos;effacent après 2 minutes sans signe de vie et ne conservent que des totaux par heure et par jour.
+                </>,
               ]}
             />
             <p>Le comptage des vues des fiches n&apos;utilise aucun cookie ni aucun stockage sur votre appareil.</p>
@@ -493,6 +511,12 @@ function privacyEn(): LegalPage {
                 the Omniscient moderation team sees it.
               </>,
               <>
+                <B>&quot;Tell the server&quot;</B> (launcher, only if you click it): when installing or launching a server
+                fails, the owner receives the kind of problem, the mod involved if any, a short cleaned-up error
+                message and the game and launcher versions. Your UUID is only used to count affected players: the owner
+                never sees your username, chat, Windows name or other servers&apos; addresses.
+              </>,
+              <>
                 <B>Notifications</B> (launcher bell): recipient UUID, server name, type, message.
               </>,
               <>
@@ -544,7 +568,7 @@ function privacyEn(): LegalPage {
               </>,
               <>
                 The launcher connects directly to third-party services, which see your IP address: Mojang, mod loader
-                repositories, CurseForge and Modrinth (modpacks), Eclipse Adoptium (Java), GitHub (update check at each
+                repositories, CurseForge, Modrinth and FTB (modpacks), Eclipse Adoptium (Java), GitHub (update check at each
                 start), the services whose status it shows, and Cloudflare if you run the speed test.
               </>,
               <>When you join a game server, that server sees your username and IP address.</>,
@@ -607,6 +631,11 @@ function privacyEn(): LegalPage {
                 <B>Cloudflare, Inc.</B>: database, image storage and scheduled tasks.
               </>,
               <>
+                <B>Sentry</B> (Functional Software, Inc., data stored in the European Union): error reports from the
+                website and the launcher, used to fix outages. They contain the error message, the page or screen
+                involved, the browser or system and the version, never your IP address, username or email address.
+              </>,
+              <>
                 <B>Microsoft</B> (Xbox Live, Minecraft): sign-in, as an independent controller of your Microsoft
                 account.
               </>,
@@ -630,7 +659,7 @@ function privacyEn(): LegalPage {
         title: "8. Transfers outside the European Union",
         body: (
           <p>
-            Vercel, Cloudflare, Google and GitHub are US companies: access by their staff or traffic routing may
+            Vercel, Cloudflare, Sentry, Google and GitHub are US companies: access by their staff or traffic routing may
             involve the United States. These transfers are covered by these providers&apos; safeguards (EU–US Data Privacy Framework and
             standard contractual clauses).
           </p>
@@ -691,6 +720,11 @@ function privacyEn(): LegalPage {
                 <>Technical Microsoft sign-in cookies (sign-in security): a few minutes.</>,
                 <>&quot;NEXT_LOCALE&quot; (chosen language): 1 year.</>,
                 <>&quot;theme&quot; (light or dark theme, browser local storage): until you clear it.</>,
+                <>
+                  &quot;omni-visitor&quot; (audience measurement, browser local storage): a random identifier, changed at each
+                  visit. No IP address; linked to your account only if you are signed in. Our servers erase it after 2
+                  minutes without a sign of life and only keep hourly and daily totals.
+                </>,
               ]}
             />
             <p>Counting listing views uses no cookie and no storage on your device.</p>

@@ -3,32 +3,34 @@
 import { useState } from "react";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
-import { PAGE_TAGS, type PageTag } from "@/lib/serverPage";
+import type { PageTag } from "@/lib/serverPage";
+import { allTags, tagName, type CustomTag } from "@/lib/tagCatalog";
 
 // Choix d'etiquettes de la fiche (version B validee par Rushi le 16/10) : rien n'est propose au
 // depart, seules les etiquettes choisies sont visibles (avec une croix), et « + Ajouter » ouvre
-// la liste fermee PAGE_TAGS avec une recherche. Sert aux principales et aux supplementaires.
+// la liste fermee (PAGE_TAGS + etiquettes ajoutees par l'equipe, voir tagCatalog.ts) avec une recherche. Sert aux principales et aux supplementaires.
 export function TagPicker({
   selected,
   max,
   exclude = [],
   onChange,
   strong = false,
+  custom = [],
 }: {
   selected: PageTag[];
   max: number;
   exclude?: PageTag[];
   onChange: (tags: PageTag[]) => void;
   strong?: boolean; // principales : pastille pleine ; supplementaires : plus discretes
+  custom?: CustomTag[];
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const label = (tag: string) => tagName(tag, locale, custom) || tag;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const full = selected.length >= max;
   const q = query.trim().toLowerCase();
-  const rest = PAGE_TAGS.filter(
-    (tag) => !selected.includes(tag) && !exclude.includes(tag) && t(`serverPage.tags.${tag}`).toLowerCase().includes(q),
-  );
+  const rest = allTags(custom).filter((tag) => !selected.includes(tag) && !exclude.includes(tag) && label(tag).toLowerCase().includes(q));
   const chipOn = strong
     ? "border-transparent bg-accent text-accent-foreground"
     : "border-[color-mix(in_srgb,var(--accent)_55%,transparent)] bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] text-foreground";
@@ -37,7 +39,7 @@ export function TagPicker({
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1.5">
         {selected.map((tag) => {
-          const name = t(`serverPage.tags.${tag}`);
+          const name = label(tag);
           return (
             <button
               key={tag}
@@ -92,7 +94,7 @@ export function TagPicker({
                   }}
                   className="rounded-full border border-border bg-surface px-3 py-1 text-[13px] text-foreground hover:border-accent"
                 >
-                  {t(`serverPage.tags.${tag}`)}
+                  {label(tag)}
                 </button>
               ))
             ) : (

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<!-- CSP en balise : voir le commentaire de index.html (audit 14/10, L1). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'" />
+<title>Omniscient · Sauvegarde</title>
+<style>
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 100 900;
+    src: url("fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+  }
+  html, body { margin: 0; background: transparent; overflow: hidden; font-family: "Inter", "Segoe UI", system-ui, sans-serif; user-select: none; }
+  .card {
+    margin: 8px; padding: 12px 14px; border-radius: 12px;
+    background: rgba(18, 20, 32, 0.92); color: #eef0ff; border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); font-size: 13px;
+    opacity: 0; transform: translateY(-6px); transition: opacity .15s ease, transform .15s ease;
+  }
+  .card.on { opacity: 1; transform: none; }
+  .top { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #7c8cff; flex: none; }
+  .done .dot { background: #3ecf8e; }
+  .error .dot { background: #ff6b6b; }
+  .pct { margin-left: auto; font-variant-numeric: tabular-nums; color: #aab0d6; font-weight: 500; }
+  .text { margin-top: 4px; color: #c6cae6; line-height: 1.35; }
+  .bar { height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); margin-top: 8px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: #7c8cff; transition: width .2s ease; }
+  form { margin-top: 8px; display: grid; gap: 8px; }
+  input {
+    font: inherit; color: #fff; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px; padding: 7px 9px; outline: none; user-select: text;
+  }
+  input:focus { border-color: #7c8cff; }
+  .acts { display: flex; gap: 8px; justify-content: flex-end; }
+  button { font: inherit; border-radius: 8px; padding: 5px 12px; border: 1px solid rgba(255, 255, 255, 0.2); background: transparent; color: #eef0ff; cursor: pointer; }
+  button.ok { background: #6c7bff; border-color: #6c7bff; color: #fff; font-weight: 600; }
+  .hint { margin-top: 8px; font-size: 11.5px; color: #8d93b8; }
+  kbd { font: inherit; padding: 0 5px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.2); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="top"><span class="dot"></span><span id="title"></span><span class="pct" id="pct"></span></div>
+    <div class="text" id="text"></div>
+    <div class="bar" id="bar" hidden><i id="fill"></i></div>
+    <form id="form" hidden>
+      <input id="name" maxlength="80" autocomplete="off" spellcheck="false" />
+      <div class="acts"><button type="button" id="cancel"></button><button type="submit" class="ok" id="ok"></button></div>
+    </form>
+    <div class="hint" id="hint"></div>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>

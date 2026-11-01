@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import { pingMinecraftServer } from "@/lib/mc-ping";
-import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
+import { SERVERS_LIVE_CACHE_TAG } from "@/lib/public-servers";
 
 // Une seule mesure partagée de tous les serveurs publics, gardée 60 secondes. Les adresses
 // restent sur le site : le launcher ne reçoit que le résultat, par slug.
@@ -38,5 +38,6 @@ async function buildStatusSnapshot(): Promise<StatusSnapshot> {
 
 export const getStatusSnapshot = unstable_cache(buildStatusSnapshot, ["status-snapshot"], {
   revalidate: SNAPSHOT_SECONDS,
-  tags: [SERVERS_CACHE_TAG],
+  // 21/10 : etiquette des infos vivantes (joueurs), videe par la tache automatique de mesure.
+  tags: [SERVERS_LIVE_CACHE_TAG],
 });

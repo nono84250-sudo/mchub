@@ -4,13 +4,16 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
 import { listFriendsOverview, sendFriendRequest } from "@/lib/friends";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { withD1Busy } from "@/lib/d1Busy";
+import { withLauncherFeature } from "@/lib/features";
 
 // Liste d'amis + statut en ligne/hors ligne, plus les demandes reçues et envoyées (page "Amis"
 // du launcher). Le statut en ligne n'est renvoyé que pour les amis acceptés (voir
 // lib/friends.ts) — même contrôle d'identité que /api/launcher/servers/mine : n'importe quel
 // joueur identifié peut lire SA PROPRE liste, jamais celle d'un autre (minecraftUuid vérifié
 // par verifyLauncherIdentity, pas juste cru sur parole).
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -38,7 +41,7 @@ export async function GET(request: Request) {
 // /api/launcher/friends/[friendUserId], POST). Réponse TOUJOURS identique que le pseudo existe
 // déjà en ami, existe mais pas en ami, ou n'existe pas du tout : anti-énumération (voir
 // sendFriendRequest dans lib/friends.ts).
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -46,9 +49,11 @@ export async function POST(request: Request) {
   const limited = rateLimitResponse(request, "launcher-friends-write", 10);
   if (limited) return limited;
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => null)) ?? {};
   const minecraftUuid = typeof body.minecraftUuid === "string" ? body.minecraftUuid : null;
-  const targetUsername = typeof body.targetUsername === "string" ? body.targetUsername.trim() : "";
+  // `query` (18/10) : pseudo OU code d'ami ; `targetUsername` garde pour l'ancien launcher.
+  const targetUsername =
+    typeof body.query === "string" ? body.query.trim() : typeof body.targetUsername === "string" ? body.targetUsername.trim() : "";
   if (!minecraftUuid) {
     return NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 });
   }
@@ -64,7 +69,11 @@ export async function POST(request: Request) {
 
   // Action volontaire du joueur : recree son compte s'il l'avait supprime.
   const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: true });
-  if (user) await sendFriendRequest(user.id, targetUsername);
+  // 20 demandes par heure et par compte (meme palier que le site) : au-dela, meme reponse, rien n'est envoye.
+  if (user && !checkRateLimit(`friends-write-hour:${user.id}`, 20, 60 * 60_000).limited) await sendFriendRequest(user.id, targetUsername);
 
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withD1Busy(withLauncherFeature("friends", handleGET));
+export const POST = withD1Busy(withLauncherFeature("friends", handlePOST));

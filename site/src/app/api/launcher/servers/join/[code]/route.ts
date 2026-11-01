@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAuthorizedLauncherRequest } from "@/lib/launcherAuth";
 import { getSlugByInviteCode } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Resout un code d'invitation vers son slug pour le launcher (voir
 // launcher/src/main.js, joinServerByCode) — meme logique que la page
@@ -10,7 +11,7 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 // ouverte quand on clique un lien d'invitation). isAuthorizedLauncherRequest
 // suffit (secret partage), comme les autres routes /api/launcher/* qui ne
 // lisent pas de donnees propres a un joueur precis.
-export async function GET(request: Request, ctx: RouteContext<"/api/launcher/servers/join/[code]">) {
+async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/servers/join/[code]">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -28,3 +29,5 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
 
   return NextResponse.json({ slug });
 }
+
+export const GET = withD1Busy(handleGET);

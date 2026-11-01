@@ -1,16 +1,18 @@
 import { redirect } from "next/navigation";
 import { AdminCredentialsForm } from "@/components/admin/AdminCredentialsForm";
-import { getCurrentAdmin } from "@/lib/adminSession";
+import { getCurrentAdmin, getPendingAdmin } from "@/lib/adminSession";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Première connexion — Omniscient" };
 
 // Étape obligatoire : tant que les identifiants initiaux ne sont pas changés, on ne
-// peut aller nulle part ailleurs dans le panel.
+// peut aller nulle part ailleurs dans le panel. Nouveau compte : cette étape vient juste
+// après le mot de passe (session "pending"), puis la configuration de la 2FA.
 export default async function FirstLogin() {
-  const admin = await getCurrentAdmin();
-  if (!admin) redirect("/admin/login");
-  if (!admin.mustChangeCredentials) redirect("/admin/servers");
+  const pending = await getPendingAdmin();
+  const admin = (await getCurrentAdmin()) ?? (pending && !pending.totpEnabled ? pending : null);
+  if (!admin) redirect(pending ? "/admin/double-authentification" : "/admin/login");
+  if (!admin.mustChangeCredentials) redirect(pending && !pending.totpEnabled ? "/admin/double-authentification" : "/admin/servers");
   return (
     <>
       <link rel="stylesheet" href="/admin/nocturne.css" />

@@ -1,9 +1,18 @@
-// Types partages entre les recherches de modpacks (CurseForge, Modrinth) et
+// Types partages entre les recherches de modpacks (CurseForge, Modrinth, FTB) et
 // l'interface (ModpackPicker) — sans "server-only" : importes aussi cote client.
 
-export type ModpackSource = "curseforge" | "modrinth";
+// "ftb" (21/10) : packs officiels de l'equipe FTB (voir lib/ftb.ts).
+export type ModpackSource = "curseforge" | "modrinth" | "ftb";
 
-export const MODPACK_SOURCES: readonly ModpackSource[] = ["curseforge", "modrinth"];
+export const MODPACK_SOURCES: readonly ModpackSource[] = ["curseforge", "modrinth", "ftb"];
+
+export const MODPACK_SOURCE_LABELS: Record<ModpackSource, string> = { curseforge: "CurseForge", modrinth: "Modrinth", ftb: "FTB" };
+
+// Lecture tolerante d'une valeur venue d'un formulaire ou de la base : tout ce qui n'est pas
+// une source connue retombe sur "curseforge" (valeur historique par defaut de la colonne).
+export function parseModpackSource(value: unknown): ModpackSource {
+  return value === "modrinth" || value === "ftb" ? value : "curseforge";
+}
 
 // Source proposee par defaut a la creation d'un serveur : Modrinth, car son
 // API est ouverte (aucune cle) et tous les mods d'un modpack y sont
@@ -35,7 +44,7 @@ export type ModpackSearchResult = {
 
 // Fichier de modpack a installer, tel que le launcher le recoit du site
 // (GET /api/launcher/servers/[slug]/modpack). `id` sert de cle de cache et
-// d'etat cote launcher : numerique chez CurseForge, texte chez Modrinth.
+// d'etat cote launcher : numerique chez CurseForge et FTB (id de version), texte chez Modrinth.
 export type ModpackInstallFile = {
   id: string | number;
   displayName: string;

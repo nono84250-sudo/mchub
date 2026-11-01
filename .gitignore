@@ -26,3 +26,16 @@ Thumbs.db
 .devin/
 /CLAUDE.md
 graphify-out/
+
+# Sauvegardes locales regroupees
+_sauvegardes-*/
+_sauvegardes/
+
+# Installeurs du launcher (trop lourds pour GitHub, publies en releases)
+launcher/release-*/
+
+# Page de test temporaire, a ne jamais commiter
+site/src/app/test-cle-curseforge/
+
+# Copies de base de donnees (e-mails et comptes reels, le depot est public)
+travail/analytique-31-10/dev-avant-migration.sql

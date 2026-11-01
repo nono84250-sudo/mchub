@@ -7,6 +7,7 @@ import { deleteAllR2Images } from "@/lib/serverImages";
 import { markAccountDeleted } from "@/lib/users";
 import { normalizeMinecraftUuid } from "@/lib/launcherSession";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
+import { deleteAllCloudData } from "@/lib/playWorlds";
 
 // Suppression definitive du compte (droit a l'effacement RGPD), en libre-service depuis la
 // page Compte. Le cascade DB (ON DELETE CASCADE sur server/serverEvent/report/playerWarning/
@@ -29,6 +30,9 @@ export async function deleteAccount(confirmation: string): Promise<{ error: Dele
 
   const servers = await db.orm.public.Server.select("id", "bannerUrl", "iconUrl", "backgroundUrl", "pageConfig").where({ ownerId: user.id }).all();
   for (const server of servers) await deleteAllR2Images(server, server.id);
+  // Mode Jouer (24/10) : mondes sauvegardés en ligne (fichiers R2 et envois en cours). Les lignes
+  // cloudWorld/cloudWorldVersion partent ensuite avec le cascade de "user".
+  await deleteAllCloudData(user.id);
 
   if (user.minecraftUuid) {
     await execSql(`DELETE FROM notification WHERE recipientMinecraftUuid = ?`, [user.minecraftUuid]);
@@ -37,6 +41,12 @@ export async function deleteAccount(confirmation: string): Promise<{ error: Dele
     await execSql(`DELETE FROM "instanceWatch" WHERE lower(replace("minecraftUuid", '-', '')) = ?`, [
       normalizeMinecraftUuid(user.minecraftUuid),
     ]);
+    // Signalements et problemes d'installation envoyes PAR le joueur (sur ses serveurs ou ceux
+    // des autres) : rattaches a l'UUID, pas a user.id, donc pas de cascade non plus. « Supprimer
+    // mon compte » doit tout effacer (23/10).
+    const uuid = normalizeMinecraftUuid(user.minecraftUuid);
+    await execSql(`DELETE FROM "report" WHERE lower(replace("reporterMinecraftUuid", '-', '')) = ?`, [uuid]);
+    await execSql(`DELETE FROM "installProblem" WHERE lower(replace("reporterMinecraftUuid", '-', '')) = ?`, [uuid]);
   }
 
   // Empreinte du compte supprime : le launcher, s'il reste connecte, ne le recreera pas tout

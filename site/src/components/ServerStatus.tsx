@@ -21,7 +21,7 @@ export async function ServerStatus({ playerCount, playerCapacity }: ServerStatus
           {playerCount === 1
             ? t(dict, "servers.onlinePlayers", { count: playerCount })
             : t(dict, "servers.onlinePlayersPlural", { count: playerCount })}
-          {playerCapacity !== null ? ` / ${playerCapacity}` : ""}
+          {playerCapacity ? ` / ${playerCapacity}` : ""}
         </span>
       ) : (
         <span>{dict.servers.unknownStatus}</span>

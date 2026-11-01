@@ -1,6 +1,9 @@
 import { Clock, Flag, Info } from "@phosphor-icons/react/ssr";
 import { ContactForm } from "@/components/ContactForm";
+import { TrustBlock } from "@/components/TrustBlock";
 import { getT } from "@/i18n/getDictionary";
+import { t } from "@/i18n/t";
+import { CONTACT_SUBJECTS } from "@/lib/contactSubjects";
 
 export const metadata = { title: "Contact — Omniscient" };
 
@@ -8,9 +11,17 @@ export const metadata = { title: "Contact — Omniscient" };
 // lib/actions/contact.ts) : enregistre juste le message en base, aucun email envoye, lu
 // depuis le panel admin (/admin/contact). Textes d'aide repris du Document 2
 // (Legal/DOCUMENTS_LEGAUX_OMNISCIENT.md).
-export default async function ContactPage() {
+// ?sujet=claim&serveur=<slug> (bouton « Nous contacter » d'une fiche proposee par Omniscient, site
+// et launcher) : sujet deja choisi et debut du message pre-rempli avec l'adresse de la fiche.
+export default async function ContactPage({ searchParams }: PageProps<"/contact">) {
   const { dict } = await getT();
   const c = dict.contact;
+  const params = await searchParams;
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+  const subject = CONTACT_SUBJECTS.find((s) => s.id === one(params.sujet))?.id;
+  const serverSlug = one(params.serveur).toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 80);
+  const prefill =
+    subject === "claim" && serverSlug ? t(dict, "contact.claimPrefill", { server: `https://omniscientlauncher.com/servers/${serverSlug}` }) : "";
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-24">
@@ -21,9 +32,13 @@ export default async function ContactPage() {
         <p className="mt-5 text-lg text-muted text-balance">{c.subtitleLong}</p>
       </div>
 
-      <div className="mt-14 grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-6 items-start">
+      <div className="mt-10">
+        <TrustBlock />
+      </div>
+
+      <div className="mt-10 grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-6 items-start">
         <div className="panel p-6">
-          <ContactForm />
+          <ContactForm defaultSubject={subject} defaultMessage={prefill} />
         </div>
 
         <aside className="flex flex-col gap-6">

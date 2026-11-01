@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { checkSlugVisibility, getServerWithIpBySlug, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
+import { teamsPublic, withoutTeam } from "@/lib/features";
+import { getLauncherServerForJoin, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { isAuthorizedLauncherRequest, launcherIdentityUuid } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
+import { withD1Busy } from "@/lib/d1Busy";
 
 // Route reservee au launcher (jamais au site public) : c'est la SEULE
 // route qui renvoie l'IP d'un serveur. Protegee par un secret partage
@@ -11,7 +13,7 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 // (un joueur qui a deja rejoint connait ensuite l'IP).
 // Serveur prive : l'IP n'est donnee qu'avec une preuve (code d'invitation
 // du serveur rejoint, ou jeton Mojang du proprietaire), voir canSeeServer.
-export async function GET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]">) {
+async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/servers/[slug]">) {
   if (!isAuthorizedLauncherRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
@@ -30,19 +32,18 @@ export async function GET(request: Request, ctx: RouteContext<"/api/launcher/ser
   // Visibilite d'ABORD (audit §1.4) : le check "gelé" ne doit s'exécuter qu'une fois confirmé
   // que l'appelant peut voir ce slug, sinon un slug privé/inconnu gelé répondrait "gelé" plutôt
   // que "introuvable" — révélant qu'un serveur privé existe sans aucune preuve d'accès.
-  const visibility = await checkSlugVisibility(slug, proof);
-  if (!visibility.visible) {
+  // Une seule lecture de la base pour les deux controles et l'IP (audit de charge du 19/10).
+  const join = await getLauncherServerForJoin(slug, proof);
+  if (join.status === "notFound") {
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
   }
-  if (visibility.frozenAt) {
+  if (join.status === "frozen") {
     // Serveur gelé par l'équipe : le launcher reçoit un message clair, pas un simple « introuvable ».
     return NextResponse.json({ error: "Ce serveur est gelé par l'équipe Omniscient.", code: "frozen" }, { status: 403 });
   }
+  const server = join.server;
 
-  const server = await getServerWithIpBySlug(slug, proof);
-  if (!server) {
-    return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
-  }
-
-  return NextResponse.json({ server });
+  return NextResponse.json({ server: (await teamsPublic()) ? server : withoutTeam(server) });
 }
+
+export const GET = withD1Busy(handleGET);

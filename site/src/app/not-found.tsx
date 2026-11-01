@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Eye, House } from "@phosphor-icons/react/ssr";
+import { getT } from "@/i18n/getDictionary";
 
 export const metadata: Metadata = { title: "Page introuvable — Omniscient" };
 
 // Page 404 (maquette "06 · 404"). La barre du haut et le pied de page viennent du site.
-export default function NotFound() {
+// Lot 8 (18/10) : dans la langue choisie seulement (plus moitie francais, moitie anglais), au tutoiement.
+export default async function NotFound() {
+  const { dict } = await getT();
+  const n = dict.notFound;
   return (
     <section className="relative flex flex-col items-center overflow-hidden px-6 pb-28 pt-24 text-center">
       <div
@@ -30,38 +34,22 @@ export default function NotFound() {
       </div>
 
       <p className="relative mt-7 font-mono text-[13px] tracking-[0.1em]" style={{ color: "var(--accent)" }}>
-        ERREUR 404 · NOT FOUND
+        {n.code}
       </p>
 
       <h1 className="relative mt-3.5 max-w-[640px] text-[42px] font-medium leading-[1.15] tracking-[-0.015em] text-foreground">
-        Même l&apos;œil omniscient n&apos;a pas vu venir cette page.
+        {n.title}
       </h1>
-      <p className="relative mt-2.5 max-w-[560px] text-[20px] leading-[1.4] text-muted">
-        Even the all-seeing eye didn&apos;t see this page coming.
-      </p>
 
-      <p className="relative mt-[22px] max-w-[460px] text-[14.5px] leading-[1.6] text-muted">
-        La page que vous cherchez a disparu de son champ de vision — comme un serveur qui n&apos;a jamais existé.
-        <br />
-        <span className="text-[13.5px] opacity-80">
-          The page you&apos;re looking for has slipped out of its field of view — like a server that never existed.
-        </span>
-      </p>
+      <p className="relative mt-[22px] max-w-[460px] text-[14.5px] leading-[1.6] text-muted">{n.body}</p>
 
       <div className="relative mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 whitespace-nowrap rounded-md border px-[22px] py-[11px] text-[14px] font-medium no-underline"
-          style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
-        >
+        <Link href="/" className="btn-fill px-[22px] py-[11px] text-[14px] no-underline">
           <House size={16} />
-          Retour à l&apos;accueil
+          {n.home}
         </Link>
-        <Link
-          href="/servers"
-          className="inline-flex items-center gap-2 whitespace-nowrap rounded-md border border-border px-[22px] py-[11px] text-[14px] font-medium text-foreground no-underline"
-        >
-          Discover servers
+        <Link href="/servers" className="btn-secondary px-[22px] py-[11px] text-[14px] no-underline">
+          {n.discover}
         </Link>
       </div>
     </section>
