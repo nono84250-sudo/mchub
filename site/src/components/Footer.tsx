@@ -10,7 +10,7 @@ import { FooterLink } from "@/components/FooterLink";
 // pages, connecte ou non (voir AccountMenu.tsx pour l'acces rapide une fois connecte).
 // Les pages legales demandees pour l'application Discord (2026-10-14) restent la.
 export async function Footer() {
-  const { dict } = await getT();
+  const { dict, locale } = await getT();
   const f = dict.footer;
 
   type FooterItem = { label: string; href?: string; soon?: boolean };
@@ -27,6 +27,8 @@ export async function Footer() {
     {
       title: f.help,
       links: [
+        // Centre d'aide (31/10) : libellé écrit ici pour ne pas toucher aux dictionnaires.
+        { label: locale === "en" ? "Help center" : "Centre d'aide", href: "/aide" },
         { label: f.faq, href: "/faq" },
         { label: f.contact, href: "/contact" },
       ],
