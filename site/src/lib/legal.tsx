@@ -351,9 +351,10 @@ export function privacyPolicy(locale: Locale): LegalPage {
         title: "8. Transferts hors de l'Union européenne",
         body: (
           <p>
-            Vos données sont stockées en Europe : la base de données et les fichiers chez Cloudflare (Europe de
-            l&apos;Ouest), les fonctions du site chez Vercel (Paris) et les rapports d&apos;erreurs chez Sentry (Union
-            européenne). Vercel, Cloudflare, Sentry, Google et GitHub sont toutefois des sociétés américaines : l&apos;accès de leurs équipes ou
+            Les données du site et du launcher sont stockées en Europe : la base de données et les fichiers chez
+            Cloudflare (Europe de l&apos;Ouest), les fonctions du site chez Vercel (Paris) et les rapports d&apos;erreurs
+            chez Sentry (Union européenne). Les e-mails (Google) et les fichiers d&apos;installation du launcher (GitHub)
+            restent chez ces prestataires. Vercel, Cloudflare, Sentry, Google et GitHub sont toutefois des sociétés américaines : l&apos;accès de leurs équipes ou
             l&apos;acheminement du trafic peut impliquer les États-Unis. Ces transferts sont encadrés par les garanties de ces prestataires
             (Data Privacy Framework UE–États-Unis et clauses contractuelles types).
           </p>
@@ -697,8 +698,9 @@ function privacyEn(): LegalPage {
         title: "8. Transfers outside the European Union",
         body: (
           <p>
-            Your data is stored in Europe: the database and files at Cloudflare (Western Europe), the website&apos;s
-            functions at Vercel (Paris) and error reports at Sentry (European Union). Vercel, Cloudflare, Sentry, Google
+            The website and launcher data is stored in Europe: the database and files at Cloudflare (Western Europe),
+            the website&apos;s functions at Vercel (Paris) and error reports at Sentry (European Union). Emails (Google)
+            and the launcher installation files (GitHub) stay with these providers. Vercel, Cloudflare, Sentry, Google
             and GitHub are nevertheless US companies: access by their staff or traffic routing may
             involve the United States. These transfers are covered by these providers&apos; safeguards (EU–US Data Privacy Framework and
             standard contractual clauses).
