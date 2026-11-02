@@ -19,7 +19,7 @@ import { isOwnImageUrl } from "@/lib/ownImageUrl";
 import { supportsAutoConnect } from "@/lib/minecraft-version-constants";
 import { SERVER_TEMPLATES, isServerTemplate } from "@/lib/serverTemplates";
 import { MANUAL_MODS_READY } from "@/lib/manualMods";
-import { DEFAULT_PAGE_CONFIG, normalizePageConfig } from "@/lib/serverPage";
+import { DEFAULT_PAGE_CONFIG, SERVER_DESCRIPTION_MAX, SERVER_NAME_MAX, normalizePageConfig } from "@/lib/serverPage";
 
 export type ServerActionState = { error: string } | undefined;
 
@@ -86,6 +86,8 @@ function readForm(
   if (!name || !description || !minecraftVersion || !ip) {
     return { error: "Nom, description, version et IP sont obligatoires." };
   }
+  if (name.length > SERVER_NAME_MAX) return { error: `Le nom ne peut pas dépasser ${SERVER_NAME_MAX} caractères.` };
+  if (description.length > SERVER_DESCRIPTION_MAX) return { error: `La description ne peut pas dépasser ${SERVER_DESCRIPTION_MAX} caractères.` };
   if (
     !isOwnImageUrl(bannerUrl, host, previous?.bannerUrl) ||
     !isOwnImageUrl(iconUrl, host, previous?.iconUrl) ||
@@ -152,7 +154,7 @@ async function getOwnedServer(serverId: string, userId: string) {
 
 // Audit 25/10 : changer l'adresse d'une fiche gelee permettait de liberer l'ancienne adresse,
 // puis de recreer une fiche avec elle (addressUsedByFrozenServer ne la voyait plus).
-const FROZEN_SERVER_ADDRESS_ERROR = "Cette fiche est gelée : son adresse ne peut pas changer tant que le gel n'est pas levé.";
+const FROZEN_SERVER_ADDRESS_ERROR = "Cette fiche est gelée : son nom, sa description et son adresse ne peuvent pas changer tant que le gel n'est pas levé.";
 
 export async function createServer(_prevState: ServerActionState, formData: FormData): Promise<ServerActionState> {
   const session = await auth();
@@ -218,7 +220,7 @@ export async function updateServer(
 
   const parsed = readForm(formData, await requestHost(), owned);
   if ("error" in parsed) return parsed;
-  if (parsed.ip !== owned.ip && owned.frozenAt) return { error: FROZEN_SERVER_ADDRESS_ERROR };
+  if (owned.frozenAt && (parsed.ip !== owned.ip || parsed.name !== owned.name || parsed.description !== owned.description)) return { error: FROZEN_SERVER_ADDRESS_ERROR };
   if (parsed.ip !== owned.ip && (await addressUsedByFrozenServer(parsed.ip, serverId))) return { error: FROZEN_ADDRESS_ERROR };
   const addedImages = (["bannerUrl", "iconUrl", "backgroundUrl"] as const).filter((k) => parsed[k] !== owned[k]).map((k) => parsed[k]);
   if (await imagesUsedByAnotherOwner(addedImages, session.user.id)) return { error: FOREIGN_IMAGE_ERROR };

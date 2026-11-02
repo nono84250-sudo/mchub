@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isCronRequest } from "@/lib/cronAuth";
 import { processDueAppeals } from "@/lib/appeals";
 import { revalidateTag } from "next/cache";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
@@ -9,8 +10,7 @@ import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 // décision admin — "effet suspensif" oblige, l'absence de décision ne doit jamais geler
 // indéfiniment.
 export async function POST(request: Request) {
-  const expected = `Bearer ${process.env.CRON_SECRET}`;
-  if (!process.env.CRON_SECRET || request.headers.get("authorization") !== expected) {
+  if (!isCronRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
   const unfrozen = await processDueAppeals();

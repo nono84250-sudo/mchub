@@ -8,7 +8,7 @@ import type { Locale } from "@/i18n/locales";
 // à mettre à jour à chaque fonction qui touche aux données (amis et présence, suppression de compte
 // en libre-service, formulaire de contact...). La version de travail complète, avec les points à
 // faire relire par un avocat, est Legal/DOCUMENTS_LEGAUX_OMNISCIENT.md.
-export const LEGAL_EDITOR = "Bruno Catoire (Rushifa)";
+export const LEGAL_EDITOR = "Rushifa";
 export const LEGAL_EMAIL = "omniscient.launchermc@gmail.com";
 const UPDATED = { fr: "Dernière mise à jour : 1er novembre 2026", en: "Last updated: November 1, 2026" };
 
@@ -37,10 +37,10 @@ const DeletionFr = () => (
     <B>Supprimer votre compte vous-même</B> : connectez-vous sur le site, puis Tableau de bord, Paramètres, « Supprimer
     mon compte » (il faut retaper « supprimer » pour confirmer). C&apos;est immédiat et définitif : votre compte, vos
     fiches de serveurs (avec leurs images, statistiques et signalements reçus), vos notifications, vos amis, votre
-    présence en ligne, les serveurs que vous suiviez, vos avertissements et notes de modération sont effacés. Restent
-    seulement, liés à votre identifiant Minecraft, les signalements que vous avez déposés sur les fiches d&apos;autres
-    propriétaires, jusqu&apos;à la suppression de ces fiches : pour les faire effacer aussi, écrivez-nous. Vous pouvez
-    aussi demander la suppression par e-mail à <Mail />.
+    présence en ligne, les serveurs que vous suiviez, vos avertissements et notes de modération, vos teams, vos mondes en
+    ligne, vos packs proposés et tous les signalements que vous avez déposés sont effacés. Un pack déjà accepté reste
+    disponible, sans votre pseudo. Vos messages envoyés par le formulaire de contact ne sont pas liés à votre compte :
+    pour les faire effacer, écrivez-nous. Vous pouvez aussi demander la suppression par e-mail à <Mail />.
     {" "}Si le launcher était connecté, il vous déconnecte dans la minute et ne recrée pas votre compte tout seul :
     pour cela, nous gardons seulement une empreinte (hachage SHA-256) de votre identifiant Minecraft et la date de suppression.
     Un nouveau compte n&apos;est créé que si vous vous reconnectez avec Microsoft, sur le site ou dans le launcher, ou
@@ -53,9 +53,10 @@ const DeletionEn = () => (
     <B>Delete your account yourself</B>: sign in on the website, then Dashboard, Settings, &quot;Delete my account&quot;
     (you must type the confirmation word). It is immediate and permanent: your account, your server listings (with
     their images, statistics and received reports), your notifications, your friends, your
-    online presence, the servers you followed, your warnings and moderation notes are erased. Only the reports you
-    filed on other owners&apos; listings remain, tied to your Minecraft identifier, until those listings are deleted:
-    write to us to have them erased too. You can also ask for deletion by email at <Mail />.
+    online presence, the servers you followed, your warnings and moderation notes, your teams, your online worlds, your
+    suggested packs and all the reports you filed are erased. A pack already accepted stays available, without your
+    username. Messages sent through the contact form are not linked to your account: write to us to have them erased.
+    You can also ask for deletion by email at <Mail />.
     {" "}If the launcher was signed in, it signs you out within a minute and does not recreate your account on its
     own: for that, we only keep a fingerprint (SHA-256 hash) of your Minecraft identifier and the deletion date. A new
     account is only created if you sign in with Microsoft again, on the website or in the launcher, or send a friend
@@ -137,9 +138,11 @@ export function privacyPolicy(locale: Locale): LegalPage {
               </>,
               <>
                 <B>Présence en ligne</B> : tant que le launcher est ouvert et connecté, il nous envoie un signal toutes
-                les 60 secondes avec votre identifiant Minecraft. Nous gardons seulement la date et l&apos;heure du
-                dernier signal. But : montrer à vos amis acceptés si vous êtes en ligne (dernier signal il y a moins de
-                2 minutes). Ce signal ne peut pas être coupé pour l&apos;instant, sauf en vous déconnectant du launcher.
+                les 3 minutes environ (5 minutes en jeu ou fenêtre réduite) avec votre identifiant Minecraft. Nous gardons
+                la date et l&apos;heure du dernier signal et, si vous jouez sur un serveur public de l&apos;annuaire, le
+                nom de ce serveur. But : montrer à vos amis acceptés si vous êtes en ligne (dernier signal il y a moins de
+                7 minutes) et sur quel serveur public vous jouez. Une partie solo ou sur un serveur privé n&apos;est pas
+                indiquée. Ce signal ne peut pas être coupé pour l&apos;instant, sauf en vous déconnectant du launcher.
               </>,
               <>
                 <B>Amis</B> : les demandes d&apos;ami (qui l&apos;a envoyée, à qui, date, en attente ou acceptée). Une
@@ -167,6 +170,16 @@ export function privacyPolicy(locale: Locale): LegalPage {
               <>
                 <B>Nombre de joueurs en ligne</B> : le site interroge le serveur de jeu ; seule la dernière mesure est
                 gardée.
+              </>,
+              <>
+                <B>Mondes en ligne</B> (si cette fonction vous est ouverte) : vos mondes sauvegardés, leur nom, leur
+                version et le nom de votre PC, pour les retrouver sur un autre ordinateur. Effacés quand vous les retirez
+                ou supprimez votre compte.
+              </>,
+              <>
+                <B>Packs proposés</B> : le fichier que vous envoyez, son nom et sa description. Il n&apos;est vu que par
+                l&apos;équipe tant qu&apos;il n&apos;est pas accepté. Un pack accepté devient un pack officiel, avec votre
+                pseudo comme auteur.
               </>,
               <>
                 <B>Signalements</B> : pseudo et UUID de la personne qui signale, catégorie, message, lien de preuve
@@ -306,7 +319,12 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 <B>Sentry</B> (Functional Software, Inc., données stockées dans l&apos;Union européenne) : rapports
                 d&apos;erreurs du site et du launcher, pour corriger les pannes. Ils contiennent le message d&apos;erreur,
                 la page ou l&apos;écran concerné, le navigateur ou le système et la version, jamais votre adresse IP, votre
-                pseudo ni votre adresse e-mail.
+                pseudo, votre adresse e-mail ni votre identifiant Minecraft. Dans le launcher, vous pouvez les couper :
+                Paramètres, Confidentialité.
+              </>,
+              <>
+                <B>YouTube</B> (Google) : la vidéo d&apos;une fiche de serveur ne se charge que si vous cliquez dessus
+                (lecteur youtube-nocookie). YouTube voit alors votre adresse IP.
               </>,
               <>
                 <B>Microsoft</B> (Xbox Live, Minecraft) : connexion, en tant que responsable distinct de votre compte
@@ -321,7 +339,7 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 launcher vérifie ou télécharge une mise à jour.
               </>,
               <>Les propriétaires de serveurs, pour les signalements techniques qui les concernent.</>,
-              <>Vos amis acceptés, pour votre identifiant Minecraft et votre présence en ligne.</>,
+              <>Vos amis acceptés, pour votre identifiant Minecraft, votre présence en ligne et le serveur public où vous jouez.</>,
               <>L&apos;équipe de modération d&apos;Omniscient.</>,
               <>Les autorités, sur demande légale.</>,
             ]}
@@ -389,7 +407,7 @@ export function privacyPolicy(locale: Locale): LegalPage {
         title: "12. Cookies et stockage local",
         body: (
           <>
-            <p>Le site n&apos;utilise que des éléments nécessaires à son fonctionnement ; aucun consentement n&apos;est donc demandé.</p>
+            <p>Tous les éléments ci-dessous sont nécessaires au fonctionnement du site, sauf la mesure d&apos;audience « omni-visitor », qui n&apos;est pas encore active pour le public.</p>
             <List
               items={[
                 <>Cookie de session (connexion) : jusqu&apos;à 30 jours.</>,
@@ -473,10 +491,12 @@ function privacyEn(): LegalPage {
                 sign-in, from your Minecraft profile as verified with Mojang.
               </>,
               <>
-                <B>Online presence</B>: while the launcher is open and signed in, it sends us a signal every 60 seconds
-                with your Minecraft identifier. We only keep the date and time of the latest signal. Purpose: showing
-                your accepted friends whether you are online (latest signal less than 2 minutes ago). This signal cannot
-                be turned off for now, except by signing out of the launcher.
+                <B>Online presence</B>: while the launcher is open and signed in, it sends us a signal about every 3 minutes
+                (5 minutes in game or when the window is minimized) with your Minecraft identifier. We keep the date and
+                time of the latest signal and, if you are playing on a public server from the directory, that server&apos;s
+                name. Purpose: showing your accepted friends whether you are online (latest signal less than 7 minutes
+                ago) and which public server you are playing on. Solo play and private servers are not shown. This signal
+                cannot be turned off for now, except by signing out of the launcher.
               </>,
               <>
                 <B>Friends</B>: friend requests (who sent it, to whom, date, pending or accepted). A request is made by
@@ -503,6 +523,15 @@ function privacyEn(): LegalPage {
               </>,
               <>
                 <B>Players online</B>: the website queries the game server; only the latest measurement is kept.
+              </>,
+              <>
+                <B>Online worlds</B> (if this feature is open to you): your saved worlds, their name, their version and
+                your PC&apos;s name, so you can find them on another computer. Erased when you remove them or delete your
+                account.
+              </>,
+              <>
+                <B>Suggested packs</B>: the file you send, its name and its description. Only the team sees it until it
+                is accepted. An accepted pack becomes an official pack, with your username as its author.
               </>,
               <>
                 <B>Reports</B>: username and UUID of the reporter, category, message, optional proof link, game and
@@ -633,7 +662,12 @@ function privacyEn(): LegalPage {
               <>
                 <B>Sentry</B> (Functional Software, Inc., data stored in the European Union): error reports from the
                 website and the launcher, used to fix outages. They contain the error message, the page or screen
-                involved, the browser or system and the version, never your IP address, username or email address.
+                involved, the browser or system and the version, never your IP address, username, email address or
+                Minecraft identifier. In the launcher you can turn them off: Settings, Privacy.
+              </>,
+              <>
+                <B>YouTube</B> (Google): a video on a server listing only loads if you click it (youtube-nocookie
+                player). YouTube then sees your IP address.
               </>,
               <>
                 <B>Microsoft</B> (Xbox Live, Minecraft): sign-in, as an independent controller of your Microsoft
@@ -648,7 +682,7 @@ function privacyEn(): LegalPage {
                 for or downloads an update.
               </>,
               <>Server owners, for technical reports about their server.</>,
-              <>Your accepted friends, for your Minecraft identifier and online presence.</>,
+              <>Your accepted friends, for your Minecraft identifier, your online presence and the public server you are playing on.</>,
               <>The Omniscient moderation team.</>,
               <>Authorities, upon legal request.</>,
             ]}
@@ -713,7 +747,7 @@ function privacyEn(): LegalPage {
         title: "12. Cookies and local storage",
         body: (
           <>
-            <p>The website only uses what it needs to work, so no consent is requested.</p>
+            <p>Everything below is needed for the website to work, except the &quot;omni-visitor&quot; audience measurement, which is not active for the public yet.</p>
             <List
               items={[
                 <>Session cookie (sign-in): up to 30 days.</>,

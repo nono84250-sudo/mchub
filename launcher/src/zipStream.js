@@ -273,6 +273,12 @@ async function readZipEntry(zipFile, entry, { maxBytes = 64 * 1024 * 1024 } = {}
 async function extractZip(zipFile, destDir, { onBytes, signal, pick = null, keepExisting = null, order = null, onEntry = null } = {}) {
   const entries = await listZip(zipFile);
   if (order) entries.sort(order);
+  // Audit du 01/11 : un zip piégé ne remplit plus le disque. Ce que l'archive annonce doit tenir dans
+  // la place libre, et chaque fichier s'arrête à la taille annoncée (voir `check` ci-dessous).
+  const announced = entries.reduce((sum, e) => sum + (!pick || pick(e.name) ? e.size : 0), 0);
+  await fsp.mkdir(destDir, { recursive: true });
+  const free = await fsp.statfs(destDir).then((s) => s.bavail * s.bsize).catch(() => Infinity);
+  if (announced > free) throw new Error("Pas assez de place sur le disque pour extraire cette archive.");
   const handle = await fsp.open(zipFile, "r");
   try {
     for (const entry of entries) {
@@ -298,8 +304,11 @@ async function extractZip(zipFile, destDir, { onBytes, signal, pick = null, keep
       const dataStart = entry.localOffset + 30 + local.readUInt16LE(26) + local.readUInt16LE(28);
       const raw = fs.createReadStream(null, { fd: handle.fd, start: dataStart, end: dataStart + entry.compressed - 1, autoClose: false });
       let crc = 0;
+      let written = 0;
       const check = new (require("node:stream").Transform)({
         transform(chunk, _enc, cb) {
+          written += chunk.length;
+          if (written > entry.size) return cb(new Error(`Fichier abîmé dans l'archive : ${entry.name}`));
           crc = zlib.crc32(chunk, crc);
           onBytes?.(chunk.length);
           cb(null, chunk);

@@ -468,7 +468,7 @@ export function AdminBugCatalog({ initial, missingTables }: { initial: AdminBugE
                       ) : draft.status === "auto" ? (
                         <div className="bc-f">
                           <label htmlFor="bc-ver">Corrigé dans le launcher</label>
-                          <input className="er-in" id="bc-ver" value={draft.fixedIn} placeholder="0.4.1" onChange={(e) => edit({ fixedIn: e.target.value })} />
+                          <input className="er-in" id="bc-ver" value={draft.fixedIn} placeholder="0.4.2" onChange={(e) => edit({ fixedIn: e.target.value })} />
                         </div>
                       ) : (
                         <div />

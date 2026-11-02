@@ -21,14 +21,33 @@ function scrub(event) {
   delete event.user;
   delete event.server_name;
   const home = os.homedir();
-  if (!home) return event;
+  if (!home) return scrubStrings(event);
   const raw = JSON.stringify(event);
   const escaped = JSON.stringify(home).slice(1, -1);
   const cleaned = raw.replace(new RegExp(escapeRegExp(escaped), "gi"), "~").replace(new RegExp(escapeRegExp(home.replace(/\\/g, "/")), "gi"), "~");
-  return JSON.parse(cleaned);
+  return scrubStrings(JSON.parse(cleaned));
 }
 
-function init({ dsn, release }) {
+// Audit du 01/11 : un lien signé (mondes, packs) ou un UUID Minecraft ne part jamais dans un rapport.
+// La partie après « ? » ou « # » d'une adresse est retirée, les UUID sont masqués. Les identifiants
+// propres à Sentry restent intacts (sans eux, le rapport serait refusé).
+const SENTRY_ID_KEYS = new Set(["event_id", "trace_id", "span_id", "parent_span_id", "debug_id", "sid", "replay_id"]);
+const UUID_DASHED = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const UUID_PLAIN = /\b[0-9a-f]{32}\b/gi;
+function scrubText(text) {
+  return text
+    .replace(/(https?:\/\/[^\s"'<>?#]+)[?#][^\s"'<>]*/gi, "$1")
+    .replace(UUID_DASHED, "<uuid>")
+    .replace(UUID_PLAIN, "<uuid>");
+}
+function scrubStrings(value, key = "") {
+  if (typeof value === "string") return SENTRY_ID_KEYS.has(key) ? value : scrubText(value);
+  if (Array.isArray(value)) return value.map((item) => scrubStrings(item, key));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubStrings(v, k)]));
+  return value;
+}
+
+function init({ dsn, release, isEnabled = () => true }) {
   if (!dsn) return;
   try {
     Sentry = require("@sentry/electron/main");
@@ -43,7 +62,10 @@ function init({ dsn, release }) {
     sendDefaultPii: false,
     tracesSampleRate: 0,
     serverName: "launcher",
-    beforeSend: scrub,
+    // Paramètres > Confidentialité : coupé = plus aucun rapport, sans redémarrer.
+    beforeSend: (event) => (isEnabled() ? scrub(event) : null),
+    // Pas de minidump : une copie de la mémoire peut contenir un jeton de session.
+    integrations: (defaults) => defaults.filter((integration) => integration.name !== "SentryMinidump"),
     // Les messages de la console peuvent contenir un pseudo.
     beforeBreadcrumb: (breadcrumb) => (breadcrumb.category === "console" ? null : breadcrumb),
   });

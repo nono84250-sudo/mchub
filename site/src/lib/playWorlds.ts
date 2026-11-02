@@ -274,9 +274,9 @@ export async function takeWorldLock(worldId: string, deviceId: string, deviceNam
 }
 
 export async function beatWorldLocks(userId: string, worldKeys: string[], deviceId: string): Promise<void> {
-  for (const key of worldKeys.slice(0, 20)) {
-    await execSql('UPDATE "cloudWorld" SET "openBeatAt" = ? WHERE "userId" = ? AND "worldKey" = ? AND "openDeviceId" = ?', [now(), userId, key, deviceId]);
-  }
+  const keys = worldKeys.slice(0, 20);
+  if (!keys.length) return;
+  await execSql(`UPDATE "cloudWorld" SET "openBeatAt" = ? WHERE "userId" = ? AND "openDeviceId" = ? AND "worldKey" IN (${keys.map(() => "?").join(", ")})`, [now(), userId, deviceId, ...keys]);
 }
 
 export async function releaseWorldLock(userId: string, worldKey: string, deviceId: string): Promise<void> {

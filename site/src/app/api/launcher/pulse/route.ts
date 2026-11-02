@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { identityErrorResponse, isAuthorizedLauncherRequest, LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, verifyLauncherProfile } from "@/lib/launcherAuth";
 import { readLauncherSession } from "@/lib/launcherSession";
-import { listNotificationsForRecipient } from "@/lib/notifications";
+import { execSqlBatch } from "@/lib/db";
+import { listNotificationsForRecipient, notificationsFromRows, notificationsStatement } from "@/lib/notifications";
 import { getLauncherStatus } from "@/lib/platformSettings";
-import { recordPresenceHeartbeat, recordSessionPresence } from "@/lib/presence";
+import { recordPresenceHeartbeat, sessionPresenceStatement } from "@/lib/presence";
 import { listPublicServers } from "@/lib/public-servers";
 import { rateLimitResponse } from "@/lib/rateLimit";
 import { findOrCreateUserByMinecraft } from "@/lib/users";
 import { withD1Busy } from "@/lib/d1Busy";
 import { requireLauncherFeature } from "@/lib/features";
-import { listFriendsOverview } from "@/lib/friends";
+import { friendsOverviewFromRows, friendsStatement, listFriendsOverview } from "@/lib/friends";
 
 // Idee 2 du lancement (19/10) : signal groupe du launcher (une fois par minute a l'origine). Remplace trois
 // appels separes (presence chaque minute, maintenance toutes les 2 min, notifications toutes les
@@ -46,8 +47,31 @@ export const POST = withD1Busy(async (request: Request) => {
 
   const token = request.headers.get(LAUNCHER_SESSION_HEADER);
   const claims = token ? readLauncherSession(token) : null;
-  let userId = claims && claims.uuid === minecraftUuid ? await recordSessionPresence(minecraftUuid, claims.issuedAt, playingSlug) : null;
-  if (!userId) {
+  const wantsNotifications = body.withNotifications === true;
+  const wantsFriends = body.withFriends === true && !(await requireLauncherFeature(request, "friends"));
+  // Cas normal (audit du 01/11, S2) : présence, notifications et amis en UN SEUL appel à la base, au
+  // lieu de 3 ou 4. Sans jeton valable, on retombe plus bas sur le chemin complet.
+  if (claims && claims.uuid === minecraftUuid) {
+    const statements = [
+      sessionPresenceStatement(minecraftUuid, claims.issuedAt, playingSlug),
+      ...(wantsNotifications ? [notificationsStatement(minecraftUuid)] : []),
+      ...(wantsFriends ? [friendsStatement('(SELECT "id" FROM "user" WHERE "minecraftUuid" = ?)', minecraftUuid)] : []),
+    ];
+    const results = await execSqlBatch(statements);
+    const accountId = (results[0][0] as { userId?: string } | undefined)?.userId;
+    if (accountId) {
+      const status = await getLauncherStatus();
+      return NextResponse.json({
+        ok: true,
+        maintenance: status.maintenance,
+        disruption: status.disruption,
+        ...(wantsNotifications ? { notifications: notificationsFromRows(results[1]) } : {}),
+        ...(wantsFriends ? { friends: friendsOverviewFromRows(results[results.length - 1] as Parameters<typeof friendsOverviewFromRows>[0], accountId) } : {}),
+      });
+    }
+  }
+  let userId: string | null = null;
+  {
     const { check: identity, name } = await verifyLauncherProfile(request, minecraftUuid);
     if (identity !== "verified") return identityErrorResponse(identity);
     const user = await findOrCreateUserByMinecraft(minecraftUuid, name, { explicit: false });
@@ -60,7 +84,7 @@ export const POST = withD1Busy(async (request: Request) => {
   // Amis : ignores sans erreur si la fonction est cachee pour ce joueur (le launcher garde alors
   // sa liste actuelle) ou si la lecture rate (la presence, elle, est deja enregistree).
   const loadFriends = async () => {
-    if (body.withFriends !== true || (await requireLauncherFeature(request, "friends"))) return undefined;
+    if (!wantsFriends) return undefined;
     return listFriendsOverview(accountId).catch((error) => {
       console.error("[pulse] amis illisibles", error);
       return undefined;
@@ -68,7 +92,7 @@ export const POST = withD1Busy(async (request: Request) => {
   };
   const [status, notifications, friends] = await Promise.all([
     getLauncherStatus(),
-    body.withNotifications === true ? listNotificationsForRecipient(minecraftUuid) : Promise.resolve(undefined),
+    wantsNotifications ? listNotificationsForRecipient(minecraftUuid) : Promise.resolve(undefined),
     loadFriends(),
   ]);
   return NextResponse.json({

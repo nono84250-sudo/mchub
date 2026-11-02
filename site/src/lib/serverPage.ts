@@ -86,7 +86,14 @@ export type PageSection = (typeof PAGE_SECTIONS)[number];
 
 // Lecteur YouTube integre et lancement automatique : coupes le 16/10 (YouTube demandait de se
 // connecter, « pas un robot »), rallumes le 18/10 : le test de Rushi montre que le lecteur marche. false pour les couper.
+// Longueurs maximales du nom et de la description d'une fiche (audit du 01/11), partout où ils s'écrivent.
+export const SERVER_NAME_MAX = 80;
+export const SERVER_DESCRIPTION_MAX = 4000;
+
 export const VIDEO_EMBED_ENABLED = true;
+// Audit du 01/11 : tant que l'avocat n'a pas répondu, aucune vidéo ne se charge sans clic, même si le
+// propriétaire a coché « Lancer automatiquement » (son choix reste enregistré). Pour rétablir : true.
+export const VIDEO_AUTOPLAY_ENABLED = false;
 
 export const PAGE_LIMITS = { about: 2000, rules: 8, ruleLength: 120, caption: 40, tags: 3, extraTags: 8, gallery: 3, url: 200, installMessage: 300 } as const;
 

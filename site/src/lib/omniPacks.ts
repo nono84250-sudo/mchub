@@ -4,7 +4,8 @@ import { revalidateTag } from "next/cache";
 import { execSql } from "@/lib/db";
 import { PLAY_TAG, type PackFile } from "@/lib/playWorlds";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { PACKS_BUCKET, deletePrefix, listWorldObjects, omnipackPartKey, omnipackPrefix, presignDownload, readWorldObject } from "@/lib/worldStorage";
+import { PACKS_BUCKET, deletePrefix, listWorldObjects, omnipackPartKey, omnipackPrefix, presignDownload, readWorldObject, readWorldObjectRange } from "@/lib/worldStorage";
+import { readCentralDirectory, readZipTail, refusedEntry } from "@/lib/omniArchiveCheck";
 
 // Pack Omniscient (27/10, preview v22 validée par Rushi). Un joueur fait son pack dans le launcher,
 // l'exporte « Pour Omniscient » (.omnipack) et le propose depuis le site (Tableau de bord ›
@@ -26,7 +27,9 @@ const SHA_RE = /^[0-9a-f]{64}$/;
 const MC_ID = /^[\w.+-]{1,32}$/;
 const LOADERS = ["fabric", "quilt", "forge", "neoforge"];
 const SAFE_JAR = /^[\w.+() [\]!'&,-]+\.jar$/i;
-const SAFE_ZIP = /^[\w.+() [\]!'&,-]+\.zip$/i;
+// Noms décorés (§, ✦) permis : de vrais packs de ressources Modrinth en ont. Pas de dossier ni de
+// caractère interdit par Windows (audit du 01/11).
+const SAFE_ZIP = /^(?!\.)[^\/:*?"<>|\u0000-\u001f]+\.zip$/i;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -167,8 +170,34 @@ export function expectedPartSize(s: Pick<Submission, "sizeBytes" | "parts">, n: 
   return n < s.parts - 1 ? OMNI_PART_SIZE : s.sizeBytes - OMNI_PART_SIZE * (s.parts - 1);
 }
 
+// Lit `length` octets à partir de `offset` dans une archive rangée par morceaux de 4 Mio.
+async function readArchiveRange(prefix: string, offset: number, length: number): Promise<Uint8Array> {
+  const out = new Uint8Array(length);
+  let done = 0;
+  while (done < length) {
+    const at = offset + done;
+    const part = Math.floor(at / OMNI_PART_SIZE);
+    const start = at - part * OMNI_PART_SIZE;
+    const n = Math.min(length - done, OMNI_PART_SIZE - start);
+    const chunk = await readWorldObjectRange(omnipackPartKey(prefix, part), start, start + n - 1, PACKS_BUCKET);
+    if (!chunk || chunk.length !== n) throw new Error("Fichier introuvable.");
+    out.set(chunk, done);
+    done += n;
+  }
+  return out;
+}
+
+// Audit du 01/11 : tout le contenu du zip est contrôlé, pas seulement omnipack.json.
+async function checkArchiveContent(prefix: string, sizeBytes: number): Promise<void> {
+  if (sizeBytes < 22) throw new Error("Ce fichier n'est pas une archive .omnipack.");
+  const tail = readZipTail(await readArchiveRange(prefix, sizeBytes - 22, 22), sizeBytes);
+  const entries = readCentralDirectory(await readArchiveRange(prefix, tail.centralOffset, tail.centralSize), tail.count);
+  const refused = refusedEntry(entries);
+  if (refused) throw new Error(`Fichier refusé dans le pack : ${str(refused, 120)}. Un pack proposé ne contient que des mods Modrinth et des fichiers de configuration.`);
+}
+
 // Tous les morceaux sont arrivés : le site lit omnipack.json dans l'archive (jamais ce que le
-// navigateur en dit), le vérifie, et le pack passe « en attente » de l'admin.
+// navigateur en dit), le vérifie, contrôle le reste du zip, et le pack passe « en attente » de l'admin.
 export async function finishSubmission(s: Submission): Promise<string | null> {
   const prefix = omnipackPrefix(s.userId, s.id);
   const objects = await listWorldObjects(prefix, PACKS_BUCKET);
@@ -179,6 +208,7 @@ export async function finishSubmission(s: Submission): Promise<string | null> {
     const head = await readWorldObject(omnipackPartKey(prefix, 0), OMNI_PART_SIZE, PACKS_BUCKET);
     if (!head) throw new Error("Fichier introuvable.");
     manifest = checkManifest(manifestFromArchiveStart(head));
+    await checkArchiveContent(prefix, Number(s.sizeBytes));
   } catch (error) {
     await dropSubmissionFiles(s);
     await execSql('DELETE FROM "playPackSubmission" WHERE "id" = ?', [s.id]);
@@ -194,6 +224,16 @@ export async function cancelSubmission(s: Submission): Promise<boolean> {
   await dropSubmissionFiles(s);
   await execSql('DELETE FROM "playPackSubmission" WHERE "id" = ?', [s.id]);
   return true;
+}
+
+// Suppression de compte : envois effacés ; un pack déjà accepté reste, sans le pseudo de son auteur.
+export async function deleteUserSubmissions(userId: string): Promise<void> {
+  const rows = (await execSql('SELECT "id", "userId", "status" FROM "playPackSubmission" WHERE "userId" = ?', [userId])) as Submission[];
+  for (const s of rows) {
+    if (s.status !== "imported") await dropSubmissionFiles(s);
+    else await execSql('UPDATE "playPack" SET "author" = NULL WHERE "submissionId" = ?', [s.id]);
+  }
+  await execSql('DELETE FROM "playPackSubmission" WHERE "userId" = ?', [userId]);
 }
 
 // --- Admin --------------------------------------------------------------------------------------

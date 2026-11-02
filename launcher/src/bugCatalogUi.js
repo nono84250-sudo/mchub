@@ -129,7 +129,11 @@
     box.querySelector("#bc-site")?.addEventListener("click", () => bugsApi.openPage(f.slug));
     const copy = box.querySelector("#bc-copy");
     copy?.addEventListener("click", () => copyLogs(copy));
+    window.__bugHelp?.bind(box, hint);
   }
+  // Aide Discord (02/11, Laboratoire « bugDiscord ») : le bloc à 3 boutons remplace « Copier les logs ».
+  const helpOn = (hasLogs) => hasLogs && window.__bugHelp?.isOn();
+  const helpBlock = (hasLogs) => (helpOn(hasLogs) ? `${window.__bugHelp.html()}<p class="bc-why">${esc(window.__bugHelp.safe())}</p>` : "");
 
   function showConsent({ entry: f, versionId, test, hasLogs }) {
     open(`${head("acc", SVG.wrench, t("known"), f.title?.[L()])}
@@ -139,7 +143,8 @@
         ${stepsOf(f).length ? `<details class="bc-det"><summary>${esc(t("myself"))}</summary><div>${stepsHtml(f)}</div></details>` : ""}
         ${pageRow(f)}
         ${why(f)}
-        ${hasLogs ? `<button type="button" class="bc-link" id="bc-copy">${esc(t("notMine"))}</button>` : ""}
+        ${helpBlock(hasLogs)}
+        ${hasLogs && !helpOn(hasLogs) ? `<button type="button" class="bc-link" id="bc-copy">${esc(t("notMine"))}</button>` : ""}
       </div>
       <div class="modal-actions"><button type="button" class="btn-secondary" id="bc-no">${esc(t("notNow"))}</button><button type="button" class="join-btn" id="bc-go">${esc(t("fix"))}</button></div>`);
     bindCommon(f);
@@ -153,11 +158,11 @@
         close();
         return hint(t("testNoRepair"));
       }
-      repair(f, versionId);
+      repair(f, versionId, hasLogs);
     };
   }
 
-  async function repair(f, versionId) {
+  async function repair(f, versionId, hasLogs) {
     busy = true;
     const labels = [t("stepBackup"), t(`step_${f.fixAction}`, { arg: f.fixArg }), t("stepCheck")];
     const draw = (i) => {
@@ -169,9 +174,10 @@
     busy = false;
     if (!out?.ok) {
       box.querySelector(".modal-head").outerHTML = head("warn", "!", t("repairFailed"), f.title?.[L()]);
-      box.querySelector(".bc-scroll").innerHTML = `<p class="bc-p">${esc(out?.error || "")}</p>${stepsOf(f).length ? `<div><p class="bc-kicker" style="margin-bottom:8px">${esc(t("whatToDo"))}</p>${stepsHtml(f)}</div>` : ""}`;
+      box.querySelector(".bc-scroll").innerHTML = `<p class="bc-p">${esc(out?.error || "")}</p>${stepsOf(f).length ? `<div><p class="bc-kicker" style="margin-bottom:8px">${esc(t("whatToDo"))}</p>${stepsHtml(f)}</div>` : ""}${helpBlock(hasLogs)}`;
       box.querySelector(".modal-actions").innerHTML = `<button type="button" class="join-btn" id="bc-ok">OK</button>`;
       box.querySelector("#bc-ok").onclick = close;
+      window.__bugHelp?.bind(box, hint);
       return box.querySelector("#bc-ok").focus();
     }
     draw(labels.length);
@@ -194,8 +200,9 @@
         ${list.length ? `<div><p class="bc-kicker" style="margin-bottom:8px">${esc(t("whatToDo"))}</p>${stepsHtml(f)}</div>` : ""}
         ${pageRow(f)}
         ${why(f)}
+        ${helpBlock(hasLogs)}
       </div>
-      <div class="modal-actions">${hasLogs ? `<button type="button" class="btn-secondary" id="bc-copy">${esc(t("didntWork"))}</button>` : ""}<button type="button" class="join-btn" id="bc-ok">OK</button></div>`);
+      <div class="modal-actions">${hasLogs && !helpOn(hasLogs) ? `<button type="button" class="btn-secondary" id="bc-copy">${esc(t("didntWork"))}</button>` : ""}<button type="button" class="join-btn" id="bc-ok">OK</button></div>`);
     bindCommon(f);
     box.querySelector("#bc-ok").onclick = close;
   }

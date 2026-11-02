@@ -63,7 +63,7 @@ export async function AdminChrome({ children, active = "parametres" }: { childre
       <link rel="stylesheet" href="/admin/nocturne.css" />
       <link rel="stylesheet" href="/admin/nb.css" />
       {/* 25/10 : feuille de style des icones au lieu du script (le script faisait echouer l'hydratation en dev). */}
-      <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+      <link rel="stylesheet" href="/vendor/phosphor/style.css" />
       <div style={WRAPPER_VARS} dangerouslySetInnerHTML={{ __html: content }} />
       <SlotPortal slotId={SLOT_ID}>{children}</SlotPortal>
     </>

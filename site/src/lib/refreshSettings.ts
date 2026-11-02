@@ -22,6 +22,10 @@ export const OWNED_SERVERS_SECONDS = 60;
 export const PUBLIC_LIST_CDN_SECONDS = 30;
 export const PUBLIC_LIST_CDN_STALE_SECONDS = 30;
 
+// Pages /servers et fiches (audit du 01/11, S4) : les chiffres ne changent que toutes les 5 min, les
+// redemander toutes les 30 s ne servait à rien.
+export const PUBLIC_PAGE_REFRESH_MS = 5 * 60_000;
+
 // Amis : un joueur est « en ligne » si son launcher a donne signe de vie depuis moins de 7 min.
 // En jeu, le launcher n'envoie sa presence que toutes les 5 min (voir renderer.js) : 7 min
 // laissent la marge d'un envoi en retard. Consequence acceptee par Rushi : apres la fermeture du
@@ -32,8 +36,8 @@ export const ONLINE_WINDOW_SECONDS = 7 * 60;
 // « en ligne » 2 min après son dernier signal, puis sa ligne est effacée.
 export const ANALYTICS_PING_SECONDS = 60;
 export const ANALYTICS_SITE_WINDOW_SECONDS = 120;
-// Le site n'écrit les signaux reçus dans la base qu'une fois toutes les 15 s au plus (par instance) :
-// voir lib/analytics.ts, le quota Cloudflare est partagé avec tout le reste.
-export const ANALYTICS_FLUSH_SECONDS = 15;
+// Le site n'écrit les signaux reçus dans la base qu'une fois par minute au plus (par instance) :
+// voir lib/analytics.ts, le quota Cloudflare est partagé avec tout le reste (audit du 01/11, S8).
+export const ANALYTICS_FLUSH_SECONDS = 60;
 // Page /admin/analytique ouverte et visible : une requête groupée toutes les 30 s.
 export const ANALYTICS_ADMIN_REFRESH_SECONDS = 30;

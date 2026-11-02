@@ -31,6 +31,7 @@ const { pipeline } = require("node:stream/promises");
 const { writeZip, extractZip, listZip } = require("./zipStream");
 const { readLevelDat } = require("./levelDat");
 const packs = require("./playPacks");
+const packRam = require("./packRam");
 
 const WORLD_FILE = "omniscient-world.json";
 // Combien de sauvegardes garder sur le PC, monde par monde (preview validée par Rushi le 24/10) :
@@ -129,10 +130,43 @@ function createPlayMode({ gameRoot, appDataDir }) {
     if (!state.worlds || typeof state.worlds !== "object") state.worlds = {};
     return state;
   }
-  async function saveState() {
-    await fsp.mkdir(PLAY_ROOT, { recursive: true });
-    await fsp.writeFile(`${STATE_FILE}.part`, JSON.stringify(state, null, 2));
-    await fsp.rename(`${STATE_FILE}.part`, STATE_FILE);
+  // Écriture sûre d'un fichier JSON (02/11, Rushi : « fichier non trouvé » de temps en temps à l'import
+  // d'un pack). Avant, deux sauvegardes en même temps (l'import et la liste des mondes, par exemple)
+  // écrivaient la même copie « play.json.part » : la 1re la renommait, la 2e ne la trouvait plus
+  // (« ENOENT: no such file or directory, rename … »). Maintenant les écritures d'un même fichier
+  // passent une par une, chacune avec sa propre copie temporaire, et le renommage réessaie quelques
+  // fois si Windows (antivirus, indexation) tient le fichier un instant.
+  const writeChains = new Map();
+  function writeJsonSafe(file, data) {
+    const prev = writeChains.get(file) || Promise.resolve();
+    const run = prev.then(async () => {
+      await fsp.mkdir(path.dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}-${crypto.randomBytes(4).toString("hex")}.part`;
+      try {
+        await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await fsp.rename(tmp, file);
+            break;
+          } catch (error) {
+            if (attempt >= 5 || !["EPERM", "EBUSY", "EACCES"].includes(error?.code)) throw error;
+            await new Promise((r) => setTimeout(r, 100 * attempt));
+          }
+        }
+      } catch (error) {
+        await fsp.rm(tmp, { force: true }).catch(() => {});
+        throw error;
+      }
+    });
+    const tail = run.catch(() => {});
+    writeChains.set(file, tail);
+    tail.then(() => {
+      if (writeChains.get(file) === tail) writeChains.delete(file);
+    });
+    return run;
+  }
+  function saveState() {
+    return writeJsonSafe(STATE_FILE, state);
   }
   // Audit du 25/10 : une clé de monde ne sert dans un chemin que si elle a la forme attendue
   // (jamais « .. » ni « __proto__ » venus de la fenêtre).
@@ -209,6 +243,17 @@ function createPlayMode({ gameRoot, appDataDir }) {
     const v = getVersion(id);
     if (!v || typeof icon !== "string" || !/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(icon) || icon.length > 210_000) return false;
     v.icon = icon;
+    await saveState();
+    return true;
+  }
+  // RAM par pack (01/11, Laboratoire « packRam ») : réglage de l'installation (voir packRam.js).
+  async function setVersionRam(id, ram) {
+    const v = getVersion(id);
+    const clean = packRam.cleanRam(ram);
+    if (!v || !clean) return false;
+    // La RAM conseillée par le fichier du pack reste, même quand le joueur change de mode.
+    if (!clean.packGB && v.ram?.packGB) clean.packGB = v.ram.packGB;
+    v.ram = clean;
     await saveState();
     return true;
   }
@@ -388,9 +433,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
   }
   async function writeBackups(key, list) {
     await fsp.mkdir(path.join(BACKUPS, key), { recursive: true });
-    const file = backupIndexFile(key);
-    await fsp.writeFile(`${file}.part`, JSON.stringify(list, null, 2));
-    await fsp.rename(`${file}.part`, file);
+    await writeJsonSafe(backupIndexFile(key), list);
   }
 
   async function iconDataUrl(dir) {
@@ -2614,6 +2657,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
 
   return {
     setVersionIcon,
+    setVersionRam,
     PLAY_ROOT,
     GAME_DIR,
     SAVES,

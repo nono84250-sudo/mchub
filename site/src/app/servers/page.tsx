@@ -13,6 +13,7 @@ import { filtersToSearch, parseFilters } from "@/lib/serverFilters";
 import { DEFAULT_OG_IMAGE, DEFAULT_TWITTER_IMAGE } from "@/lib/seo";
 import { getT } from "@/i18n/getDictionary";
 import { t } from "@/i18n/t";
+import { PUBLIC_PAGE_REFRESH_MS } from "@/lib/refreshSettings";
 
 const TITLE = "Serveurs — Omniscient";
 const DESCRIPTION = "Parcourez l'annuaire Omniscient : des serveurs Minecraft vanilla et moddés, avec leur nombre de joueurs en direct, à lancer en un clic.";
@@ -77,7 +78,7 @@ export default async function ServersPage({ searchParams }: PageProps<"/servers"
     // Design 2026-10-17, point 5 : au-dela de 1500 px, deux colonnes de cartes (un seul
     // affichage a maintenir, pas de bouton liste/grille).
     <div className="mx-auto max-w-6xl min-[1500px]:max-w-[1400px] px-4 sm:px-6 py-12">
-      <AutoRefresh intervalMs={30_000} />
+      <AutoRefresh intervalMs={PUBLIC_PAGE_REFRESH_MS} />
       <h1 className="text-3xl font-bold tracking-tight text-foreground">{dict.servers.title}</h1>
       <p className="mt-1 text-muted">
         {t(dict, directoryTotal === 1 ? "servers.count" : "servers.countPlural", { count: directoryTotal })}

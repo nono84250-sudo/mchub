@@ -311,17 +311,9 @@ export async function execSql(sql: string, params: unknown[] = []) {
   return (await d1()).prepare(sql).bind(...params.map(toDb)).run();
 }
 
-// ponytail: l'API REST D1 n'offre pas de transaction (contrairement a database.batch() en
-// Workers) : ces instructions s'executent l'une apres l'autre, pas de facon atomique. Risque
-// mineur ici (compteur de vue/lancement + evenement) ; passer par un Worker intermediaire si
-// ca doit un jour etre garanti atomique.
-export async function execBatch(stmts: { sql: string; params?: unknown[] }[]) {
-  for (const s of stmts) await execSql(s.sql, s.params ?? []);
-}
-
 // Panel Analytique (31/10) : plusieurs instructions en UN SEUL appel a Cloudflare (champ « batch »
-// de l'API REST, execute comme une transaction), contrairement a execBatch ci-dessus. Renvoie les
-// lignes de chaque instruction, dans le meme ordre.
+// de l'API REST, execute comme une transaction). Renvoie les lignes de chaque instruction, dans le
+// meme ordre. Audit du 01/11 (S3) : les compteurs de vue et de lancement passent aussi par ici.
 export async function execSqlBatch(stmts: { sql: string; params?: unknown[] }[]): Promise<Row[][]> {
   const batch = stmts.map((s) => ({ sql: s.sql, params: (s.params ?? []).map(toDb) }));
   const results = await d1Call(`batch(${stmts.length}) ${stmts[0]?.sql ?? ""}`, { batch });

@@ -3,11 +3,14 @@
 import { revalidateTag } from "next/cache";
 import { auth, signOut } from "@/auth";
 import { db, execSql } from "@/lib/db";
-import { deleteAllR2Images } from "@/lib/serverImages";
+import { deleteAllR2Images, deleteR2ImageIfOwned } from "@/lib/serverImages";
 import { markAccountDeleted } from "@/lib/users";
 import { normalizeMinecraftUuid } from "@/lib/launcherSession";
 import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { deleteAllCloudData } from "@/lib/playWorlds";
+import { deleteUserSubmissions } from "@/lib/omniPacks";
+import { removeTester } from "@/lib/features";
+import { TEAMS_READY } from "@/lib/teamRules";
 
 // Suppression definitive du compte (droit a l'effacement RGPD), en libre-service depuis la
 // page Compte. Le cascade DB (ON DELETE CASCADE sur server/serverEvent/report/playerWarning/
@@ -33,6 +36,20 @@ export async function deleteAccount(confirmation: string): Promise<{ error: Dele
   // Mode Jouer (24/10) : mondes sauvegardés en ligne (fichiers R2 et envois en cours). Les lignes
   // cloudWorld/cloudWorldVersion partent ensuite avec le cascade de "user".
   await deleteAllCloudData(user.id);
+  // Audit du 01/11 : ce qui restait après la suppression. Icônes de team et images de preuve : les
+  // lignes partent avec le cascade, les fichiers R2 non. Packs proposés : fichiers effacés (un pack
+  // déjà accepté reste, sans le pseudo de son auteur). Liste des testeurs du Laboratoire : par UUID.
+  if (TEAMS_READY) {
+    const teamImages = (await execSql(
+      `SELECT "iconUrl" AS "url" FROM "team" WHERE "ownerId" = ? UNION ALL SELECT "proofImageUrl" FROM "teamRequest" WHERE "userId" = ?`,
+      [user.id, user.id],
+    )) as unknown as { url: string | null }[];
+    await execSql(`DELETE FROM "teamRequest" WHERE "userId" = ?`, [user.id]);
+    await execSql(`DELETE FROM "team" WHERE "ownerId" = ?`, [user.id]);
+    for (const { url } of teamImages) await deleteR2ImageIfOwned(url, null);
+  }
+  await deleteUserSubmissions(user.id);
+  if (user.minecraftUuid) await removeTester(user.minecraftUuid);
 
   if (user.minecraftUuid) {
     await execSql(`DELETE FROM notification WHERE recipientMinecraftUuid = ?`, [user.minecraftUuid]);

@@ -1,6 +1,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("mchub", {
+  // Aide Discord dans les bugs (02/11) : rapport nettoyé, zip dans Téléchargements, lien du Discord.
+  bugHelp: {
+    text: (lang) => ipcRenderer.invoke("bugHelp:text", lang),
+    zip: (lang) => ipcRenderer.invoke("bugHelp:zip", lang),
+    discord: () => ipcRenderer.invoke("bugHelp:discord"),
+  },
   // Catalogue de bugs (31/10) : fiche reconnue, réparation proposée, compteurs.
   bugs: {
     onFound: (callback) => {
@@ -228,6 +234,12 @@ contextBridge.exposeInMainWorld("mchub", {
     renameVersion: (id, name) => ipcRenderer.invoke("play:renameVersion", id, name),
     removeVersion: (id, worlds) => ipcRenderer.invoke("play:removeVersion", id, Array.isArray(worlds) ? worlds : []),
     launch: (opts) => ipcRenderer.invoke("play:launch", opts),
+    // RAM par pack (01/11, Laboratoire « packRam »).
+    ram: {
+      info: (id) => ipcRenderer.invoke("play:ram:info", id),
+      set: (id, ram) => ipcRenderer.invoke("play:ram:set", id, ram),
+      list: () => ipcRenderer.invoke("play:ram:list"),
+    },
     listWorlds: () => ipcRenderer.invoke("play:listWorlds"),
     setWorldBackup: (key, on, opts) => ipcRenderer.invoke("play:setWorldBackup", key, on, opts),
     listBackups: (key) => ipcRenderer.invoke("play:listBackups", key),
@@ -383,6 +395,14 @@ contextBridge.exposeInMainWorld("mchub", {
       return () => ipcRenderer.removeListener("play:worldsChanged", listener);
     },
     // « Tester dans le launcher » (31/10) : fenêtre d'installation d'un pack proposé (main.js, installTestPack).
+    packFile: {
+      take: () => ipcRenderer.invoke("app:takePackFile"),
+      onOpen: (callback) => {
+        const listener = (_event, file) => callback(file);
+        ipcRenderer.on("app:packFile", listener);
+        return () => ipcRenderer.removeListener("app:packFile", listener);
+      },
+    },
     testPack: {
       onEvent: (callback) => {
         const listener = (_event, ev) => callback(ev);

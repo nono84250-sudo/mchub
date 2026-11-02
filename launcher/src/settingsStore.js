@@ -90,6 +90,8 @@ const DEFAULTS = {
   // Parametres > Divers > Discord : coupe = le launcher ne se connecte meme pas a Discord
   // (voir discordPresence.js, setEnabled).
   discordPresence: true,
+  // Parametres > Confidentialite : rapports d'erreurs anonymes (voir errorReports.js).
+  errorReports: true,
   // Parametres > Divers > Videos (16/10) : les videos des fiches serveur ne demarrent qu'au
   // clic, meme si le proprietaire a choisi le lancement automatique (voir setupPageVideo).
   blockVideoAutoplay: false,

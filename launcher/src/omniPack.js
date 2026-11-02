@@ -17,12 +17,15 @@ const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
 const packs = require("./playPacks");
+const packRam = require("./packRam");
 const { writeZip, listZip, readZipEntry, extractZip } = require("./zipStream");
 
 const FORMAT = 1;
 const CFG_DIRS = ["config", "defaultconfigs", "kubejs"];
 const SAFE_JAR = /^[\w.+() \[\]!'&,-]+\.jar$/i;
-const SAFE_ZIP = /^[\w.+() \[\]!'&,-]+\.zip$/i;
+// Nom d'un fichier .zip : pas de dossier ni de caractère interdit par Windows. Les noms décorés (§, ✦)
+// de vrais packs de ressources Modrinth sont permis (audit du 01/11, pack PVP refusé à l'import).
+const SAFE_ZIP = /^(?!\.)[^\/:*?"<>|\u0000-\u001f]+\.zip$/i;
 const MC_ID = /^[\w.+-]+$/;
 // Première version de Minecraft où chaque chargeur existe (liste des versions à générer).
 const LOADER_MIN = { fabric: "1.14", quilt: "1.14", forge: "1.7.10", neoforge: "1.20.2" };
@@ -35,6 +38,21 @@ const isMrUrl = (u) => {
   } catch {
     return false;
   }
+};
+// Audit du 01/11 : à l'installation, seuls les réglages sortent de overrides/ (même règle que
+// lib/omniArchiveCheck.ts côté site), et jamais d'exécutable, où qu'il soit dans l'archive. Le
+// fichier reste lisible par le launcher : c'est le chemin final qui est refusé.
+const FORBIDDEN_EXT = /\.(jar|exe|dll|bat|cmd|com|scr|msi|msp|ps1|psm1|vbs|vbe|wsf|wsh|hta|lnk|sh|so|dylib|class|pif|reg|cpl|jse|url)$/i;
+// 02/11 (test au8) : Windows retire les points et espaces en fin de nom (« evil.jar. » devient
+// evil.jar) et lit « a.txt:b » comme un flux caché. Un tel nom n'existe pas dans un vrai pack : refusé.
+const winUnsafe = (rel) => rel.split("/").some((seg) => /[. ]$/.test(seg) || /[<>:"|?*\x00-\x1f\\]/.test(seg));
+const isAllowedOverride = (rel) => {
+  if (winUnsafe(rel)) return false;
+  if (rel === "overrides/options.txt") return true;
+  if (FORBIDDEN_EXT.test(rel)) return false;
+  const [, dir] = rel.split("/");
+  if (!CFG_DIRS.includes(dir)) return false;
+  return dir === "kubejs" || !/\.(js|ts|py|rb|lua)$/i.test(rel);
 };
 const sha1File = async (file) => {
   const h = crypto.createHash("sha1");
@@ -157,6 +175,7 @@ function createOmniPack({ playMode }) {
       }
       const v = await playMode.createVersion({ minecraftVersion: mc, name, omni: { group, base: false } });
       await copyContent(base, v.id);
+      if (base.ram) await playMode.setVersionRam(v.id, base.ram).catch(() => false);
       return { mc, kind: "ok", id: v.id, miss: [], keepMiss: [] };
     }
     const loaderVersion = await packs.latestLoaderVersion(base.pack.loader, mc).catch(() => null);
@@ -178,6 +197,7 @@ function createOmniPack({ playMode }) {
     }
     const v = await playMode.createCustomVersion({ kind: "mine", name, minecraftVersion: mc, loader: base.pack.loader, loaderVersion, mods: list, omni: { group, base: false, missing: miss } });
     await copyContent(base, v.id);
+    if (base.ram) await playMode.setVersionRam(v.id, base.ram).catch(() => false);
     return { mc, kind: miss.length ? "part" : "ok", id: v.id, miss, keepMiss: [] };
   }
 
@@ -215,6 +235,8 @@ function createOmniPack({ playMode }) {
       datapacks: [],
       dpLoader: playMode.loaderOf(v),
       worlds: [],
+      // RAM conseillée pour cette version du pack (RAM par pack, 01/11) : calculée, pas celle du joueur.
+      ...(parts.ram !== false ? { ramGB: packRam.needGB(packRam.ctxOf(v)) } : {}),
     };
     if (v.pack) {
       for (const m of v.mods || []) {
@@ -320,7 +342,7 @@ function createOmniPack({ playMode }) {
     const zipFiles = [];
     const notModrinth = new Set();
     for (const g of group.sort((a, b) => cmpMc(b.minecraftVersion, a.minecraftVersion))) {
-      const r = await versionManifest(g, { parts: { cfg: parts.cfg !== false, rp: parts.rp !== false, sh: parts.sh !== false, dp: parts.dp !== false }, worldKeys: parts.w === false ? [] : worlds });
+      const r = await versionManifest(g, { parts: { cfg: parts.cfg !== false, rp: parts.rp !== false, sh: parts.sh !== false, dp: parts.dp !== false, ram: parts.ram !== false }, worldKeys: parts.w === false ? [] : worlds });
       r.notModrinth.forEach((n) => notModrinth.add(n));
       versions.push(r.entry);
       zipFiles.push(...r.zipFiles);
@@ -345,7 +367,7 @@ function createOmniPack({ playMode }) {
   // Pour un ami (.mrpack, format Modrinth) : mods en liens Modrinth, réglages, packs, mondes cochés.
   // Les mods qui ne viennent pas de Modrinth ne sont JAMAIS dans le fichier : leur liste (avec la page)
   // est dans « omniscient-a-telecharger.txt ».
-  async function exportMrpack(id, outFile, { parts = {}, worlds = [], plan = null } = {}) {
+  async function exportMrpack(id, outFile, { parts = {}, worlds = [], plan = null, ramGB = null } = {}) {
     const { v, dir } = playMode.omniSource(id);
     const index = {
       formatVersion: 1,
@@ -420,6 +442,13 @@ function createOmniPack({ playMode }) {
       const txt = path.join(os.tmpdir(), `omni-manual-${crypto.randomBytes(4).toString("hex")}.txt`);
       await fsp.writeFile(txt, `Mods à télécharger à la main (pas sur Modrinth) :\r\n\r\n${manual.join("\r\n")}\r\n`);
       zipFiles.push({ abs: txt, rel: "overrides/omniscient-a-telecharger.txt", mtimeMs: Date.now(), tmp: true });
+    }
+    // RAM conseillée (01/11) : le .mrpack n'a pas de case pour ça ; Omniscient la lit dans ce petit
+    // fichier à côté (Modrinth App et Prism l'ignorent).
+    if (packRam.intGB(ramGB)) {
+      const rj = path.join(os.tmpdir(), `omni-ram-${crypto.randomBytes(4).toString("hex")}.json`);
+      await fsp.writeFile(rj, JSON.stringify({ recommendedRamGB: packRam.intGB(ramGB) }));
+      zipFiles.push({ abs: rj, rel: "omniscient.json", mtimeMs: Date.now(), tmp: true });
     }
     try {
       const size = await writeArchive(outFile, index, "modrinth.index.json", zipFiles);
@@ -514,13 +543,14 @@ function createOmniPack({ playMode }) {
     await fsp.writeFile(txt, `Mods de ce pack et leur page (merci à leurs auteurs) :\r\n\r\n${lines.join("\r\n")}\r\n`);
     return [{ abs: txt, rel: "overrides/omniscient-credits.txt", mtimeMs: Date.now(), tmp: true }];
   }
-  async function exportCfZip(id, outFile, { parts = {}, worlds = [], plan }) {
+  async function exportCfZip(id, outFile, { parts = {}, worlds = [], plan, ramGB = null }) {
     const { v, dir } = plan;
     const loader = v.pack?.loader;
     let lv = String(v.pack?.loaderVersion || "");
     if (lv.startsWith(`${v.minecraftVersion}-`)) lv = lv.slice(v.minecraftVersion.length + 1);
     const manifest = {
-      minecraft: { version: v.minecraftVersion, modLoaders: loader && lv ? [{ id: `${loader}-${lv}`, primary: true }] : [] },
+      // recommendedRam (Mo) : case officielle de CurseForge, lue aussi par Prism et Omniscient (01/11).
+      minecraft: { version: v.minecraftVersion, modLoaders: loader && lv ? [{ id: `${loader}-${lv}`, primary: true }] : [], ...(packRam.intGB(ramGB) ? { recommendedRam: packRam.intGB(ramGB) * 1024 } : {}) },
       manifestType: "minecraftModpack",
       manifestVersion: 1,
       name: String(v.name || v.pack?.name || `Minecraft ${v.minecraftVersion}`).slice(0, 80),
@@ -619,11 +649,18 @@ function createOmniPack({ playMode }) {
       return (name) => {
         if (!name.startsWith(pre) || name.endsWith("/")) return null;
         const rel = name.slice(pre.length);
-        if (rel.startsWith("overrides/")) return parts.includes("cfg") ? rel.slice(10) : null;
-        if (rel.startsWith("files/resourcepacks/")) return parts.includes("rp") ? rel.slice(6) : null;
-        if (rel.startsWith("files/shaderpacks/")) return parts.includes("sh") ? rel.slice(6) : null;
-        if (rel.startsWith("files/datapacks/")) return parts.includes("dp") ? `.omniscient/datapacks/${rel.slice(16)}` : null;
+        if (rel.startsWith("overrides/")) return parts.includes("cfg") && isAllowedOverride(rel) ? rel.slice(10) : null;
+        if (rel.startsWith("files/")) {
+          // Un fichier .zip par dossier, jamais de sous-dossier ni d'autre type.
+          const [, sub, file, extra] = rel.split("/");
+          if (extra !== undefined || !SAFE_ZIP.test(file || "")) return null;
+          if (sub === "resourcepacks") return parts.includes("rp") ? rel.slice(6) : null;
+          if (sub === "shaderpacks") return parts.includes("sh") ? rel.slice(6) : null;
+          if (sub === "datapacks") return parts.includes("dp") ? `.omniscient/datapacks/${file}` : null;
+          return null;
+        }
         if (rel.startsWith("worlds/")) {
+          if (FORBIDDEN_EXT.test(rel) || winUnsafe(rel)) return null;
           const folder = rel.split("/")[1];
           return wantWorld(folder) ? `saves/${rel.slice(7)}` : null;
         }
@@ -706,6 +743,7 @@ function createOmniPack({ playMode }) {
         }
         await playMode.saveState();
       }
+      if (packRam.intGB(ver.ramGB)) await playMode.setVersionRam(v.id, { mode: "auto", packGB: packRam.intGB(ver.ramGB) }).catch(() => false);
       created.push({ id: v.id, mc: ver.minecraftVersion, worlds: imported });
     }
     return { name: json.name, group, created };
@@ -724,6 +762,7 @@ function createOmniPack({ playMode }) {
       loaderVersion: base.loaderVersion || "",
       modCount: (base.mods || []).length,
       versions: json.versions.map((x) => x.minecraftVersion),
+      recommendedRamGB: packRam.intGB(base.ramGB),
       configFiles: 1,
       resourcepacks: (base.resourcepacks || []).map((r) => r.file),
       shaders: (base.shaders || []).map((r) => r.file),

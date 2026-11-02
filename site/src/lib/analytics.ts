@@ -11,7 +11,7 @@ import { ANALYTICS_FLUSH_SECONDS, ANALYTICS_SITE_WINDOW_SECONDS, ONLINE_WINDOW_S
 //
 // Quota Cloudflare (~1 200 appels / 5 min pour tout le site) : un appel par signal coûterait 500
 // appels / 5 min à 100 visiteurs. Les signaux attendent donc en mémoire et partent ensemble en UN
-// appel, au plus toutes les 15 s par instance. Si une instance s'arrête, son attente est perdue :
+// appel, au plus une fois par minute par instance. Si une instance s'arrête, son attente est perdue :
 // sans gravité, le visiteur renvoie un signal à la minute suivante.
 const FLUSH_MS = ANALYTICS_FLUSH_SECONDS * 1000;
 const ROLLUP_MS = 60_000;

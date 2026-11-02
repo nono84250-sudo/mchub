@@ -105,7 +105,7 @@
       cdT: "Suppression de « {w} »", cdD: "Suppression dans {s} s. Tu peux encore annuler : rien n'est effacé avant la fin.", foreverCancelled: "Suppression annulée. Rien n'a été effacé.",
       restoreGoneD: "Le monde revient dans Mes mondes tel qu'il était le {d}.", foreverCloudFail: "Supprimé de ce PC, mais pas du cloud ({e}). Retire-le depuis Mes mondes sur le site.",
       mpT: "Mon pack", mpD: "Un pack à toi, sur ce PC : tu choisis tes mods sur Modrinth. Rien n'est publié ni partagé.",
-      mpPick: "Mon pack", mpPickD: "Tes propres mods, choisis sur Modrinth. Privé, sur ce PC.", omT: "Pack Omniscient", omD: "Pour le partager. Vanilla (map, packs de ressources, data packs) ou Mon pack (mods Modrinth seulement, pas de CurseForge ni de .jar à la main). Tu pourras le générer pour d'autres versions et l'envoyer pour qu'il soit publié dans Omniscient.", omOnly: "Pack Omniscient : Vanilla ou Mon pack seulement.", typeL: "Type", omCreate: "Créer un Pack Omniscient", omList: "Pack Omniscient", omListD: "Packs créés par la communauté, testés puis publiés par l'équipe.", omNone: "Aucun Pack Omniscient pour cette installation pour l'instant.", omJoin: "Tout le monde peut en proposer un : coche « Créer un Pack Omniscient » en haut, puis ⚙ › Exporter › Pour Omniscient.", omBy: "par {a}", mpLoader: "Chargeur",
+      mpPick: "Mon pack", mpPickD: "Tes propres mods, choisis sur Modrinth. Privé, sur ce PC.", mpPickOld: "Pas pour cette version : les mods demandent une version officielle, à partir de 1.7.10 (Forge) ou 1.14 (Fabric).",omT: "Pack Omniscient", omD: "Pour le partager. Vanilla (map, packs de ressources, data packs) ou Mon pack (mods Modrinth seulement, pas de CurseForge ni de .jar à la main). Tu pourras le générer pour d'autres versions et l'envoyer pour qu'il soit publié dans Omniscient.", omOnly: "Pack Omniscient : Vanilla ou Mon pack seulement.", typeL: "Type", omCreate: "Créer un Pack Omniscient", omList: "Pack Omniscient", omListD: "Packs créés par la communauté, testés puis publiés par l'équipe.", omNone: "Aucun Pack Omniscient pour cette installation pour l'instant.", omJoin: "Tout le monde peut en proposer un : coche « Créer un Pack Omniscient » en haut, puis ⚙ › Exporter › Pour Omniscient.", omBy: "par {a}", mpLoader: "Chargeur",
       mpFor: "Pour ton monde « {w} »", mpFound: "{n} de ses mods sont sur Modrinth", mpAddAll: "Tout ajouter ({n})", mpMissing: "{n} ne sont pas sur Modrinth : ils sont dans l'onglet CurseForge, à télécharger à la main.",
       mpFabricWorld: "Fabric ne note pas la liste de ses mods dans le monde : ajoute ceux que tu utilisais (ex. Litematica, WorldEdit).",
       mpTabMr: "Modrinth", mpTabCf: "CurseForge, à la main", mpSearch: "Chercher un mod sur Modrinth (WorldEdit, Litematica, Create…)", mpSearchCf: "Chercher un mod sur CurseForge",
@@ -242,7 +242,7 @@
       cdT: "Deleting “{w}”", cdD: "Deleting in {s} s. You can still cancel: nothing is erased before the end.", foreverCancelled: "Deletion cancelled. Nothing was erased.",
       restoreGoneD: "The world comes back to My worlds as it was on {d}.", foreverCloudFail: "Deleted from this PC, but not from the cloud ({e}). Remove it from My worlds on the website.",
       mpT: "My pack", mpD: "A pack of your own, on this PC: you pick your mods on Modrinth. Nothing is published or shared.",
-      mpPick: "My pack", mpPickD: "Your own mods, picked on Modrinth. Private, on this PC.", omT: "Omniscient pack", omD: "To share it. Vanilla (map, resource packs, data packs) or My pack (Modrinth mods only, no CurseForge, no hand-added .jar). You can generate it for other versions and send it to be published in Omniscient.", omOnly: "Omniscient pack: Vanilla or My pack only.", typeL: "Type", omCreate: "Create an Omniscient pack", omList: "Omniscient pack", omListD: "Packs made by the community, tested then published by the team.", omNone: "No Omniscient pack for this installation yet.", omJoin: "Anyone can submit one: tick “Create an Omniscient pack” at the top, then ⚙ › Export › For Omniscient.", omBy: "by {a}", mpLoader: "Loader",
+      mpPick: "My pack", mpPickD: "Your own mods, picked on Modrinth. Private, on this PC.", mpPickOld: "Not for this version: mods need an official release, from 1.7.10 (Forge) or 1.14 (Fabric).",omT: "Omniscient pack", omD: "To share it. Vanilla (map, resource packs, data packs) or My pack (Modrinth mods only, no CurseForge, no hand-added .jar). You can generate it for other versions and send it to be published in Omniscient.", omOnly: "Omniscient pack: Vanilla or My pack only.", typeL: "Type", omCreate: "Create an Omniscient pack", omList: "Omniscient pack", omListD: "Packs made by the community, tested then published by the team.", omNone: "No Omniscient pack for this installation yet.", omJoin: "Anyone can submit one: tick “Create an Omniscient pack” at the top, then ⚙ › Export › For Omniscient.", omBy: "by {a}", mpLoader: "Loader",
       mpFor: "For your world “{w}”", mpFound: "{n} of its mods are on Modrinth", mpAddAll: "Add all ({n})", mpMissing: "{n} are not on Modrinth: they are in the CurseForge tab, to download by hand.",
       mpFabricWorld: "Fabric does not write its mod list into the world: add the ones you used (e.g. Litematica, WorldEdit).",
       mpTabMr: "Modrinth", mpTabCf: "CurseForge, by hand", mpSearch: "Search a mod on Modrinth (WorldEdit, Litematica, Create…)", mpSearchCf: "Search a mod on CurseForge",
@@ -668,6 +668,13 @@
   .pk-row > .pk-end { justify-self:end; }
   .pk-ver select { height:30px; padding:0 26px 0 8px; line-height:normal; font-size:12px; width:170px; max-width:170px; }
   .pk-up { font-size:10.5px; font-weight:700; color:var(--accent); white-space:nowrap; }
+  /* 02/11 (Rushi, version A) : la pastille suit le nom de mod le plus long (--pk-nmw, plafonné) et la
+     version prend le reste ; un nom de fichier trop long finit par « … » au lieu de recouvrir la pastille. */
+  .pk-mods .pk-row { grid-template-columns:32px var(--pk-nmw,220px) var(--pk-srcw,96px) minmax(0,1fr) 64px; }
+  .pk-mods .pk-nm b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pk-mods .pk-up { overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .pk-mods .pk-ver select, .pk-mods .pk-ver .btn-secondary { flex:none; }
+  .pk-empty { padding:18px 12px; text-align:center; font-size:12.5px; color:var(--muted); }
   .pk-sw { width:34px; height:20px; border-radius:99px; border:0; background:color-mix(in srgb, var(--muted) 35%, transparent); position:relative; cursor:pointer; padding:0; }
   .pk-sw::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:left .15s; }
   .pk-sw[aria-checked="true"] { background:var(--accent); }
@@ -783,7 +790,7 @@
   .fx-img { display:grid; place-items:center; background:#000; border-radius:8px; overflow:hidden; max-height:65vh; }
   .fx-img img { max-width:100%; max-height:65vh; display:block; }
   .pk-files .pk-av { background:color-mix(in srgb, var(--muted) 18%, transparent); color:var(--muted); font-size:15px; }
-  @media (max-width: 760px) { .pk-row { grid-template-columns:32px minmax(0,1fr) auto; } .pk-row .pk-src, .pk-row .pk-ver { display:none; } }
+  @media (max-width: 760px) { .pk-row, .pk-mods .pk-row { grid-template-columns:32px minmax(0,1fr) auto; } .pk-row .pk-src, .pk-row .pk-ver { display:none; } }
   .nb-origin { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; color:var(--success); background:color-mix(in srgb, var(--success) 14%, transparent); white-space:nowrap; cursor:help; }
   .nl-links { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
   .nl-links .link-btn { margin:0; padding-left:0; padding-right:0; }
@@ -1043,10 +1050,18 @@
       data.packs = Array.isArray(r.packs) ? r.packs : [];
     }
   }
+  let refreshSeq = 0;
   async function refresh() {
     if (!playVisible) return;
+    // Deux lectures en même temps : seule la dernière compte, sinon une réponse lue avant un retrait
+    // arrive après lui et fait réapparaître la tuile un instant (01/11, Rushi : « ça clignote »).
+    const seq = ++refreshSeq;
     const [v, w] = await Promise.all([api.listVersions(), api.listWorlds()]);
+    if (seq !== refreshSeq) return;
     data.versions = v?.versions || [];
+    // Le launcher prévient dès que le dossier est retiré, avant la fin de l'effet : la tuile en cours de
+    // retrait reste à sa place jusque-là (sinon les autres sautaient et le fantôme partait en 1re place).
+    if (PJ.rm?.v && !data.versions.some((x) => x.id === PJ.rm.id)) data.versions.splice(Math.max(PJ.rm.at, 0), 0, PJ.rm.v);
     data.worlds = w?.worlds || [];
     // Première installation automatique : seulement après une vraie lecture de la liste.
     data.loaded = !!v?.versions;
@@ -1697,7 +1712,10 @@
   });
   document.addEventListener("mouseup", () => (PJ.drag = null));
   async function pjRmMany(ids) {
-    const tiles = ids.map((id) => data.versions.find((x) => x.id === id)).filter(Boolean);
+    // Dans l'ordre de l'écran, pas celui du glisser : « En attente » se lit 1, 2, 3… (01/11, Rushi).
+    const screen = [...panel.querySelectorAll("[data-pj-grid] > [data-pj-tile]")].map((t) => t.dataset.pjTile);
+    const place = (id) => (screen.includes(id) ? screen.indexOf(id) : screen.length);
+    const tiles = [...ids].sort((a, b) => place(a) - place(b)).map((id) => data.versions.find((x) => x.id === id)).filter(Boolean);
     if (!tiles.length) return;
     // Une tuile de Pack Omniscient = tout le pack : ses autres versions partent avec elle (29/10).
     const vs = [...new Set(tiles.flatMap((v) => pjGroup(v)))];
@@ -1817,10 +1835,97 @@
   }
   const pjWithGhost = (tiles) => {
     const out = [...tiles];
-    // Chaque fantôme reste à la place de sa tuile, dans l'ordre des retraits.
-    [...PJ.ghosts].sort((a, b) => a.idx - b.idx || a.key - b.key).forEach((g, i) => out.splice(Math.min(Math.max(g.idx, 0) + i, out.length), 0, pjGhost(g)));
+    // Chaque fantôme reste à la place de sa tuile : idx = tuiles avant lui, ord = sa place à l'écran.
+    [...PJ.ghosts].sort((a, b) => a.ord - b.ord).forEach((g, i) => out.splice(Math.min(Math.max(g.idx, 0) + i, out.length), 0, pjGhost(g)));
     return out;
   };
+  // Retrait terminé : recalcule la place de tous les fantômes d'après l'écran. Sinon, retirer une
+  // tuile placée avant un fantôme le décale et les tuiles changent d'ordre (01/11, Rushi : « au pif »).
+  function pjGhostSlots(id, ghost) {
+    let tiles = 0, ord = 0;
+    panel.querySelectorAll("[data-pj-grid] > .pj2-tile").forEach((t) => {
+      if (t.dataset.pjTile === id) {
+        ghost.idx = tiles;
+        ghost.ord = ord++;
+      } else if (t.dataset.pjTile) tiles++;
+      else if (t.dataset.pjGhost) {
+        const g = PJ.ghosts.find((x) => x.key === +t.dataset.pjGhost);
+        if (g) {
+          g.idx = tiles;
+          g.ord = ord++;
+        }
+      }
+    });
+  }
+  // Met à jour un élément sans tout recréer : ce qui n'a pas changé garde ses nœuds, donc ses animations
+  // (rond, barre, fondu) ne repartent pas de zéro et ses images ne clignotent pas (01/11, Rushi :
+  // « à chaque actualisation toutes les animations redémarrent »). Les tuiles sont suivies par leur id.
+  const pjNodeKey = (n) => {
+    if (n.nodeType !== 1) return null;
+    if (n.dataset.pjTile) return `t:${n.dataset.pjTile}`;
+    if (n.dataset.pjGhost) return `g:${n.dataset.pjGhost}`;
+    if (n.hasAttribute("data-pj-drawer")) return "drawer";
+    if (n.hasAttribute("data-pj-tiles")) return "more";
+    return null;
+  };
+  const pjSameKind = (a, b) => a.nodeType === b.nodeType && a.nodeName === b.nodeName && (a.nodeType !== 1 || a.classList[0] === b.classList[0]);
+  function pjMorph(a, b) {
+    if (a.isEqualNode(b)) return;
+    if (a.nodeType !== 1) {
+      a.nodeValue = b.nodeValue;
+      return;
+    }
+    for (const at of [...a.attributes]) if (!b.hasAttribute(at.name)) a.removeAttribute(at.name);
+    for (const at of [...b.attributes]) if (a.getAttribute(at.name) !== at.value) a.setAttribute(at.name, at.value);
+    if (a.nodeName === "INPUT") {
+      if (a.type === "checkbox" || a.type === "radio") a.checked = b.hasAttribute("checked");
+      else if (document.activeElement !== a) a.value = b.getAttribute("value") ?? "";
+    }
+    pjMorphKids(a, b);
+  }
+  function pjMorphKids(parent, next) {
+    const keyed = new Map();
+    for (const n of [...parent.childNodes]) if (pjNodeKey(n)) keyed.set(pjNodeKey(n), n);
+    const wanted = new Set([...next.childNodes].map(pjNodeKey).filter(Boolean));
+    for (const [k, n] of keyed) if (!wanted.has(k)) {
+      n.remove();
+      keyed.delete(k);
+    }
+    const kept = new Set();
+    let cur = parent.firstChild;
+    for (const nk of [...next.childNodes]) {
+      // Le tiroir est rangé à part (pjPlaceDrawer le remet sous la bonne rangée) : il ne bloque pas le parcours.
+      while (cur && pjNodeKey(cur) === "drawer") cur = cur.nextSibling;
+      const key = pjNodeKey(nk);
+      if (key === "drawer" && keyed.has(key)) {
+        const dr = keyed.get(key);
+        kept.add(dr);
+        pjMorph(dr, nk);
+        continue;
+      }
+      const target = key ? keyed.get(key) : cur && !pjNodeKey(cur) && pjSameKind(cur, nk) ? cur : null;
+      if (!target) {
+        parent.insertBefore(nk, cur);
+        kept.add(nk);
+        continue;
+      }
+      if (target === cur) cur = cur.nextSibling;
+      else parent.insertBefore(target, cur);
+      kept.add(target);
+      pjMorph(target, nk);
+    }
+    for (const n of [...parent.childNodes]) if (!kept.has(n)) n.remove();
+  }
+  function pjPatch(el, html) {
+    // En sortant de la page d'un pack, rien à garder : ses boutons ont leurs propres écouteurs.
+    if (el.querySelector(":scope > .pk-page")) {
+      el.innerHTML = html;
+      return;
+    }
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    pjMorphKids(el, tpl.content);
+  }
   // Le tiroir se place après la dernière tuile de la rangée de la tuile choisie, flèche sous elle.
   function pjPlaceDrawer() {
     const grid = panel.querySelector("[data-pj-grid]");
@@ -1829,7 +1934,7 @@
     if (!dr || !sel) return;
     let last = sel;
     for (const t of grid.querySelectorAll(".pj2-tile")) if (Math.abs(t.offsetTop - sel.offsetTop) < 4) last = t;
-    last.after(dr);
+    if (last.nextElementSibling !== dr) last.after(dr);
     const a = dr.querySelector(".pj2-arrow");
     if (a) a.style.left = `${sel.offsetLeft - grid.offsetLeft + sel.offsetWidth / 2 - 9}px`;
   }
@@ -2032,7 +2137,7 @@
     try {
       while (PJ.rmQ.length) {
         const job = PJ.rmQ.shift();
-        PJ.rm = { id: job.id, t0: Date.now() };
+        PJ.rm = { id: job.id, t0: Date.now(), v: data.versions.find((x) => x.id === job.id), at: data.versions.findIndex((x) => x.id === job.id) };
         render();
         const r = await api.removeVersion(job.id, job.keys).catch((e) => ({ ok: false, error: String(e?.message || e) }));
         if (!r?.ok) {
@@ -2060,11 +2165,20 @@
     PJ.hide = id;
     if (PJ.sel === id) PJ.sel = null;
     const key = ++PJ.ghostSeq;
-    PJ.ghosts.push({ key, idx, label: info.label, cov: info.cov, n: info.n, withWorlds: info.withWorlds, timer: setTimeout(() => pjGhostOut(key), 6000) });
+    const ghost = { key, idx, ord: 1e9 + key, label: info.label, cov: info.cov, n: info.n, withWorlds: info.withWorlds, timer: setTimeout(() => pjGhostDue(key), 6000) };
+    pjGhostSlots(id, ghost);
+    PJ.ghosts.push(ghost);
     PJ.flip = before;
     render();
     await refresh();
     PJ.hide = null;
+  }
+  // Tant que la file tourne, les fantômes restent : les tuiles ne bougent pas, elles glissent une fois à la fin.
+  function pjGhostDue(key) {
+    const g = PJ.ghosts.find((x) => x.key === key);
+    if (!g) return;
+    if (PJ.rm || PJ.rmQ.length) g.timer = setTimeout(() => pjGhostDue(key), 500);
+    else pjGhostOut(key);
   }
   async function pjGhostOut(key) {
     const g = PJ.ghosts.find((x) => x.key === key);
@@ -2320,7 +2434,7 @@
     }
     pjCloseMenu();
     if (on("playTiles")) {
-      panel.innerHTML = `${header()}${cloudBannerHtml()}${remoteBannerHtml(cloudOnly)}${pjRender(cloudOnly)}`;
+      pjPatch(panel, `${header()}${cloudBannerHtml()}${remoteBannerHtml(cloudOnly)}${pjRender(cloudOnly)}`);
       pjPlaceDrawer();
       pjSyncPick();
       if (PJ.flip) {
@@ -2439,6 +2553,16 @@
       const go = await checkDevices(opts.worldKey).catch(() => true);
       if (btn) btn.disabled = false;
       if (!go) return;
+    }
+    // RAM par pack (Laboratoire « packRam ») : trop basse pour le pack, ou plus que la RAM libre ?
+    if (on("packRam") && !opts.ramChecked) {
+      const rw = opts.worldKey ? data.worlds.find((x) => x.key === opts.worldKey) : null;
+      const rid = opts.versionId || rw?.lastVersionId || null;
+      if (rid && data.versions.some((x) => x.id === rid)) {
+        const g = await rmBeforeLaunch(rid);
+        if (!g) return;
+        opts = { ...opts, ramChecked: true, ...(g.ramGB ? { ramGB: g.ramGB } : {}) };
+      }
     }
     const v = opts.versionId ? data.versions.find((x) => x.id === opts.versionId) : null;
     const w = opts.worldKey ? data.worlds.find((x) => x.key === opts.worldKey) : null;
@@ -2629,25 +2753,34 @@
     if (info.kind === "deps") {
       body = `<p style="margin:8px 0 4px;">${esc(T("chDeps"))}</p><ul style="margin:0 0 8px 18px;padding:0;font-size:13.5px;line-height:1.5;">${info.deps.map((d) => `<li>${esc(T("chDep", { a: d.mod || d.modId || "?", b: d.needs, min: d.min ? T("chMin", { v: d.min }) : "", have: d.have ? T("chHave", { v: d.have }) : T("chMissing") }))}</li>`).join("")}</ul>`;
     } else if (info.kind === "java") body = `<p style="margin:8px 0;">${esc(T("chJava"))}</p>${info.description ? `<p class="pk-note">${esc(info.description)}</p>` : ""}`;
-    else if (info.kind === "memory") body = `<p style="margin:8px 0;">${esc(T("chMem"))}</p>`;
+    else if (info.kind === "memory") body = `<p style="margin:8px 0;">${esc(T("chMem"))}</p>${on("packRam") && v ? `<button type="button" class="btn-secondary" id="ch-ram" style="margin:2px 0 6px;">🧠 ${esc(rmTr("Régler la RAM de ce pack", "Set this pack's RAM"))}</button>` : ""}`;
     else body = `<p style="margin:8px 0;">${esc(T("chCrash"))}</p>${info.description ? `<p class="pk-note">${esc(T("chWhy", { d: info.description }))}</p>` : ""}${(info.lines || []).map((l) => `<p class="pk-note">${esc(T("chSuspect", { m: l }))}</p>`).join("")}`;
+    // Aide Discord (02/11, Laboratoire « bugDiscord ») : le bloc à 3 boutons remplace « Copier les logs ».
+    const help = on("bugDiscord") ? window.__bugHelp : null;
+    const noFiles = help && !info.hasCrash && !info.hasLog ? `<p class="pk-note">${esc(help.empty())}</p>` : "";
     const m = overlay(`<div class="modal-box pop-in tone-warn" role="dialog" aria-modal="true" aria-labelledby="ch-t" data-crash-help style="max-width:520px;text-align:left;">
       <h3 id="ch-t">⚠ ${esc(T("chT"))}</h3>${v ? `<p class="join-note" style="margin:0;">${esc(versionLabel(v))}</p>` : ""}
-      ${body}
-      <p class="play-safe">${esc(info.packKind === "official" ? T("chOfficial") : T("chHelp"))}</p>
+      ${help
+        ? `<div class="bh-scroll"><div>${body}${noFiles}</div>${info.packKind === "official" ? `<p class="play-safe">${esc(T("chOfficial"))}</p>` : ""}${help.html()}<p class="play-safe">${esc(help.safe())}</p></div>`
+        : `${body}<p class="play-safe">${esc(info.packKind === "official" ? T("chOfficial") : T("chHelp"))}</p>`}
       <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px;">
         ${info.hasCrash ? `<button type="button" class="link-btn" id="ch-folder" style="margin-right:auto;">${esc(T("chFolder"))}</button>` : `<span style="margin-right:auto;"></span>`}
-        <button type="button" class="btn-secondary" id="ch-copy" style="margin:0;">${esc(T("chCopy"))}</button>
+        ${help ? "" : `<button type="button" class="btn-secondary" id="ch-copy" style="margin:0;">${esc(T("chCopy"))}</button>`}
         ${editable && v ? `<button type="button" class="join-btn" id="ch-fix">${esc(T("chFix"))}</button>` : `<button type="button" class="join-btn" id="ch-close">${esc(T("close"))}</button>`}
       </div></div>`);
     m.$("#ch-close")?.addEventListener("click", m.close);
+    m.$("#ch-ram")?.addEventListener("click", () => {
+      m.close();
+      rmOpenDialog(info.versionId);
+    });
     m.$("#ch-folder")?.addEventListener("click", () => api.openCrashFolder());
     m.$("#ch-fix")?.addEventListener("click", () => {
       m.close();
       showPlay();
       openPackPage(info.versionId);
     });
-    m.$("#ch-copy").addEventListener("click", async (e) => {
+    if (help) help.bind(m.ov, toast);
+    m.$("#ch-copy")?.addEventListener("click", async (e) => {
       const r = await api.crashLogs();
       if (!r?.ok) return;
       try {
@@ -2694,6 +2827,8 @@
     const MIN_MC = { forge: "1.7.10", neoforge: "1.20.2", fabric: "1.14", quilt: "1.14" };
     const mcCmp = (a, b) => a.localeCompare(b, "en", { numeric: true });
     const versFor = (loader) => (data.mcVersions || []).filter((v) => v.type === "release" && mcCmp(v.id, MIN_MC[loader] || "1.14") >= 0).map((v) => v.id);
+    // Version déjà choisie (ex. 1.12.2, trop vieille pour Fabric) : on change de chargeur, pas de version.
+    if (!versFor(st.loader).includes(st.mc)) st.loader = LOADER_IDS.find((l) => versFor(l).includes(st.mc)) || st.loader;
     if (!versFor(st.loader).includes(st.mc)) st.mc = versFor(st.loader)[0] || st.mc;
     const draw = async (skel = false) => {
       const lName = LOADERS[st.loader];
@@ -3079,6 +3214,7 @@
   // mode : "add" (page d'un pack), "ver" (nouveau pack, version d'abord), "free" (mods d'abord), "browse" (modpacks).
   async function openAddWin(o) {
     adClose();
+    if (on("packRam")) await rmLoadSys();
     const p = packPage?.p;
     const S = {
       mode: o.mode,
@@ -3402,8 +3538,36 @@
       }
       return [...cells.entries()].map(([k, n]) => ({ l: k.split("|")[0], v: k.split("|")[1], n })).sort((p1, p2) => p2.n - p1.n || adCmp(p2.v, p1.v) || AD_LOADERS.indexOf(p1.l) - AD_LOADERS.indexOf(p2.l)).slice(0, 6);
     }
+    // RAM du futur pack (Laboratoire « packRam ») : une pastille à côté du nom, un clic pour régler.
+    function adRamCtx() {
+      const mc = S.mode === "ver" ? S.ctx?.mc : (S.pick || "|").split("|")[1];
+      const mods = [...S.free.values()];
+      return { mods: mods.length, mc: mc || "", shaders: mods.some((x) => /\b(iris|oculus)\b/i.test(`${x.name || ""} ${x.slug || x.id || ""}`)), packGB: null };
+    }
+    function adRamPill() {
+      if (!on("packRam")) return "";
+      S.ram = S.ram || { mode: "auto", gb: 0 };
+      const c = adRamCtx();
+      const v = rmValue(S.ram, c);
+      const tone = rmVerdict(v, c)[0];
+      return `<button type="button" class="ad-btn sec rm-pill ${tone === "warn" || tone === "bad" ? tone : ""}" data-ad-ram title="${esc(rmTr("Mémoire (RAM) de ce pack : cliquer pour régler", "Memory (RAM) for this pack: click to set"))}">🧠 ${esc(`${rmGo(v)} · ${rmModeName(S.ram.mode)}`)}${tone === "warn" || tone === "bad" ? " ⚠" : ""}</button>`;
+    }
+    function adRamDialog() {
+      const st = { ...S.ram };
+      const d = overlay(`<div class="modal-box pop-in" role="dialog" aria-modal="true" aria-labelledby="rm-at" style="max-width:520px;text-align:left;max-height:calc(100vh - 48px);overflow:auto;">
+        <h3 id="rm-at">🧠 ${esc(rmTr("Mémoire (RAM) du nouveau pack", "Memory (RAM) for the new pack"))}</h3><div data-rm-slot></div>
+        <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;"><button type="button" class="btn-secondary" data-x>${esc(T("cancel"))}</button><button type="button" class="join-btn" data-ok>OK</button></div></div>`);
+      rmMount(d.$("[data-rm-slot]"), st, adRamCtx);
+      d.$("[data-x]").addEventListener("click", d.close);
+      d.$("[data-ok]").addEventListener("click", () => {
+        S.ram = { mode: st.mode, gb: st.gb };
+        d.close();
+        draw();
+      });
+      d.$("[data-ok]").focus();
+    }
     function footNew() {
-      const nameIn = `<input class="ad-nm" data-ad-name maxlength="60" placeholder="${esc(adTr("Nom du pack", "Pack name"))}" value="${esc(S.name)}">`;
+      const nameIn = `${adRamPill()}<input class="ad-nm" data-ad-name maxlength="60" placeholder="${esc(adTr("Nom du pack", "Pack name"))}" value="${esc(S.name)}">`;
       if (S.mode === "ver") {
         return `<span class="n">${esc(S.free.size ? adTr(`${S.free.size} mod(s) choisi(s). Les mods nécessaires sont ajoutés tout seuls.`, `${S.free.size} mod(s) picked. Required mods are added automatically.`) : adTr("Ajoute tes mods : seuls ceux qui marchent avec cette version sont montrés.", "Add your mods: only the ones that work with this version are shown."))}</span><span class="sp"></span>${nameIn}<button type="button" class="ad-btn sec" data-ad-x>${esc(adTr("Annuler", "Cancel"))}</button><button type="button" class="ad-btn" data-ad-create="${esc(`${S.ctx.l}|${S.ctx.mc}`)}">${esc(adTr(`Créer en ${adTarget(S.ctx.l, S.ctx.mc)}`, `Create on ${adTarget(S.ctx.l, S.ctx.mc)}`))}</button>`;
       }
@@ -3452,6 +3616,9 @@
         return null;
       }
       toast(copyOf ? adTr(`Copie « ${r.name} » créée. Ton pack d'origine n'a pas bougé.`, `Copy “${r.name}” created. Your original pack did not change.`) : T("mpCreated", { n: r.name || name }));
+      // RAM : la copie garde le réglage du pack d'origine ; un nouveau pack prend celui de la pastille.
+      const ram = copyOf ? rmStOf(copyOf) : S.ram;
+      if (r.version?.id && ram && ram.mode !== "auto") await rmSave(r.version.id, ram);
       await refresh();
       adClose();
       if (r.version?.id) openPackPage(r.version.id);
@@ -3539,6 +3706,7 @@
       if (!t || !win.contains(t)) return;
       const g = (k) => t.getAttribute(k);
       if (t.hasAttribute("data-ad-x")) return adClose();
+      if (t.hasAttribute("data-ad-ram")) return adRamDialog();
       if (t.hasAttribute("data-ad-swno")) {
         S.sw = null;
         return draw();
@@ -3756,6 +3924,8 @@
     const MIN = { forge: "1.7.10", neoforge: "1.20.2", fabric: "1.14", quilt: "1.14" };
     const versFor = (l) => (data.mcVersions || []).filter((v) => v.type === "release" && adCmp(v.id, MIN[l]) >= 0).map((v) => v.id);
     let l = AD_LOADERS.includes(pre.loader) ? pre.loader : "fabric";
+    // Version déjà choisie (ex. 1.12.2, trop vieille pour Fabric) : on change de chargeur, pas de version.
+    if (pre.minecraftVersion && !versFor(l).includes(pre.minecraftVersion)) l = AD_LOADERS.find((k) => versFor(k).includes(pre.minecraftVersion)) || l;
     let mc = pre.minecraftVersion && versFor(l).includes(pre.minecraftVersion) ? pre.minecraftVersion : versFor(l)[0] || "1.21.1";
     const m = overlay(`<div class="ad-win" role="dialog" aria-modal="true" aria-labelledby="adc-t" style="height:auto;width:min(640px,calc(100vw - 40px))"></div>`, { className: "play-modal ad-ovl" });
     const win = m.$(".ad-win");
@@ -3786,6 +3956,264 @@
       return openAddWin({ mode: "ver", loader: l, mc, name: pre.name, omni: pre.omni });
     });
   }
+
+  // --- RAM par pack (01/11, preview validée par Rushi, Laboratoire « packRam ») -----------------
+  // Chaque installation a sa RAM : automatique (calculée), comme dans Paramètres, ou choisie. Même
+  // formule que packRam.js (main) : mods ≤40 → 4 Go, ≤120 → 6, ≤220 → 8, sinon 10 ; +1 avec
+  // shaders ; au moins la RAM conseillée par le fichier du pack ; jamais plus que le maximum sûr
+  // du PC (4 Go laissés à Windows, 3/4 du PC au plus). Le bloc est replié par défaut (Rushi 01/11).
+  const rmTr = (f, e) => (L() === "fr" ? f : e);
+  const rmCmp = (a, b) => String(a || "").localeCompare(String(b || ""), "en", { numeric: true });
+  let rmSys = { totalGB: 8, settingsGB: 4 };
+  const rmLoadSys = () =>
+    window.mchub.settings
+      .get()
+      .then((s) => {
+        if (s) rmSys = { totalGB: Number(s.totalGB) || rmSys.totalGB, settingsGB: Number(s.memoryMaxGB) || rmSys.settingsGB };
+        return rmSys;
+      })
+      .catch(() => rmSys);
+  rmLoadSys();
+  function rmNeed(c) {
+    let n = !c.mods ? (rmCmp(c.mc, "1.18") >= 0 ? 3 : 2) : c.mods <= 40 ? 4 : c.mods <= 120 ? 6 : c.mods <= 220 ? 8 : 10;
+    if (c.shaders) n += 1;
+    if (c.packGB) n = Math.max(n, Math.min(32, c.packGB));
+    return n;
+  }
+  const rmSafe = () => Math.max(2, Math.min(rmSys.totalGB - 4, Math.floor(rmSys.totalGB * 0.75)));
+  const rmAuto = (c) => Math.max(1, Math.min(rmNeed(c), rmSafe()));
+  const rmValue = (st, c) => (st.mode === "global" ? rmSys.settingsGB : st.mode === "custom" ? st.gb : rmAuto(c));
+  const rmGo = (n) => `${n} ${rmTr("Go", "GB")}`;
+  const rmModeName = (m) => (m === "global" ? rmTr("comme Paramètres", "same as Settings") : m === "custom" ? rmTr("choisie", "custom") : rmTr("automatique", "automatic"));
+  function rmVerdict(v, c) {
+    const n = rmNeed(c), pc = rmSys.totalGB;
+    if (v > pc - 3) return ["bad", rmTr(`Trop haut : il ne resterait que ${Math.max(0, pc - v)} Go pour Windows et tes autres programmes. Le PC risque de ramer, ou Windows de fermer le jeu.`, `Too high: only ${Math.max(0, pc - v)} GB would be left for Windows and your other programs. The PC may lag, or Windows may close the game.`)];
+    if (v < n) return [v <= n - 2 ? "bad" : "warn", rmTr(`Trop bas pour ce pack (il lui faut environ ${n} Go) : le jeu risque de geler au chargement ou de planter avec « Out of memory ».`, `Too low for this pack (it needs about ${n} GB): the game may freeze while loading or crash with “Out of memory”.`)];
+    if (v >= n + 6 && v >= 12) return ["info", rmTr(`Plus n'est pas mieux : au-delà d'environ ${n} Go, ce pack n'en profite pas et Java fait des pauses plus longues (petites saccades).`, `More is not better: above about ${n} GB this pack gains nothing and Java makes longer pauses (small stutters).`)];
+    return ["ok", rmTr("Bonne valeur pour ce pack.", "Good value for this pack.")];
+  }
+  // Contexte d'une installation déjà créée (liste des versions + page du pack si ouverte).
+  function rmCtxOf(id) {
+    const v = data.versions.find((x) => x.id === id) || {};
+    const p = packPage?.id === id ? packPage.p : null;
+    const mods = p ? (p.vanilla ? 0 : p.mods.filter((m) => m.on !== false).length) : v.pack ? v.modCount || 0 : 0;
+    const shaders = !!(p && (p.iris || p.mods.some((m) => m.on !== false && /\b(iris|oculus)\b/i.test(`${m.name} ${m.id}`))));
+    return { mods, mc: v.minecraftVersion || p?.minecraftVersion || "", shaders, packGB: v.ram?.packGB || null };
+  }
+  const rmStOf = (id) => {
+    const r = data.versions.find((x) => x.id === id)?.ram;
+    return { mode: ["auto", "global", "custom"].includes(r?.mode) ? r.mode : "auto", gb: Number(r?.gb) || 0 };
+  };
+  const RM_CSS = `<style>.rm-box{margin-top:12px;padding:12px;border-radius:var(--radius-m);border:1px solid var(--border);background:var(--surface-raised);text-align:left}
+    .rm-box.fold{padding:9px 12px}.rm-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}.rm-head b{font-size:14px}.rm-head .rm-pc{margin-left:auto;font-size:11.5px;color:var(--muted)}
+    .rm-tog{width:100%;margin:0;padding:2px 0;border:0;background:transparent;color:var(--foreground);font:inherit;text-align:left;cursor:pointer}.rm-tog .rm-sum{margin-left:auto;font-size:12.5px;font-weight:600}
+    .rm-sum.warn{color:var(--warn)}.rm-sum.bad{color:var(--danger)}.rm-chev{color:var(--muted);font-size:12px;width:14px;text-align:center}
+    .rm-why{margin:0 0 8px;font-size:12px;color:var(--muted);line-height:1.45}.rm-opts{display:flex;flex-direction:column;gap:6px}.rm-opts .play-row{align-items:flex-start}.rm-opts .play-row input{margin-top:3px}
+    .rm-opts .play-row .t b{font-weight:600}.rm-opts .play-row .sz{white-space:nowrap;font-weight:700;color:var(--foreground)}
+    .rm-tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;font-size:10.5px;font-weight:700;background:color-mix(in srgb,var(--success) 18%,transparent);color:var(--success);vertical-align:1px}
+    .rm-slide{display:flex;align-items:center;gap:10px;margin:10px 2px 2px}.rm-slide input{flex:1;accent-color:var(--accent)}.rm-slide output{min-width:58px;text-align:right;font-weight:700;font-size:15px}
+    .rm-step{width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--foreground);font:inherit;font-size:16px;cursor:pointer}
+    .rm-gauge{height:8px;border-radius:99px;margin:12px 2px 4px;display:flex;overflow:hidden}.rm-gauge i{display:block;height:100%}
+    .rm-gauge .lo{background:color-mix(in srgb,var(--warn) 55%,transparent)}.rm-gauge .ok{background:color-mix(in srgb,var(--success) 60%,transparent)}.rm-gauge .hi{background:color-mix(in srgb,var(--danger) 60%,transparent)}
+    .rm-mark{position:relative;height:0;margin:0 2px}.rm-mark span{position:absolute;top:-15px;width:4px;height:14px;border-radius:2px;background:var(--foreground);transform:translateX(-2px);box-shadow:0 0 0 2px var(--surface-raised)}
+    .rm-scale{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin:6px 2px 0}
+    .rm-msg{margin:10px 0 0;padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.45;display:flex;gap:8px}
+    .rm-msg.ok{background:color-mix(in srgb,var(--success) 12%,transparent)}.rm-msg.info{background:color-mix(in srgb,var(--accent) 12%,transparent)}.rm-msg.warn{background:color-mix(in srgb,var(--warn) 16%,transparent)}.rm-msg.bad{background:color-mix(in srgb,var(--danger) 16%,transparent)}
+    .rm-note{margin:8px 0 0;font-size:11.5px;color:var(--muted);line-height:1.45}.rm-pill.warn{border-color:var(--warn)!important}.rm-pill.bad{border-color:var(--danger)!important}</style>`;
+  if (!document.getElementById("rm-css")) {
+    const el = document.createElement("div");
+    el.id = "rm-css";
+    el.hidden = true;
+    el.innerHTML = RM_CSS;
+    document.head.appendChild(el.firstElementChild);
+  }
+  const RM_ICON = { ok: "✓", info: "ℹ", warn: "⚠", bad: "⛔" };
+  function rmBlockHtml(st, c, { note = true } = {}) {
+    const n = rmNeed(c), a = rmAuto(c), v = rmValue(st, c), pc = rmSys.totalGB;
+    const [tone, msg] = rmVerdict(v, c);
+    if (st.fold && !st.open) {
+      return `<button type="button" class="rm-head rm-tog" data-rm-tog aria-expanded="false"><b>🧠 ${esc(rmTr("Mémoire (RAM)", "Memory (RAM)"))}</b><span class="rm-sum ${tone}">${esc(`${rmGo(v)} · ${rmModeName(st.mode)}`)}${tone === "warn" || tone === "bad" ? esc(` · ⚠ ${tone === "bad" ? rmTr("à vérifier", "check it") : rmTr("un peu juste", "a bit low")}`) : ""}</span><span class="rm-chev">▾</span></button>`;
+    }
+    const why = [c.mods ? `${c.mods} mods` : rmTr("sans mods", "no mods"), c.mc && `Minecraft ${c.mc}`, c.shaders && "shaders", c.packGB && rmTr(`le pack conseille ${c.packGB} Go`, `the pack suggests ${c.packGB} GB`), rmTr(`ton PC a ${pc} Go`, `your PC has ${pc} GB`)].filter(Boolean).join(" · ");
+    const small = n > rmSafe() ? rmTr(`Ton PC a ${pc} Go : ce pack en demande ${n}. On met ${a} Go, le maximum sûr. Ferme Chrome et Discord avant de jouer ; le pack peut rester lent.`, `Your PC has ${pc} GB: this pack needs ${n}. We use ${a} GB, the safe maximum. Close Chrome and Discord before playing; the pack may stay slow.`) : null;
+    const lo = Math.min(n, pc), hi = Math.max(lo, pc - 3), noGreen = n > pc - 3;
+    const pct = (x) => `${(Math.max(0, Math.min(x, pc)) / pc) * 100}%`;
+    const row = (mode, title, sub, val, tag) => `<label class="play-row"><input type="radio" name="rm-${st.id}" value="${mode}" ${st.mode === mode ? "checked" : ""}><span class="t"><b>${esc(title)}${tag ? `<span class="rm-tag">${esc(tag)}</span>` : ""}</b><small>${esc(sub)}</small></span><span class="sz">${esc(val)}</span></label>`;
+    const head = st.fold
+      ? `<button type="button" class="rm-head rm-tog" data-rm-tog aria-expanded="true"><b>🧠 ${esc(rmTr("Mémoire (RAM)", "Memory (RAM)"))}</b><span class="rm-sum ${tone}">${esc(`${rmGo(v)} · ${rmModeName(st.mode)}`)}</span><span class="rm-chev">▴</span></button>`
+      : `<div class="rm-head"><b>🧠 ${esc(rmTr("Mémoire (RAM) de ce pack", "Memory (RAM) for this pack"))}</b><span class="rm-pc">${esc(rmTr(`PC : ${pc} Go`, `PC: ${pc} GB`))}</span></div>`;
+    return `${head}<p class="rm-why">${esc(rmTr("Calculée pour : ", "Worked out from: "))}${esc(why)}</p>
+      <div class="rm-opts">
+        ${row("auto", rmTr("Automatique", "Automatic"), rmTr("Le launcher la recalcule si tu ajoutes ou retires des mods.", "The launcher works it out again when you add or remove mods."), rmGo(a), rmTr("conseillé", "recommended"))}
+        ${row("global", rmTr("Comme dans Paramètres", "Same as Settings"), rmTr("La valeur de Paramètres › Mémoire, pour tous les jeux.", "The value in Settings › Memory, for every game."), rmGo(rmSys.settingsGB))}
+        ${row("custom", rmTr("Je choisis", "I choose"), rmTr("Une valeur fixe rien que pour ce pack.", "A fixed value just for this pack."), st.mode === "custom" ? rmGo(st.gb) : "…")}
+      </div>
+      ${st.mode === "custom" ? `<div class="rm-slide"><button type="button" class="rm-step" data-rm-step="-1" aria-label="${esc(rmTr("Moins", "Less"))}">−</button><input type="range" min="1" max="${pc}" step="1" value="${st.gb}" data-rm-range aria-label="${esc(rmTr("RAM en Go", "RAM in GB"))}"><button type="button" class="rm-step" data-rm-step="1" aria-label="${esc(rmTr("Plus", "More"))}">+</button><output>${esc(rmGo(st.gb))}</output></div>` : ""}
+      <div class="rm-gauge" aria-hidden="true"><i class="lo" style="width:${pct(lo)}"></i><i class="ok" style="width:${noGreen ? "0%" : pct(hi - lo)}"></i><i class="hi" style="width:${pct(pc - (noGreen ? lo : hi))}"></i></div>
+      <div class="rm-mark" aria-hidden="true"><span style="left:${pct(v)}"></span></div>
+      <div class="rm-scale"><span>1 ${rmTr("Go", "GB")}</span><span>${esc(noGreen ? rmTr("pas de zone verte : PC trop juste pour ce pack", "no green range: PC too small for this pack") : rmTr(`vert = bonne zone (${lo} à ${hi} Go)`, `green = good range (${lo} to ${hi} GB)`))}</span><span>${esc(rmGo(pc))}</span></div>
+      ${small ? `<p class="rm-msg warn"><span>⚠</span><span>${esc(small)}</span></p>` : ""}
+      ${small && st.mode === "auto" ? "" : `<p class="rm-msg ${tone}"><span>${RM_ICON[tone]}</span><span>${esc(`${rmGo(v)} : ${msg}`)}</span></p>`}
+      ${note ? `<p class="rm-note">${esc(rmTr("Ce réglage passe avant celui de Paramètres › Mémoire, pour ce pack seulement. Tu pourras le changer plus tard dans ⚙ › Mémoire (RAM). Les copies gardent ce réglage. Avant chaque lancement, le launcher revérifie la RAM libre du PC.", "This setting wins over Settings › Memory, for this pack only. You can change it later in ⚙ › Memory (RAM). Copies keep this setting. Before every launch, the launcher checks the PC's free RAM again."))}</p>` : ""}`;
+  }
+  let rmSeq = 0;
+  // Monte le bloc dans `el` ; getCtx() relit le pack à chaque dessin.
+  function rmMount(el, st, getCtx, opts = {}) {
+    st.id = st.id || ++rmSeq;
+    el.classList.add("rm-box");
+    const draw = () => {
+      el.classList.toggle("fold", !!st.fold && !st.open);
+      el.innerHTML = rmBlockHtml(st, getCtx(), opts);
+      opts.onChange?.();
+    };
+    el.addEventListener("change", (e) => {
+      if (e.target.name !== `rm-${st.id}`) return;
+      st.mode = e.target.value;
+      if (st.mode === "custom" && !st.gb) st.gb = rmAuto(getCtx());
+      draw();
+    });
+    el.addEventListener("input", (e) => {
+      if (!e.target.matches("[data-rm-range]")) return;
+      st.gb = Number(e.target.value);
+      draw();
+      el.querySelector("[data-rm-range]")?.focus();
+    });
+    el.addEventListener("click", (e) => {
+      if (e.target.closest("[data-rm-tog]")) {
+        st.open = !st.open;
+        return draw();
+      }
+      const b = e.target.closest("[data-rm-step]");
+      if (b) {
+        st.gb = Math.max(1, Math.min(rmSys.totalGB, (st.gb || 1) + Number(b.dataset.rmStep)));
+        draw();
+      }
+    });
+    draw();
+    return draw;
+  }
+  const rmSave = (id, st) => (on("packRam") && id ? api.ram.set(id, { mode: st.mode, gb: st.gb }).catch(() => null) : null);
+  // Fenêtre « Mémoire (RAM) » (⚙ d'une installation, Paramètres › Mémoire, aide au crash).
+  async function rmOpenDialog(id, { after } = {}) {
+    await rmLoadSys();
+    const st = rmStOf(id);
+    const v = data.versions.find((x) => x.id === id);
+    const m = overlay(`<div class="modal-box pop-in" role="dialog" aria-modal="true" aria-labelledby="rm-dt" style="max-width:520px;text-align:left;max-height:calc(100vh - 48px);overflow:auto;">
+      <h3 id="rm-dt">🧠 ${esc(rmTr("Mémoire (RAM)", "Memory (RAM)"))}</h3><p class="join-note" style="margin:0;">${esc(v ? versionLabel(v) : "")}</p><div data-rm-slot></div>
+      <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;"><button type="button" class="btn-secondary" data-x>${esc(T("cancel"))}</button><button type="button" class="join-btn" data-ok>${esc(rmTr("Enregistrer", "Save"))}</button></div></div>`);
+    rmMount(m.$("[data-rm-slot]"), st, () => rmCtxOf(id));
+    m.$("[data-x]").addEventListener("click", m.close);
+    m.$("[data-ok]").addEventListener("click", async () => {
+      const r = await rmSave(id, st);
+      if (!r?.ok) return toast(r?.error || "?");
+      m.close();
+      toast(rmTr(`RAM réglée sur ${rmGo(rmValue(st, rmCtxOf(id)))} (${rmModeName(st.mode)}).`, `RAM set to ${rmGo(rmValue(st, rmCtxOf(id)))} (${rmModeName(st.mode)}).`));
+      await refresh();
+      if (packPage?.id === id) drawPackPage();
+      after?.();
+    });
+    m.$("[data-ok]").focus();
+  }
+  // Avant de lancer : RAM trop basse pour le pack, ou plus haute que la RAM libre du PC.
+  // Renvoie null (annulé), ou { ramGB } (null = la RAM réglée de l'installation).
+  async function rmBeforeLaunch(id) {
+    if (!on("packRam") || !id) return { ramGB: null };
+    const info = await api.ram.info(id).catch(() => null);
+    if (!info?.ok) return { ramGB: null };
+    rmSys = { totalGB: info.totalGB || rmSys.totalGB, settingsGB: info.settingsGB || rmSys.settingsGB };
+    const v = info.gb, n = info.needGB, free = info.freeGB;
+    const low = v < n && info.ram?.mode !== "auto";
+    // Windows libère sa mémoire cache au besoin : on ne prévient qu'au-delà de 1 Go de plus que le libre.
+    const tooMuch = v > free + 1;
+    let quiet = false;
+    try {
+      quiet = localStorage.getItem(`omniscient.ramQuiet.${id}`) === String(v);
+    } catch {
+      /* stockage local indisponible */
+    }
+    if ((!low && !tooMuch) || (quiet && !low)) return { ramGB: null };
+    const fixV = tooMuch ? Math.max(1, Math.min(free, v)) : Math.min(info.autoGB, Math.max(free, info.autoGB));
+    const body = tooMuch
+      ? rmTr(`Ce pack est réglé sur ${v} Go, mais il ne reste que ${free} Go de libre en ce moment (navigateur, Discord et Windows utilisent le reste). Si tu lances quand même, le PC peut ramer ou Windows fermer le jeu.`, `This pack is set to ${v} GB, but only ${free} GB are free right now (browser, Discord and Windows use the rest). If you launch anyway, the PC may lag or Windows may close the game.`)
+      : rmTr(`Ce pack a ${info.mods} mods et seulement ${v} Go de RAM. Il lui en faut environ ${n} : il risque de geler au chargement ou de planter avec « Out of memory ».`, `This pack has ${info.mods} mods and only ${v} GB of RAM. It needs about ${n}: it may freeze while loading or crash with “Out of memory”.`);
+    return new Promise((resolve) => {
+      const m = overlay(`<div class="modal-box pop-in tone-warn" role="dialog" aria-modal="true" aria-labelledby="rm-lt" style="max-width:520px;text-align:left;">
+        <h3 id="rm-lt">⚠ ${esc(tooMuch ? rmTr("Pas assez de RAM libre", "Not enough free RAM") : rmTr("RAM trop basse pour ce pack", "RAM too low for this pack"))}</h3><p style="margin:8px 0;font-size:13.5px;line-height:1.5;">${esc(body)}</p>
+        ${tooMuch ? `<label class="play-row" style="margin-top:6px;"><input type="checkbox" data-quiet><span class="t">${esc(rmTr("Ne plus prévenir pour ce pack", "Don't warn again for this pack"))}<small>${esc(rmTr(`Tant que sa RAM reste à ${v} Go.`, `As long as its RAM stays at ${v} GB.`))}</small></span></label>` : `<label class="play-row" style="margin-top:6px;"><input type="checkbox" data-keep checked><span class="t">${esc(rmTr("Garder cette valeur pour ce pack", "Keep this value for this pack"))}<small>${esc(rmTr("Sinon, seulement pour cette partie.", "Otherwise, just for this game."))}</small></span></label>`}
+        <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px;"><button type="button" class="btn-secondary" data-x>${esc(T("cancel"))}</button><button type="button" class="btn-secondary" data-any>${esc(rmTr(`Lancer avec ${v} Go quand même`, `Launch with ${v} GB anyway`))}</button><button type="button" class="join-btn" data-fix>${esc(tooMuch ? rmTr(`Lancer avec ${fixV} Go cette fois`, `Launch with ${fixV} GB this time`) : rmTr(`Passer à ${fixV} Go et lancer`, `Switch to ${fixV} GB and launch`))}</button></div></div>`);
+      let done = false;
+      const end = (x) => {
+        if (done) return;
+        done = true;
+        m.close();
+        resolve(x);
+      };
+      new MutationObserver((_, ob) => {
+        if (!document.body.contains(m.ov)) {
+          ob.disconnect();
+          end(null);
+        }
+      }).observe(document.body, { childList: true });
+      m.$("[data-x]").addEventListener("click", () => end(null));
+      m.$("[data-any]").addEventListener("click", () => {
+        if (m.$("[data-quiet]")?.checked) {
+          try {
+            localStorage.setItem(`omniscient.ramQuiet.${id}`, String(v));
+          } catch {
+            /* stockage local indisponible */
+          }
+        }
+        end({ ramGB: null });
+      });
+      m.$("[data-fix]").addEventListener("click", async () => {
+        if (!tooMuch && m.$("[data-keep]")?.checked) {
+          await rmSave(id, fixV === info.autoGB ? { mode: "auto" } : { mode: "custom", gb: fixV });
+          refresh().catch(() => {});
+          return end({ ramGB: null });
+        }
+        end({ ramGB: fixV });
+      });
+      m.$("[data-fix]").focus();
+    });
+  }
+  // Paramètres › Mémoire (renderer.js appelle ce crochet) : la RAM de chaque pack, repliée.
+  let rmSetOpen = false;
+  window.__omRamSettings = async (contentEl) => {
+    if (!on("packRam") || !contentEl) return;
+    const r = await api.ram.list().catch(() => null);
+    if (!r?.ok) return;
+    rmSys = { totalGB: r.totalGB || rmSys.totalGB, settingsGB: r.settingsGB || rmSys.settingsGB };
+    contentEl.querySelector(".rm-set")?.remove();
+    const save = contentEl.querySelector("#settings-save-memory");
+    if (!save) return;
+    const list = r.versions.filter((x) => x.modded || x.ram.mode !== "auto");
+    const toneOf = (x) => rmVerdict(x.gb, { mods: x.mods, mc: x.minecraftVersion, packGB: x.ram.packGB || null })[0];
+    const nBad = list.filter((x) => ["warn", "bad"].includes(toneOf(x))).length;
+    const sec = document.createElement("section");
+    sec.className = "settings-section rm-set";
+    const draw = () => {
+      sec.innerHTML = `<button type="button" class="rm-tog rm-head" data-rm-settog aria-expanded="${rmSetOpen}"><b class="settings-row-label">🧠 ${esc(rmTr("RAM de chaque pack", "RAM for each pack"))}</b><span class="rm-sum ${nBad ? "warn" : ""}">${esc(`${list.length} pack(s)`)}${nBad ? esc(rmTr(` · ⚠ ${nBad} à vérifier`, ` · ⚠ ${nBad} to check`)) : ""}</span><span class="rm-chev">${rmSetOpen ? "▴" : "▾"}</span></button>
+        ${rmSetOpen ? `<p class="settings-row-desc">${esc(rmTr("Par défaut, chaque pack calcule sa RAM tout seul. La valeur du haut sert aux packs réglés sur « Comme dans Paramètres » et aux serveurs.", "By default, each pack works out its own RAM. The value above is used by packs set to “Same as Settings” and by servers."))}</p>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">${list.length ? list.map((x) => { const tn = toneOf(x); return `<div class="play-row" style="cursor:default;"><span class="t"><b style="font-weight:600;">${esc(x.name)}</b><small>${esc(`${x.mods} mods · ${rmModeName(x.ram.mode)}`)}</small></span><span class="sz" style="color:${tn === "bad" ? "var(--danger)" : tn === "warn" ? "var(--warn)" : "inherit"}">${esc(rmGo(x.gb))}${tn === "warn" || tn === "bad" ? " ⚠" : ""}</span><button type="button" class="btn-secondary" data-rm-edit="${esc(x.id)}" style="margin:0;padding:3px 10px;font-size:12px;">${esc(rmTr("Modifier", "Change"))}</button></div>`; }).join("") : `<p class="join-note">${esc(rmTr("Aucun pack installé.", "No pack installed."))}</p>`}</div>
+        ${list.some((x) => x.ram.mode !== "auto") ? `<button type="button" class="btn-secondary" data-rm-allauto style="margin-top:8px;align-self:flex-start;">${esc(rmTr("Tout remettre en automatique", "Set all back to automatic"))}</button>` : ""}` : ""}`;
+    };
+    draw();
+    save.before(sec);
+    sec.addEventListener("click", async (e) => {
+      if (e.target.closest("[data-rm-settog]")) {
+        rmSetOpen = !rmSetOpen;
+        return draw();
+      }
+      const ed = e.target.closest("[data-rm-edit]");
+      if (ed) return rmOpenDialog(ed.dataset.rmEdit, { after: () => window.__omRamSettings(contentEl) });
+      if (e.target.closest("[data-rm-allauto]")) {
+        for (const x of list) if (x.ram.mode !== "auto") await api.ram.set(x.id, { mode: "auto" }).catch(() => null);
+        toast(rmTr("Tous les packs sont en RAM automatique.", "Every pack is on automatic RAM."));
+        await refresh();
+        return window.__omRamSettings(contentEl);
+      }
+    });
+  };
 
   // --- Page d'un pack (Mon pack ou pack officiel) -------------------------------------------------
   // Onglets Mods / Packs de ressources / Shaders / Mondes / Fichiers. Les mods ajoutés par le joueur
@@ -3818,6 +4246,7 @@
     wzCfFile: "Fichier à prendre :", wzCfLook: "Recherche du bon fichier…", wzCfNoV: "Aucune version de {b} sur CurseForge ne va avec Minecraft {v} ({l}). Choisis une solution :",
     wzCfWrong: "Mauvaise version : {w}. Le launcher ne le prend pas (il reste dans Téléchargements). Sur la page, clique « Download » sous {f}.",
     wzValidate: "Valider", wzLater: "Finir plus tard", wzOk: "Pack corrigé : plus aucun problème.",
+    emptyMine: "Aucun mod ajouté pour l'instant.", emptyDeps: "Aucun mod nécessaire.", noMatch: "Aucun mod ne correspond à ta recherche.",
     needs: "Nécessite : {d}", neededBy: "Nécessaire pour {d}", latest: "récente", upTo: "↑ {v}",
     lock: "Désactiver ce mod casserait : {d}", cfHand: "CurseForge ✋", mr: "Modrinth",
     rpAdd: "+ Ajouter un pack de ressources", rpNote: "Le premier de la liste passe devant les autres, comme dans Minecraft.",
@@ -3852,6 +4281,7 @@
     wzCfFile: "File to get:", wzCfLook: "Looking for the right file…", wzCfNoV: "No version of {b} on CurseForge works with Minecraft {v} ({l}). Pick a fix:",
     wzCfWrong: "Wrong version: {w}. The launcher does not take it (it stays in Downloads). On the page, click “Download” under {f}.",
     wzValidate: "Done", wzLater: "Finish later", wzOk: "Pack fixed: no problem left.",
+    emptyMine: "No mods added yet.", emptyDeps: "No required mods.", noMatch: "No mod matches your search.",
     needs: "Needs: {d}", neededBy: "Required by {d}", latest: "latest", upTo: "↑ {v}",
     lock: "Turning this mod off would break: {d}", cfHand: "CurseForge ✋", mr: "Modrinth",
     rpAdd: "+ Add a resource pack", rpNote: "The first one in the list wins over the others, like in Minecraft.",
@@ -3974,6 +4404,13 @@
       ${man ? `<p class="pk-note fx-warn">${esc(pkT("fxManaged", { t: pkT(man) }))}</p>` : fx.path ? "" : `<p class="pk-note" style="margin:0 0 10px;">${esc(pkT("fNote"))}</p>`}
       ${fx.err ? `<p class="pk-note fx-warn">${esc(fx.err)}</p>` : ""}${list}`;
   }
+  // « Ouvrir avec Windows » : le launcher peut refuser (.bat, .exe… : audit du 01/11). Le refus
+  // s'affiche maintenant (02/11, test au6 : le bouton ne disait rien).
+  async function fxOpenExt(st, path) {
+    const r = await api.myPack.files.openExternal(st.id, path);
+    if (r && r.ok === false && r.error) toast(r.error);
+    return r;
+  }
   // Fenêtre « ce fichier ne s'ouvre pas ici » : on explique et on passe la main à Windows.
   function fxElsewhere(st, path, why) {
     const name = path.split("/").pop();
@@ -3985,7 +4422,7 @@
     m.ov.addEventListener("click", (e) => {
       if (e.target.closest("[data-x]")) return m.close();
       if (e.target.closest("[data-show]")) { api.myPack.files.showInExplorer(st.id, path); return m.close(); }
-      if (e.target.closest("[data-ext]")) { api.myPack.files.openExternal(st.id, path); return m.close(); }
+      if (e.target.closest("[data-ext]")) { fxOpenExt(st, path); return m.close(); }
     });
   }
   async function fxOpen(st, path) {
@@ -4005,7 +4442,7 @@
       m.ov.addEventListener("click", (e) => {
         if (e.target.closest("[data-x]")) return m.close();
         if (e.target.closest("[data-show]")) return api.myPack.files.showInExplorer(st.id, path);
-        if (e.target.closest("[data-ext]")) return api.myPack.files.openExternal(st.id, path);
+        if (e.target.closest("[data-ext]")) return fxOpenExt(st, path);
       });
       return;
     }
@@ -4028,7 +4465,7 @@
     };
     ta.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && !ro) { e.preventDefault(); save(); } });
     m.ov.addEventListener("click", (e) => {
-      if (e.target.closest("[data-ext]")) return api.myPack.files.openExternal(st.id, path);
+      if (e.target.closest("[data-ext]")) return fxOpenExt(st, path);
       if (e.target.closest("[data-copy]")) { navigator.clipboard?.writeText(ta.value).catch(() => {}); return toast(pkT("fxCopied")); }
       if (e.target.closest("[data-save]")) return save();
       if (e.target.closest("[data-x]")) {
@@ -4788,6 +5225,7 @@
         ${friend ? `<button type="button" data-om="friend"><b>${esc(omT("friend"))}</b><small>${esc(omT("friendD"))}</small></button>` : ""}
         ${omni ? `<button type="button" data-om="export"><b>${esc(omT("omni"))}</b><small>${esc(omT("omniD"))}</small></button><hr><button type="button" data-om="gen"><b>${esc(omT("gen"))}</b><small>${esc(omT("genD"))}</small></button>` : ""}
         ${friend || omni ? "<hr>" : ""}<div class="om-mh">${esc(omT("inst"))}</div>
+        ${on("packRam") && packPage ? (() => { const c = rmCtxOf(packPage.id), st = rmStOf(packPage.id), v = rmValue(st, c), tn = rmVerdict(v, c)[0]; return `<button type="button" data-om="ram"><b>🧠 ${esc(rmTr("Mémoire (RAM)", "Memory (RAM)"))}${tn === "warn" || tn === "bad" ? " ⚠" : ""}</b><small>${esc(`${rmGo(v)} · ${rmModeName(st.mode)}`)}</small></button>`; })() : ""}
         <button type="button" data-om="rename"><b>✎ ${esc(T("rename"))}</b>${p.omni ? `<small>${esc(omT("renD"))}</small>` : ""}</button>
         <button type="button" data-om="remove" style="color:var(--danger,#e5484d);"><b>🗑 ${esc(omT("rmB"))}</b>${(p.omni?.versions || []).length > 1 ? `<small>${esc(omT("rmD"))}</small>` : ""}</button></div></span>`;
   }
@@ -4984,6 +5422,7 @@
       if (!l) return;
       e.preventDefault();
       kDrag = { on: !g.keep.has(l.dataset.kl) };
+      document.addEventListener("mouseup", () => (kDrag = null), { once: true });
       kPaint(l.dataset.kl, kDrag.on);
     });
     root.addEventListener("mouseover", (e) => {
@@ -4994,9 +5433,6 @@
     root.addEventListener("click", (e) => {
       if (e.detail && e.target.closest?.("[data-kl]")) e.preventDefault();
     });
-    const kUp = () => (kDrag = null);
-    document.addEventListener("mouseup", kUp);
-    m.ov.addEventListener("remove", kUp);
     root.addEventListener("click", async (e) => {
       const b = e.target.closest("button");
       if (!b) return;
@@ -5022,6 +5458,10 @@
   }
   const omCheck = (key, label, sub, checked = true, disabled = false) => `<label class="play-row" style="padding:8px 10px;"><input type="checkbox" data-part="${key}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}><span class="t">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span></label>`;
   const omWorlds = (ws, checked) => ws.length ? `<div class="om-wl">${ws.map((w) => `<label class="play-row" style="padding:6px 10px;"><input type="checkbox" data-w="${esc(w.key)}" ${checked ? "checked" : ""}><span class="t">${esc(w.name)}<small>${esc(w.mc || "")} · ${esc(sizeFmt(w.sizeBytes || 0))}</small></span></label>`).join("")}</div>` : `<p class="om-note">${esc(omT("noW"))}</p>`;
+  // RAM dans l'export (Laboratoire « packRam ») : la RAM conseillée part avec le pack.
+  const omRamGB = (id) => rmValue(rmStOf(id), rmCtxOf(id));
+  const omRamCheck = (id, sub) => (on("packRam") ? omCheck("ram", rmTr(`🧠 RAM conseillée : ${rmGo(omRamGB(id))}`, `🧠 Recommended RAM: ${rmGo(omRamGB(id))}`), sub) : "");
+  const omRamOut = (m, id) => (on("packRam") && m.$('[data-part="ram"]')?.checked ? omRamGB(id) : null);
   async function omOpenExport(st) {
     const r = await api.omniPack.exportPreview(st.id);
     if (!r?.ok) return packErr(r);
@@ -5033,6 +5473,7 @@
       <div class="om-sec">${esc(omT("inc"))}</div>
       ${r.vanilla ? "" : omCheck("mods", omT("mods"), omT("modsD", { n: r.mods }), true, true)}
       ${omCheck("cfg", omT("cfg"), omT("cfgD"))}${omCheck("rp", r.vanilla ? omT("rpV") : omT("rp"), omT("rpD"))}${on("dataPacks") ? omCheck("dp", omT("dp"), omT("dpD")) : ""}
+      ${omRamCheck(st.id, rmTr("Chaque version part avec la RAM qu'il lui faut : celui qui importe n'a rien à régler.", "Each version comes with the RAM it needs: whoever imports it has nothing to set."))}
       <div class="om-sec">${esc(omT("w"))}</div><p class="om-note" style="margin:0 0 6px;">${esc(omT("wD"))}</p>${omWorlds(r.worlds, r.vanilla)}
       <div class="om-sec">${esc(omT("next"))}</div><ol class="om-steps"><li>${esc(omT("s1"))}</li><li>${esc(omT("s2"))}</li><li>${esc(omT("s3"))}</li></ol>
       <p class="fx-msg" data-msg></p>
@@ -5044,7 +5485,7 @@
       const part = (k) => m.$(`[data-part="${k}"]`)?.checked !== false;
       const worlds = [...m.ov.querySelectorAll("[data-w]:checked")].map((x) => x.dataset.w);
       b.disabled = true;
-      const out = await api.omniPack.exportOmni(st.id, { parts: { cfg: part("cfg"), rp: part("rp"), sh: part("rp"), dp: on("dataPacks") ? part("dp") : false, w: worlds.length > 0 }, worlds });
+      const out = await api.omniPack.exportOmni(st.id, { parts: { cfg: part("cfg"), rp: part("rp"), sh: part("rp"), dp: on("dataPacks") ? part("dp") : false, w: worlds.length > 0, ram: omRamOut(m, st.id) != null }, worlds });
       b.disabled = false;
       if (out?.cancelled) return;
       if (!out?.ok) return (m.$("[data-msg]").textContent = out?.error || "?");
@@ -5064,7 +5505,7 @@
       <div class="om-file"><span class="ic">⬆</span><span><b>${esc(name)}.mrpack</b><small>${esc(p.vanilla ? omT("vanilla") : `${p.mods.length} mods`)} · ${esc(omT("light"))}</small></span></div>
       <div class="om-sec">${esc(omT("inc"))}</div>
       ${p.vanilla ? "" : omCheck("mods", omT("frMods"), omT("frModsD"), true, true)}
-      ${omCheck("cfg", omT("cfg"), omT("cfgD"))}${omCheck("rp", p.vanilla ? omT("rpV") : omT("rp"), "")}${!p.vanilla && on("dataPacks") ? omCheck("dp", omT("dp"), "") : ""}
+      ${omCheck("cfg", omT("cfg"), omT("cfgD"))}${omCheck("rp", p.vanilla ? omT("rpV") : omT("rp"), "")}${!p.vanilla && on("dataPacks") ? omCheck("dp", omT("dp"), "") : ""}${p.vanilla ? "" : omRamCheck(st.id, rmTr("Ton ami aura la bonne RAM en important le pack dans Omniscient (et avec le .zip, aussi dans l'appli CurseForge).", "Your friend gets the right RAM when importing the pack in Omniscient (and with the .zip, in the CurseForge app too)."))}
       <div class="om-sec">${esc(omT("frW"))}</div><p class="om-note" style="margin:0 0 6px;">${esc(omT("frWD"))}</p>${omWorlds(ws, false)}
       ${p.vanilla ? "" : `<p class="om-note">${esc(omT("frCf"))}</p>`}<p class="fx-msg" data-msg></p>
       <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;"><button type="button" class="btn-secondary" data-x>${esc(omT("cancel"))}</button><button type="button" class="join-btn" data-save>${esc(omT("save"))}</button></div></div>`);
@@ -5075,7 +5516,7 @@
       const part = (k) => m.$(`[data-part="${k}"]`)?.checked !== false;
       const worlds = [...m.ov.querySelectorAll("[data-w]:checked")].map((x) => x.dataset.w);
       b.disabled = true;
-      const out = await api.omniPack.exportFriend(st.id, { parts: { cfg: part("cfg"), rp: part("rp"), dp: part("dp"), w: worlds.length > 0 }, worlds });
+      const out = await api.omniPack.exportFriend(st.id, { parts: { cfg: part("cfg"), rp: part("rp"), dp: part("dp"), w: worlds.length > 0 }, worlds, ramGB: omRamOut(m, st.id) });
       b.disabled = false;
       if (out?.cancelled) return;
       if (!out?.ok) return (m.$("[data-msg]").textContent = out?.error || "?");
@@ -5134,7 +5575,7 @@
         ${sec(adTr("Pas dans l'export", "Not in the export"), miss, adTr("fichier introuvable", "file not found"))}
         ${fmt === "zip" && !plan.cfChecked ? `<p class="om-note" style="color:var(--warn)">⚠ ${esc(adTr("Connecte-toi pour que le launcher reconnaisse les mods CurseForge : sinon ils partent en .jar.", "Sign in so the launcher can recognise CurseForge mods: otherwise they go as .jar."))}</p>` : ""}
         <div class="om-sec">${esc(omT("inc"))}</div>
-        ${omCheck("cfg", omT("cfg"), omT("cfgD"), pc("cfg"))}${omCheck("rp", omT("rp"), "", pc("rp"))}${on("dataPacks") ? omCheck("dp", omT("dp"), "", pc("dp")) : ""}
+        ${omCheck("cfg", omT("cfg"), omT("cfgD"), pc("cfg"))}${omCheck("rp", omT("rp"), "", pc("rp"))}${on("dataPacks") ? omCheck("dp", omT("dp"), "", pc("dp")) : ""}${on("packRam") ? omCheck("ram", rmTr(`🧠 RAM conseillée : ${rmGo(omRamGB(st.id))}`, `🧠 Recommended RAM: ${rmGo(omRamGB(st.id))}`), fmt === "zip" ? rmTr("Écrite dans le champ officiel du .zip : l'appli CurseForge et Omniscient la lisent.", "Written in the .zip's official field: the CurseForge app and Omniscient read it.") : rmTr("Petit fichier lu par Omniscient à l'import (les autres launchers l'ignorent, sans souci).", "Small file read by Omniscient on import (other launchers just ignore it)."), pc("ram")) : ""}
         <div class="om-sec">${esc(omT("frW"))}</div><p class="om-note" style="margin:0 0 6px;">${esc(omT("frWD"))}</p>${omWorlds(ws, false)}
         <p class="fx-msg" data-msg></p>
         <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;"><button type="button" class="btn-secondary" data-x>${esc(omT("cancel"))}</button><button type="button" class="join-btn" data-save>${esc(omT("save"))}</button></div>`;
@@ -5153,7 +5594,7 @@
       const part = (k) => m.$(`[data-part="${k}"]`)?.checked !== false;
       const worlds = [...m.ov.querySelectorAll("[data-w]:checked")].map((x) => x.dataset.w);
       b.disabled = true;
-      const out = await api.omniPack.exportFriend(st.id, { format: fmt, parts: { cfg: part("cfg"), rp: part("rp"), dp: on("dataPacks") ? part("dp") : false, w: worlds.length > 0 }, worlds });
+      const out = await api.omniPack.exportFriend(st.id, { format: fmt, parts: { cfg: part("cfg"), rp: part("rp"), dp: on("dataPacks") ? part("dp") : false, w: worlds.length > 0 }, worlds, ramGB: omRamOut(m, st.id) });
       b.disabled = false;
       if (out?.cancelled) return;
       if (!out?.ok) return (m.$("[data-msg]").textContent = out?.error || "?");
@@ -5175,8 +5616,23 @@
     if (a === "stale") return omRemoveStale();
     if (a === "rename") return pjRename(st.id);
     if (a === "remove") return omRemovePack(st.id);
+    if (a === "ram") return rmOpenDialog(st.id);
+  }
+  // Bandeau de la page d'un pack quand sa RAM est trop basse (Laboratoire « packRam »).
+  function rmBannerHtml(id) {
+    if (!on("packRam")) return "";
+    const c = rmCtxOf(id), st = rmStOf(id), v = rmValue(st, c), n = rmNeed(c);
+    if (v >= n || st.mode === "auto") return "";
+    return `<div class="pk-check bad" role="status" style="border-color:var(--warn);"><span><b>🧠 ${esc(rmTr(`RAM un peu juste : ${v} Go pour ${c.mods} mods`, `RAM a bit low: ${v} GB for ${c.mods} mods`))}</b><br>${esc(rmTr(`Ce pack demande environ ${n} Go. Avec moins, il risque de geler ou de planter.`, `This pack needs about ${n} GB. With less, it may freeze or crash.`))}</span><button type="button" class="join-btn" data-om="ram">${esc(rmTr("Régler", "Set"))}</button></div>`;
   }
   document.addEventListener("click", (e) => { if (!e.target.closest(".om-exp")) document.querySelectorAll(".om-menu").forEach((x) => (x.hidden = true)); });
+  // Largeur d'un texte en pixels (colonnes de la liste des mods, version A du 02/11).
+  let pkMeasureCtx = null;
+  function pkTextW(txt, font) {
+    pkMeasureCtx = pkMeasureCtx || document.createElement("canvas").getContext("2d");
+    pkMeasureCtx.font = font;
+    return pkMeasureCtx.measureText(String(txt || "")).width;
+  }
   function drawPackPage() {
     const st = packPage;
     const p = st.p;
@@ -5201,9 +5657,9 @@
         : `<button type="button" class="pk-sw" role="switch" aria-checked="${m.on}" data-pk-on="${esc(m.id)}" aria-label="${esc(m.name)}"></button>`;
       return `<div class="pk-row${m.on ? "" : " off"}${bad ? " bad" : ""}">
         <span class="pk-av" style="background:${pkColor(m.name)}">${esc(m.name[0])}</span>
-        <span class="pk-nm"><b>${esc(m.name)}</b><small class="${bad ? "need" : ""}">${esc(sub)}</small></span>
+        <span class="pk-nm"><b title="${esc(m.name)}">${esc(m.name)}</b><small class="${bad ? "need" : ""}">${esc(sub)}</small></span>
         <span class="pk-src ${m.source}">${esc(m.source === "cf" ? (m.got === "api" ? pkT("cfApi") : pkT("cfHand")) : m.source === "file" ? pkT("file") : pkT("mr"))}</span>
-        ${p.readonly ? `<span class="pk-ver"></span>` : m.source === "cf" && m.got === "api" ? `<span class="pk-ver"><span class="pk-nm"><small>${esc(m.version)}</small></span></span>` : m.source === "file" ? `<span class="pk-ver"><span class="pk-nm"><small>${esc(m.version)}</small></span></span>` : m.source === "cf" ? `<span class="pk-ver">${m.have ? `<span class="pk-up" style="color:var(--success);">✓ ${esc(pkT("cfHave"))}</span><span class="pk-nm"><small>${esc(m.version)}</small></span>` : `<span class="pk-nm"><small class="need">${esc(pkT("cfWait"))}</small></span><button type="button" class="btn-secondary" data-pk-cf="${esc(m.id)}" style="margin:0;padding:4px 10px;font-size:12px;">${esc(pkT("cfOpen"))} ↗</button>`}</span>` : `<span class="pk-ver">${m.source === "mr" && m.versions[0] !== m.version ? `<span class="pk-up">${esc(pkT("upTo", { v: m.versions[0] }))}</span>` : ""}
+        ${p.readonly ? `<span class="pk-ver"></span>` : m.source === "cf" && m.got === "api" ? `<span class="pk-ver"><span class="pk-nm"><small>${esc(m.version)}</small></span></span>` : m.source === "file" ? `<span class="pk-ver"><span class="pk-nm"><small>${esc(m.version)}</small></span></span>` : m.source === "cf" ? `<span class="pk-ver">${m.have ? `<span class="pk-up" style="color:var(--success);">✓ ${esc(pkT("cfHave"))}</span><span class="pk-nm"><small>${esc(m.version)}</small></span>` : `<span class="pk-nm"><small class="need">${esc(pkT("cfWait"))}</small></span><button type="button" class="btn-secondary" data-pk-cf="${esc(m.id)}" style="margin:0;padding:4px 10px;font-size:12px;">${esc(pkT("cfOpen"))} ↗</button>`}</span>` : `<span class="pk-ver">${m.source === "mr" && m.versions[0] !== m.version ? `<span class="pk-up" title="${esc(m.versions[0])}">${esc(pkT("upTo", { v: m.versions[0] }))}</span>` : ""}
           <select class="play-in" data-pk-ver="${esc(m.id)}" aria-label="${esc(m.name)}">${m.versions.map((x, i) => `<option value="${esc(x)}" ${x === m.version ? "selected" : ""}>${esc(x)}${i === 0 ? ` · ${esc(pkT("latest"))}` : ""}</option>`).join("")}</select></span>`}
         <span class="pk-end">${sw}${p.readonly || (m.auto && nb.length) ? "" : `<button type="button" class="pk-del" data-pk-del="mod" data-k="${esc(m.id)}" title="${esc(pkT("delL"))}" aria-label="${esc(pkT("delL"))} ${esc(m.name)}">${TRASH}</button>`}</span></div>`;
     };
@@ -5213,14 +5669,18 @@
       const showMine = st.filter === "all" || st.filter === "mine";
       const showDeps = st.filter === "all" || st.filter === "deps";
       const list = st.filter === "up" ? ups.filter(match) : null;
+      // Version A (02/11) : largeur commune des colonnes nom et pastille, mesurée sur tous les mods du pack.
+      const nmW = Math.min(300, Math.ceil(Math.max(120, ...p.mods.map((m) => pkTextW(m.name, "600 13.5px Inter, system-ui, sans-serif")))) + 2);
+      const srcW = Math.ceil(Math.max(...["mr", "cfApi", "cfHand", "file"].map((k) => pkTextW(pkT(k), "700 10.5px Inter, system-ui, sans-serif")))) + 16;
+      const modList = (all, shown, emptyKey) => `<div class="pk-list pk-mods" style="--pk-nmw:${nmW}px;--pk-srcw:${srcW}px;">${shown.length ? shown.map(row).join("") : emptyKey ? `<div class="pk-empty">${esc(pkT(all.length ? "noMatch" : emptyKey))}</div>` : ""}</div>`;
       const chip = (k, label, n) => `<button type="button" class="pk-chip" data-pk-f="${k}" aria-pressed="${st.filter === k}">${esc(label)}${n != null ? ` · ${n}` : ""}</button>`;
       body = `<div class="pk-tools"><input class="play-in" type="search" data-pk-q placeholder="${esc(pkT("search"))}" value="${esc(st.q)}">
           ${chip("all", pkT("fAll"))}${chip("mine", pkT("fMine"), mine.length)}${chip("deps", pkT("fDeps"), deps.length)}${ups.length ? chip("up", pkT("fUp"), ups.length) : ""}
           <span class="sp"></span>${p.readonly ? "" : `${ups.length ? `<button type="button" class="btn-secondary" data-pk-upall>${esc(pkT("upAll"))}</button>` : ""}<button type="button" class="join-btn" data-pk-add>${esc(pkT("add"))}</button>`}</div>
         ${p.readonly ? `<p class="pk-note">${esc(pkT("readonly"))}</p>` : ""}
-        ${list ? `<div class="pk-list">${list.map(row).join("")}</div>` : `
-        ${showMine ? `<div class="pk-sec">${esc(pkT("secMine"))} · ${mine.length}</div><div class="pk-list">${mine.filter(match).map(row).join("")}</div>` : ""}
-        ${showDeps ? `<div class="pk-sec">${esc(pkT("secDeps"))} · ${deps.length} <span>${esc(pkT("secDepsD"))}</span></div><div class="pk-list">${deps.filter(match).map(row).join("")}</div>` : ""}`}
+        ${list ? modList(list, list, "") : `
+        ${showMine ? `<div class="pk-sec">${esc(pkT("secMine"))} · ${mine.length}</div>${modList(mine, mine.filter(match), "emptyMine")}` : ""}
+        ${showDeps ? `<div class="pk-sec">${esc(pkT("secDeps"))} · ${deps.length} <span>${esc(pkT("secDepsD"))}</span></div>${modList(deps, deps.filter(match), "emptyDeps")}` : ""}`}
         <p class="pk-note">${esc(pkT("checkBefore"))}</p>`;
     } else if (st.tab === "rp") {
       body = `<div class="pk-tools"><p class="pk-note" style="flex:1;">${esc(pkT("rpNote"))}</p><button type="button" class="join-btn" data-pk-add>${esc(pkT("rpAdd"))}</button></div>
@@ -5275,6 +5735,7 @@
         ? `<div class="pk-check bad" role="status"><span><b>${esc(pkT("bad", { n: probs.length }))}</b><br>${probs.map((x) => esc(pkProbText(x))).join("<br>")}</span>
           ${p.readonly ? "" : p.partial ? `<button type="button" class="join-btn" disabled><span class="ip-spin" aria-hidden="true"></span> ${esc(pkT("fixWait"))}</button>` : `<button type="button" class="join-btn" data-pk-fix>${esc(probs.length > 1 ? pkT("fixAll") : pkT("fix"))}</button>`}</div>`
         : p.vanilla ? "" : `<div class="pk-check ok" role="status">${esc(pkT("okAll"))}</div>`}
+      ${rmBannerHtml(st.id)}
       ${omJobHtml()}
       <div class="pk-tabs" role="tablist">${p.vanilla ? "" : tab("mods", pkT("tMods"), p.mods.length)}${tab("rp", pkT("tRp"), p.resourcepacks.length)}${p.vanilla && !on("vanillaModded") ? "" : tab("sh", pkT("tSh"), p.shaders.length)}${tab("w", pkT("tW"), worlds.length)}${on("dataPacks") && dpSupported(p.minecraftVersion) ? tab("dp", pkT("tDp"), (p.datapacks || []).length) : ""}${tab("f", pkT("tF"))}</div>
       ${body}</div>`;
@@ -5620,6 +6081,7 @@
       <p class="play-warn" id="pnv-warn" hidden></p>
       <div class="field-label" id="pnv-plabel" style="margin-top:12px;">${esc(T(on("omniPack") ? "typeL" : "packL"))}</div>
       <div class="play-list" id="pnv-packs" style="margin-top:6px;max-height:none;"></div>
+      ${on("packRam") ? `<div id="pnv-ram"></div>` : ""}
       <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
         <button type="button" class="btn-secondary" id="pnv-cancel">${esc(T("cancel"))}</button>
         <button type="button" class="btn-secondary" id="pnv-create" disabled>${esc(T("create"))}</button>
@@ -5636,6 +6098,18 @@
     const all = vr.versions;
     selV = all.find((x) => x.type === "release")?.id || all[0]?.id;
     const packsFor = (ver) => data.packs.filter((p) => (p.versions || []).some((x) => x.minecraftVersion === ver));
+    // RAM de la future installation (Laboratoire « packRam »), repliée sur une ligne.
+    const ramSt = { mode: "auto", gb: 0, fold: true };
+    let ramDraw = null;
+    const ramCtx = () => {
+      const pk = data.packs.find((p) => p.id === selP);
+      const pv = pk?.versions?.find((x) => x.minecraftVersion === selV);
+      return { mods: pv ? pv.files.length : 0, mc: selV || "", shaders: false, packGB: null };
+    };
+    if ($("#pnv-ram")) {
+      await rmLoadSys();
+      ramDraw = rmMount($("#pnv-ram"), ramSt, ramCtx);
+    }
     const draw = () => {
       const f = all.filter((x) => types.has(x.type) && x.id.toLowerCase().includes(q.toLowerCase()));
       $("#pnv-count").textContent = T("count", { n: f.length });
@@ -5649,6 +6123,10 @@
       // Pack Omniscient : seulement Vanilla ou Mon pack (pas les packs officiels).
       const avail = omni ? [] : packsFor(selV);
       const grp = on("omniPack");
+      // Mon pack : seulement là où un chargeur de mods existe (mêmes limites que openMyPack). Sinon, la
+      // fenêtre suivante passait en silence à une autre version (01/11, Rushi : test Fabric trop vieux).
+      const mineOk = t === "release" && adCmp(selV, "1.7.10") >= 0;
+      if (selP === "mine" && !mineOk) selP = "vanilla";
       if (selP !== "vanilla" && selP !== "mine" && !(grp && selP === "__omni") && !avail.some((p) => p.id === selP)) selP = "vanilla";
       if (grp && selP === "__omni" && avail.length) selP = avail[0].id;
       const omSel = grp && (selP === "__omni" || avail.some((p) => p.id === selP));
@@ -5659,7 +6137,7 @@
           const pv = p.versions.find((x) => x.minecraftVersion === selV);
           return `<label class="play-row" style="align-items:flex-start;"><input type="radio" name="pnv-pack" value="${esc(p.id)}" ${p.id === selP ? "checked" : ""} style="margin-top:3px;"><span class="t"><b style="font-weight:600;">${esc(packName(p))} <span class="play-beta-tag" style="margin-left:4px;">${esc(T("official"))}</span></b><small>${esc(p.description?.[L()] || p.description?.fr || "")}</small></span><span class="sz">${pv.files.length} ${esc(T("mods"))}</span></label>`;
         }),
-        on("myPack") && `<label class="play-row" style="align-items:flex-start;"><input type="radio" name="pnv-pack" value="mine" ${selP === "mine" ? "checked" : ""} style="margin-top:3px;"><span class="t"><b style="font-weight:600;">${esc(T("mpPick"))}</b><small>${esc(T("mpPickD"))}</small></span><span class="sz">Modrinth</span></label>`,
+        on("myPack") && `<label class="play-row" style="align-items:flex-start;${mineOk ? "" : "opacity:.6;cursor:not-allowed;"}"><input type="radio" name="pnv-pack" value="mine" ${selP === "mine" ? "checked" : ""} ${mineOk ? "" : "disabled"} style="margin-top:3px;"><span class="t"><b style="font-weight:600;">${esc(T("mpPick"))}</b><small>${esc(T(mineOk ? "mpPickD" : "mpPickOld"))}</small></span><span class="sz">Modrinth</span></label>`,
         grp && !omni && `<label class="play-row" style="align-items:flex-start;"><input type="radio" name="pnv-pack" value="__omni" ${omSel ? "checked" : ""} style="margin-top:3px;"><span class="t"><b style="font-weight:600;">${esc(T("omList"))}</b><small>${esc(T("omListD"))}</small></span><span class="sz">${esc(avail.length ? `${avail.length} pack${avail.length > 1 ? "s" : ""}` : L() === "fr" ? "Bientôt" : "Soon")}</span></label>`,
         grp && !omni && omSel && (avail.length
           ? avail.map((p) => { const pv = p.versions.find((x) => x.minecraftVersion === selV); return `<label class="play-row" style="align-items:flex-start;margin-left:26px;"><input type="radio" name="pnv-omp" value="${esc(p.id)}" ${p.id === selP ? "checked" : ""} style="margin-top:3px;"><span class="t"><b style="font-weight:600;">${esc(packName(p))}</b><small>${esc(p.author ? T("omBy", { a: p.author }) + " · " : "")}${esc(p.description?.[L()] || p.description?.fr || "")}</small></span><span class="sz">${pv.files.length} ${esc(T("mods"))}</span></label>`; }).join("")
@@ -5668,6 +6146,10 @@
       ].filter(Boolean).join("");
       $("#pnv-create").disabled = !selV || selP === "__omni";
       $("#pnv-play").disabled = !selV || selP === "mine" || selP === "__omni";
+      if (ramDraw) {
+        $("#pnv-ram").hidden = selP === "mine" || selP === "__omni";
+        ramDraw();
+      }
     };
     draw();
     $("#pnv-list").addEventListener("click", (e) => {
@@ -5716,6 +6198,7 @@
         $("#pnv-warn").textContent = r?.error || "";
         return;
       }
+      if (ramDraw && ramSt.mode !== "auto") await rmSave(r.version.id, ramSt);
       m.close();
       await refresh();
       if (andPlay) launch({ versionId: r.version.id });
@@ -6459,14 +6942,16 @@
       const steps = [{ id: "world", label: T("impStepW"), state: "run", n: 0, of: picked.size }];
       const run = { t0: Date.now(), end: 0, overall: null };
       const total = found.filter((f) => picked.has(f.folder)).reduce((a, f) => a + (f.sizeBytes || 0), 0);
+      box.innerHTML = ""; // l'écran du choix part : ses boutons gardent leurs écouteurs, ne pas les réutiliser
       const draw = () => {
-        box.innerHTML = `<h3 id="pi-t">${esc(T("impT"))}</h3>
+        // Redessinée chaque seconde : pjPatch, sinon le rond et la barre repartent de zéro à chaque fois.
+        pjPatch(box, `<h3 id="pi-t">${esc(T("impT"))}</h3>
           <p style="margin:0 0 10px;color:var(--muted);font-size:12.5px;">${esc(T("impCopy", { n: picked.size }))} · ${esc(sizeFmt(total))}</p>
           ${ipOverall(run, steps)}
           <div class="cf-steps">${steps.map((s) => `<div class="cf-step ${s.state}"><span class="ic">${ipIcon(s)}</span><span>${esc(s.label)}</span><span class="n">${s.n}/${s.of}</span>
             ${s.state === "run" ? ipStepExtra(s) : ""}</div>`).join("")}</div>
           <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
-            <button type="button" class="join-btn" id="pi-ok" ${run.end ? "" : "disabled"}>${esc(T("cfDoneB"))}</button></div>`;
+            <button type="button" class="join-btn" id="pi-ok" ${run.end ? "" : "disabled"}>${esc(T("cfDoneB"))}</button></div>`);
         m.$("#pi-ok")?.addEventListener("click", m.close);
       };
       draw();
@@ -6861,6 +7346,7 @@
       ${worlds.length ? `<div class="play-list">${worlds.map((w) => `<label class="play-row"><input type="checkbox" data-cfw="${esc(w.folder)}" ${picked.has(w.folder) ? "checked" : ""}>
         <img src="${w.icon || grassThumb(w.folder)}" alt=""><span class="t">${esc(w.name)}<small>Minecraft ${esc(p.minecraftVersion)}${w.lastPlayed ? ` · ${esc(ago(w.lastPlayed))}` : ""}</small></span>
         <span class="sz">${esc(sizeFmt(w.sizeBytes))}</span></label>`).join("")}</div>` : `<p class="cf-man-note">${esc(T(p.from === "mrpack" ? "mrNoWorld" : "cfNoWorld"))}</p>`}
+      ${on("packRam") ? `<div id="cf-ram"></div>` : ""}
       <p class="play-safe">✓ ${esc(T("cfSafe"))}</p>
       <p class="play-safe">✓ ${esc(T("cfPrivate"))}</p>
       <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px;">
@@ -6869,7 +7355,15 @@
       </div>`;
     const go = m.$("#cf-go");
     m.$("#cf-cancel").addEventListener("click", m.close);
+    // RAM du pack importé (Laboratoire « packRam »), repliée : RAM conseillée par le fichier du pack.
+    const ramSt = { mode: "auto", gb: 0, fold: true };
+    let ramDraw = null;
+    if (m.$("#cf-ram")) {
+      await rmLoadSys();
+      ramDraw = rmMount(m.$("#cf-ram"), ramSt, () => ({ mods: parts.has("mods") ? p.modCount || 0 : 0, mc: p.minecraftVersion || (p.versions || [])[0] || "", shaders: parts.has("sh") && !!p.shaders?.length, packGB: Number(p.recommendedRamGB) || null }));
+    }
     const check = () => {
+      ramDraw?.();
       go.textContent = goLabel();
       m.$("#cf-nomods").hidden = parts.has("mods") || !picked.size;
       go.disabled = !parts.size && !picked.size;
@@ -6882,7 +7376,7 @@
       c.checked ? parts.add(c.dataset.cfp) : parts.delete(c.dataset.cfp);
       check();
     }));
-    go.addEventListener("click", () => installCfPack(m, box, p, [...picked], parts));
+    go.addEventListener("click", () => installCfPack(m, box, p, [...picked], parts, ramDraw ? { mode: ramSt.mode, ...(ramSt.mode === "custom" ? { gb: ramSt.gb } : {}) } : null));
     go.focus();
   }
 
@@ -6935,7 +7429,7 @@
   }
   const ipIcon = (s) => (s.state === "done" ? "✓" : s.state === "run" ? (s.id === "manual" ? "●" : ipSpin) : "○");
 
-  async function installCfPack(m, box, p, folders, parts) {
+  async function installCfPack(m, box, p, folders, parts, ram = null) {
     m.ov.dataset.locked = "1";
     // Compteur du téléchargement : sans les mods déjà dans le fichier du pack (copiés, pas
     // téléchargés) ni ceux à télécharger à la main. Avant : ATM10 restait à « 413/416 » (27/10).
@@ -6967,11 +7461,11 @@
     const draw = () => {
       const allDone = steps.every((s) => s.state === "done");
       const man = steps.find((s) => s.id === "manual");
-      part.live.innerHTML = `<h3 id="cf-t">${esc(p.from === "mrpack" ? T("mrT") : T("cfT"))}</h3>
+      pjPatch(part.live, `<h3 id="cf-t">${esc(p.from === "mrpack" ? T("mrT") : T("cfT"))}</h3>
         <div class="cf-head"><img src="${p.icon || grassThumb(p.name)}" alt=""><div><b>${esc(p.name)}</b><small>${esc(T("cfMeta", { v: p.minecraftVersion, l: modLabel({ loader: p.loader }), n: p.modCount }))}</small></div></div>
         ${ipOverall(run, steps)}
         <div class="cf-steps">${steps.map((s) => `<div class="cf-step ${s.state}"><span class="ic">${ipIcon(s)}</span><span>${esc(s.label)}</span><span class="n">${s.of ? `${s.n}/${s.of}` : ""}</span>
-          ${s.state === "run" && s.id !== "manual" ? ipStepExtra(s) : ""}</div>`).join("")}</div>`;
+          ${s.state === "run" && s.id !== "manual" ? ipStepExtra(s) : ""}</div>`).join("")}</div>`);
       const manHtml = man && man.state !== "wait" ? `<p class="cf-man-note">${esc(T("cfManualD"))}</p>
           <div class="cf-man">${p.manual.map((x, i) => `<div class="cf-man-row ${found.has(i) ? "ok" : ""}"><span style="min-width:0;">${esc(x.name)}<span class="fn">${esc(x.fileName)}</span></span>
             <span class="st">${esc(found.has(i) ? T("cfFound") : T("cfWaiting"))}</span>
@@ -7019,7 +7513,7 @@
     draw();
     // Le temps restant bouge même entre deux pas (gros fichier) : un dessin par seconde.
     const tick = setInterval(() => (document.body.contains(m.ov) ? draw() : clearInterval(tick)), 1000);
-    job = await (jobP = api.cfPack.install(p.id, { worlds: folders, parts: [...parts] }, (ev) => {
+    job = await (jobP = api.cfPack.install(p.id, { worlds: folders, parts: [...parts], ...(ram ? { ram } : {}) }, (ev) => {
       if (ev.step === "omcopy" && !ev.done) ev = { ...ev, what: ev.mc ? `Minecraft ${ev.mc}` : undefined };
       ipApply(steps, run, ev);
       draw();
@@ -7535,6 +8029,13 @@
   // n'apparaisse ; ensuite, mises à jour seulement si l'état change.
   window.mchub.onFeaturesChanged?.((state) => applyFeatures(state));
   window.addEventListener("omniscient:features", (e) => applyFeatures(e.detail || {}));
+  // Double-clic sur un .omnipack : même fenêtre que Importer › Un pack. Tant que le Laboratoire n'est
+  // pas lu, le fichier attend ; fonction coupée pour ce joueur = rien ne s'ouvre.
+  const openPackFile = (file) => {
+    if (file && on("omniPack")) openCfPack({ zip: file, kind: "omni" });
+  };
+  api.packFile?.onOpen(openPackFile);
+  window.addEventListener("omniscient:features", () => api.packFile?.take().then(openPackFile), { once: true });
   Promise.resolve(window.mchub.getFeatures?.())
     .then((state) => applyFeatures(state || {}))
     .catch(() => {});

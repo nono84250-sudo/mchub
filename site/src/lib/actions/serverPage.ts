@@ -11,6 +11,8 @@ import { SERVERS_CACHE_TAG } from "@/lib/public-servers";
 import { getTagCatalog } from "@/lib/tagRequests";
 import { isKnownTag } from "@/lib/tagCatalog";
 import {
+  SERVER_DESCRIPTION_MAX,
+  SERVER_NAME_MAX,
   normalizePageConfig,
   pageInputErrors,
   parsePageConfig,
@@ -38,10 +40,12 @@ export async function updateServerPage(
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const owned = await db.orm.public.Server.select("id", "slug", "pageConfig", "backgroundUrl", "bannerUrl", "iconUrl")
+  const owned = await db.orm.public.Server.select("id", "slug", "pageConfig", "backgroundUrl", "bannerUrl", "iconUrl", "frozenAt")
     .where({ id: serverId, ownerId: session.user.id })
     .first();
   if (!owned) return { error: "notFound" };
+  // Audit du 01/11 : une fiche gelée par l'équipe ne se modifie plus (même règle que la suppression).
+  if (owned.frozenAt) return { error: "generic" };
 
   let raw: Partial<PageEditorInput>;
   try {
@@ -74,7 +78,7 @@ export async function updateServerPage(
         iconUrl: str(rawIdentity.iconUrl) || null,
       }
     : null;
-  if (identity && (!identity.name || !identity.description)) return { error: "identity" };
+  if (identity && (!identity.name || !identity.description || identity.name.length > SERVER_NAME_MAX || identity.description.length > SERVER_DESCRIPTION_MAX)) return { error: "identity" };
 
   const previous = parsePageConfig(owned.pageConfig);
   const previousGallery = new Set(previous.gallery.map((g) => g.url));

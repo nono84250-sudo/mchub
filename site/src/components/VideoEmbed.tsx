@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { VIDEO_EMBED_ENABLED } from "@/lib/serverPage";
+import { VIDEO_AUTOPLAY_ENABLED, VIDEO_EMBED_ENABLED } from "@/lib/serverPage";
 
 export type VideoLabels = { play: string; cookies: string; open: string; caption: string };
 
@@ -40,7 +40,7 @@ function EmbeddedVideo({ videoId, autoplay, labels }: { videoId: string; autopla
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!autoplay || mode !== "thumb" || !boxRef.current) return;
+    if (!VIDEO_AUTOPLAY_ENABLED || !autoplay || mode !== "thumb" || !boxRef.current) return;
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) setMode("auto");

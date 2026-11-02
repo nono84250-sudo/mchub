@@ -192,6 +192,17 @@ export async function readWorldObject(objectKey: string, maxBytes: number, bucke
   }
 }
 
+// Un passage précis d'un objet (répertoire central d'un .omnipack). `end` est inclus.
+export async function readWorldObjectRange(objectKey: string, start: number, end: number, bucket: string = WORLDS_BUCKET): Promise<Uint8Array | null> {
+  if (!isWorldObjectKey(objectKey) || end < start) return null;
+  try {
+    const out = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey, Range: `bytes=${start}-${end}` }));
+    return out.Body ? await out.Body.transformToByteArray() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function listWorldObjects(prefix: string, bucket: string = WORLDS_BUCKET): Promise<{ key: string; size: number }[]> {
   if (!isWorldObjectKey(prefix)) return [];
   const all: { key: string; size: number }[] = [];

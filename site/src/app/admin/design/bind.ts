@@ -8,7 +8,7 @@ import type { AppealHistoryEntry } from "@/lib/appeals";
 import { formatAdminTime } from "@/lib/timezone";
 
 export const escapeHtml = (value: string) =>
-  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 export const fmt = (n: number) => n.toLocaleString("en-US");
 

@@ -19,6 +19,23 @@ const LOCALES = {
 
 const DICTIONARIES = {
   fr: {
+    // Aide Discord dans les bugs (02/11), voir bugHelpUi.js.
+    bugHelp: {
+      title: "Besoin d'aide ? Envoie le rapport à l'équipe sur Discord",
+      stepCopy: "Copie tout",
+      or: "ou",
+      stepZip: "télécharge le zip",
+      stepJoin: "Rejoins le Discord",
+      stepPaste: "Colle le texte (ou glisse le zip) dans ta demande d'aide",
+      copy: "Copier tout",
+      zip: "Télécharger le zip",
+      discord: "Rejoindre le Discord",
+      safe: "Le nom de ton compte Windows est masqué (« ~ »). Ni mot de passe, ni jeton de connexion, ni monde dans le rapport.",
+      empty: "Aucun rapport de plantage n'a été trouvé : le jeu s'est fermé sans rien écrire. Le rapport contient quand même les infos de ton PC et du launcher.",
+      copied: "Rapport copié ({n} lignes) : colle-le dans ta demande d'aide.",
+      zipped: "{name} enregistré dans Téléchargements ({kb} Ko)",
+      failed: "Impossible de préparer le rapport. Réessaie dans un instant.",
+    },
     // Catalogue de bugs (31/10), voir bugCatalogUi.js.
     bugs: {
       known: "Problème connu",
@@ -1112,6 +1129,9 @@ const DICTIONARIES = {
       minimizeWhilePlayingDesc: "Il se réduit quand Minecraft démarre et revient tout seul quand tu fermes le jeu (sauf en mode discret).",
       minimizeWhilePlayingDiscreet: "Mode discret : il se réduit quand Minecraft démarre mais ne revient pas tout seul (pour ne pas apparaître en plein stream). Rouvre-le depuis la barre des tâches.",
       discordSection: "Discord",
+      errorReportsTitle: "Rapports d'erreurs",
+      errorReports: "Envoyer les rapports d'erreurs",
+      errorReportsDesc: "Quand le launcher plante, un rapport anonyme nous aide à corriger le problème : jamais ton pseudo, ton adresse IP ni ton identifiant Minecraft.",
       discordPresence: "Afficher mon activité sur Discord",
       discordPresenceDesc: "Montre sur ton profil Discord que tu joues avec Omniscient, et sur quel serveur. Un serveur privé n'est jamais nommé.",
       videoSection: "Vidéos",
@@ -1321,6 +1341,23 @@ const DICTIONARIES = {
     },
   },
   en: {
+    // Aide Discord dans les bugs (02/11), voir bugHelpUi.js.
+    bugHelp: {
+      title: "Need help? Send the report to the team on Discord",
+      stepCopy: "Copy everything",
+      or: "or",
+      stepZip: "download the zip",
+      stepJoin: "Join the Discord",
+      stepPaste: "Paste the text (or drop the zip) in your help request",
+      copy: "Copy everything",
+      zip: "Download the zip",
+      discord: "Join the Discord",
+      safe: "Your Windows account name is hidden (“~”). No password, sign-in token or world in the report.",
+      empty: "No crash report was found: the game closed without writing anything. The report still holds your PC and launcher info.",
+      copied: "Report copied ({n} lines): paste it in your help request.",
+      zipped: "{name} saved in Downloads ({kb} KB)",
+      failed: "Could not prepare the report. Try again in a moment.",
+    },
     // Catalogue de bugs (31/10), voir bugCatalogUi.js.
     bugs: {
       known: "Known problem",
@@ -2397,6 +2434,9 @@ const DICTIONARIES = {
       minimizeWhilePlayingDesc: "It minimizes when Minecraft starts and comes back on its own when you close the game (except in discreet mode).",
       minimizeWhilePlayingDiscreet: "Discreet mode: it minimizes when Minecraft starts but doesn't come back on its own (so it never pops up on stream). Reopen it from the taskbar.",
       discordSection: "Discord",
+      errorReportsTitle: "Error reports",
+      errorReports: "Send error reports",
+      errorReportsDesc: "When the launcher crashes, an anonymous report helps us fix the problem: never your username, IP address or Minecraft identifier.",
       discordPresence: "Show my activity on Discord",
       discordPresenceDesc: "Shows on your Discord profile that you're playing with Omniscient, and on which server. A private server is never named.",
       videoSection: "Videos",

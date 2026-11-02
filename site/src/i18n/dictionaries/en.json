@@ -31,7 +31,7 @@
     "termsLong": "Terms of use",
     "privacyShort": "Privacy",
     "soon": "soon",
-    "copyright": "© 2026 Bruno Catoire. All rights reserved. Omniscient is not affiliated with Mojang or Microsoft."
+    "copyright": "© 2026 Rushifa. All rights reserved. Omniscient is not affiliated with Mojang or Microsoft."
   },
   "home": {
     "badge": "Minecraft/Xbox access approved — the launcher is online",
@@ -422,6 +422,8 @@
       "team": "Team",
       "demandesDeTeam": "Team requests",
       "demandesDEtiquettes": "Tag requests",
+      "mondesEnLigne": "Online worlds (list)",
+      "packsProposes": "Suggested packs",
       "presence": "Last activity in the launcher"
     },
     "exportNotIncluded": "Never included: sign-in tokens, invite codes, who reported your servers, other players' data. Your Microsoft email and password: we don't have them.",

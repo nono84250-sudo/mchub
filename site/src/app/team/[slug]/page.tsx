@@ -48,7 +48,7 @@ export default async function TeamPage({ params }: PageProps<"/team/[slug]">) {
         icon={
           team.iconUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={team.iconUrl} alt="" className="h-full w-full object-cover" />
+            <img loading="lazy" decoding="async" src={team.iconUrl} alt="" className="h-full w-full object-cover" />
           ) : (
             teamInitials(team.name)
           )

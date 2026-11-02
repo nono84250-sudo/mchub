@@ -22,6 +22,8 @@ const ROWS = [
   "team",
   "demandesDeTeam",
   "demandesDEtiquettes",
+  "mondesEnLigne",
+  "packsProposes",
 ] as const;
 
 const ERROR_KEYS: Record<DataExportError, string> = {

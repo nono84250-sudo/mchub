@@ -18,6 +18,7 @@ const { spawn } = require("node:child_process");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const AdmZip = require("adm-zip");
+const { listZip, readZipEntry } = require("./zipStream");
 
 const MOD_DOWNLOAD_CONCURRENCY = 6;
 const FILE_INFO_BATCH = 100;
@@ -789,6 +790,27 @@ async function findManualFiles(blocked, { instanceDir, searchDirs }) {
 //   ou inconnu de l'installation précédente : gardé tel quel ;
 // - non modifié et changé dans le pack : mis à jour.
 // `previousHashes` / `nextHashes` : empreintes (SHA-1) des fichiers installés.
+// Audit du 01/11 (L3) : AdmZip met tout le pack en mémoire (300 Mo de plus pour un pack de 300 Mo). Ici,
+// seule la liste des fichiers et les deux petits fichiers de description sont lus d'avance ; le reste
+// l'est un fichier à la fois. Même forme que AdmZip pour le code qui suit. Archive que notre lecteur
+// refuse : ancienne lecture complète.
+async function openPackZip(zipPath) {
+  try {
+    const entries = await listZip(zipPath);
+    const small = new Map();
+    for (const e of entries) {
+      if (e.name === "manifest.json" || e.name === "modrinth.index.json") small.set(e.name, await readZipEntry(zipPath, e));
+    }
+    return {
+      getEntry: (name) => (small.has(name) ? { entryName: name } : null),
+      readAsText: (entry) => small.get(entry.entryName).toString("utf8"),
+      getEntries: () => entries.map((e) => ({ entryName: e.name, isDirectory: e.name.endsWith("/"), getData: () => readZipEntry(zipPath, e, { maxBytes: 1024 * 1024 * 1024 }) })),
+    };
+  } catch {
+    return new AdmZip(zipPath);
+  }
+}
+
 async function extractOverrides(zip, dirName, instanceDir, previousHashes, nextHashes) {
   const prefix = `${dirName}/`;
   let count = 0;
@@ -804,7 +826,7 @@ async function extractOverrides(zip, dirName, instanceDir, previousHashes, nextH
     const target = safeJoin(instanceDir, relative);
     const isJar = /^mods\/.+\.jar$/i.test(relative);
     if (isJar) jars.push(relative);
-    const data = entry.getData();
+    const data = await entry.getData();
     const packHash = crypto.createHash("sha1").update(data).digest("hex");
 
     if (fs.existsSync(target)) {
@@ -1433,7 +1455,7 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
         },
       });
     }
-    zip = new AdmZip(zipPath);
+    zip = await openPackZip(zipPath);
     pack = source === "modrinth" ? readModrinthPack(zip) : readCurseforgePack(zip);
   }
 

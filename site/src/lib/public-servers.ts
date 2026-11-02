@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { MANUAL_MODS_COLUMNS } from "@/lib/manualMods";
-import { db, execBatch, execSql } from "@/lib/db";
+import { db, execSql, execSqlBatch } from "@/lib/db";
 import { getServerStatus, scheduleStatusRefresh } from "@/lib/server-status";
 import { LAUNCHER_SESSION_HEADER, normalizeMinecraftUuid, sessionIdentity, verifyMinecraftIdentity } from "@/lib/launcherAuth";
 import { rateLimitResponse } from "@/lib/rateLimit";
@@ -552,17 +552,39 @@ export async function getLauncherServerForJoin(slug: string, proof: PrivateServe
 // augmente dans la base (`viewCount + 1`), pas lu puis reecrit — avec la lecture
 // puis l'ecriture, deux visites simultanees perdaient une vue — et l'evenement
 // est enregistre dans la meme instruction (ni ligne orpheline, ni compteur sans evenement).
+//
+// Audit du 01/11 (quota D1) : les vues d'une même instance partent ensemble, au plus une fois toutes
+// les 20 s. La première vue après ce délai part tout de suite, donc un site calme ne perd rien ; si
+// une instance s'arrête en pleine rafale, quelques vues sont perdues (compteur indicatif).
+const VIEW_FLUSH_MS = 20_000;
+const VIEW_MAX_SLUGS = 40; // 2 instructions par serveur
+const pendingViews = new Map<string, number>();
+let lastViewFlushAt = 0;
+
 export async function recordServerView(slug: string): Promise<void> {
-  await execBatch([
-    { sql: 'UPDATE "server" SET "viewCount" = "viewCount" + 1 WHERE "slug" = ?', params: [slug] },
-    { sql: "INSERT INTO \"serverEvent\" (\"id\", \"serverId\", \"kind\") SELECT ?, \"id\", 'view' FROM \"server\" WHERE \"slug\" = ?", params: [crypto.randomUUID(), slug] },
-  ]);
+  if (pendingViews.has(slug) || pendingViews.size < VIEW_MAX_SLUGS * 10) pendingViews.set(slug, (pendingViews.get(slug) ?? 0) + 1);
+  if (Date.now() - lastViewFlushAt < VIEW_FLUSH_MS) return;
+  lastViewFlushAt = Date.now();
+  const batch = [...pendingViews.entries()].slice(0, VIEW_MAX_SLUGS);
+  for (const [key] of batch) pendingViews.delete(key);
+  await execSqlBatch(
+    batch.flatMap(([key, count]) => [
+      { sql: 'UPDATE "server" SET "viewCount" = "viewCount" + ? WHERE "slug" = ?', params: [count, key] },
+      // Une ligne par vue pour la page Activité, écrites d'un coup (jamais plus de 50 par envoi).
+      {
+        sql:
+          "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?) " +
+          "INSERT INTO \"serverEvent\" (\"id\", \"serverId\", \"kind\") SELECT lower(hex(randomblob(16))), s.\"id\", 'view' FROM \"server\" s, n WHERE s.\"slug\" = ?",
+        params: [Math.min(count, 50), key],
+      },
+    ]),
+  );
 }
 
 // Appelee par le launcher (route /api/launcher/servers/[slug]/launch) a
 // chaque lancement reussi — meme instruction atomique que recordServerView.
 export async function recordServerLaunch(slug: string): Promise<void> {
-  await execBatch([
+  await execSqlBatch([
     { sql: 'UPDATE "server" SET "launchCount" = "launchCount" + 1 WHERE "slug" = ?', params: [slug] },
     { sql: "INSERT INTO \"serverEvent\" (\"id\", \"serverId\", \"kind\") SELECT ?, \"id\", 'launch' FROM \"server\" WHERE \"slug\" = ?", params: [crypto.randomUUID(), slug] },
   ]);

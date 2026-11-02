@@ -713,6 +713,8 @@ async function readCfExport(zipFile, { readLevel }) {
     shaders: top("shaderpacks/"),
     worlds,
     overridesPrefix: ov,
+    // RAM conseillée par le pack (Mo dans le manifest CurseForge), en Go (RAM par pack, 01/11).
+    recommendedRamGB: ramGBFromMb(manifest.minecraft.recommendedRam),
   };
 }
 
@@ -784,6 +786,22 @@ const partOfPath = (rel) => {
   return "cfg";
 };
 
+// RAM conseillée écrite dans un pack (RAM par pack, 01/11). Jamais plus de 32 Go.
+function ramGBFromMb(mb) {
+  const n = Number(mb);
+  return Number.isFinite(n) && n >= 512 ? Math.min(32, Math.ceil(n / 1024)) : null;
+}
+async function mrpackRamGB(zipFile, entries) {
+  const e = entries.find((x) => x.name === "omniscient.json");
+  if (!e || e.size > 64 * 1024) return null;
+  try {
+    const n = Math.round(Number(JSON.parse((await readZipEntry(zipFile, e)).toString("utf8")).recommendedRamGB));
+    return Number.isFinite(n) && n >= 1 ? Math.min(32, n) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function readMrpack(zipFile, { readLevel }) {
   const entries = await listZip(zipFile);
   const indexEntry = entries.find((e) => e.name === "modrinth.index.json");
@@ -851,6 +869,8 @@ async function readMrpack(zipFile, { readLevel }) {
     worlds: await worldsIn(zipFile, inOv, { readLevel, mc: String(deps.minecraft) }),
     overridesPrefix: MR_PREFIXES,
     shadow: [...shadow],
+    // RAM conseillée : petit fichier omniscient.json ajouté par l'export d'Omniscient (01/11).
+    recommendedRamGB: await mrpackRamGB(zipFile, entries),
   };
 }
 

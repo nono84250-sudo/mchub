@@ -1,5 +1,5 @@
 import { db, execSql } from "@/lib/db";
-import { getOnlineStatuses } from "@/lib/presence";
+import { isOnline } from "@/lib/presence";
 import { FRIEND_PRIVACY_READY, resolveFriendTarget } from "@/lib/friendPrivacy";
 
 // Systeme d'amis. Phase 1 (2026-10-14) : ajout direct et reciproque, sans accord de l'autre
@@ -42,27 +42,41 @@ function orderedPair(a: string, b: string): [string, string] {
   return a < b ? [a, b] : [b, a];
 }
 
-export async function listFriendsOverview(userId: string): Promise<FriendsOverview> {
-  // La moitie "autre joueur" de la paire change de colonne selon l'ordre (userId peut être
-  // userId1 OU userId2) — ce CASE WHEN récupère toujours le bon côté en une seule requête.
-  const rows = (await execSql(
-    `SELECT f."id" AS "friendshipId", f."status", f."requesterId",
-            u."id" AS "userId", u."minecraftUsername", u."minecraftUuid"
-     FROM "friendship" f
-     JOIN "user" u ON u."id" = (CASE WHEN f."userId1" = ? THEN f."userId2" ELSE f."userId1" END)
-     WHERE f."userId1" = ? OR f."userId2" = ?
-     ORDER BY u."minecraftUsername" ASC`,
-    [userId, userId, userId],
-  )) as {
-    friendshipId: string;
-    status: string;
-    requesterId: string | null;
-    userId: string;
-    minecraftUsername: string | null;
-    minecraftUuid: string | null;
-  }[];
+type FriendRow = {
+  friendshipId: string;
+  status: string;
+  requesterId: string | null;
+  userId: string;
+  minecraftUsername: string | null;
+  minecraftUuid: string | null;
+  lastSeenAt: string | null;
+  playingSlug: string | null;
+};
 
-  const toRequest = (r: (typeof rows)[number]): FriendRequest => ({
+// La moitie "autre joueur" de la paire change de colonne selon l'ordre (userId peut être
+// userId1 OU userId2) — ce CASE WHEN récupère toujours le bon côté en une seule requête. Audit du
+// 01/11 (S2) : la présence vient dans la même requête. `meSql` : l'id du joueur, ou une sous-requête
+// quand /api/launcher/pulse ne le connaît pas encore (tout part alors en un seul appel à la base).
+export function friendsStatement(meSql: string, meParam: string): { sql: string; params: unknown[] } {
+  return {
+    sql: `SELECT f."id" AS "friendshipId", f."status", f."requesterId",
+            u."id" AS "userId", u."minecraftUsername", u."minecraftUuid", p."lastSeenAt", p."playingSlug"
+     FROM "friendship" f
+     JOIN "user" u ON u."id" = (CASE WHEN f."userId1" = ${meSql} THEN f."userId2" ELSE f."userId1" END)
+     LEFT JOIN "userPresence" p ON p."userId" = u."id"
+     WHERE f."userId1" = ${meSql} OR f."userId2" = ${meSql}
+     ORDER BY u."minecraftUsername" ASC`,
+    params: [meParam, meParam, meParam],
+  };
+}
+
+export async function listFriendsOverview(userId: string): Promise<FriendsOverview> {
+  const { sql, params } = friendsStatement("?", userId);
+  return friendsOverviewFromRows((await execSql(sql, params)) as FriendRow[], userId);
+}
+
+export function friendsOverviewFromRows(rows: FriendRow[], userId: string): FriendsOverview {
+  const toRequest = (r: FriendRow): FriendRequest => ({
     friendshipId: r.friendshipId,
     userId: r.userId,
     minecraftUsername: r.minecraftUsername,
@@ -70,17 +84,13 @@ export async function listFriendsOverview(userId: string): Promise<FriendsOvervi
 
   const accepted = rows.filter((r) => r.status === "accepted");
   const pending = rows.filter((r) => r.status !== "accepted");
-  // Presence lue uniquement pour les amis acceptes : les ids des demandes en attente ne sont
-  // jamais passes a getOnlineStatuses.
-  const statuses = await getOnlineStatuses(accepted.map((r) => r.userId));
-
+  // Presence montree uniquement pour les amis acceptes : toRequest ne copie jamais lastSeenAt ni
+  // playingSlug pour une demande en attente.
   return {
-    friends: accepted.map((r) => ({
-      ...toRequest(r),
-      minecraftUuid: r.minecraftUuid,
-      online: statuses.get(r.userId)?.online ?? false,
-      playingSlug: statuses.get(r.userId)?.playingSlug ?? null,
-    })),
+    friends: accepted.map((r) => {
+      const online = !!r.lastSeenAt && isOnline(r.lastSeenAt);
+      return { ...toRequest(r), minecraftUuid: r.minecraftUuid, online, playingSlug: online ? r.playingSlug ?? null : null };
+    }),
     incoming: pending.filter((r) => r.requesterId !== userId).map(toRequest),
     outgoing: pending.filter((r) => r.requesterId === userId).map(toRequest),
   };

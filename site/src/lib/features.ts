@@ -175,6 +175,21 @@ export const FEATURES: FeatureDef[] = [
       en: "Known bugs: the launcher recognises them when the game closes, fixes them, offers “Fix it” or shows the steps. Public page /aide/bugs.",
     },
   },
+  // 02/11 (preview « Fenêtre de bug et Discord » validée par Rushi) : défaut « Test ».
+  {
+    id: "bugDiscord",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.2",
+    group: "play",
+    section: "comfort",
+    name: { fr: "Aide Discord dans les bugs", en: "Discord help in bug windows" },
+    description: {
+      fr: "Dans les fenêtres de bug du launcher : « Copier tout », « Télécharger le zip » (rapport, latest.log, rapport de crash, chemins masqués) et « Rejoindre le Discord ». Cachée : l'ancien « Copier les logs ».",
+      en: "In the launcher's bug windows: “Copy everything”, “Download the zip” (report, latest.log, crash report, paths hidden) and “Join the Discord”. Hidden: the old “Copy the logs”.",
+    },
+  },
   // 27/10 (preview « Changement de version » validée par Rushi, « Ajoute le ») : défaut « Test ».
   {
     id: "versionGuard",
@@ -416,6 +431,20 @@ export const FEATURES: FeatureDef[] = [
       fr: "Deux fichiers de touches communs (vanilla, modé) : les touches changées en jeu y sont reportées à la fermeture, et chaque nouvelle installation part de ces touches. Les installations existantes ne sont pas modifiées.",
       en: "Two shared key binding files (vanilla, modded): keys changed in game are saved there when the game closes, and every new installation starts from them. Existing installations are not changed.",
     },
+  },  // 01/11 (preview « RAM par pack » validée par Rushi, « oui, code-le ») : défaut « Test ».
+  {
+    id: "packRam",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.2",
+    group: "play",
+    section: "comfort",
+    name: { fr: "Mémoire (RAM) par pack", en: "Memory (RAM) per pack" },
+    description: {
+      fr: "Chaque installation a sa RAM : automatique (selon le nombre de mods, la version, les shaders et la RAM du PC), comme dans Paramètres, ou choisie. Réglable à la création, à l'import (la RAM conseillée du fichier est lue), dans ⚙ › Mémoire ; vérifiée avant de lancer ; proposée après un plantage « manque de mémoire » ; écrite dans les exports. Coupé : la RAM de Paramètres pour tout.",
+      en: "Each installation has its own RAM: automatic (from the mod count, version, shaders and the PC's RAM), same as Settings, or custom. Set when creating, when importing (the file's recommended RAM is read), in ⚙ › Memory; checked before launching; offered after an “out of memory” crash; written in exports. Off: the Settings RAM for everything.",
+    },
   },
 ];
 
@@ -523,6 +552,14 @@ export async function setFeatureStates(changes: Record<string, FeatureState>): P
 export async function setTesters(testers: Tester[]): Promise<void> {
   await execSql(upsertSetting, [TESTERS_KEY, JSON.stringify(testers.slice(0, 50)), new Date().toISOString()]);
   revalidateTag(FEATURES_TAG, { expire: 0 });
+}
+
+// Suppression de compte : ce joueur sort de la liste des testeurs (rien à écrire s'il n'y est pas).
+export async function removeTester(uuid: string): Promise<void> {
+  const normalized = normalizeMinecraftUuid(uuid);
+  const { testers } = await lab();
+  const kept = testers.filter((t) => normalizeMinecraftUuid(t.uuid) !== normalized);
+  if (kept.length !== testers.length) await setTesters(kept);
 }
 
 // --- Qui regarde ? ----------------------------------------------------------------------------

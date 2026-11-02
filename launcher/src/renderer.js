@@ -1276,17 +1276,16 @@ function pageSectionBodyHtml(section, page, server) {
         <p class="page-video-note">${t("serverPage.videoCaption")}</p>`;
       }
       // Vignette sans requete vers YouTube, lecteur youtube-nocookie au clic (ou tout seul et
-      // sans le son si le proprietaire a coche « Lancer automatiquement », voir setupPageVideo).
+      // Audit du 01/11 : plus de lancement automatique, même si le propriétaire l'a coché).
       return `
-        <div class="page-video-box" data-video-id="${escapeHtml(page.videoId)}" data-video-autoplay="${page.videoAutoplay ? "1" : ""}">
+        <div class="page-video-box" data-video-id="${escapeHtml(page.videoId)}" data-video-autoplay="">
           <button type="button" class="page-video" aria-label="${escapeHtml(t("serverPage.videoPlay"))}">
             <span class="page-video-play"></span>
           </button>
         </div>
         <p class="page-video-note">${t("serverPage.videoCookies")}
           <button type="button" class="page-video-open" data-link-kind="video" data-link-value="${escapeHtml(page.videoId)}">${t("serverPage.videoOpen")}</button>
-        </p>
-        <p class="page-video-autonote">${t("serverPage.videoAutoplayNote")}</p>`;
+        </p>`;
     case "rules":
       return `<ol class="page-rules">${page.rules.map((rule) => `<li>${escapeHtml(rule)}</li>`).join("")}</ol>`;
     case "social": {
@@ -1333,6 +1332,7 @@ function openGalleryLightbox(item, index) {
 // Lecteur integre, lancement automatique, reglage « Bloquer » et petite phrase : coupes le 16/10
 // (YouTube demandait de se connecter, « pas un robot »). Le code reste ; true pour les reactiver.
 const VIDEO_EMBED_ENABLED = true; // rallume le 18/10 (test de Rushi : le lecteur marche)
+const VIDEO_AUTOPLAY_ENABLED = false; // audit du 01/11 : aucune vidéo sans clic (voir lib/serverPage.ts du site)
 
 // Video de la fiche (16/10) : le lecteur YouTube (domaine youtube-nocookie) ne se charge qu'au
 // clic, ou des que la video est visible a 90 % si le proprietaire a coche « Lancer
@@ -2380,6 +2380,7 @@ function relativeDayText(at) {
 
 let playCountsCache = {};
 let activityRenderKey = "";
+let activityIconKey = null;
 
 let activityPointerDown = false;
 
@@ -2393,7 +2394,11 @@ function renderActivity() {
   const cloud = window.playCloudActivity?.() || null;
   if (cloud && (cloud.over || !["install", "move", "start", "play", "fail"].includes(state.phase))) parts = cloud.parts;
   pill.className = `activity-pill${parts.cls ? ` ${parts.cls}` : ""}`;
-  document.getElementById("activity-pill-icon").innerHTML = parts.icon;
+  // Seulement si l'icone change : sinon son anneau animé repart de zéro à chaque progression.
+  if (parts.icon !== activityIconKey) {
+    activityIconKey = parts.icon;
+    document.getElementById("activity-pill-icon").innerHTML = parts.icon;
+  }
   const pillText = document.getElementById("activity-pill-text");
   if (parts.play) {
     const [pre, rest = ""] = t("activity.pillPlay", { name: "\u0001", time: "\u0002" }).split("\u0001");
@@ -6694,7 +6699,7 @@ async function renderSettingsTab(tab) {
   // onglets gardent leur colonne etroite.
   contentEl.classList.toggle("settings-content-wide", tab === "debug" || tab === "misc");
   if (tab === "language") return renderLanguageTab(contentEl, settings);
-  if (tab === "privacy") return renderPrivacyTab(contentEl);
+  if (tab === "privacy") return renderPrivacyTab(contentEl, settings);
   if (tab === "memory") return renderMemoryTab(contentEl, settings);
   if (tab === "misc") return renderMiscTab(contentEl, settings);
   if (tab === "debug") return renderDebugTab(contentEl, settings);
@@ -7097,6 +7102,8 @@ function renderMemoryTab(contentEl, settings) {
     renderMemoryTab(contentEl, { ...settings, ...updated });
     flashSavedButton(document.getElementById("settings-save-memory"));
   });
+  // RAM par pack (Laboratoire « packRam ») : la liste repliée « RAM de chaque pack » (play.js).
+  window.__omRamSettings?.(contentEl);
 }
 
 // Confirmation visuelle : le bouton passe au vert « Enregistré ✓ » pendant un instant.
@@ -7183,7 +7190,7 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
         <input type="checkbox" id="settings-discord-presence" ${settings.discordPresence !== false ? "checked" : ""} />
       </div>
     </section>
-    ${VIDEO_EMBED_ENABLED ? `
+    ${VIDEO_AUTOPLAY_ENABLED ? `
     <section class="settings-section">
       <h3 class="settings-section-title">${t("settings.videoSection")}</h3>
       <div class="settings-row">
@@ -8166,6 +8173,9 @@ async function boot() {
     // relai tout de suite — jamais d'ecran d'erreur pour une verification de
     // mise a jour ratee (pas de connexion, releases indisponibles...).
   });
+  // Laboratoire (audit du 01/11, L1) : droits demandés dès maintenant, en parallèle de la mise à jour,
+  // au lieu d'attendre qu'elle soit finie pour commencer.
+  const labReady = window.mchub.featuresReady?.().catch(() => null);
   await Promise.all([window.mchub.updates.check(), new Promise((resolve) => setTimeout(resolve, 500))]);
   stopUpdateStatus();
 
@@ -8195,7 +8205,7 @@ async function boot() {
   bootstrapProgressEl.parentElement.classList.add("indeterminate");
   // Laboratoire : droits de ce compte lus pendant le chargement, pour que le menu apparaisse
   // complet du premier coup (Jouer, Amis…), sans icône qui surgit après.
-  const labState = await window.mchub.featuresReady?.().catch(() => null);
+  const labState = await labReady;
   if (labState) {
     applyLabFeatures(labState);
     window.dispatchEvent(new CustomEvent("omniscient:features", { detail: labState }));
@@ -10156,14 +10166,28 @@ document.addEventListener("keydown", (event) => {
 
 // Parametres > Confidentialite : pour l'instant ce seul reglage (le Mode discret reste dans
 // Apparence, son deplacement est un autre sujet).
-function renderPrivacyTab(contentEl) {
+function renderPrivacyTab(contentEl, settings) {
   contentEl.innerHTML = `
     <section class="settings-section">
       <h3 class="settings-section-title">${escapeHtml(t("friends.policyQ"))}</h3>
       <div class="settings-wide-slot" id="settings-friend-policy-${contentEl.id || "search"}"></div>
+    </section>
+    <section class="settings-section">
+      <h3 class="settings-section-title">${escapeHtml(t("settings.errorReportsTitle"))}</h3>
+      <div class="settings-row">
+        <span>
+          <label class="settings-row-label" for="settings-error-reports">${t("settings.errorReports")}</label>
+          <p class="settings-row-desc">${t("settings.errorReportsDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-error-reports" ${settings.errorReports !== false ? "checked" : ""} />
+      </div>
     </section>`;
   const slot = contentEl.querySelector(".settings-wide-slot");
   renderFriendPolicyCard(slot, { where: "settings" });
+  contentEl.querySelector("#settings-error-reports").addEventListener("change", async (event) => {
+    settings.errorReports = event.target.checked;
+    await window.mchub.settings.set({ errorReports: event.target.checked });
+  });
 }
 
 // --- Menus « … » (option C, 18/10) : fermeture commune ---------------------------------------

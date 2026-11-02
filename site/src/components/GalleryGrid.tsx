@@ -33,7 +33,7 @@ export function GalleryGrid({ items }: { items: GalleryItem[] }) {
             }`}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- image deposee par le proprietaire (R2) */}
-            <img src={item.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <img loading="lazy" decoding="async" src={item.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
             {item.caption ? (
               <span className="absolute bottom-1.5 left-2 text-[11px] text-white [text-shadow:0_1px_2px_rgba(0,0,0,.8)]">{item.caption}</span>
             ) : null}
@@ -49,7 +49,7 @@ export function GalleryGrid({ items }: { items: GalleryItem[] }) {
           className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-6"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={items[open].url} alt={items[open].caption} className="max-h-full max-w-full rounded-lg object-contain" />
+          <img loading="lazy" decoding="async" src={items[open].url} alt={items[open].caption} className="max-h-full max-w-full rounded-lg object-contain" />
         </div>
       ) : null}
     </>

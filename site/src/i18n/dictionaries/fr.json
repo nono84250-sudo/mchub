@@ -31,7 +31,7 @@
     "termsLong": "Conditions d'utilisation",
     "privacyShort": "Confidentialité",
     "soon": "bientôt",
-    "copyright": "© 2026 Bruno Catoire. Tous droits réservés. Omniscient n’est affilié ni à Mojang ni à Microsoft."
+    "copyright": "© 2026 Rushifa. Tous droits réservés. Omniscient n’est affilié ni à Mojang ni à Microsoft."
   },
   "home": {
     "badge": "Accès Minecraft/Xbox approuvé — le launcher est en ligne",
@@ -422,6 +422,8 @@
       "team": "Team",
       "demandesDeTeam": "Demandes de team",
       "demandesDEtiquettes": "Demandes d'étiquettes",
+      "mondesEnLigne": "Mondes en ligne (liste)",
+      "packsProposes": "Packs proposés",
       "presence": "Dernière activité dans le launcher"
     },
     "exportNotIncluded": "Jamais dedans : jetons de connexion, codes d'invitation, qui a signalé tes serveurs, données des autres joueurs. Ton e-mail et ton mot de passe Microsoft : on ne les a pas.",

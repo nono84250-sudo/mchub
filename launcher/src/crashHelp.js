@@ -5,6 +5,7 @@
 // Lecture seule ; rien n'est envoyé nulle part (le joueur copie les logs lui-même s'il veut de l'aide).
 // Node pur (aucune dépendance à Electron).
 const fsp = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
 
 const TAIL_BYTES = 2 * 1024 * 1024;
@@ -117,4 +118,106 @@ async function logsForHelp(files) {
   return parts.join("\n\n").replace(/([A-Za-z]:\\Users\\)[^\\]+/gi, "$1<joueur>").replace(/(\/(?:home|Users)\/)[^/]+/g, "$1<joueur>");
 }
 
-module.exports = { analyze, analyzeGame, logsForHelp };
+// Aide Discord dans les bugs (02/11, preview validée par Rushi, Laboratoire « bugDiscord ») : le rapport
+// que le joueur copie ou met dans un zip pour l'équipe. Tout passe par sanitize avant de sortir d'ici.
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function sessionName() {
+  try {
+    return os.userInfo().username || "";
+  } catch {
+    return "";
+  }
+}
+// Jetons et mots de passe masqués, chemins du compte remplacés par « ~ », nom de session retiré.
+function sanitize(text, { home = os.homedir(), user = sessionName() } = {}) {
+  let out = String(text || "")
+    .replace(/(--(?:accessToken|clientId|xuid|uuid)[,=\s]+)[^\s,\]]+/gi, "$1***")
+    .replace(/\beyJ[\w-]{10,}\.[\w-]{10,}(?:\.[\w-]+)?/g, "***")
+    .replace(/(Bearer\s+)\S+/gi, "$1***")
+    .replace(/\b((?:access[_-]?token|refresh[_-]?token|token|password|passwd|pwd|secret|api[_-]?key|authorization)["']?\s*[:=]\s*["']?)[^\s"',;]+/gi, "$1***");
+  // Le dossier du compte tel quel d'abord (un nom avec une espace y passe), avec \ / ou \\ entre les parties.
+  const parts = String(home || "").split(/[\\/]+/).filter(Boolean);
+  if (parts.length > 1) out = out.replace(new RegExp(parts.map(escapeRegExp).join("[\\\\/]+"), "gi"), "~");
+  out = out.replace(/[A-Za-z]:[\\/]+Users[\\/]+[^\\/\r\n"':]+/gi, "~").replace(/\/(?:home|Users)\/[^/\r\n"':]+/g, "~");
+  if (user.length >= 3) out = out.replace(new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(user)}(?![A-Za-z0-9_])`, "gi"), "~");
+  return out;
+}
+
+const REPORT_TEXT = {
+  fr: {
+    title: "rapport", error: "L'erreur", launcher: "Le launcher", pc: "Le PC", install: "L'installation", log: "Journal",
+    type: "Type", message: "Message", code: "Code technique", mods: "Mods en cause", known: "Problème connu", when: "Heure",
+    version: "Version", name: "Nom", loader: "Chargeur", ram: "RAM", gpu: "Carte graphique", system: "Système",
+    kinds: { deps: "Mod manquant ou trop vieux", java: "Mauvaise version de Java", memory: "Manque de mémoire", crash: "Le jeu a planté" },
+    none: "(aucune installation)", noLogs: "(aucun rapport de plantage ni latest.log trouvé pour cette partie)", lastLines: "dernières lignes",
+    note: "(Chemins remplacés par « ~ » : ni nom de session Windows, ni mot de passe, ni jeton.)",
+    noCrash: "Aucun problème de jeu enregistré depuis l'ouverture du launcher.",
+  },
+  en: {
+    title: "report", error: "The error", launcher: "The launcher", pc: "The PC", install: "The install", log: "Log",
+    type: "Type", message: "Message", code: "Technical code", mods: "Mods involved", known: "Known problem", when: "Time",
+    version: "Version", name: "Name", loader: "Loader", ram: "RAM", gpu: "Graphics card", system: "System",
+    kinds: { deps: "Missing or outdated mod", java: "Wrong Java version", memory: "Out of memory", crash: "The game crashed" },
+    none: "(no install)", noLogs: "(no crash report or latest.log found for this game)", lastLines: "last lines",
+    note: "(Paths replaced by “~”: no Windows account name, password or token.)",
+    noCrash: "No game problem recorded since the launcher was opened.",
+  },
+};
+const REPORT_CRASH_LINES = 150;
+const REPORT_LOG_LINES = 200;
+const ZIP_LOG_BYTES = 5 * 1024 * 1024;
+const ZIP_CRASH_BYTES = 1024 * 1024;
+
+const kv = (rows) => rows.filter(([, v]) => v != null && v !== "").map(([k, v]) => `${k} : ${v}`).join("\n");
+
+/**
+ * Le texte de « Copier tout », et rapport.txt du zip. `crash` : { files, info, version, known, at } de la
+ * dernière partie à problème (ou null), `system` : infos du PC et du launcher (diagnostics.getSystemInfo).
+ */
+async function buildReport({ lang, crash, system }) {
+  const x = REPORT_TEXT[lang] || REPORT_TEXT.fr;
+  const info = crash?.info || {};
+  const deps = (info.deps || []).map((d) => `${d.mod || d.modId || "?"} → ${d.needs}${d.min ? ` ${d.min}+` : ""}${d.have ? ` (${d.have})` : ""}`);
+  const mods = [...(info.lines || []), ...deps].join(" ; ");
+  const v = crash?.version || {};
+  const logs = [];
+  if (crash?.files?.crash) {
+    const text = await fsp.readFile(crash.files.crash, "utf8").catch(() => "");
+    if (text) logs.push(`--- ${path.basename(crash.files.crash)} ---\n${text.split(/\r?\n/).slice(0, REPORT_CRASH_LINES).join("\n")}`);
+  }
+  if (crash?.files?.log) {
+    const text = await readTail(crash.files.log, 256 * 1024).catch(() => "");
+    if (text) logs.push(`--- latest.log (${x.lastLines}) ---\n${text.split(/\r?\n/).slice(-REPORT_LOG_LINES).join("\n")}`);
+  }
+  const report = [
+    `Omniscient Launcher — ${x.title} ${new Date().toISOString().slice(0, 10)}`, "",
+    `== ${x.error} ==`,
+    crash
+      ? kv([[x.type, x.kinds[info.kind] || info.kind], [x.message, info.description], [x.mods, mods], [x.code, info.exitCode], [x.known, crash.known], [x.when, new Date(crash.at || Date.now()).toLocaleString(lang === "en" ? "en-US" : "fr-BE")]])
+      : x.noCrash,
+    "",
+    `== ${x.launcher} ==`, kv([[x.version, system?.launcherVersion], ["Electron", system?.electronVersion]]), "",
+    `== ${x.pc} ==`, kv([[x.system, system?.os], ["Java", system?.java], [x.ram, system?.ramGB ? `${system.ramGB} Go` : null], [x.gpu, system?.gpu]]), "",
+    `== ${x.install} ==`, crash ? kv([[x.name, v.name], ["Minecraft", v.mc], [x.loader, v.loader ? `${v.loader}${v.loaderVersion ? ` ${v.loaderVersion}` : ""}` : null]]) || x.none : x.none, "",
+    `== ${x.log} ==`, logs.join("\n\n") || x.noLogs, "",
+    x.note,
+  ].join("\n");
+  return sanitize(report);
+}
+
+// Copies nettoyées à mettre dans le zip : le journal et le rapport de crash, jamais les originaux.
+async function writeZipLogs(dir, files) {
+  const out = [];
+  const add = async (file, rel, bytes) => {
+    const text = file ? await readTail(file, bytes).catch(() => null) : null;
+    if (text == null) return;
+    const abs = path.join(dir, rel);
+    await fsp.writeFile(abs, sanitize(text), "utf8");
+    out.push({ abs, rel, mtimeMs: Date.now() });
+  };
+  await add(files?.log, "latest.log", ZIP_LOG_BYTES);
+  if (files?.crash) await add(files.crash, path.basename(files.crash), ZIP_CRASH_BYTES);
+  return out;
+}
+
+module.exports = { analyze, analyzeGame, logsForHelp, sanitize, buildReport, writeZipLogs };

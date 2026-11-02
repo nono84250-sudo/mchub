@@ -59,7 +59,7 @@ export function HomeOnlineServers({ servers, total }: { servers: HomeOnlineServe
             <div className="relative h-16 banner-placeholder overflow-hidden">
               {s.bannerUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={s.bannerUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                <img loading="lazy" decoding="async" src={s.bannerUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
               ) : null}
             </div>
             <div className="flex items-center justify-between gap-2 px-3 py-2.5">
