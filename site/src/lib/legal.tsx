@@ -317,6 +317,13 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 planifiées. La base de données et les fichiers sont stockés en Europe de l&apos;Ouest.
               </>,
               <>
+                <B>Sentry</B> (Functional Software, Inc., données stockées dans l&apos;Union européenne) : rapports
+                d&apos;erreurs du site et du launcher, pour corriger les pannes. Ils contiennent le message d&apos;erreur,
+                la page ou l&apos;écran concerné, le navigateur ou le système et la version, jamais votre adresse IP, votre
+                pseudo, votre adresse e-mail ni votre identifiant Minecraft. Dans le launcher, vous pouvez les couper :
+                Paramètres, Confidentialité.
+              </>,
+              <>
                 <B>YouTube</B> (Google) : la vidéo d&apos;une fiche de serveur ne se charge que si vous cliquez dessus
                 (lecteur youtube-nocookie). YouTube voit alors votre adresse IP.
               </>,
@@ -345,8 +352,9 @@ export function privacyPolicy(locale: Locale): LegalPage {
         body: (
           <p>
             Les données du site et du launcher sont stockées en Europe : la base de données et les fichiers chez
-            Cloudflare (Europe de l&apos;Ouest) et les fonctions du site chez Vercel (Paris). Les e-mails (Google) et les fichiers d&apos;installation du launcher (GitHub)
-            restent chez ces prestataires. Vercel, Cloudflare, Google et GitHub sont toutefois des sociétés américaines : l&apos;accès de leurs équipes ou
+            Cloudflare (Europe de l&apos;Ouest), les fonctions du site chez Vercel (Paris) et les rapports d&apos;erreurs
+            chez Sentry (Union européenne). Les e-mails (Google) et les fichiers d&apos;installation du launcher (GitHub)
+            restent chez ces prestataires. Vercel, Cloudflare, Sentry, Google et GitHub sont toutefois des sociétés américaines : l&apos;accès de leurs équipes ou
             l&apos;acheminement du trafic peut impliquer les États-Unis. Ces transferts sont encadrés par les garanties de ces prestataires
             (Data Privacy Framework UE–États-Unis et clauses contractuelles types).
           </p>
@@ -657,6 +665,12 @@ function privacyEn(): LegalPage {
                 database and the files are stored in Western Europe.
               </>,
               <>
+                <B>Sentry</B> (Functional Software, Inc., data stored in the European Union): error reports from the
+                website and the launcher, used to fix outages. They contain the error message, the page or screen
+                involved, the browser or system and the version, never your IP address, username, email address or
+                Minecraft identifier. In the launcher you can turn them off: Settings, Privacy.
+              </>,
+              <>
                 <B>YouTube</B> (Google): a video on a server listing only loads if you click it (youtube-nocookie
                 player). YouTube then sees your IP address.
               </>,
@@ -684,9 +698,9 @@ function privacyEn(): LegalPage {
         title: "8. Transfers outside the European Union",
         body: (
           <p>
-            The website and launcher data is stored in Europe: the database and files at Cloudflare (Western Europe)
-            and the website&apos;s functions at Vercel (Paris). Emails (Google)
-            and the launcher installation files (GitHub) stay with these providers. Vercel, Cloudflare, Google
+            The website and launcher data is stored in Europe: the database and files at Cloudflare (Western Europe),
+            the website&apos;s functions at Vercel (Paris) and error reports at Sentry (European Union). Emails (Google)
+            and the launcher installation files (GitHub) stay with these providers. Vercel, Cloudflare, Sentry, Google
             and GitHub are nevertheless US companies: access by their staff or traffic routing may
             involve the United States. These transfers are covered by these providers&apos; safeguards (EU–US Data Privacy Framework and
             standard contractual clauses).
