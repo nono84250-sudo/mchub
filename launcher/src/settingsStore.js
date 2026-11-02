@@ -60,6 +60,9 @@ const DEFAULTS = {
   discreetMode: false,
   // Barre laterale depliee avec les noms (serie 2, idee 1) : repliee par defaut pour les habitues.
   sidebarExpanded: false,
+  // Passe a true apres le tout premier demarrage, ou la barre s'ouvre depliee une seule fois pour
+  // montrer le nom des pages (Rushi 25/10) ; ensuite elle suit sidebarExpanded (repliee par defaut).
+  sidebarIntroShown: false,
   // Dernier onglet de Ma bibliotheque (audit 17/10, lot 3) : Installes par defaut.
   libraryTab: "installed",
   firstRunWizardDone: false,
@@ -87,6 +90,8 @@ const DEFAULTS = {
   // Parametres > Divers > Discord : coupe = le launcher ne se connecte meme pas a Discord
   // (voir discordPresence.js, setEnabled).
   discordPresence: true,
+  // Parametres > Confidentialite : rapports d'erreurs anonymes (voir errorReports.js).
+  errorReports: true,
   // Parametres > Divers > Videos (16/10) : les videos des fiches serveur ne demarrent qu'au
   // clic, meme si le proprietaire a choisi le lancement automatique (voir setupPageVideo).
   blockVideoAutoplay: false,

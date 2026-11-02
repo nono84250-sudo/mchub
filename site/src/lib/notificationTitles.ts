@@ -5,6 +5,15 @@ import type { NotificationSummary } from "@/lib/notifications";
 // Titre d'une notification, partage par la page Notifications et la bande « Pour toi » du
 // tableau de bord (memes libelles que notifItemHtml cote launcher).
 export function notificationTitle(dict: Dictionary, n: NotificationSummary): string {
+  // 25/10 : message d'article (serverName « news:<id> », voir lib/newsNotify.ts).
+  if (isNewsNotification(n)) return dict.dashboard.notifNewsTitle;
+  // 26/10 : nouveau signalement pour le proprietaire (serverName « report:<id> », voir lib/reportNotify.ts).
+  const report = reportNotificationInfo(n);
+  if (report) {
+    return report.count > 1
+      ? t(dict, "dashboard.notifReportReceivedTitleMany", { count: String(report.count), server: report.serverName })
+      : t(dict, "dashboard.notifReportReceivedTitle", { server: report.serverName });
+  }
   switch (n.type) {
     case "server_frozen":
       return t(dict, "dashboard.notifServerFrozenTitle", { server: n.serverName });
@@ -32,4 +41,20 @@ export function notificationTitle(dict: Dictionary, n: NotificationSummary): str
     default:
       return t(dict, "dashboard.notifReportRepliedTitle", { server: n.serverName });
   }
+}
+
+export function isNewsNotification(n: NotificationSummary): boolean {
+  return n.serverName.startsWith("news:");
+}
+
+// « Nouvel article : Titre (à lire dans Actualités sur le site) » -> « Titre ».
+export function newsTitleFromMessage(message: string | null): string {
+  return String(message ?? "").replace(/^Nouvel article : /, "").replace(/ \(à lire dans Actualités sur le site\)$/, "");
+}
+
+// « report:<serverId> » + message « <nombre>|<nom du serveur> » (voir lib/reportNotify.ts).
+export function reportNotificationInfo(n: NotificationSummary): { serverId: string; count: number; serverName: string } | null {
+  if (!n.serverName.startsWith("report:")) return null;
+  const match = /^(\d+)\|([\s\S]*)$/.exec(n.message ?? "");
+  return { serverId: n.serverName.slice(7), count: match ? Number(match[1]) : 1, serverName: match ? match[2] : "" };
 }

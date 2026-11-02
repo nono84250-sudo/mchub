@@ -25,12 +25,16 @@ export type FeatureDef = {
   where: ("site" | "launcher")[];
   minLauncher?: string;
   group: "play" | "social" | "launcher";
+  // Sous-groupe de « Jouer et mondes » dans /admin/laboratoire. Affichage seulement : la clé
+  // feature.<id> et les états ne dépendent pas de ce champ.
+  section?: "worldsSaves" | "importPack" | "buildPack" | "playPage" | "comfort";
   name: { fr: string; en: string };
   description: { fr: string; en: string };
 };
 
 // À chaque nouvelle fonctionnalité : une entrée ici (défaut « hidden »), puis
 // requireLauncherFeature / featureVisibleOnSite dans ses routes et ses pages.
+// Groupe « play » : choisir aussi sa section (sinon elle arrive dans « Autres » au Laboratoire).
 export const FEATURES: FeatureDef[] = [
   {
     id: "play",
@@ -51,6 +55,7 @@ export const FEATURES: FeatureDef[] = [
     where: ["launcher", "site"],
     minLauncher: "0.4.0",
     group: "play",
+    section: "worldsSaves",
     name: { fr: "Mondes en ligne (cloud)", en: "Online worlds (cloud)" },
     description: {
       fr: "Envoi des mondes en ligne, versions gardées, mondes sur plusieurs PC, page Mes mondes du site.",
@@ -64,10 +69,242 @@ export const FEATURES: FeatureDef[] = [
     where: ["launcher"],
     minLauncher: "0.4.0",
     group: "play",
+    section: "worldsSaves",
     name: { fr: "Sauvegarde en jeu (F6)", en: "In-game save (F6)" },
     description: {
       fr: "F6 et Maj+F6 pendant la partie, sauvegarde automatique toutes les 30 min et en quittant un monde.",
       en: "F6 and Shift+F6 while playing, automatic save every 30 min and when leaving a world.",
+    },
+  },
+  {
+    id: "strictDirs",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "playPage",
+    name: { fr: "Un dossier par version", en: "One folder per version" },
+    description: {
+      fr: "Dans Jouer, chaque version (vanilla ou modée) a son propre dossier de jeu ; les mondes existants y sont rangés après une sauvegarde.",
+      en: "In Play, each version (vanilla or modded) has its own game folder; existing worlds are moved there after a backup.",
+    },
+  },
+  {
+    id: "myPack",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "buildPack",
+    name: { fr: "Mon pack", en: "My pack" },
+    description: {
+      fr: "Créer son pack de mods (Modrinth), page d'un pack avec onglets et assistant « Corriger le pack ».",
+      en: "Build your own mod pack (Modrinth), pack page with tabs and the « Fix the pack » assistant.",
+    },
+  },
+  {
+    id: "myPackCf",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "buildPack",
+    name: { fr: "Mon pack : mods CurseForge", en: "My pack: CurseForge mods" },
+    description: {
+      fr: "Dans Mon pack, liste CurseForge : le joueur télécharge chaque mod lui-même, le launcher le trouve dans Téléchargements.",
+      en: "In My pack, CurseForge list: the player downloads each mod, the launcher finds it in Downloads.",
+    },
+  },
+  {
+    id: "cfImport",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "importPack",
+    name: { fr: "Importer un pack CurseForge", en: "Import a CurseForge pack" },
+    description: {
+      fr: "Importer un export CurseForge (.zip) avec ses mods, réglages, ressources, shaders et mondes.",
+      en: "Import a CurseForge export (.zip) with its mods, settings, resources, shaders and worlds.",
+    },
+  },
+  {
+    id: "mrImport",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "importPack",
+    name: { fr: "Importer un pack Modrinth", en: "Import a Modrinth pack" },
+    description: {
+      fr: "« Importer un pack » propose aussi Modrinth (.mrpack) : tous les mods se téléchargent seuls, avec réglages, ressources, shaders et mondes.",
+      en: "“Import a pack” also offers Modrinth (.mrpack): every mod downloads by itself, with settings, resources, shaders and worlds.",
+    },
+  },
+  {
+    id: "crashHelp",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "comfort",
+    name: { fr: "Aide au crash", en: "Crash help" },
+    description: {
+      fr: "À chaque fermeture du jeu, le launcher lit les logs et dit le problème (mod manquant, trop vieux…), avec « Corriger » et « Copier les logs ».",
+      en: "Each time the game closes, the launcher reads the logs and tells the problem (missing or old mod…), with « Fix » and « Copy the logs ».",
+    },
+  },
+  // 31/10 (preview « Catalogue de bugs » validée par Rushi) : défaut « Test ».
+  {
+    id: "bugCatalog",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher", "site"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "comfort",
+    name: { fr: "Catalogue de bugs", en: "Bug catalogue" },
+    description: {
+      fr: "Les bugs connus : le launcher les reconnaît à la fermeture du jeu, les corrige, propose « Corriger » ou montre la marche à suivre. Page publique /aide/bugs.",
+      en: "Known bugs: the launcher recognises them when the game closes, fixes them, offers “Fix it” or shows the steps. Public page /aide/bugs.",
+    },
+  },
+  // 02/11 (preview « Fenêtre de bug et Discord » validée par Rushi) : défaut « Test ».
+  {
+    id: "bugDiscord",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.2",
+    group: "play",
+    section: "comfort",
+    name: { fr: "Aide Discord dans les bugs", en: "Discord help in bug windows" },
+    description: {
+      fr: "Dans les fenêtres de bug du launcher : « Copier tout », « Télécharger le zip » (rapport, latest.log, rapport de crash, chemins masqués) et « Rejoindre le Discord ». Cachée : l'ancien « Copier les logs ».",
+      en: "In the launcher's bug windows: “Copy everything”, “Download the zip” (report, latest.log, crash report, paths hidden) and “Join the Discord”. Hidden: the old “Copy the logs”.",
+    },
+  },
+  // 27/10 (preview « Changement de version » validée par Rushi, « Ajoute le ») : défaut « Test ».
+  {
+    id: "versionGuard",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "worldsSaves",
+    name: { fr: "Protéger les mondes au changement de version", en: "Protect worlds on version change" },
+    description: {
+      fr: "« Mettre à jour » une installation : ses mondes sont sauvegardés 🛡 et vérifiés avant. Version de chaque sauvegarde, et sauvegarde des mondes plus anciens avant de lancer une version plus récente.",
+      en: "« Update » an installation: its worlds are backed up 🛡 and checked first. Each backup's version, and older worlds backed up before launching a newer version.",
+    },
+  },
+  // 27/10 (preview « Page Jouer » C1 validée par Rushi, « Toute la C1 ») : défaut « Test ».
+  {
+    id: "playTiles",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "playPage",
+    name: { fr: "Page Jouer en tuiles", en: "Play page as tiles" },
+    description: {
+      fr: "Mes installations en tuiles (clic = page de l'installation), leurs mondes dans un tiroir « Mondes », bande « Continuer », interrupteur Sauvegarde sur chaque monde, copies gardées étiquetées.",
+      en: "My installations as tiles (click = installation page), their worlds in a « Worlds » drawer, « Continue » strip, Backup switch on each world, kept copies labelled.",
+    },
+  },
+  // 27/10 (preview « Pack Omniscient » v22 validée par Rushi, « tu peux tout coder ») : défaut « Test ».
+  {
+    id: "vanillaPage",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "playPage",
+    name: { fr: "Page des versions vanilla", en: "Vanilla version page" },
+    description: {
+      fr: "Un clic sur une version vanilla ouvre sa page : packs de ressources, mondes (chercher, importer une map), fichiers, bouton Retirer.",
+      en: "Clicking a vanilla version opens its page: resource packs, worlds (search, import a map), files, Remove button.",
+    },
+  },
+  {
+    id: "dataPacks",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "buildPack",
+    name: { fr: "Data packs", en: "Data packs" },
+    description: {
+      fr: "Onglet Data packs : chercher sur Modrinth ou ajouter un .zip, choisir les mondes (sauvegarde avant), ou tous les mondes avec Paxi / Global Packs.",
+      en: "Data packs tab: search Modrinth or add a .zip, pick the worlds (backup first), or every world with Paxi / Global Packs.",
+    },
+  },
+  {
+    id: "packFiles",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "buildPack",
+    name: { fr: "Explorateur de fichiers", en: "File explorer" },
+    description: {
+      fr: "Onglet Fichiers d'une version : naviguer, modifier les fichiers texte (copie .bak), voir les images, renommer, mettre à la Corbeille.",
+      en: "A version's Files tab: browse, edit text files (.bak copy), view images, rename, move to the Recycle Bin.",
+    },
+  },
+  {
+    id: "packExport",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "buildPack",
+    name: { fr: "Exporter pour un ami (.mrpack)", en: "Export for a friend (.mrpack)" },
+    description: {
+      fr: "Menu ⚙ d'une version : fichier .mrpack (mods en liens Modrinth, réglages, packs, mondes cochés). Jamais de mod CurseForge dans le fichier.",
+      en: "A version's ⚙ menu: .mrpack file (Modrinth mod links, settings, packs, ticked worlds). Never a CurseForge mod in the file.",
+    },
+  },
+  {
+    id: "omniPack",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher", "site"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "buildPack",
+    name: { fr: "Pack Omniscient", en: "Omniscient pack" },
+    description: {
+      fr: "Créer un Pack Omniscient (Modrinth seulement ou vanilla), le générer pour d'autres versions, l'exporter en .omnipack ; page « Proposer un pack » du site et import dans l'admin (tester, publier).",
+      en: "Create an Omniscient pack (Modrinth only or vanilla), generate it for other versions, export a .omnipack; the site's “Submit a pack” page and admin import (test, publish).",
+    },
+  },
+  // 28/10 (preview « Packs Modrinth, CurseForge, FTB » B validée par Rushi, « tu peux coder tout ») :
+  // défaut « Test ».
+  {
+    id: "packBrowse",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "importPack",
+    name: { fr: "Packs existants (Modrinth, CurseForge, FTB)", en: "Existing packs (Modrinth, CurseForge, FTB)" },
+    description: {
+      fr: "« + Nouvelle version » propose 3 cartes : Créer, Un pack existant (chercher et installer un pack Modrinth, CurseForge ou FTB) et Importer. En-tête de Jouer allégé (menu « ⋯ »).",
+      en: "« + New version » offers 3 cards: Create, An existing pack (search and install a Modrinth, CurseForge or FTB pack) and Import. Lighter Play header (« ⋯ » menu).",
     },
   },
   {
@@ -89,6 +326,18 @@ export const FEATURES: FeatureDef[] = [
     name: { fr: "Amis", en: "Friends" },
     description: { fr: "Demandes d'amis et qui joue où.", en: "Friend requests and who plays where." },
   },
+  // 31/10 (preview « Panel Analytique » validée par Rushi) : défaut « Test ».
+  {
+    id: "analytics",
+    defaultState: "test",
+    where: ["site"],
+    group: "social",
+    name: { fr: "Analytique (admin) et signaux du site", en: "Analytics (admin) and site signals" },
+    description: {
+      fr: "Page Analytique de l'admin (visible dès que ce n'est pas « Cachée »). Signal du site : Test = comptes testeurs seulement, Bêta publique ou Pour tous = tous les visiteurs. Cachée : ni page, ni signal.",
+      en: "Admin Analytics page (visible unless “Hidden”). Site signal: Test = tester accounts only, Public beta or For everyone = every visitor. Hidden: no page, no signal.",
+    },
+  },
   {
     id: "tour",
     defaultState: "betaTesters",
@@ -97,6 +346,105 @@ export const FEATURES: FeatureDef[] = [
     group: "launcher",
     name: { fr: "Visite guidée", en: "Guided tour" },
     description: { fr: "Bulles qui présentent le menu au premier lancement.", en: "Bubbles that present the menu on first launch." },
+  },
+  // 28/10 (preview « Visite de Jouer » validée par Rushi) : défaut « Test ».
+  {
+    id: "playTour",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "launcher",
+    name: { fr: "Visite de Jouer", en: "Play tour" },
+    description: {
+      fr: "9 bulles qui montrent la page Jouer (installations, mondes, sauvegarde auto, réglages des sauvegardes dans « ⋯ »). Proposée à la 1re ouverture de Jouer, depuis la visite guidée, Paramètres › Divers et l'Aide.",
+      en: "9 bubbles that show the Play page (installations, worlds, auto backup, backup settings in « ⋯ »). Offered the first time Play opens, from the guided tour, Settings › Misc and Help.",
+    },
+  },  // 28/10 (preview « Jouer : premiers pas et ajouts » validée par Rushi) : défaut « Test ».
+  {
+    id: "firstInstall",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "playPage",
+    name: { fr: "Première installation automatique", en: "Automatic first installation" },
+    description: {
+      fr: "Au tout premier lancement de Jouer, le launcher crée « Minecraft <dernière version> » (rien n'est téléchargé avant « Jouer »). Sans Internet, ou si le joueur retire tout, une carte « Commence ici ».",
+      en: "The very first time Play opens, the launcher creates “Minecraft <latest version>” (nothing is downloaded before “Play”). Offline, or if the player removes everything, a “Start here” card.",
+    },
+  },
+  {
+    id: "contentCf",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "buildPack",
+    name: { fr: "Ajouter depuis CurseForge (page d'une installation)", en: "Add from CurseForge (installation page)" },
+    description: {
+      fr: "La fenêtre « Ajouter » (packs de ressources, shaders, mondes, data packs) cherche aussi sur CurseForge et télécharge le fichier quand son auteur le permet ; sinon « Page ↗ ». Coupé : Modrinth et « Importer un fichier .zip » seulement.",
+      en: "The “Add” window (resource packs, shaders, worlds, data packs) also searches CurseForge and downloads the file when its author allows it; otherwise “Page ↗”. Off: Modrinth and “Import a .zip file” only.",
+    },
+  },
+  // 31/10 (preview « Menus d'ajout » validée par Rushi, « tu peux coder ces menus-là ») : défaut « Test ».
+  {
+    id: "addMenus",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "buildPack",
+    name: { fr: "Nouveaux menus d'ajout (compatibilité et fiches)", en: "New add menus (compatibility and sheets)" },
+    description: {
+      fr: "Une seule fenêtre « Ajouter » (mods, packs de ressources, shaders, data packs, mondes) : seulement ce qui marche avec la version et le chargeur du pack (les autres comptés à part), fiche de chaque élément (versions × chargeurs, version minimale, mods nécessaires, images, soutenir l'auteur), « Créer une copie en … » sans jamais changer le pack. Aussi « Créer un pack » (mods d'abord ou version d'abord), « Un pack existant » avec la grille des versions, et « Exporter pour un ami » en .mrpack ou .zip CurseForge.",
+      en: "A single “Add” window (mods, resource packs, shaders, data packs, worlds): only what works with the pack's version and loader (the others counted apart), a sheet per item (versions × loaders, minimum version, required mods, images, support the author), “Make a copy on …” without ever changing the pack. Also “Create a pack” (mods first or version first), “An existing pack” with the version grid, and “Export for a friend” as .mrpack or CurseForge .zip.",
+    },
+  },
+  {
+    id: "vanillaModded",
+    parent: "vanillaPage",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "playPage",
+    name: { fr: "Shaders en vanilla et « Basculer en version modée »", en: "Shaders in vanilla and “Switch to modded”" },
+    description: {
+      fr: "Onglet Shaders sur une installation vanilla ; un shader, ou « tous les mondes » pour un data pack, propose de passer l'installation en Fabric/NeoForge/Forge avec Iris ou Paxi (seulement s'ils existent pour sa version). Rien n'est supprimé.",
+      en: "Shaders tab on a vanilla installation; a shader, or “every world” for a data pack, offers to switch the installation to Fabric/NeoForge/Forge with Iris or Paxi (only if they exist for its version). Nothing is deleted.",
+    },
+  },
+  // 28/10 (demande de Rushi) : défaut « Test ».
+  {
+    id: "keysSync",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.0",
+    group: "play",
+    section: "comfort",
+    name: { fr: "Mes touches (vanilla et modées)", en: "My key bindings (vanilla and modded)" },
+    description: {
+      fr: "Deux fichiers de touches communs (vanilla, modé) : les touches changées en jeu y sont reportées à la fermeture, et chaque nouvelle installation part de ces touches. Les installations existantes ne sont pas modifiées.",
+      en: "Two shared key binding files (vanilla, modded): keys changed in game are saved there when the game closes, and every new installation starts from them. Existing installations are not changed.",
+    },
+  },  // 01/11 (preview « RAM par pack » validée par Rushi, « oui, code-le ») : défaut « Test ».
+  {
+    id: "packRam",
+    parent: "play",
+    defaultState: "test",
+    where: ["launcher"],
+    minLauncher: "0.4.2",
+    group: "play",
+    section: "comfort",
+    name: { fr: "Mémoire (RAM) par pack", en: "Memory (RAM) per pack" },
+    description: {
+      fr: "Chaque installation a sa RAM : automatique (selon le nombre de mods, la version, les shaders et la RAM du PC), comme dans Paramètres, ou choisie. Réglable à la création, à l'import (la RAM conseillée du fichier est lue), dans ⚙ › Mémoire ; vérifiée avant de lancer ; proposée après un plantage « manque de mémoire » ; écrite dans les exports. Coupé : la RAM de Paramètres pour tout.",
+      en: "Each installation has its own RAM: automatic (from the mod count, version, shaders and the PC's RAM), same as Settings, or custom. Set when creating, when importing (the file's recommended RAM is read), in ⚙ › Memory; checked before launching; offered after an “out of memory” crash; written in exports. Off: the Settings RAM for everything.",
+    },
   },
 ];
 
@@ -204,6 +552,14 @@ export async function setFeatureStates(changes: Record<string, FeatureState>): P
 export async function setTesters(testers: Tester[]): Promise<void> {
   await execSql(upsertSetting, [TESTERS_KEY, JSON.stringify(testers.slice(0, 50)), new Date().toISOString()]);
   revalidateTag(FEATURES_TAG, { expire: 0 });
+}
+
+// Suppression de compte : ce joueur sort de la liste des testeurs (rien à écrire s'il n'y est pas).
+export async function removeTester(uuid: string): Promise<void> {
+  const normalized = normalizeMinecraftUuid(uuid);
+  const { testers } = await lab();
+  const kept = testers.filter((t) => normalizeMinecraftUuid(t.uuid) !== normalized);
+  if (kept.length !== testers.length) await setTesters(kept);
 }
 
 // --- Qui regarde ? ----------------------------------------------------------------------------

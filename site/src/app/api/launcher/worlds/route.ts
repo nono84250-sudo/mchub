@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { withD1Busy } from "@/lib/d1Busy";
 import { playLauncherUser } from "@/lib/playLauncher";
-import { deleteCloudWorld, findCloudWorld, getPlayBeta, getUserOffer, listCloudWorlds, pruneCloud, usedBytes } from "@/lib/playWorlds";
+import { deleteCloudWorld, findCloudWorld, getPlayBeta, getUserOffer, hasCloudVersions, listCloudWorlds, pruneCloud, usedBytes } from "@/lib/playWorlds";
 
 // Mode Jouer (bêta, 24/10) : offre du joueur (quota et conservation viennent de la table
 // playOffer), place utilisée et mondes en ligne. Lu par le launcher (fenêtre de synchro, mondes
@@ -12,6 +12,12 @@ export const GET = withD1Busy(async (request: Request) => {
   if ("response" in auth) return auth.response;
   const offer = await getUserOffer(auth.userId);
   if (offer.cloud) await pruneCloud(auth.userId, offer, { throttle: true });
+  // Audit du 28/10 (correctif 8) : compte sans offre cloud qui n'a rien en ligne (le cas le plus
+  // courant) : meme reponse qu'avant, avec 1 lecture de la base au lieu de 3. Un compte dont
+  // l'offre a expire mais qui a encore des mondes en ligne passe par la lecture complete.
+  if (!offer.cloud && !(await hasCloudVersions(auth.userId))) {
+    return NextResponse.json({ beta: await getPlayBeta(), offer, usedBytes: 0, setupDone: false, worlds: [] });
+  }
   const [worlds, used, beta] = await Promise.all([listCloudWorlds(auth.userId), usedBytes(auth.userId), getPlayBeta()]);
   return NextResponse.json({
     beta,

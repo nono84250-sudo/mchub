@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isCronRequest } from "@/lib/cronAuth";
 import { D1_MAX_PARAMS, db, or } from "@/lib/db";
 import { pingMinecraftServer } from "@/lib/mc-ping";
 import { CONCURRENCY } from "@/lib/status-snapshot";
@@ -31,8 +32,7 @@ function sleep(ms: number) {
 }
 
 export async function POST(request: Request) {
-  const expected = `Bearer ${process.env.CRON_SECRET}`;
-  if (!process.env.CRON_SECRET || request.headers.get("authorization") !== expected) {
+  if (!isCronRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 

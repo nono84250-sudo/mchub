@@ -4,9 +4,11 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectsCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   ListPartsCommand,
+  PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { IMAGES_BUCKET, r2 } from "@/lib/r2";
 
@@ -17,6 +19,11 @@ import { IMAGES_BUCKET, r2 } from "@/lib/r2";
 // bucket des images, avec le même jeton.
 export const WORLDS_BUCKET = process.env.R2_WORLDS_BUCKET || IMAGES_BUCKET;
 export const WORLDS_PREFIX = "worlds/";
+// Packs proposés (.omnipack, 31/10) : bucket dédié « omniscient-pack », jamais celui des images.
+// Réglage R2_PACKS_BUCKET ; tant qu'il n'existe pas, les packs restent là où ils étaient (bucket des
+// mondes) pour que rien ne casse. Les mêmes fonctions servent aux deux : le dernier paramètre
+// « bucket » choisit où ranger.
+export const PACKS_BUCKET = process.env.R2_PACKS_BUCKET || WORLDS_BUCKET;
 // R2 : 5 Mio minimum par morceau (sauf le dernier), 10 000 morceaux maximum.
 const MIN_PART = 5 * 1024 * 1024;
 const MAX_PARTS = 10_000;
@@ -88,23 +95,23 @@ export async function objectSize(objectKey: string): Promise<number | null> {
   }
 }
 
-export async function deleteObjects(keys: string[]): Promise<void> {
+export async function deleteObjects(keys: string[], bucket: string = WORLDS_BUCKET): Promise<void> {
   const safe = keys.filter(isWorldObjectKey);
   for (let i = 0; i < safe.length; i += 1000) {
-    await r2.send(new DeleteObjectsCommand({ Bucket: WORLDS_BUCKET, Delete: { Objects: safe.slice(i, i + 1000).map((Key) => ({ Key })), Quiet: true } }));
+    await r2.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: safe.slice(i, i + 1000).map((Key) => ({ Key })), Quiet: true } }));
   }
 }
 
 // Efface tout ce qui est sous un préfixe (un joueur ou un monde), y compris un fichier que la base
 // aurait oublié. Refuse tout préfixe qui ne vise pas au moins un joueur précis.
-export async function deletePrefix(prefix: string): Promise<number> {
+export async function deletePrefix(prefix: string, bucket: string = WORLDS_BUCKET): Promise<number> {
   if (!/^worlds\/[^/]+\/(?:[^/]+\/)?$/.test(prefix)) throw new Error("Préfixe refusé");
   let deleted = 0;
   let token: string | undefined;
   do {
-    const out = await r2.send(new ListObjectsV2Command({ Bucket: WORLDS_BUCKET, Prefix: prefix, ContinuationToken: token }));
+    const out = await r2.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }));
     const keys = (out.Contents ?? []).map((o) => o.Key).filter((k): k is string => !!k);
-    if (keys.length) await deleteObjects(keys);
+    if (keys.length) await deleteObjects(keys, bucket);
     deleted += keys.length;
     token = out.IsTruncated ? out.NextContinuationToken : undefined;
   } while (token);
@@ -118,7 +125,7 @@ const rfc3986 = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => 
 const sha256Hex = (s: string) => createHash("sha256").update(s).digest("hex");
 const hmac = (key: Buffer | string, s: string) => createHmac("sha256", key).update(s).digest();
 
-function presign(method: "GET" | "PUT", objectKey: string, extra: Record<string, string>, seconds = PRESIGN_SECONDS, now = new Date()): string {
+function presign(method: "GET" | "PUT", objectKey: string, extra: Record<string, string>, seconds = PRESIGN_SECONDS, now = new Date(), bucket: string = WORLDS_BUCKET): string {
   const accountId = process.env.CF_ACCOUNT_ID;
   const accessKey = process.env.R2_ACCESS_KEY_ID;
   const secret = process.env.R2_SECRET_ACCESS_KEY;
@@ -127,7 +134,7 @@ function presign(method: "GET" | "PUT", objectKey: string, extra: Record<string,
   const amzDate = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const day = amzDate.slice(0, 8);
   const scope = `${day}/auto/s3/aws4_request`;
-  const path = `/${WORLDS_BUCKET}/${objectKey.split("/").map(rfc3986).join("/")}`;
+  const path = `/${bucket}/${objectKey.split("/").map(rfc3986).join("/")}`;
   const query: Record<string, string> = {
     ...extra,
     "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
@@ -152,8 +159,58 @@ export function presignPart(objectKey: string, uploadId: string, partNumber: num
 }
 
 // Téléchargement : le nom proposé au navigateur (site) vient de filename.
-export function presignDownload(objectKey: string, filename?: string): string {
+export function presignDownload(objectKey: string, filename?: string, bucket: string = WORLDS_BUCKET): string {
   const extra: Record<string, string> = {};
   if (filename) extra["response-content-disposition"] = `attachment; filename="${filename.replace(/[^\w.() -]/g, "_")}"`;
-  return presign("GET", objectKey, extra);
+  return presign("GET", objectKey, extra, PRESIGN_SECONDS, new Date(), bucket);
+}
+
+// --- Pack Omniscient (27/10) ----------------------------------------------------------------
+// Un .omnipack proposé depuis le site arrive par morceaux de 4 Mio (limite de 4,5 Mo par requête
+// sur Vercel), chacun rangé comme un objet à part sous worlds/<id du compte>/omnipack.<id>/ : le
+// point n'existe jamais dans une clé de monde, et tout part avec le compte s'il est supprimé.
+export function omnipackPrefix(userId: string, submissionId: string): string {
+  return `${WORLDS_PREFIX}${userId}/omnipack.${submissionId}/`;
+}
+export function omnipackPartKey(prefix: string, n: number): string {
+  return `${prefix}${String(n).padStart(5, "0")}.part`;
+}
+
+export async function putWorldObject(objectKey: string, body: Uint8Array, bucket: string = WORLDS_BUCKET): Promise<void> {
+  if (!isWorldObjectKey(objectKey)) throw new Error("Clé refusée");
+  await r2.send(new PutObjectCommand({ Bucket: bucket, Key: objectKey, Body: body, ContentType: "application/octet-stream" }));
+}
+
+// Début d'un objet (lecture de omnipack.json, toujours le premier fichier de l'archive).
+export async function readWorldObject(objectKey: string, maxBytes: number, bucket: string = WORLDS_BUCKET): Promise<Uint8Array | null> {
+  if (!isWorldObjectKey(objectKey)) return null;
+  try {
+    const out = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey, Range: `bytes=0-${maxBytes - 1}` }));
+    return out.Body ? await out.Body.transformToByteArray() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Un passage précis d'un objet (répertoire central d'un .omnipack). `end` est inclus.
+export async function readWorldObjectRange(objectKey: string, start: number, end: number, bucket: string = WORLDS_BUCKET): Promise<Uint8Array | null> {
+  if (!isWorldObjectKey(objectKey) || end < start) return null;
+  try {
+    const out = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey, Range: `bytes=${start}-${end}` }));
+    return out.Body ? await out.Body.transformToByteArray() : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function listWorldObjects(prefix: string, bucket: string = WORLDS_BUCKET): Promise<{ key: string; size: number }[]> {
+  if (!isWorldObjectKey(prefix)) return [];
+  const all: { key: string; size: number }[] = [];
+  let token: string | undefined;
+  do {
+    const out = await r2.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }));
+    for (const o of out.Contents ?? []) if (o.Key) all.push({ key: o.Key, size: o.Size ?? 0 });
+    token = out.IsTruncated ? out.NextContinuationToken : undefined;
+  } while (token);
+  return all.sort((a, b) => a.key.localeCompare(b.key));
 }

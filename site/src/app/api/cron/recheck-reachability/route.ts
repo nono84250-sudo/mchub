@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isCronRequest } from "@/lib/cronAuth";
 import { revalidateTag } from "next/cache";
 import { db, execSql } from "@/lib/db";
 import { pingMinecraftServer } from "@/lib/mc-ping";
@@ -45,8 +46,7 @@ async function writeResults(results: PingResult[]) {
 export const maxDuration = 60; // a verifier contre le plan Vercel reel une fois deploye (voir rapport)
 
 export async function POST(request: Request) {
-  const expected = `Bearer ${process.env.CRON_SECRET}`;
-  if (!process.env.CRON_SECRET || request.headers.get("authorization") !== expected) {
+  if (!isCronRequest(request)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 

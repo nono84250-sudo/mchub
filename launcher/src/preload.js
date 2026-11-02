@@ -1,6 +1,32 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("mchub", {
+  // Aide Discord dans les bugs (02/11) : rapport nettoyé, zip dans Téléchargements, lien du Discord.
+  bugHelp: {
+    text: (lang) => ipcRenderer.invoke("bugHelp:text", lang),
+    zip: (lang) => ipcRenderer.invoke("bugHelp:zip", lang),
+    discord: () => ipcRenderer.invoke("bugHelp:discord"),
+  },
+  // Catalogue de bugs (31/10) : fiche reconnue, réparation proposée, compteurs.
+  bugs: {
+    onFound: (callback) => {
+      const listener = (_event, found) => callback(found);
+      ipcRenderer.on("bugs:found", listener);
+      return () => ipcRenderer.removeListener("bugs:found", listener);
+    },
+    signal: (code) => ipcRenderer.invoke("bugs:signal", code),
+    refused: (slug) => ipcRenderer.invoke("bugs:refused", slug),
+    openPage: (slug) => ipcRenderer.invoke("bugs:openPage", slug),
+    repair: async (slug, versionId, onStep) => {
+      const listener = (_event, step) => onStep?.(step);
+      ipcRenderer.on("bugs:repairStep", listener);
+      try {
+        return await ipcRenderer.invoke("bugs:repair", slug, versionId);
+      } finally {
+        ipcRenderer.removeListener("bugs:repairStep", listener);
+      }
+    },
+  },
   getSiteUrl: () => ipcRenderer.invoke("app:getSiteUrl"),
   // Laboratoire (25/10) : { <id>: { visible, beta } } d'après le site, voir features.js.
   getFeatures: () => ipcRenderer.invoke("features:get"),
@@ -41,7 +67,7 @@ contextBridge.exposeInMainWorld("mchub", {
   listJoinedServers: () => ipcRenderer.invoke("servers:listJoined"),
   joinServerByCode: (code) => ipcRenderer.invoke("servers:joinByCode", code),
   leaveJoinedServer: (slug) => ipcRenderer.invoke("servers:leaveJoined", slug),
-  openManageServer: (serverId) => ipcRenderer.invoke("servers:openManage", serverId),
+  openManageServer: (serverId, section) => ipcRenderer.invoke("servers:openManage", serverId, section),
   // Petite fenetre "Reglages" d'une instance (Mes instances, 2026-10-13) : canal du modpack
   // (release/beta), distincte de openManageServer ci-dessus qui continue d'ouvrir le site.
   getServerChannel: (slug) => ipcRenderer.invoke("servers:getChannel", slug),
@@ -70,7 +96,9 @@ contextBridge.exposeInMainWorld("mchub", {
   submitReport: (report) => ipcRenderer.invoke("reports:submit", report),
   reportInstallProblem: (payload) => ipcRenderer.invoke("servers:reportInstallProblem", payload),
   listNotifications: (opts) => ipcRenderer.invoke("notifications:list", opts),
-  markNotificationsRead: () => ipcRenderer.invoke("notifications:markRead"),
+  // Sans id : tout marquer comme lu ; avec un id : seulement ce message (centre de notifications).
+  markNotificationsRead: (id) => ipcRenderer.invoke("notifications:markRead", id),
+  getNews: (id) => ipcRenderer.invoke("news:get", id),
   deleteNotification: (id) => ipcRenderer.invoke("notifications:delete", id),
   clearReadNotifications: () => ipcRenderer.invoke("notifications:clearRead"),
   signIn: (remember) => ipcRenderer.invoke("auth:signIn", remember),
@@ -204,8 +232,14 @@ contextBridge.exposeInMainWorld("mchub", {
     listVersions: () => ipcRenderer.invoke("play:listVersions"),
     createVersion: (opts) => ipcRenderer.invoke("play:createVersion", opts),
     renameVersion: (id, name) => ipcRenderer.invoke("play:renameVersion", id, name),
-    removeVersion: (id) => ipcRenderer.invoke("play:removeVersion", id),
+    removeVersion: (id, worlds) => ipcRenderer.invoke("play:removeVersion", id, Array.isArray(worlds) ? worlds : []),
     launch: (opts) => ipcRenderer.invoke("play:launch", opts),
+    // RAM par pack (01/11, Laboratoire « packRam »).
+    ram: {
+      info: (id) => ipcRenderer.invoke("play:ram:info", id),
+      set: (id, ram) => ipcRenderer.invoke("play:ram:set", id, ram),
+      list: () => ipcRenderer.invoke("play:ram:list"),
+    },
     listWorlds: () => ipcRenderer.invoke("play:listWorlds"),
     setWorldBackup: (key, on, opts) => ipcRenderer.invoke("play:setWorldBackup", key, on, opts),
     listBackups: (key) => ipcRenderer.invoke("play:listBackups", key),
@@ -213,15 +247,169 @@ contextBridge.exposeInMainWorld("mchub", {
     testOverlay: () => ipcRenderer.invoke("play:testOverlay"),
     backupNow: (key, label) => ipcRenderer.invoke("play:backupNow", key, label),
     restoreBackup: (key, backupId) => ipcRenderer.invoke("play:restoreBackup", key, backupId),
+    updateCheck: (id, mc) => ipcRenderer.invoke("play:updateCheck", id, mc),
+    updateVersion: (id, opts) => ipcRenderer.invoke("play:updateVersion", id, opts),
+    onUpdateStep: (cb) => {
+      const fn = (_e, st) => cb(st);
+      ipcRenderer.on("play:updateStep", fn);
+      return () => ipcRenderer.removeListener("play:updateStep", fn);
+    },
     deleteBackup: (key, backupId) => ipcRenderer.invoke("play:deleteBackup", key, backupId),
     scanImport: (dir) => ipcRenderer.invoke("play:scanImport", dir),
     pickImportDir: () => ipcRenderer.invoke("play:pickImportDir"),
-    importWorlds: (dir, folders) => ipcRenderer.invoke("play:import", dir, folders),
+    importWorlds: async (dir, folders, onStep) => {
+      const listener = (_event, step) => onStep?.(step);
+      ipcRenderer.on("play:importProgress", listener);
+      try {
+        return await ipcRenderer.invoke("play:import", dir, folders);
+      } finally {
+        ipcRenderer.removeListener("play:importProgress", listener);
+      }
+    },
     openWorldFolder: (key) => ipcRenderer.invoke("play:openWorldFolder", key),
+    copyWorld: (key, opts) => ipcRenderer.invoke("play:copyWorld", key, opts),
+    deleteWorldForever: (key, opts) => ipcRenderer.invoke("play:deleteWorldForever", key, opts),
+    // Aide au crash (26/10) : ce que le launcher a reconnu à la fermeture du jeu.
+    crashLogs: () => ipcRenderer.invoke("play:crashLogs"),
+    openCrashFolder: () => ipcRenderer.invoke("play:openCrashFolder"),
+    // Data packs en attente posés dans le premier monde d'une installation (28/10).
+    onDpApplied: (callback) => {
+      const listener = (_event, list) => callback(list);
+      ipcRenderer.on("play:dpApplied", listener);
+      return () => ipcRenderer.removeListener("play:dpApplied", listener);
+    },
+    onCrashHelp: (callback) => {
+      const listener = (_event, info) => callback(info);
+      ipcRenderer.on("play:crashHelp", listener);
+      return () => ipcRenderer.removeListener("play:crashHelp", listener);
+    },
+    // Mon pack (26/10) : mods Modrinth + liste CurseForge téléchargée à la main par le joueur.
+    myPack: {
+      get: (id, opts) => ipcRenderer.invoke("myPack:get", id, opts),
+      create: (o) => ipcRenderer.invoke("myPack:create", o),
+      add: (id, mods) => ipcRenderer.invoke("myPack:add", id, mods),
+      setMod: (id, modId, patch) => ipcRenderer.invoke("myPack:setMod", id, modId, patch),
+      fix: (id, problem) => ipcRenderer.invoke("myPack:fix", id, problem),
+      addJar: (id, opts) => ipcRenderer.invoke("myPack:addJar", id, opts),
+      searchModrinth: (q, opts) => ipcRenderer.invoke("myPack:searchModrinth", q, opts),
+      searchCurseForge: (q, opts) => ipcRenderer.invoke("myPack:searchCurseForge", q, opts),
+      scanWorld: (key) => ipcRenderer.invoke("myPack:scanWorld", key),
+      openCurseForge: (arg) => ipcRenderer.invoke("myPack:openCurseForge", arg),
+      // « Corriger le pack » (30/10) : bon fichier CurseForge, versions d'un mod, mauvais fichier téléchargé.
+      cfTarget: (id, problem) => ipcRenderer.invoke("myPack:cfTarget", id, problem),
+      cfFiles: (id, modId) => ipcRenderer.invoke("myPack:cfFiles", id, modId),
+      onCfWrong: (callback) => {
+        const listener = (_event, w) => callback(w);
+        ipcRenderer.on("myPack:cfWrong", listener);
+        return () => ipcRenderer.removeListener("myPack:cfWrong", listener);
+      },
+      setResourcePack: (id, file, on) => ipcRenderer.invoke("myPack:setResourcePack", id, file, on),
+      setShader: (id, file) => ipcRenderer.invoke("myPack:setShader", id, file),
+      openFolder: (id, sub) => ipcRenderer.invoke("myPack:openFolder", id, sub),
+      // Page d'une version (27/10) : retirer, ajouter (Modrinth ou fichier), data packs, maps, fichiers.
+      remove: (id, item) => ipcRenderer.invoke("myPack:remove", id, item),
+      // 28/10 : `opts.src` = "cf" pour CurseForge (fenêtre « Ajouter » commune).
+      searchContent: (id, kind, q, opts) => ipcRenderer.invoke("myPack:searchContent", id, kind, q, opts),
+      addContent: (id, o) => ipcRenderer.invoke("myPack:addContent", id, o),
+      openCurseForgePage: (o) => ipcRenderer.invoke("myPack:openCurseForgePage", o),
+      watchCfContent: (id, o) => ipcRenderer.invoke("myPack:watchCfContent", id, o),
+      addShaderLoader: (id, which) => ipcRenderer.invoke("myPack:addShaderLoader", id, which),
+      searchDatapacks: (id, q) => ipcRenderer.invoke("myPack:searchDatapacks", id, q),
+      addDatapack: (id, o) => ipcRenderer.invoke("myPack:addDatapack", id, o),
+      setDatapack: (id, file, o) => ipcRenderer.invoke("myPack:setDatapack", id, file, o),
+      openMapsPage: (mc) => ipcRenderer.invoke("myPack:openMapsPage", mc),
+      importMap: (id) => ipcRenderer.invoke("myPack:importMap", id),
+      addMap: (id, o) => ipcRenderer.invoke("myPack:addMap", id, o),
+      // Basculer une installation vanilla en version modée (28/10).
+      loaderOptions: (id, need) => ipcRenderer.invoke("myPack:loaderOptions", id, need),
+      switchToModded: (id, o) => ipcRenderer.invoke("myPack:switchToModded", id, o),
+      files: {
+        list: (id, rel) => ipcRenderer.invoke("myPack:filesList", id, rel),
+        read: (id, rel) => ipcRenderer.invoke("myPack:filesRead", id, rel),
+        write: (id, rel, text) => ipcRenderer.invoke("myPack:filesWrite", id, rel, text),
+        rename: (id, rel, name) => ipcRenderer.invoke("myPack:filesRename", id, rel, name),
+        mkdir: (id, rel) => ipcRenderer.invoke("myPack:filesMkdir", id, rel),
+        trash: (id, rel) => ipcRenderer.invoke("myPack:filesTrash", id, rel),
+        openExternal: (id, rel) => ipcRenderer.invoke("myPack:filesOpenExternal", id, rel),
+        showInExplorer: (id, rel) => ipcRenderer.invoke("myPack:filesShow", id, rel),
+      },
+    },
+    // Pack Omniscient (27/10) : générer pour d'autres versions, exporter (.omnipack, .mrpack ami).
+    // Nouveaux menus d'ajout (31/10, Laboratoire « addMenus »).
+    addMenu: {
+      search: (o) => ipcRenderer.invoke("addMenu:search", o),
+      sheet: (o) => ipcRenderer.invoke("addMenu:sheet", o),
+      copyCheck: (id, o) => ipcRenderer.invoke("addMenu:copyCheck", id, o),
+      openLink: (u) => ipcRenderer.invoke("addMenu:openLink", u),
+    },
+    omniPack: {
+      targets: (id) => ipcRenderer.invoke("omniPack:targets", id),
+      job: () => ipcRenderer.invoke("omniPack:job"),
+      generate: (id, o) => ipcRenderer.invoke("omniPack:generate", id, o),
+      stop: () => ipcRenderer.invoke("omniPack:stop"),
+      clearJob: () => ipcRenderer.invoke("omniPack:clearJob"),
+      exportPreview: (id) => ipcRenderer.invoke("omniPack:exportPreview", id),
+      exportOmni: (id, o) => ipcRenderer.invoke("omniPack:export", id, o),
+      exportFriend: (id, o) => ipcRenderer.invoke("omniPack:exportFriend", id, o),
+      friendPlan: (id) => ipcRenderer.invoke("omniPack:friendPlan", id),
+      onJob: (callback) => {
+        const listener = (_event, job) => callback(job);
+        ipcRenderer.on("omniPack:job", listener);
+        return () => ipcRenderer.removeListener("omniPack:job", listener);
+      },
+    },
+    // « Un pack existant » (28/10, Laboratoire « packBrowse »).
+    packBrowse: {
+      sources: () => ipcRenderer.invoke("packBrowse:sources"),
+      search: (src, q, opts) => ipcRenderer.invoke("packBrowse:search", src, q, opts),
+      versions: (src, id) => ipcRenderer.invoke("packBrowse:versions", src, id),
+      prepare: async (src, id, versionId, extra, onProgress) => {
+        const listener = (_event, step) => onProgress?.(step);
+        ipcRenderer.on("packBrowse:progress", listener);
+        try {
+          return await ipcRenderer.invoke("packBrowse:prepare", src, id, versionId, extra);
+        } finally {
+          ipcRenderer.removeListener("packBrowse:progress", listener);
+        }
+      },
+      openPage: (url) => ipcRenderer.invoke("packBrowse:openPage", url),
+    },
+    // Importer un export CurseForge (.zip) avec ses mondes (26/10).
+    cfPack: {
+      pickZip: (kind) => ipcRenderer.invoke("cfPack:pickZip", kind === "mr" || kind === "omni" ? kind : "cf"),
+      read: (src) => ipcRenderer.invoke("cfPack:read", src),
+      install: async (id, opts, onStep) => {
+        const listener = (_event, step) => step?.id === id && onStep?.(step);
+        ipcRenderer.on("cfPack:progress", listener);
+        try {
+          return await ipcRenderer.invoke("cfPack:install", id, opts);
+        } finally {
+          ipcRenderer.removeListener("cfPack:progress", listener);
+        }
+      },
+      openManual: (item) => ipcRenderer.invoke("cfPack:openManual", item),
+    },
     onWorldsChanged: (callback) => {
       const listener = () => callback();
       ipcRenderer.on("play:worldsChanged", listener);
       return () => ipcRenderer.removeListener("play:worldsChanged", listener);
+    },
+    // « Tester dans le launcher » (31/10) : fenêtre d'installation d'un pack proposé (main.js, installTestPack).
+    packFile: {
+      take: () => ipcRenderer.invoke("app:takePackFile"),
+      onOpen: (callback) => {
+        const listener = (_event, file) => callback(file);
+        ipcRenderer.on("app:packFile", listener);
+        return () => ipcRenderer.removeListener("app:packFile", listener);
+      },
+    },
+    testPack: {
+      onEvent: (callback) => {
+        const listener = (_event, ev) => callback(ev);
+        ipcRenderer.on("testPack:event", listener);
+        return () => ipcRenderer.removeListener("testPack:event", listener);
+      },
+      answer: (yes) => ipcRenderer.invoke("testPack:answer", !!yes),
     },
     onSaveActivity: (callback) => {
       const listener = (_event, activity) => callback(activity);

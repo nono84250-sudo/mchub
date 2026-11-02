@@ -110,6 +110,17 @@ export async function broadcastNotification(input: {
 
 // Les 30 plus recentes suffisent pour un panneau de cloche — pas de
 // pagination, meme raisonnement que listReportsForServer.
+// Audit du 01/11 (S2) : même lecture, à envoyer avec d'autres dans un seul appel (/api/launcher/pulse).
+export function notificationsStatement(minecraftUuid: string): { sql: string; params: unknown[] } {
+  return {
+    sql: 'SELECT "id", "type", "serverName", "message", "read", "createdAt", "eventAt" FROM "notification" WHERE "recipientMinecraftUuid" = ? ORDER BY "createdAt" DESC LIMIT 30',
+    params: [normalizeMinecraftUuid(minecraftUuid)],
+  };
+}
+export function notificationsFromRows(rows: Record<string, unknown>[]): NotificationSummary[] {
+  return rows.map((r) => ({ ...r, read: r.read === 1 || r.read === true })) as NotificationSummary[];
+}
+
 export async function listNotificationsForRecipient(minecraftUuid: string): Promise<NotificationSummary[]> {
   return db.orm.public.Notification.select("id", "type", "serverName", "message", "read", "createdAt", "eventAt")
     .where({ recipientMinecraftUuid: normalizeMinecraftUuid(minecraftUuid) })
@@ -123,6 +134,12 @@ export async function listNotificationsForRecipient(minecraftUuid: string): Prom
 // notifications rendait "Tout marquer comme lu"/"Effacer les lues" visiblement lent.
 export async function markNotificationsRead(minecraftUuid: string) {
   await execSql('UPDATE "notification" SET "read" = 1 WHERE "recipientMinecraftUuid" = ? AND "read" = 0', [normalizeMinecraftUuid(minecraftUuid)]);
+}
+
+// Une seule notification (clic dans le centre de notifications du launcher, 25/10). Le filtre
+// sur le destinataire empeche de marquer celle d'un autre joueur.
+export async function markNotificationRead(id: string, minecraftUuid: string) {
+  await execSql('UPDATE "notification" SET "read" = 1 WHERE "id" = ? AND "recipientMinecraftUuid" = ?', [id, normalizeMinecraftUuid(minecraftUuid)]);
 }
 
 // Verifie que la notification appartient bien au joueur qui demande sa

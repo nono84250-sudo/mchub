@@ -24,6 +24,7 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
   let pending = null;
   let pendingUuid = null;
   let confirmed = false; // vrai dès qu'une réponse du site a été reçue pour le compte actuel
+  let confirmedAt = 0;
   let timer = null;
 
   const visible = (id) => state[id]?.visible === true;
@@ -55,6 +56,7 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
         state = next;
         saved = { at: Date.now(), uuid, features: next };
         confirmed = uuid === (currentUuid() || null);
+        confirmedAt = Date.now();
         fs.promises.mkdir(cacheDir, { recursive: true }).then(() => fs.promises.writeFile(file, JSON.stringify(saved))).catch(() => {});
         if (changed) {
           log?.(`Laboratoire : ${Object.entries(next).filter(([, f]) => f.visible).map(([id]) => id).join(", ") || "rien"} visible`);
@@ -71,6 +73,15 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
     return pending;
   }
 
+  // Audit du 28/10 (correctif 6) : comme refresh, sauf si une réponse pour CE compte est arrivée
+  // il y a moins de `maxAgeMs` (ou est en route) : au démarrage, le site était lu 3 fois.
+  function recent(maxAgeMs) {
+    const uuid = currentUuid() || null;
+    if (pending && pendingUuid === uuid) return pending;
+    if (confirmed && saved?.uuid === uuid && Date.now() - confirmedAt < maxAgeMs) return Promise.resolve(state);
+    return refresh();
+  }
+
   function start() {
     refresh();
     if (!timer) timer = setInterval(refresh, REFRESH_MS);
@@ -84,7 +95,7 @@ function createFeatures({ cacheDir, siteUrl, authHeaders, currentUuid, fetchJson
     return state;
   }
 
-  return { visible, all, refresh, ready, start };
+  return { visible, all, refresh, recent, ready, start };
 }
 
 module.exports = { createFeatures };

@@ -1,0 +1,72 @@
+diff --git a/site/src/components/MobileNav.tsx b/site/src/components/MobileNav.tsx
+index 03349ff..324ed95 100644
+--- a/site/src/components/MobileNav.tsx
++++ b/site/src/components/MobileNav.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useState } from "react";
++import { useEffect, useRef, useState } from "react";
+ import Link from "next/link";
+ import { List, X } from "@phosphor-icons/react";
+ import { logout } from "@/lib/actions/auth";
+@@ -17,9 +17,28 @@ import { TEAMS_READY } from "@/lib/teamRules";
+ export function MobileNav({ loggedIn, unread = 0, show = { friends: true, team: true } }: { loggedIn: boolean; unread?: number; show?: { friends: boolean; team: boolean } }) {
+   const [open, setOpen] = useState(false);
+   const { t } = useI18n();
++  const rootRef = useRef<HTMLDivElement>(null);
++
++  // Test vue telephone (30/10) : le menu ne se fermait qu'avec le bouton ou un lien. Echap et
++  // un toucher en dehors du menu le ferment aussi, comme un menu deroulant classique.
++  useEffect(() => {
++    if (!open) return;
++    const onKey = (e: KeyboardEvent) => {
++      if (e.key === "Escape") setOpen(false);
++    };
++    const onPointer = (e: PointerEvent) => {
++      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
++    };
++    document.addEventListener("keydown", onKey);
++    document.addEventListener("pointerdown", onPointer);
++    return () => {
++      document.removeEventListener("keydown", onKey);
++      document.removeEventListener("pointerdown", onPointer);
++    };
++  }, [open]);
+ 
+   return (
+-    <div className="sm:hidden">
++    <div ref={rootRef} className="sm:hidden">
+       <button
+         type="button"
+         onClick={() => setOpen((v) => !v)}
+diff --git a/site/src/components/ServerDetailView.tsx b/site/src/components/ServerDetailView.tsx
+index 5919056..d765509 100644
+--- a/site/src/components/ServerDetailView.tsx
++++ b/site/src/components/ServerDetailView.tsx
+@@ -153,7 +153,7 @@ export async function ServerDetailView({ slug, server: raw, inviteCode }: { slug
+             </h1>
+             <div className="mt-2 flex flex-wrap items-center gap-1.5">
+               <span
+-                className="inline-flex items-center whitespace-nowrap rounded-lg px-2.5 py-1 text-[12.5px] font-semibold"
++                className="inline-flex items-center rounded-lg px-2.5 py-1 text-[12.5px] font-semibold sm:whitespace-nowrap"
+                 style={
+                   tested
+                     ? { color: "var(--success)", background: "color-mix(in srgb, var(--success) 16%, transparent)" }
+diff --git a/site/src/components/ServerStatePill.tsx b/site/src/components/ServerStatePill.tsx
+index 5ca3f19..af06339 100644
+--- a/site/src/components/ServerStatePill.tsx
++++ b/site/src/components/ServerStatePill.tsx
+@@ -46,9 +46,11 @@ export async function ServerStatePill({
+         style={state === "unk" ? { border: `1.5px dashed ${color}` } : { background: color }}
+       />
+       {text}
++      {/* Test vue telephone (30/10) : masquee (display none) hors survol, pas juste transparente --
++          transparente, elle depassait quand meme du bord droit sur la fiche et elargissait la page. */}
+       <span
+         role="tooltip"
+-        className="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-30 w-max max-w-[240px] -translate-x-1/2 whitespace-normal rounded-lg border border-white/15 bg-[#0e0f16] px-2.5 py-2 text-left text-xs font-normal leading-snug text-[#f1f1f4] opacity-0 shadow-[0_8px_20px_rgba(0,0,0,0.4)] transition-opacity group-hover/pill:opacity-100"
++        className="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-30 w-max max-w-[240px] -translate-x-1/2 whitespace-normal rounded-lg border border-white/15 bg-[#0e0f16] px-2.5 py-2 text-left text-xs font-normal leading-snug text-[#f1f1f4] hidden shadow-[0_8px_20px_rgba(0,0,0,0.4)] group-hover/pill:block"
+       >
+         <b className="mb-0.5 block font-semibold" style={{ color }}>
+           ● {label}

@@ -54,21 +54,52 @@ function parseNbt(buffer) {
   return payload(10, 0);
 }
 
-/** Renvoie { name, version, lastPlayed, gameType, hardcore } ou null si illisible. */
+// Monde modé ? (26/10, un monde CurseForge ouvert en vanilla dans Jouer a été abîmé) Le jeu note
+// le chargeur dans Data.ServerBrands (« forge », « neoforge », « fabric », « quilt ») et WasModded ;
+// Forge et NeoForge listent aussi leurs mods dans Data.DataPacks.Enabled (« mod:<id> »). Fabric
+// ne note pas la liste de ses mods : on connaît seulement le chargeur.
+const LOADERS = ["neoforge", "forge", "quilt", "fabric"];
+const NOT_MODS = new Set(["minecraft", "forge", "neoforge", "fabric", "quilt"]);
+function detectMods(root, data) {
+  const brands = (Array.isArray(data.ServerBrands) ? data.ServerBrands : []).filter((b) => typeof b === "string").map((b) => b.toLowerCase());
+  const packs = (Array.isArray(data.DataPacks?.Enabled) ? data.DataPacks.Enabled : []).filter((p) => typeof p === "string");
+  const ids = [...new Set(packs.filter((p) => p.startsWith("mod:")).map((p) => p.slice(4)).filter((id) => id && !NOT_MODS.has(id)))];
+  let loader = LOADERS.find((l) => brands.includes(l)) || null;
+  if (!loader && ids.length) loader = packs.includes("mod:neoforge") ? "neoforge" : "forge";
+  if (!loader && packs.includes("fabric")) loader = "fabric";
+  if (!loader && (root.fml || root.FML)) loader = "forge";
+  if (!loader && data.WasModded !== 1) return null;
+  return { loader: loader || null, count: ids.length, ids: ids.slice(0, 1000) };
+}
+
+/** Renvoie { name, version, lastPlayed, gameType, hardcore, mods } ou null si illisible.
+ *  `mods` : null pour un monde vanilla, sinon { loader, count, ids } (voir detectMods). */
 async function readLevelDat(file) {
   try {
-    const raw = await fsp.readFile(file);
-    const data = parseNbt(raw[0] === 0x1f && raw[1] === 0x8b ? zlib.gunzipSync(raw) : raw)?.Data || {};
-    return {
-      name: typeof data.LevelName === "string" ? data.LevelName : null,
-      version: typeof data.Version?.Name === "string" ? data.Version.Name : null,
-      lastPlayed: typeof data.LastPlayed === "number" ? data.LastPlayed : null,
-      gameType: typeof data.GameType === "number" ? data.GameType : null,
-      hardcore: data.hardcore === 1,
-    };
+    return levelFromBuffer(await fsp.readFile(file));
   } catch {
     return null;
   }
 }
+// Même lecture depuis le contenu du fichier (monde dans un export CurseForge .zip, 26/10).
+async function readLevelBuffer(raw) {
+  try {
+    return levelFromBuffer(raw);
+  } catch {
+    return null;
+  }
+}
+function levelFromBuffer(raw) {
+  const root = parseNbt(raw[0] === 0x1f && raw[1] === 0x8b ? zlib.gunzipSync(raw) : raw) || {};
+  const data = root.Data || {};
+  return {
+    name: typeof data.LevelName === "string" ? data.LevelName : null,
+    version: typeof data.Version?.Name === "string" ? data.Version.Name : null,
+    lastPlayed: typeof data.LastPlayed === "number" ? data.LastPlayed : null,
+    gameType: typeof data.GameType === "number" ? data.GameType : null,
+    hardcore: data.hardcore === 1,
+    mods: detectMods(root, data),
+  };
+}
 
-module.exports = { readLevelDat, parseNbt };
+module.exports = { readLevelDat, readLevelBuffer, parseNbt };

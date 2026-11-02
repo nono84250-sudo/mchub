@@ -143,7 +143,8 @@ function createLiveSave({ playMode, overlay, globalShortcut, onBackup, onActivit
 
   // Le jeu a-t-il écrit le monde depuis `since` ? Pause (Échap, « Saving and pausing game ») ou
   // son enregistrement automatique (level.dat réécrit). Renvoie "pause", "autosave" ou null.
-  const levelMtime = (world) => fsp.stat(path.join(playMode.SAVES, world.folder, "level.dat")).then((st) => st.mtimeMs, () => 0);
+  // Séparation stricte (26/10) : le monde peut être dans le dossier de sa version (world.home).
+  const levelMtime = (world) => fsp.stat(path.join(world.dir || path.join(playMode.gameDirOf(world.home || null), "saves", world.folder), "level.dat")).then((st) => st.mtimeMs, () => 0);
   async function waitForWrite(world, since, timeoutMs) {
     const first = await levelMtime(world);
     const end = Date.now() + timeoutMs;

@@ -195,7 +195,9 @@ async function listZip(zipFile) {
     let count = tail.readUInt16LE(endAt + 10);
     let centralSize = tail.readUInt32LE(endAt + 12);
     let centralOffset = tail.readUInt32LE(endAt + 16);
-    if (centralOffset === MAX32 && endAt >= 20 && tail.readUInt32LE(endAt - 20) === 0x07064b50) {
+    // ZIP64 : n'importe lequel des trois champs peut être saturé (27/10 : un mod de plus de 65 535
+    // fichiers, Conquest Reforged, n'était lu qu'à moitié).
+    if ((count === 0xffff || centralSize === MAX32 || centralOffset === MAX32) && endAt >= 20 && tail.readUInt32LE(endAt - 20) === 0x07064b50) {
       const end64Offset = Number(tail.readBigUInt64LE(endAt - 20 + 8));
       const end64 = await readAt(handle, end64Offset, 56);
       if (end64.readUInt32LE(0) !== 0x06064b50) throw new Error("Archive illisible (ZIP64).");
@@ -246,26 +248,67 @@ function insideJoin(base, relative) {
   return target;
 }
 
-/** Extrait toute l'archive dans `destDir` (qui doit etre vide ou absent). CRC verifie par fichier. */
-async function extractZip(zipFile, destDir, { onBytes, signal } = {}) {
+// Un seul fichier de l'archive, en mémoire (petits fichiers : manifest.json, level.dat, icône).
+async function readZipEntry(zipFile, entry, { maxBytes = 64 * 1024 * 1024 } = {}) {
+  if (entry.size > maxBytes) throw new Error(`Fichier trop gros dans l'archive : ${entry.name}`);
+  const handle = await fsp.open(zipFile, "r");
+  try {
+    const local = await readAt(handle, entry.localOffset, 30);
+    if (local.readUInt32LE(0) !== 0x04034b50) throw new Error("Archive illisible (en-tête local).");
+    const dataStart = entry.localOffset + 30 + local.readUInt16LE(26) + local.readUInt16LE(28);
+    const raw = await readAt(handle, dataStart, entry.compressed);
+    const data = entry.method === 8 ? zlib.inflateRawSync(raw) : raw;
+    if ((zlib.crc32(data) >>> 0) !== entry.crc) throw new Error(`Fichier abîmé dans l'archive : ${entry.name}`);
+    return data;
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Extrait toute l'archive dans `destDir` (qui doit etre vide ou absent). CRC verifie par fichier.
+ *  `pick(name)` (26/10, import d'un export CurseForge) : chemin de destination de l'entrée dans
+ *  `destDir`, ou null pour la sauter. `keepExisting(rel)` : vrai = ne jamais écraser ce fichier. */
+// `order(a, b)` : ordre d'extraction (entrées de listZip) ; `onEntry(entry, rel)` : appelé (et attendu)
+// avant chaque fichier extrait, pour la progression des imports (27/10).
+async function extractZip(zipFile, destDir, { onBytes, signal, pick = null, keepExisting = null, order = null, onEntry = null } = {}) {
   const entries = await listZip(zipFile);
+  if (order) entries.sort(order);
+  // Audit du 01/11 : un zip piégé ne remplit plus le disque. Ce que l'archive annonce doit tenir dans
+  // la place libre, et chaque fichier s'arrête à la taille annoncée (voir `check` ci-dessous).
+  const announced = entries.reduce((sum, e) => sum + (!pick || pick(e.name) ? e.size : 0), 0);
+  await fsp.mkdir(destDir, { recursive: true });
+  const free = await fsp.statfs(destDir).then((s) => s.bavail * s.bsize).catch(() => Infinity);
+  if (announced > free) throw new Error("Pas assez de place sur le disque pour extraire cette archive.");
   const handle = await fsp.open(zipFile, "r");
   try {
     for (const entry of entries) {
       if (signal?.aborted) throw new DOMException("Restauration annulée.", "AbortError");
-      if (entry.name.endsWith("/")) {
-        await fsp.mkdir(insideJoin(destDir, entry.name), { recursive: true });
+      const rel = pick ? pick(entry.name) : entry.name;
+      if (!rel) continue;
+      if (onEntry && !rel.endsWith("/")) await onEntry(entry, rel);
+      if (rel.endsWith("/")) {
+        await fsp.mkdir(insideJoin(destDir, rel), { recursive: true });
         continue;
       }
-      const target = insideJoin(destDir, entry.name);
+      const target = insideJoin(destDir, rel);
+      if (keepExisting?.(rel) && fs.existsSync(target)) continue;
       await fsp.mkdir(path.dirname(target), { recursive: true });
+      // Fichier vide (vu dans un vrai export CurseForge, 27/10) : rien à lire, et un flux de 0 octet
+      // ferait planter createReadStream (start > end).
+      if (entry.compressed === 0 && entry.size === 0) {
+        await fsp.writeFile(target, Buffer.alloc(0));
+        continue;
+      }
       const local = await readAt(handle, entry.localOffset, 30);
       if (local.readUInt32LE(0) !== 0x04034b50) throw new Error("Archive illisible (en-tête local).");
       const dataStart = entry.localOffset + 30 + local.readUInt16LE(26) + local.readUInt16LE(28);
       const raw = fs.createReadStream(null, { fd: handle.fd, start: dataStart, end: dataStart + entry.compressed - 1, autoClose: false });
       let crc = 0;
+      let written = 0;
       const check = new (require("node:stream").Transform)({
         transform(chunk, _enc, cb) {
+          written += chunk.length;
+          if (written > entry.size) return cb(new Error(`Fichier abîmé dans l'archive : ${entry.name}`));
           crc = zlib.crc32(chunk, crc);
           onBytes?.(chunk.length);
           cb(null, chunk);
@@ -284,4 +327,4 @@ async function extractZip(zipFile, destDir, { onBytes, signal } = {}) {
   }
 }
 
-module.exports = { writeZip, listZip, extractZip };
+module.exports = { writeZip, listZip, extractZip, readZipEntry };

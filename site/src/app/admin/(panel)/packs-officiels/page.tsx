@@ -1,8 +1,11 @@
 import { AdminChrome } from "@/components/admin/AdminChrome";
 import { PackModPicker } from "@/components/admin/PackModPicker";
+import { PackSubmissionActions } from "@/components/admin/PackSubmissionActions";
+import { AddPackButton } from "@/components/admin/AddPackButton";
 import { requireAdmin } from "@/app/admin/design/guard";
 import { listAdminPacks } from "@/lib/playPacks";
 import { getPlayBeta } from "@/lib/playWorlds";
+import { listPendingSubmissions } from "@/lib/omniPacks";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Packs officiels — Omniscient" };
@@ -23,8 +26,16 @@ const DONE: Record<string, string> = {
   untested: "Version remise « À tester ».",
   publish: "Version publiée : elle est proposée dans le launcher.",
   unpublish: "Version retirée du launcher.",
-  deleted: "Pack supprimé. Les versions déjà créées par les joueurs gardent leurs mods.",
+  deleted: "Pack retiré. Les versions déjà créées par les joueurs gardent leurs mods.",
+  imported: "Pack accepté : il est dans la liste ci-dessous, caché des joueurs. Publie une version quand tu veux la rendre visible.",
+  alltested: "Toutes les versions sont marquées « Testée ».",
+  alluntested: "Toutes les versions sont remises « À tester ».",
+  allpublish: "Toutes les versions sont publiées : elles sont proposées dans le launcher.",
+  allunpublish: "Toutes les versions sont retirées du launcher.",
+  refused: "Pack refusé : son fichier est effacé et le joueur voit ton message.",
 };
+const LOADER: Record<string, string> = { fabric: "Fabric", quilt: "Quilt", forge: "Forge", neoforge: "NeoForge", vanilla: "Vanilla" };
+type Extras = { resourcepacks?: number; shaders?: number; datapacks?: number; worlds?: string[]; own?: string[]; tested?: boolean };
 
 type FileRow = { title?: string; filename: string };
 const parse = <T,>(s: string, fallback: T): T => {
@@ -38,7 +49,7 @@ const parse = <T,>(s: string, fallback: T): T => {
 export default async function PacksOfficiels({ searchParams }: PageProps<"/admin/packs-officiels">) {
   await requireAdmin();
   const params = await searchParams;
-  const [packs, beta] = await Promise.all([listAdminPacks(), getPlayBeta()]);
+  const [packs, beta, submissions] = await Promise.all([listAdminPacks(), getPlayBeta(), listPendingSubmissions().catch(() => [])]);
   const doneKey = typeof params.done === "string" ? params.done : "";
   const done =
     doneKey === "saved"
@@ -54,6 +65,17 @@ export default async function PacksOfficiels({ searchParams }: PageProps<"/admin
   const label: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--muted)", minWidth: 0 };
   const btn = (color = "var(--color-accent)", solid = false): React.CSSProperties => ({ border: `1px solid ${color}`, color: solid ? "#fff" : color, background: solid ? color : "transparent", padding: "8px 16px", borderRadius: "var(--radius-md)", font: "500 13.5px var(--font-heading)", cursor: "pointer", whiteSpace: "nowrap" });
   const mini = (color = "var(--color-text)"): React.CSSProperties => ({ border: `1px solid ${color === "var(--color-text)" ? "var(--color-divider)" : color}`, color, background: "transparent", padding: "5px 10px", borderRadius: "var(--radius-md)", font: "500 12px var(--font-heading)", cursor: "pointer", whiteSpace: "nowrap" });
+  const omniExtras = (x: Extras) => {
+    const bits = [
+      x.resourcepacks ? `${x.resourcepacks} pack(s) de ressources` : "",
+      x.shaders ? `${x.shaders} shader(s)` : "",
+      x.datapacks ? `${x.datapacks} data pack(s)` : "",
+      x.worlds?.length ? `maps : ${x.worlds.join(", ")}` : "",
+      x.tested ? "testée par l'auteur" : "pas testée par l'auteur",
+      x.own?.length ? `⚠ ${x.own.length} fichier(s) hors Modrinth` : "",
+    ].filter(Boolean);
+    return bits.length ? ` · ${bits.join(" · ")}` : "";
+  };
   const betaTag = beta ? <span style={{ ...pill("var(--warn)"), textTransform: "uppercase", letterSpacing: ".04em", fontSize: 11 }}>Bêta</span> : null;
 
   const packForm = (p?: (typeof packs)[number]) => (
@@ -88,19 +110,46 @@ export default async function PacksOfficiels({ searchParams }: PageProps<"/admin
         <div style={{ minWidth: 0, flex: "1 1 280px" }}>
           <h1 style={{ margin: "0 0 6px", fontSize: 22, fontWeight: 500, display: "flex", alignItems: "center", gap: 10 }}>Packs officiels {betaTag}</h1>
           <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
-            Les packs proposés dans « Jouer » du launcher, en plus de Vanilla. Une liste de mods Modrinth : rien n&apos;est hébergé chez nous.
+            Les packs proposés dans « Jouer » du launcher, en plus de Vanilla. Des mods Modrinth et leurs fichiers de configuration : aucun mod n&apos;est hébergé chez nous.
           </p>
         </div>
+        <AddPackButton />
       </div>
 
       {done ? <div style={banner("var(--success)")}>{done}</div> : null}
       {error ? <div style={banner("var(--danger)")}>{error}</div> : null}
 
 
-      <details style={{ ...card, marginBottom: 16 }} open={packs.length === 0}>
-        <summary style={{ cursor: "pointer", fontWeight: 500 }}>+ Nouveau pack</summary>
-        <div style={{ marginTop: 14 }}>{packForm()}</div>
-      </details>
+      {/* Pack Omniscient (27/10) : packs proposés par les joueurs depuis « Proposer un pack ». */}
+      <section style={{ ...card, marginBottom: 16 }}>
+        <p style={{ margin: "0 0 4px", fontWeight: 500 }}>Packs proposés par les joueurs {submissions.length ? <span style={pill("var(--color-accent)")}>{submissions.length}</span> : null}</p>
+        <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--muted)" }}>
+          Packs envoyés depuis Tableau de bord › Proposer un pack : uniquement des mods Modrinth et leurs fichiers de configuration (vérifié par le site). Pour ajouter ton propre pack, utilise « + Ajouter un pack » en haut à droite. Teste d&apos;abord le pack dans ton launcher, puis accepte-le ou refuse-le.
+        </p>
+        {submissions.length === 0 ? (
+          <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>Aucun pack en attente.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {submissions.map((s) => {
+              const m = parse<{ vanilla?: boolean; loader?: string | null; versions?: { minecraftVersion: string; mods: unknown[]; tested?: boolean; own?: string[]; worlds?: string[] }[] }>(s.manifest, {});
+              const versions = m.versions ?? [];
+              return (
+                <div key={s.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, border: "1px solid var(--color-divider)", borderRadius: "var(--radius-md)", padding: "10px 12px" }}>
+                  <span style={{ flex: "1 1 260px", minWidth: 0 }}>
+                    <span style={{ display: "block", fontWeight: 600 }}>{s.name}</span>
+                    <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>
+                      par {s.author || "?"} · {m.vanilla ? "Vanilla" : LOADER[m.loader ?? ""] ?? m.loader} · {versions.map((v) => `${v.minecraftVersion}${v.tested ? " ✓" : ""}`).join(", ")} · {(Number(s.sizeBytes) / 1e6).toFixed(1)} Mo
+                      {versions[0] ? ` · ${versions[0].mods.length} mods` : ""}
+                    </span>
+                  </span>
+                  <PackSubmissionActions id={s.id} name={s.name} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
 
       {packs.length === 0 ? (
         <section style={{ ...card, textAlign: "center", borderStyle: "dashed" }}>
@@ -116,7 +165,10 @@ export default async function PacksOfficiels({ searchParams }: PageProps<"/admin
               <details key={p.id} id={`pack-${p.id}`} style={{ ...card, padding: "14px 18px" }} open={openPack === p.id}>
                 <summary style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", listStyle: "none", flexWrap: "wrap" }}>
                   <span style={{ flex: "1 1 200px", minWidth: 0 }}>
-                    <span style={{ display: "block", fontWeight: 600 }}>{p.nameFr}</span>
+                    <span style={{ display: "block", fontWeight: 600 }}>
+                      {p.nameFr} {p.kind === "omni" ? <span style={pill("var(--color-accent)")}>Pack Omniscient</span> : null}
+                    </span>
+                    {p.kind === "omni" && p.author ? <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>Proposé par {p.author}</span> : null}
                     <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>{p.descriptionFr || "Sans description"}</span>
                   </span>
                   <span style={pill(published ? "var(--success)" : "var(--muted)")}>{published ? `${published} version${published > 1 ? "s" : ""} publiée${published > 1 ? "s" : ""}` : "Pas publié"}</span>
@@ -128,6 +180,25 @@ export default async function PacksOfficiels({ searchParams }: PageProps<"/admin
                     <p style={{ margin: "0 0 8px", fontSize: 11.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)" }}>
                       Versions de Minecraft (créées automatiquement)
                     </p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                      {([["tested", "Tout marquer testé", "var(--success)"], ["publish", "Tout publier", "var(--color-accent)"], ["unpublish", "Tout retirer du launcher", "var(--danger)"]] as const).map(([what, text, color]) => (
+                        <form key={what} method="post" action="/api/admin/play">
+                          <input type="hidden" name="action" value="versionAll" />
+                          <input type="hidden" name="packId" value={p.id} />
+                          <input type="hidden" name="what" value={what} />
+                          <button type="submit" style={mini(color)}>{text}</button>
+                        </form>
+                      ))}
+                      <form method="post" action="/api/admin/play" style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
+                        <input type="hidden" name="action" value="delete" />
+                        <input type="hidden" name="packId" value={p.id} />
+                        <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12, color: "var(--muted)" }}>
+                          <input type="checkbox" required />
+                          Je confirme
+                        </label>
+                        <button type="submit" style={mini("var(--danger)")}>Retirer ce pack</button>
+                      </form>
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 1, border: "1px solid var(--color-divider)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
                       {p.versions.map((v) => {
                         const st = STATUS[v.status] ?? STATUS.to_test;
@@ -148,8 +219,9 @@ export default async function PacksOfficiels({ searchParams }: PageProps<"/admin
                             <span style={pill(st.color)}>{st.label}</span>
                             {isPub ? <span style={pill("var(--success)")}>Visible par les joueurs</span> : null}
                             <span style={{ flex: "1 1 220px", minWidth: 0, fontSize: 12, color: "var(--muted)" }} title={files.map((f) => f.filename).join("\n")}>
-                              {files.length} mod{files.length > 1 ? "s" : ""} · Fabric {v.loaderVersion}
+                              {v.loader === "vanilla" ? "Vanilla" : `${files.length} mod${files.length > 1 ? "s" : ""} · ${LOADER[v.loader] ?? "Fabric"} ${v.loaderVersion ?? ""}`}
                               {missing.length ? ` · sans ${missing.map((m) => m.title).join(", ")}` : ""}
+                              {p.kind === "omni" ? omniExtras(parse<Extras>(v.extras, {})) : ""}
                             </span>
                             {v.status !== "not_enough" ? (
                               <>
@@ -172,7 +244,13 @@ export default async function PacksOfficiels({ searchParams }: PageProps<"/admin
                     </p>
                   </div>
                   <div style={{ height: 1, background: "var(--color-divider)" }} />
-                  {packForm(p)}
+                  {p.kind === "omni" ? (
+                    <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>
+                      Pack Omniscient : il se modifie dans le launcher (puis on importe le nouveau fichier). Ici, on teste et on publie ses versions.
+                    </p>
+                  ) : (
+                    packForm(p)
+                  )}
                   <form method="post" action="/api/admin/play">
                     <input type="hidden" name="action" value="delete" />
                     <input type="hidden" name="packId" value={p.id} />
@@ -180,7 +258,7 @@ export default async function PacksOfficiels({ searchParams }: PageProps<"/admin
                       <input type="checkbox" required />
                       Je confirme
                     </label>
-                    <button type="submit" style={{ ...btn("var(--danger)"), borderColor: "transparent" }}>Supprimer ce pack</button>
+                    <button type="submit" style={{ ...btn("var(--danger)"), borderColor: "transparent" }}>Retirer ce pack</button>
                   </form>
                 </div>
               </details>

@@ -10,10 +10,10 @@ import { FooterLink } from "@/components/FooterLink";
 // pages, connecte ou non (voir AccountMenu.tsx pour l'acces rapide une fois connecte).
 // Les pages legales demandees pour l'application Discord (2026-10-14) restent la.
 export async function Footer() {
-  const { dict } = await getT();
+  const { dict, locale } = await getT();
   const f = dict.footer;
 
-  type FooterItem = { label: string; href?: string; soon?: boolean };
+  type FooterItem = { label: string; href?: string; soon?: boolean; external?: boolean };
   const columns: { title: string; links: FooterItem[] }[] = [
     {
       title: f.product,
@@ -27,6 +27,9 @@ export async function Footer() {
     {
       title: f.help,
       links: [
+        // Centre d'aide et bugs connus (01/11, demande de Rushi) : libellés écrits ici pour ne pas toucher aux dictionnaires.
+        { label: locale === "en" ? "Help center" : "Centre d'aide", href: "/aide" },
+        { label: locale === "en" ? "Known bugs" : "Bugs connus", href: "/aide/bugs" },
         { label: f.faq, href: "/faq" },
         { label: f.contact, href: "/contact" },
       ],
@@ -39,11 +42,11 @@ export async function Footer() {
       ],
     },
     {
-      // Communaute : Discord et YouTube n'existent pas encore. Le jour venu, mettre le
-      // lien (href) et retirer « soon ».
+      // Communaute : Discord ouvert le 01/11. YouTube n'existe pas encore : le jour venu,
+      // mettre le lien (href) et retirer « soon ».
       title: f.community,
       links: [
-        { label: "Discord", soon: true },
+        { label: "Discord", href: "https://discord.gg/HGXN34umC2", external: true },
         { label: "YouTube", soon: true },
       ],
     },
@@ -66,7 +69,11 @@ export async function Footer() {
               <ul className="flex flex-col gap-2">
                 {col.links.map((link) => (
                   <li key={link.label}>
-                    {link.href ? (
+                    {link.external ? (
+                      <a href={link.href} target="_blank" rel="noopener noreferrer" className="text-muted transition-colors hover:text-foreground">
+                        {link.label}
+                      </a>
+                    ) : link.href ? (
                       <FooterLink href={link.href}>{link.label}</FooterLink>
                     ) : (
                       <span className="text-muted">

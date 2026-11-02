@@ -74,9 +74,10 @@ type ServerFormProps = {
   // jamais un autre <form>, invalide a l'interieur de celui-ci.
   children?: ReactNode;
   sourceStates?: Record<ModpackSource, boolean>;
+  sourceMaintenance?: { source: ModpackSource; message: string } | null;
 };
 
-export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode, canPublish = true, children, sourceStates }: ServerFormProps) {
+export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode, canPublish = true, children, sourceStates, sourceMaintenance }: ServerFormProps) {
   const { t } = useI18n();
   const router = useRouter();
   const values = { ...EMPTY_VALUES, ...defaultValues };
@@ -357,6 +358,7 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
           }}
           onChange={setModpack}
           sourceStates={sourceStates}
+          sourceMaintenance={sourceMaintenance}
         />
       ) : null}
 

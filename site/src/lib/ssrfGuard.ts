@@ -37,18 +37,36 @@ function isPrivateIPv4(ip: string): boolean {
   );
 }
 
+// Audit du 01/11 : comparaison sur les 8 groupes de 16 bits et non sur le texte, qui acceptait
+// 0:0:0:0:0:0:0:1 ou une adresse mappee ecrite en hexadecimal (::ffff:7f00:1).
+function ipv6Groups(ip: string): number[] {
+  // Ecrit les 4 derniers octets d'une forme "...:1.2.3.4" en deux groupes hexadecimaux.
+  const dotted = ip.toLowerCase().split("%")[0].replace(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/, (_, a, b, c, d) => {
+    return `${((Number(a) << 8) | Number(b)).toString(16)}:${((Number(c) << 8) | Number(d)).toString(16)}`;
+  });
+  const [head, tail] = dotted.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const missing = dotted.includes("::") ? 8 - left.length - right.length : 0;
+  return [...left, ...Array(missing).fill("0"), ...right].map((g) => parseInt(g, 16));
+}
+
 function isPrivateIPv6(ip: string): boolean {
-  const normalized = ip.toLowerCase();
-  if (normalized === "::" || normalized === "::1") return true; // non specifiee / loopback
-  if (normalized.startsWith("fe80:") || normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb")) return true; // link-local
-  if (/^f[cd][0-9a-f]{2}:/.test(normalized)) return true; // unique local (fc00::/7)
+  const g = ipv6Groups(ip);
+  if (g.length !== 8 || g.some((n) => !Number.isInteger(n))) return true; // illisible : refuse par prudence
+  const zeroUpTo = (n: number) => g.slice(0, n).every((x) => x === 0);
+  if (zeroUpTo(7) && g[7] <= 1) return true; // non specifiee / loopback
+  if ((g[0] & 0xffc0) === 0xfe80) return true; // link-local (fe80::/10)
+  if ((g[0] & 0xfe00) === 0xfc00) return true; // unique local (fc00::/7)
+  if ((g[0] & 0xff00) === 0xff00) return true; // multicast (ff00::/8)
   // Prefixes de tunnel (audit §1.12) : encapsulent une adresse IPv4 potentiellement privee, ou
   // relaient vers un reseau que l'hebergeur ne maitrise pas forcement.
-  if (normalized.startsWith("2002:")) return true; // 6to4 (2002::/16)
-  if (normalized.startsWith("2001::") || /^2001:0{1,4}:/.test(normalized)) return true; // Teredo (2001::/32)
-  if (normalized.startsWith("64:ff9b::") || normalized.startsWith("64:ff9b:1::")) return true; // NAT64 (64:ff9b::/96 et 64:ff9b:1::/48)
-  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIPv4(mapped[1]);
+  if (g[0] === 0x2002) return true; // 6to4 (2002::/16)
+  if (g[0] === 0x2001 && g[1] === 0) return true; // Teredo (2001::/32)
+  if (g[0] === 0x0064 && g[1] === 0xff9b) return true; // NAT64 (64:ff9b::/96 et 64:ff9b:1::/48)
+  // IPv4 cachee : mappee (::ffff:a.b.c.d), traduite (::ffff:0:a.b.c.d) ou compatible (::a.b.c.d).
+  if (zeroUpTo(5) && (g[5] === 0xffff || g[5] === 0)) return isPrivateIPv4(`${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`);
+  if (zeroUpTo(4) && g[4] === 0xffff && g[5] === 0) return isPrivateIPv4(`${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`);
   return false;
 }
 

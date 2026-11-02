@@ -52,6 +52,7 @@ export function ModpackPicker({
   defaultValue,
   onChange,
   sourceStates,
+  sourceMaintenance,
 }: {
   defaultValue?: ModpackValue;
   onChange?: (value: ModpackValue) => void;
@@ -61,6 +62,8 @@ export function ModpackPicker({
   // l'utilisateur : confusion -> signalements evitables). Optionnel pour ne pas casser un
   // appelant qui ne l'a pas encore (traite alors toutes les sources comme activees).
   sourceStates?: Record<ModpackSource, boolean>;
+  // 25/10 : source en maintenance (voir getSourceMaintenance) : avertissement orange, jamais bloquant.
+  sourceMaintenance?: { source: ModpackSource; message: string } | null;
 }) {
   const { t } = useI18n();
   const [source, setSource] = useState<ModpackSource>(defaultValue?.id ? defaultValue.source : DEFAULT_MODPACK_SOURCE);
@@ -149,6 +152,7 @@ export function ModpackPicker({
       <div role="radiogroup" aria-label={t("wizard.modpackSourceLabel")} className="inline-flex w-fit overflow-hidden rounded-md border border-border">
         {MODPACK_SOURCES.map((option, index) => {
           const disabled = sourceStates?.[option] === false;
+          const inMaintenance = sourceMaintenance?.source === option;
           return (
             <button
               key={option}
@@ -161,17 +165,36 @@ export function ModpackPicker({
                 disabled
                   ? { color: "var(--danger)" }
                   : source === option
-                    ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: "var(--accent)" }
-                    : { color: "var(--muted)" }
+                    ? { boxShadow: "inset 0 0 0 1px var(--accent)", color: inMaintenance ? "var(--state-busy)" : "var(--accent)" }
+                    : { color: inMaintenance ? "var(--state-busy)" : "var(--muted)" }
               }
             >
               {SOURCE_LABELS[option]}
-              {disabled ? " ⚠" : ""}
+              {disabled ? " ⚠" : inMaintenance ? " 🛠" : ""}
             </button>
           );
         })}
       </div>
-      {sourceStates?.[source] === false ? (
+      {sourceStates?.[source] !== false && sourceMaintenance?.source === source ? (
+        <div
+          role="status"
+          className="mb-1 flex items-start gap-2.5 rounded-[10px] px-3 py-2.5 text-[13px] leading-snug"
+          style={{
+            background: "color-mix(in srgb, var(--state-busy) 12%, var(--surface))",
+            border: "1px solid color-mix(in srgb, var(--state-busy) 40%, transparent)",
+          }}
+        >
+          <span aria-hidden="true">🛠</span>
+          <div>
+            <strong className="block text-foreground">{t("wizard.sourceMaintenanceTitle", { source: SOURCE_LABELS[source] })}</strong>
+            <span className="text-muted">
+              {sourceMaintenance.message}
+              <br />
+              {t("wizard.sourceMaintenanceHint")}
+            </span>
+          </div>
+        </div>
+      ) : sourceStates?.[source] === false ? (
         <p className="mb-1 text-xs" style={{ color: "var(--danger)" }}>
           {t("wizard.modpackSourceDisabled", { source: SOURCE_LABELS[source] })}
         </p>

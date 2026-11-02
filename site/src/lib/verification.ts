@@ -83,7 +83,7 @@ function levenshtein(a: string, b: string): number {
   if (m === 0) return n;
   if (n === 0) return m;
   const prev = Array.from({ length: n + 1 }, (_, j) => j);
-  let curr = new Array(n + 1).fill(0);
+  const curr = new Array(n + 1).fill(0);
   for (let i = 1; i <= m; i++) {
     curr[0] = i;
     for (let j = 1; j <= n; j++) {

@@ -111,13 +111,37 @@ function setMinFileLevel(level) {
 function appendToFile(entry) {
   if (LEVEL_PRIORITY[entry.level] > LEVEL_PRIORITY[minFileLevel]) return;
   const line = `${new Date(entry.ts).toISOString()} ${entry.level.toUpperCase().padEnd(5)} ${entry.source.padEnd(8)} ${entry.message}\n`;
-  try {
-    fs.appendFileSync(todayLogPath(), line);
-  } catch {
-    // Ecriture disque non-critique (dossier verrouille, disque plein...) —
-    // le journal en memoire/la console de debug restent fonctionnels.
-  }
+  pendingLines.push(line);
+  // Une erreur part tout de suite : c'est souvent la dernière ligne avant un plantage.
+  if (entry.level === "error") flushLogFile();
+  else if (!flushTimer) flushTimer = setTimeout(flushLogFile, FLUSH_MS);
 }
+
+// Audit du 01/11 (L2) : un gros modpack écrit des milliers de lignes au démarrage. Les écrire une par
+// une bloquait le launcher : elles partent maintenant groupées, une fois par seconde, sans le bloquer.
+const FLUSH_MS = 1000;
+const pendingLines = [];
+let flushTimer = null;
+
+function flushLogFile() {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = null;
+  if (!pendingLines.length) return;
+  const block = pendingLines.splice(0).join("");
+  // Ecriture disque non-critique (dossier verrouille, disque plein...) —
+  // le journal en memoire/la console de debug restent fonctionnels.
+  try {
+    fs.appendFile(todayLogPath(), block, () => {});
+  } catch {}
+}
+
+// Fermeture : le reste part de façon synchrone, un appel asynchrone n'aurait pas le temps de finir.
+process.on("exit", () => {
+  if (!pendingLines.length) return;
+  try {
+    fs.appendFileSync(todayLogPath(), pendingLines.splice(0).join(""));
+  } catch {}
+});
 
 function pushLog({ level = "info", source = "launcher", message }) {
   // Traces de débogage (14/10, demande de Rushi) : masquées partout (console de debug comprise)

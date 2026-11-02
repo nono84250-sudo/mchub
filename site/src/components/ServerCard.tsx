@@ -151,7 +151,7 @@ export async function ServerCard({
         ) : null}
         {bannerUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={bannerUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={bannerUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
         ) : (
           <span
             aria-hidden="true"
@@ -173,7 +173,7 @@ export async function ServerCard({
           <span className="server-icon h-6 w-6 flex-shrink-0 overflow-hidden text-xs">
             {iconUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={iconUrl} alt="" className="h-full w-full object-cover" />
+              <img loading="lazy" decoding="async" src={iconUrl} alt="" className="h-full w-full object-cover" />
             ) : (
               name.trim().charAt(0).toUpperCase() || "?"
             )}

@@ -186,8 +186,8 @@ const LOADERS: Record<ExportCategory, (account: Account) => Promise<unknown>> = 
     })),
 
   presence: async (a) => {
-    const [p] = await rows('SELECT "lastSeenAt" FROM "userPresence" WHERE "userId" = ?', [a.id]);
-    return { derniereActiviteDansLeLauncher: (p?.lastSeenAt as string | undefined) ?? null };
+    const [p] = await rows('SELECT "lastSeenAt", "playingSlug" FROM "userPresence" WHERE "userId" = ?', [a.id]);
+    return { derniereActiviteDansLeLauncher: (p?.lastSeenAt as string | undefined) ?? null, serveurPublicEnCours: (p?.playingSlug as string | undefined) ?? null };
   },
 
   serveursSuivis: async (a) => {
@@ -303,13 +303,39 @@ const SELF_EXTRAS = {
       [] as unknown[],
     );
   },
-  // Le reglage seulement : le code ami lui-meme sert a se faire ajouter, il reste dans la page Amis.
+  // Audit du 01/11 : export complété. Mondes en ligne (sans les fichiers, trop lourds pour un e-mail :
+  // ils se récupèrent depuis Tableau de bord, Mondes), packs proposés et code ami.
+  mondesEnLigne: (a: Account) =>
+    safe(
+      async () =>
+        (
+          await rows(
+            `SELECT w."name", w."minecraftVersion", w."packName", w."lastDeviceName", w."lastPlayedAt", w."createdAt",
+                    (SELECT COUNT(*) FROM "cloudWorldVersion" v WHERE v."worldId" = w."id") AS "versions"
+             FROM "cloudWorld" w WHERE w."userId" = ? ORDER BY w."createdAt" DESC`,
+            [a.id],
+          )
+        ).map((w) => ({ nom: w.name, versionMinecraft: w.minecraftVersion, pack: w.packName, dernierPC: w.lastDeviceName, derniereSauvegarde: w.lastPlayedAt, versionsGardees: w.versions, creeLe: w.createdAt })),
+      [] as unknown[],
+    ),
+  packsProposes: (a: Account) =>
+    safe(
+      async () =>
+        (await rows('SELECT "name", "sizeBytes", "status", "note", "createdAt" FROM "playPackSubmission" WHERE "userId" = ? ORDER BY "createdAt" DESC', [a.id])).map((p) => ({
+          nom: p.name,
+          tailleEnOctets: p.sizeBytes,
+          etat: p.status,
+          reponseDeLEquipe: p.note ?? null,
+          envoyeLe: p.createdAt,
+        })),
+      [] as unknown[],
+    ),
   reglageAmis: (a: Account) =>
     safe(
       async () => {
-        const [u] = await rows('SELECT "friendPolicy" FROM "user" WHERE "id" = ?', [a.id]);
+        const [u] = await rows('SELECT "friendPolicy", "friendCode" FROM "user" WHERE "id" = ?', [a.id]);
         const p = String(u?.friendPolicy ?? "code");
-        return { quiPeutMAjouter: p === "all" ? "tout le monde" : p === "none" ? "personne" : "seulement avec mon code ami" };
+        return { quiPeutMAjouter: p === "all" ? "tout le monde" : p === "none" ? "personne" : "seulement avec mon code ami", monCodeAmi: u?.friendCode ?? null };
       },
       null as unknown,
     ),

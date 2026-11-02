@@ -10,7 +10,19 @@ import { normalizeMinecraftUuid } from "@/lib/launcherSession";
 // appel relisait lockedAt dans D1 (un aller-retour REST de plus par affichage, limite Cloudflare).
 // cache() de React partage la lecture entre les appels d'un meme rendu ; hors rendu React (proxy.ts),
 // il ne memorise rien et relit comme avant. Le verrou reste donc revalide a chaque requete.
-const readLockState = cache((id: string) => db.orm.public.User.select("lockedAt").where({ id }).first());
+// Audit du 01/11 (S4) : gardé aussi 1 min en mémoire, chaque actualisation de page d'un joueur connecté
+// relisait la base. Un verrou posé par l'équipe peut donc mettre jusqu'à 1 min à prendre effet.
+const LOCK_STATE_TTL_MS = 60_000;
+const LOCK_STATE_MAX = 5000;
+const lockStates = new Map<string, { at: number; value: { lockedAt: unknown } | null }>();
+const readLockState = cache(async (id: string) => {
+  const hit = lockStates.get(id);
+  if (hit && Date.now() - hit.at < LOCK_STATE_TTL_MS) return hit.value;
+  const value = (await db.orm.public.User.select("lockedAt").where({ id }).first()) ?? null;
+  if (lockStates.size >= LOCK_STATE_MAX) lockStates.clear();
+  lockStates.set(id, { at: Date.now(), value });
+  return value;
+});
 
 // "Se connecter avec Microsoft" est desormais l'unique moyen de se
 // connecter au site (plus d'email/mot de passe) : le meme identifiant

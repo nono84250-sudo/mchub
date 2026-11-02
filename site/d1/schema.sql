@@ -411,7 +411,13 @@ CREATE TABLE "playPack" (
   -- Liste de départ : identifiants ou slugs de projets Modrinth (JSON ["sodium", "lithium", ...]).
   "modrinthProjects" TEXT NOT NULL DEFAULT '[]',
   "createdAt"     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "updatedAt"     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "updatedAt"     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- Pack Omniscient (27/10) : 'list' (liste Modrinth) ou 'omni' (archive .omnipack dans R2).
+  "kind"          TEXT NOT NULL DEFAULT 'list',
+  "author"        TEXT,
+  -- JSON { "prefix", "parts", "size", "sha256" } (packs 'omni').
+  "archive"       TEXT,
+  "submissionId"  TEXT
 );
 
 -- Une ligne par version de Minecraft préparée. status : tested (Testée), to_test (À tester),
@@ -430,9 +436,30 @@ CREATE TABLE "playPackVersion" (
   "status"           TEXT NOT NULL DEFAULT 'to_test',
   "published"        INTEGER NOT NULL DEFAULT 0,
   "createdAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "updatedAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "updatedAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- Pack Omniscient (27/10) : JSON { resourcepacks, shaders, datapacks, worlds, own, tested }.
+  "extras"           TEXT NOT NULL DEFAULT '{}'
 );
 CREATE UNIQUE INDEX "playPackVersion_pack_mc_idx" ON "playPackVersion"("packId", "minecraftVersion");
+
+-- Packs proposés par les joueurs (Pack Omniscient, 27/10) : migration 2026-10-27-pack-omniscient.sql
+CREATE TABLE "playPackSubmission" (
+  "id"         TEXT PRIMARY KEY,
+  "userId"     TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "name"       TEXT NOT NULL,
+  "sizeBytes"  INTEGER NOT NULL,
+  "sha256"     TEXT NOT NULL,
+  "parts"      INTEGER NOT NULL,
+  "manifest"   TEXT NOT NULL DEFAULT '{}',
+  -- uploading, pending, imported, refused
+  "status"     TEXT NOT NULL DEFAULT 'uploading',
+  "note"       TEXT,
+  "packId"     TEXT,
+  "createdAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX "playPackSubmission_user_idx" ON "playPackSubmission"("userId");
+CREATE INDEX "playPackSubmission_status_idx" ON "playPackSubmission"("status");
 
 -- Offres : le quota et la durée de conservation viennent d'ici, jamais du code.
 CREATE TABLE "playOffer" (
@@ -525,3 +552,70 @@ CREATE TABLE "cloudUpload" (
   "expiresAt"        TEXT NOT NULL
 );
 CREATE INDEX "cloudUpload_user_idx" ON "cloudUpload"("userId");
+
+-- Panel Analytique (migration 2026-10-31) : visiteurs du site vus depuis moins de 2 min (ni IP, ni
+-- navigateur, ni page ; pas de clé étrangère, voir la migration) et pics par heure (totaux seulement).
+CREATE TABLE "analyticsSiteVisitor" (
+  "visitorId"  TEXT PRIMARY KEY,
+  "userId"     TEXT,
+  "lastSeenAt" TEXT NOT NULL
+);
+CREATE INDEX "analyticsSiteVisitor_lastSeenAt_idx" ON "analyticsSiteVisitor"("lastSeenAt");
+
+CREATE TABLE "analyticsDaily" (
+  "day"          TEXT NOT NULL,
+  "hour"         INTEGER NOT NULL,
+  "launcherPeak" INTEGER NOT NULL DEFAULT 0,
+  "sitePeak"     INTEGER NOT NULL DEFAULT 0,
+  "totalPeak"    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY ("day", "hour")
+);
+
+-- Catalogue de bugs (31/10) : voir d1/migrations/2026-10-31-catalogue-bugs.sql (les fiches sont dans la migration).
+CREATE TABLE IF NOT EXISTS "bugCatalogEntry" (
+  "id"          TEXT PRIMARY KEY,
+  "slug"        TEXT NOT NULL UNIQUE,
+  -- auto (corrigé tout seul), consent (réparation proposée), manual (à la main), analyse (jamais montré aux joueurs)
+  "status"      TEXT NOT NULL DEFAULT 'analyse',
+  -- player ou internal (équipe seulement : ni launcher ni page publique)
+  "visibility"  TEXT NOT NULL DEFAULT 'player',
+  "hasGuide"    INTEGER NOT NULL DEFAULT 0,
+  "notify"      INTEGER NOT NULL DEFAULT 1,
+  "published"   INTEGER NOT NULL DEFAULT 0,
+  -- mods, curseforge, crash, launcher, dev
+  "category"    TEXT NOT NULL DEFAULT 'crash',
+  "titleFr"     TEXT NOT NULL DEFAULT '',
+  "titleEn"     TEXT NOT NULL DEFAULT '',
+  "symptomFr"   TEXT NOT NULL DEFAULT '',
+  "symptomEn"   TEXT NOT NULL DEFAULT '',
+  "causeFr"     TEXT NOT NULL DEFAULT '',
+  "causeEn"     TEXT NOT NULL DEFAULT '',
+  -- Liste fixe : none, ignore, loader, remove, replace, update, redownload, cache
+  "fixAction"   TEXT NOT NULL DEFAULT 'none',
+  "fixArg"      TEXT NOT NULL DEFAULT '',
+  "fixTextFr"   TEXT NOT NULL DEFAULT '',
+  "fixTextEn"   TEXT NOT NULL DEFAULT '',
+  -- Tableaux JSON de phrases
+  "stepsFr"     TEXT NOT NULL DEFAULT '[]',
+  "stepsEn"     TEXT NOT NULL DEFAULT '[]',
+  -- log, crash ou launcher
+  "matchWhere"  TEXT NOT NULL DEFAULT 'log',
+  -- Texte exact cherché, sans tenir compte des majuscules ; plusieurs variantes séparées par « || »
+  "matchText"   TEXT NOT NULL DEFAULT '',
+  "matchMc"     TEXT NOT NULL DEFAULT '',
+  "matchLoader" TEXT NOT NULL DEFAULT '',
+  "fixedIn"     TEXT NOT NULL DEFAULT '',
+  "logSample"   TEXT NOT NULL DEFAULT '',
+  "createdAt"   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt"   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Seulement des compteurs par fiche et par jour : aucune donnée de joueur.
+CREATE TABLE IF NOT EXISTS "bugCatalogStat" (
+  "entryId"  TEXT NOT NULL REFERENCES "bugCatalogEntry"("id") ON DELETE CASCADE,
+  "day"      TEXT NOT NULL,
+  "seen"     INTEGER NOT NULL DEFAULT 0,
+  "repaired" INTEGER NOT NULL DEFAULT 0,
+  "refused"  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY ("entryId", "day")
+);

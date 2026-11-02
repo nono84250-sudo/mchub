@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { List, X } from "@phosphor-icons/react";
 import { logout } from "@/lib/actions/auth";
@@ -17,9 +17,28 @@ import { TEAMS_READY } from "@/lib/teamRules";
 export function MobileNav({ loggedIn, unread = 0, show = { friends: true, team: true } }: { loggedIn: boolean; unread?: number; show?: { friends: boolean; team: boolean } }) {
   const [open, setOpen] = useState(false);
   const { t } = useI18n();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Test vue telephone (30/10) : le menu ne se fermait qu'avec le bouton ou un lien. Echap et
+  // un toucher en dehors du menu le ferment aussi, comme un menu deroulant classique.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onPointer = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [open]);
 
   return (
-    <div className="sm:hidden">
+    <div ref={rootRef} className="sm:hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

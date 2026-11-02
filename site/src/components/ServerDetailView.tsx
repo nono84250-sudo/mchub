@@ -24,6 +24,7 @@ import { getTagCatalog } from "@/lib/tagRequests";
 import { tagName } from "@/lib/tagCatalog";
 import { MODPACK_SOURCE_LABELS } from "@/lib/modpack-types";
 import { ftbModpackPageUrl } from "@/lib/ftb";
+import { PUBLIC_PAGE_REFRESH_MS } from "@/lib/refreshSettings";
 
 // Libelles des sections, lus une fois dans le dictionnaire (partages avec l'editeur).
 export function serverPageLabels(dict: Dictionary): ServerPageLabels {
@@ -114,7 +115,7 @@ export async function ServerDetailView({ slug, server: raw, inviteCode }: { slug
       ) : null}
 
       <div className="relative mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <AutoRefresh intervalMs={30_000} />
+        <AutoRefresh intervalMs={PUBLIC_PAGE_REFRESH_MS} />
         <ViewTracker slug={slug} />
         <ServerHowToPlay launcherHref={launcherHref} />
         <div
@@ -153,7 +154,7 @@ export async function ServerDetailView({ slug, server: raw, inviteCode }: { slug
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span
-                className="inline-flex items-center whitespace-nowrap rounded-lg px-2.5 py-1 text-[12.5px] font-semibold"
+                className="inline-flex items-center rounded-lg px-2.5 py-1 text-[12.5px] font-semibold sm:whitespace-nowrap"
                 style={
                   tested
                     ? { color: "var(--success)", background: "color-mix(in srgb, var(--success) 16%, transparent)" }

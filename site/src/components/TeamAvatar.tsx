@@ -12,7 +12,7 @@ export function TeamAvatar({ team, size = 18, className = "" }: { team: Pick<Tea
     >
       {team.iconUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={team.iconUrl} alt="" className="h-full w-full object-cover" />
+        <img loading="lazy" decoding="async" src={team.iconUrl} alt="" className="h-full w-full object-cover" />
       ) : (
         teamInitials(team.name)
       )}

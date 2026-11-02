@@ -47,7 +47,7 @@ export function AdminCredentialsForm({ firstLogin, currentUsername }: { firstLog
     <form onSubmit={submit} style={{ display: "grid", gap: 12, maxWidth: 360 }}>
       {firstLogin && (
         <p style={{ margin: 0, color: "var(--warn)" }}>
-          Première connexion : tu dois choisir un nouveau nom d'utilisateur et un nouveau mot de passe avant de continuer.
+          Première connexion : tu dois choisir un nouveau nom d&apos;utilisateur et un nouveau mot de passe avant de continuer.
         </p>
       )}
       {/* 2026-10-10 : aria-label ajoute sur chaque champ (pas de <label> visible dans la

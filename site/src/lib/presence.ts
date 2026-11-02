@@ -44,16 +44,16 @@ export async function recordPresenceHeartbeat(userId: string, playingSlug: strin
 // si aucune ligne n'a ete ecrite (compte absent, verrouille, jeton revoque, ou tout juste a la
 // limite de la revocation) : l'appelant refait alors le chemin complet, qui tranche proprement.
 // La marge de 1 ms sur la revocation envoie les cas limites vers ce chemin complet.
-export async function recordSessionPresence(minecraftUuid: string, issuedAt: number, playingSlug: string | null): Promise<string | null> {
-  const rows = (await execSql(
+export function sessionPresenceStatement(minecraftUuid: string, issuedAt: number, playingSlug: string | null): { sql: string; params: unknown[] } {
+  return {
+    sql:
     'INSERT INTO "userPresence" ("userId", "lastSeenAt", "playingSlug") ' +
       'SELECT u."id", ?, ? FROM "user" u WHERE u."minecraftUuid" = ? AND u."lockedAt" IS NULL ' +
       'AND (u."sessionsValidAfter" IS NULL OR ? > (julianday(u."sessionsValidAfter") - 2440587.5) * 86400000.0 + 1) ' +
       'ON CONFLICT ("userId") DO UPDATE SET "lastSeenAt" = excluded."lastSeenAt", "playingSlug" = excluded."playingSlug", "updatedAt" = strftime(\'%Y-%m-%dT%H:%M:%fZ\', \'now\') ' +
       'RETURNING "userId"',
-    [new Date().toISOString(), playingSlug, minecraftUuid, issuedAt],
-  )) as { userId: string }[];
-  return rows[0]?.userId ?? null;
+    params: [new Date().toISOString(), playingSlug, minecraftUuid, issuedAt],
+  };
 }
 
 // Statut en ligne/hors ligne de plusieurs joueurs en une seule requete (liste d'amis) —

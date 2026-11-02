@@ -31,7 +31,7 @@
     "termsLong": "Conditions d'utilisation",
     "privacyShort": "Confidentialité",
     "soon": "bientôt",
-    "copyright": "© 2026 Omniscient. Pas affilié à Mojang ni Microsoft."
+    "copyright": "© 2026 Rushifa. Tous droits réservés. Omniscient n’est affilié ni à Mojang ni à Microsoft."
   },
   "home": {
     "badge": "Accès Minecraft/Xbox approuvé — le launcher est en ligne",
@@ -198,8 +198,15 @@
     "notifInstanceBackOnlineTitle": "{server} est de nouveau en ligne",
     "notifAdminMessageTitle": "Message de l'équipe à propos de {server}",
     "notifReportResolvedTitle": "Signalement résolu — {server}",
+    "notifReportReceivedTitle": "Nouveau signalement — {server}",
+    "notifReportReceivedTitleMany": "{count} nouveaux signalements — {server}",
+    "notifReportReceivedBody": "Un joueur a signalé un problème technique.",
+    "notifReportReceivedBodyMany": "Des joueurs ont signalé des problèmes techniques.",
+    "notifReportReceivedLink": "Voir les signalements",
     "notifReportRepliedTitle": "Réponse à ton signalement — {server}",
     "notifBroadcastAnnouncementTitle": "Annonce",
+    "notifNewsTitle": "Actualité",
+    "notifNewsRead": "Lire l'article",
     "notifBroadcastMaintenanceTitle": "Maintenance",
     "notifBroadcastAlertTitle": "Alerte",
     "notifBroadcastPromotionTitle": "Promotion",
@@ -224,7 +231,8 @@
     "forYouHoursAgo": "il y a {count} h",
     "navTeam": "Ma team",
     "navWorlds": "Mes mondes",
-    "navBeta": "Bêta"
+    "navBeta": "Bêta",
+    "navPacks": "Proposer un pack"
   },
   "servers": {
     "title": "Annuaire des serveurs",
@@ -414,6 +422,8 @@
       "team": "Team",
       "demandesDeTeam": "Demandes de team",
       "demandesDEtiquettes": "Demandes d'étiquettes",
+      "mondesEnLigne": "Mondes en ligne (liste)",
+      "packsProposes": "Packs proposés",
       "presence": "Dernière activité dans le launcher"
     },
     "exportNotIncluded": "Jamais dedans : jetons de connexion, codes d'invitation, qui a signalé tes serveurs, données des autres joueurs. Ton e-mail et ton mot de passe Microsoft : on ne les a pas.",
@@ -732,6 +742,8 @@
     "modpackModrinthHint": "Modrinth : tous les mods d'un modpack sont téléchargeables automatiquement.",
     "modpackCurseforgeHint": "CurseForge : les mods dont l'auteur interdit le téléchargement automatique devront être installés à la main.",
     "modpackFtbHint": "Packs officiels de l’équipe FTB. Les mods viennent de CurseForge, de Modrinth et des serveurs de FTB.",
+    "sourceMaintenanceTitle": "{source} est en maintenance",
+    "sourceMaintenanceHint": "La recherche et les téléchargements peuvent ne pas marcher. Tu peux quand même enregistrer ton serveur.",
     "modpackSourceDisabled": "{source} est temporairement désactivé par l'équipe — la recherche ne fonctionnera pas. Choisis une autre source ou saisis l'identifiant à la main.",
     "modpackSearchLabel": "Modpack",
     "modpackSearchPlaceholder": "Rechercher un modpack sur {source}…",
@@ -1328,5 +1340,66 @@
     "lockD": "Dès que tu es Supporter, le launcher envoie tes mondes ici tout seul. Rien à faire de ton côté.",
     "note": "Sans abonnement, rien ne change dans ton jeu : tes mondes et leurs sauvegardes restent sur ton PC.",
     "fair": "Supporter aide aussi à payer le site. Aucun avantage en jeu, aucun classement payant."
+  },
+  "omnipack": {
+    "title": "Proposer un pack",
+    "beta": "Bêta",
+    "lead": "Tu as fait un Pack Omniscient dans le launcher ? Exporte-le avec « ⬆ Pour Omniscient » (un fichier .omnipack) et envoie-le ici. L'équipe le teste, puis il peut être proposé à tous les joueurs dans « Jouer ».",
+    "rules": "Seulement des mods Modrinth (jamais de CurseForge). 300 Mo au plus : exporte sans les mondes si c'est trop gros. 3 packs en attente au maximum.",
+    "pick": "Choisir un fichier .omnipack",
+    "hashing": "Préparation du fichier…",
+    "sending": "Envoi : {pct} %",
+    "checking": "Vérification du pack…",
+    "sent": "Pack envoyé ! Il est en attente de l'équipe.",
+    "notOmni": "Choisis un fichier .omnipack (bouton « ⬆ Pour Omniscient » dans le launcher).",
+    "tooBig": "Fichier trop gros (300 Mo au plus). Exporte le pack sans les mondes.",
+    "error": "Envoi impossible : {msg}",
+    "mine": "Mes packs proposés",
+    "none": "Aucun pack proposé pour le moment.",
+    "stUploading": "Envoi pas terminé",
+    "stPending": "En attente de l'équipe",
+    "stImported": "Accepté",
+    "stRefused": "Refusé",
+    "versions": "{n} version(s) de Minecraft",
+    "cancel": "Retirer",
+    "note": "Message de l'équipe : {note}"
+  },
+  "bugs": {
+    "title": "Bugs connus et solutions",
+    "crumb": "Bugs connus",
+    "help": "Aide",
+    "lead": "Les problèmes déjà rencontrés avec Omniscient et comment les régler. Beaucoup se corrigent tout seuls dans le launcher, sans que tu aies quoi que ce soit à faire.",
+    "all": "Tous",
+    "search": "Chercher : message d'erreur, mod…",
+    "none": "Rien ne correspond. Essaie un autre mot, ou écris-nous.",
+    "guide": "Guide complet",
+    "status": {
+      "auto": "Se corrige tout seul",
+      "consent": "Réparation proposée",
+      "manual": "À corriger à la main"
+    },
+    "category": {
+      "mods": "Mods et packs",
+      "curseforge": "CurseForge",
+      "crash": "Le jeu plante",
+      "launcher": "Launcher",
+      "dev": "Équipe (dev)"
+    },
+    "allVersions": "Toutes les versions",
+    "updated": "Mis à jour le {date}",
+    "emptyT": "Aucun bug connu pour l'instant",
+    "emptyD": "Si quelque chose ne marche pas, écris-nous : on s'en occupe.",
+    "whatYouSee": "Ce que tu vois",
+    "why": "Pourquoi",
+    "fix": "La solution",
+    "nothing": "Rien à faire.",
+    "auto": "Le launcher le corrige tout seul.",
+    "autoSince": "Le launcher le corrige tout seul depuis la version {v}.",
+    "oneClick": "En un clic :",
+    "oneClickD": "quand le problème arrive, le launcher te propose de le corriger (bouton « Corriger »).",
+    "yourself": "Le faire toi-même",
+    "back": "Tous les bugs connus",
+    "cfTop": "← ce bouton donne la DERNIÈRE version : pas celui-là",
+    "cfCaption": "Étape 2 : sur la page du fichier, prends le bouton sous le nom du fichier (entouré en vert)."
   }
 }

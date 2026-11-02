@@ -4,6 +4,20 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { getInstanceWatch, setInstanceWatch } from "@/lib/instanceWatch";
 import { withD1Busy } from "@/lib/d1Busy";
+import { canSeeServer, proofFromRequest } from "@/lib/public-servers";
+
+// Audit du 01/11 : sans ce contrôle, deviner le nom court d'un serveur privé suffisait à le suivre
+// et à recevoir son nom dans les notifications. Serveur privé : il faut sa preuve (code d'invitation
+// du serveur rejoint, ou propriétaire), sinon « introuvable », comme s'il n'existait pas.
+const WATCH_COLUMNS = ["id", "playerCount", "isPrivate", "inviteCode"];
+async function watchableServer(request: Request, slug: string) {
+  const server = await db.orm.public.Server.select(...WATCH_COLUMNS)
+    .include("owner", (o) => o.select("minecraftUuid"))
+    .where({ slug })
+    .first();
+  if (!server || !(await canSeeServer(server, proofFromRequest(request)))) return null;
+  return server;
+}
 
 // Lecture/écriture de la case "Me prévenir du changement de statut de cette instance" (point 9,
 // voir INSTANCE_SETTINGS_FIELDS côté launcher) depuis la même petite fenêtre "Réglages" que le
@@ -29,7 +43,7 @@ async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/serv
   if (identity !== "verified") return identityErrorResponse(identity);
 
   const { slug } = await ctx.params;
-  const server = await db.orm.public.Server.select("id").where({ slug }).first();
+  const server = await watchableServer(request, slug);
   if (!server) {
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
   }
@@ -56,7 +70,7 @@ async function handlePATCH(request: Request, ctx: RouteContext<"/api/launcher/se
   if (identity !== "verified") return identityErrorResponse(identity);
 
   const { slug } = await ctx.params;
-  const server = await db.orm.public.Server.select("id", "playerCount").where({ slug }).first();
+  const server = await watchableServer(request, slug);
   if (!server) {
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
   }

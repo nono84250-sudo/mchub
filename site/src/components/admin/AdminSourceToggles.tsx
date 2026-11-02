@@ -54,7 +54,7 @@ export function AdminSourceToggles({ initial }: { initial: Record<string, boolea
   return (
     <div style={{ display: "grid", gap: 10, maxWidth: 420 }}>
       <p style={{ margin: "0 0 4px", fontSize: 13, color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
-        Coché = source active pour la recherche et l'installation de modpacks, pour tous les joueurs. Décoché = désactivée, signalée en rouge partout où un propriétaire choisit son modpack.
+        Coché = source active pour la recherche et l&apos;installation de modpacks, pour tous les joueurs. Décoché = désactivée, signalée en rouge partout où un propriétaire choisit son modpack.
       </p>
       {Object.keys(LABELS).map((source) => (
         <label key={source} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", border: "1px solid var(--color-divider)", borderRadius: "var(--radius-md)" }}>

@@ -1,0 +1,47 @@
+AIDE DISCORD DANS LES FENETRES DE BUG : CE QUI EST FAIT (2 novembre, en local, rien de pousse)
+Preview validee : https://claude.ai/artifact/LP4EmMPCj6cTmG2C5v9LHf
+Liste de tests : https://claude.ai/artifact/LruZmd9dZFHZAWty6BmSzK (categorie « Aide Discord », 9 tests)
+Interrupteur Laboratoire : « Aide Discord dans les bugs » (id bugDiscord, Confort et aide, defaut Test).
+Coupe : l'ancienne fenetre revient, avec « Copier les logs ».
+
+FICHIERS (copies dans avant\ et apres\)
+- launcher/src/bugHelpUi.js (NOUVEAU) : le bloc « Besoin d'aide ? » et ses 3 boutons.
+- launcher/src/crashHelp.js : nettoyage du texte (sanitize), rapport (buildReport), copies nettoyees pour le zip.
+- launcher/src/main.js : canaux bugHelp:text, bugHelp:zip, bugHelp:discord ; dernier crash garde avec ses infos.
+- launcher/src/preload.js : window.mchub.bugHelp.
+- launcher/src/play.js : fenetre d'aide au crash.
+- launcher/src/bugCatalogUi.js : fenetres « Probleme connu » (seulement quand des journaux existent) + reparation echouee.
+- launcher/src/index.html : charge bugHelpUi.js.
+- launcher/src/i18n.js : textes FR et EN.
+- site/src/lib/features.ts : l'interrupteur.
+
+ZIP ET LIEN
+- Le zip va directement dans Telechargements, puis l'Explorateur s'ouvre dessus (pas de dialogue « Enregistrer sous »).
+  Contenu : rapport.txt, latest.log (5 Mo de fin au plus), le rapport de crash de la partie. Tout passe par sanitize.
+- Le lien Discord est une constante dans main.js : l'interface n'envoie aucune adresse.
+
+ECARTS AVEC LA PREVIEW (ce qui n'existe pas encore dans le vrai code)
+1. La fenetre « Envoyer le rapport », son ecran « Envoi impossible » et l'ecran d'envoi reussi n'existent pas en local
+   (errorReports.js = Sentry seulement, sans fenetre). Donc pas de bouton « Envoyer le rapport » dans la fenetre de crash,
+   et rien sur ces ecrans. Quand ils seront codes : window.__bugHelp.html() et .bind(racine, notifier) suffisent.
+2. Le « Envoi impossible » qui existe dans le launcher est celui du signalement d'un serveur (va au proprietaire) :
+   pas touche, ce n'est pas un rapport de bug.
+
+CE QUI RESTE VISIBLE DANS LE RAPPORT
+- Le pseudo Minecraft est dans latest.log (« Setting user: ... ») ; les messages du chat en jeu y sont aussi si une partie a eu lieu.
+  Le texte de la fenetre ne promet que le compte Windows, le mot de passe, le jeton et les mondes.
+- Masques aussi : --accessToken, --clientId, --xuid, --uuid, jetons JWT, Bearer, token=, password=, api_key=.
+
+VERIFIE
+- Launcher local + site local, vraie partie du pack « Test » arretee de force : fenetre, rapport 227 lignes, zip 16 Ko
+  (latest.log + rapport.txt ; pas de rapport de crash car arret force). 0 occurrence du nom de session, 0 chemin C:\Users, jeton masque.
+- FR, EN, sombre, clair, Copier tout, zip, Discord (appel intercepte : bonne adresse exacte), fiche catalogue consent et manual,
+  sans journaux (pas de bloc), etat vide (message « Aucun rapport de plantage »), interrupteur coupe (ancienne fenetre).
+- Captures : tests\fr.png, en.png, light-cat.png, real.png.
+NON VERIFIE
+- Le vrai passage de l'interrupteur sur Cachee dans le Laboratoire (coupure simulee cote launcher, pour ne pas changer ton reglage).
+- L'ouverture reelle de Discord : a faire au test bd5.
+
+A SAVOIR
+- Le site local a du etre redemarre : il n'avait pas vu la modification de features.ts.
+- Le pack « Test » a ete lance pour l'essai : sa date de derniere partie a change, ses fichiers de mods non.

@@ -46,9 +46,11 @@ export async function ServerStatePill({
         style={state === "unk" ? { border: `1.5px dashed ${color}` } : { background: color }}
       />
       {text}
+      {/* Test vue telephone (30/10) : masquee (display none) hors survol, pas juste transparente --
+          transparente, elle depassait quand meme du bord droit sur la fiche et elargissait la page. */}
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-30 w-max max-w-[240px] -translate-x-1/2 whitespace-normal rounded-lg border border-white/15 bg-[#0e0f16] px-2.5 py-2 text-left text-xs font-normal leading-snug text-[#f1f1f4] opacity-0 shadow-[0_8px_20px_rgba(0,0,0,0.4)] transition-opacity group-hover/pill:opacity-100"
+        className="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-30 w-max max-w-[240px] -translate-x-1/2 whitespace-normal rounded-lg border border-white/15 bg-[#0e0f16] px-2.5 py-2 text-left text-xs font-normal leading-snug text-[#f1f1f4] hidden shadow-[0_8px_20px_rgba(0,0,0,0.4)] group-hover/pill:block"
       >
         <b className="mb-0.5 block font-semibold" style={{ color }}>
           ● {label}

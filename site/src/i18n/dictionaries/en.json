@@ -31,7 +31,7 @@
     "termsLong": "Terms of use",
     "privacyShort": "Privacy",
     "soon": "soon",
-    "copyright": "© 2026 Omniscient. Not affiliated with Mojang or Microsoft."
+    "copyright": "© 2026 Rushifa. All rights reserved. Omniscient is not affiliated with Mojang or Microsoft."
   },
   "home": {
     "badge": "Minecraft/Xbox access approved — the launcher is online",
@@ -198,8 +198,15 @@
     "notifInstanceBackOnlineTitle": "{server} is back online",
     "notifAdminMessageTitle": "Message from the team about {server}",
     "notifReportResolvedTitle": "Report resolved — {server}",
+    "notifReportReceivedTitle": "New report — {server}",
+    "notifReportReceivedTitleMany": "{count} new reports — {server}",
+    "notifReportReceivedBody": "A player reported a technical problem.",
+    "notifReportReceivedBodyMany": "Players reported technical problems.",
+    "notifReportReceivedLink": "View reports",
     "notifReportRepliedTitle": "Reply to your report — {server}",
     "notifBroadcastAnnouncementTitle": "Announcement",
+    "notifNewsTitle": "News",
+    "notifNewsRead": "Read the article",
     "notifBroadcastMaintenanceTitle": "Maintenance",
     "notifBroadcastAlertTitle": "Alert",
     "notifBroadcastPromotionTitle": "Promotion",
@@ -224,7 +231,8 @@
     "forYouHoursAgo": "{count} h ago",
     "navTeam": "My team",
     "navWorlds": "My worlds",
-    "navBeta": "Beta"
+    "navBeta": "Beta",
+    "navPacks": "Submit a pack"
   },
   "servers": {
     "title": "Server directory",
@@ -414,6 +422,8 @@
       "team": "Team",
       "demandesDeTeam": "Team requests",
       "demandesDEtiquettes": "Tag requests",
+      "mondesEnLigne": "Online worlds (list)",
+      "packsProposes": "Suggested packs",
       "presence": "Last activity in the launcher"
     },
     "exportNotIncluded": "Never included: sign-in tokens, invite codes, who reported your servers, other players' data. Your Microsoft email and password: we don't have them.",
@@ -732,6 +742,8 @@
     "modpackModrinthHint": "Modrinth: every mod in a modpack can be downloaded automatically.",
     "modpackCurseforgeHint": "CurseForge: mods whose author forbids automatic download will have to be installed by hand.",
     "modpackFtbHint": "Official packs from the FTB team. Mods come from CurseForge, Modrinth and FTB’s own servers.",
+    "sourceMaintenanceTitle": "{source} is under maintenance",
+    "sourceMaintenanceHint": "Search and downloads may not work. You can still save your server.",
     "modpackSourceDisabled": "{source} is temporarily disabled by the team — search won't work. Pick another source or enter the ID by hand.",
     "modpackSearchLabel": "Modpack",
     "modpackSearchPlaceholder": "Search a modpack on {source}…",
@@ -1328,5 +1340,66 @@
     "lockD": "As soon as you are a Supporter, the launcher sends your worlds here on its own. Nothing to do on your side.",
     "note": "Without a subscription nothing changes in your game: your worlds and their backups stay on your PC.",
     "fair": "Supporter also helps pay for the site. No in-game advantage, no paid ranking."
+  },
+  "omnipack": {
+    "title": "Submit a pack",
+    "beta": "Beta",
+    "lead": "Made an Omniscient Pack in the launcher? Export it with “⬆ For Omniscient” (an .omnipack file) and send it here. The team tests it, then it can be offered to every player in “Play”.",
+    "rules": "Modrinth mods only (never CurseForge). 300 MB at most: export without worlds if it's too big. At most 3 packs waiting.",
+    "pick": "Choose an .omnipack file",
+    "hashing": "Preparing the file…",
+    "sending": "Sending: {pct}%",
+    "checking": "Checking the pack…",
+    "sent": "Pack sent! It's waiting for the team.",
+    "notOmni": "Choose an .omnipack file (“⬆ For Omniscient” button in the launcher).",
+    "tooBig": "File too big (300 MB max). Export the pack without worlds.",
+    "error": "Couldn't send: {msg}",
+    "mine": "My submitted packs",
+    "none": "No pack submitted yet.",
+    "stUploading": "Upload not finished",
+    "stPending": "Waiting for the team",
+    "stImported": "Accepted",
+    "stRefused": "Refused",
+    "versions": "{n} Minecraft version(s)",
+    "cancel": "Remove",
+    "note": "Message from the team: {note}"
+  },
+  "bugs": {
+    "title": "Known bugs and fixes",
+    "crumb": "Known bugs",
+    "help": "Help",
+    "lead": "Problems already met with Omniscient and how to solve them. Many fix themselves in the launcher, with nothing for you to do.",
+    "all": "All",
+    "search": "Search: error message, mod…",
+    "none": "Nothing matches. Try another word, or write to us.",
+    "guide": "Full guide",
+    "status": {
+      "auto": "Fixes itself",
+      "consent": "Repair offered",
+      "manual": "Fix by hand"
+    },
+    "category": {
+      "mods": "Mods and packs",
+      "curseforge": "CurseForge",
+      "crash": "Game crash",
+      "launcher": "Launcher",
+      "dev": "Team (dev)"
+    },
+    "allVersions": "All versions",
+    "updated": "Updated {date}",
+    "emptyT": "No known bug yet",
+    "emptyD": "If something doesn't work, write to us: we'll take care of it.",
+    "whatYouSee": "What you see",
+    "why": "Why",
+    "fix": "The fix",
+    "nothing": "Nothing to do.",
+    "auto": "The launcher fixes it on its own.",
+    "autoSince": "The launcher fixes it on its own since version {v}.",
+    "oneClick": "In one click:",
+    "oneClickD": "when the problem happens, the launcher offers to fix it (“Fix it” button).",
+    "yourself": "Do it yourself",
+    "back": "All known bugs",
+    "cfTop": "← this button gives the LATEST version: not this one",
+    "cfCaption": "Step 2: on the file page, use the button under the file name (circled in green)."
   }
 }

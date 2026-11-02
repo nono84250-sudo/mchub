@@ -10,6 +10,28 @@ window.addEventListener("unhandledrejection", (event) => {
   window.mchub.reportError({ message: reason?.message ?? String(reason), stack: reason?.stack });
 });
 
+// Animations en boucle (ronds qui tournent, barres sans fin) : un bloc redessiné recrée l'élément et
+// l'animation repartait de zéro à chaque mise à jour, ce qui saccadait (retour de Rushi du 27/10 :
+// pilule de téléchargement en haut à droite, fenêtres d'import). Chaque animation qui apparaît
+// reprend à la même horloge que les autres, donc là où l'ancienne en était.
+(function keepSpinnersInPhase() {
+  const SEL = ".activity-ring, .mc-conn-spin, .ip-spin, .activity-bar.indeterminate > i, .conn-indeterminate, .cf-bar.ind > i";
+  const sync = (el) => {
+    const d = getComputedStyle(el).animationDuration || "";
+    const ms = parseFloat(d) * (d.endsWith("ms") ? 1 : 1000);
+    if (ms > 0) el.style.animationDelay = `-${Math.round(performance.now() % ms)}ms`;
+  };
+  new MutationObserver((records) => {
+    for (const r of records) {
+      for (const n of r.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.matches(SEL)) sync(n);
+        n.querySelectorAll(SEL).forEach(sync);
+      }
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
+})();
+
 const gateEl = document.getElementById("gate");
 const gateMessageEl = document.getElementById("gate-message");
 const gateLoginBtn = document.getElementById("gate-login");
@@ -492,14 +514,28 @@ function friendsBySlug() {
 }
 let friendsForListsAt = 0;
 const FRIENDS_FOR_LISTS_MS = 5 * 60_000;
-function refreshFriendsForLists(onChange) {
+// Correctif 3 de l'audit du 28/10 : tant qu'une liste de serveurs est affichee, les amis arrivent
+// avec le signal de presence (sendPresenceHeartbeat), sans appel a part. Le site deja en ligne ne
+// les renvoie pas encore : pulseGivesFriends reste faux et l'appel a part continue comme avant.
+// Au-dela de FRIENDS_STALE_MS (liste rouverte apres un long moment, fin de partie), un appel a part.
+const FRIENDS_STALE_MS = 10 * 60_000;
+let pulseGivesFriends = false;
+// Derniere liste qui a demande les amis : son panneau (encore affiche ?) et quoi redessiner.
+let friendsListsTarget = null;
+function friendsListsVisible() {
+  return !!friendsListsTarget && friendsListsTarget.panel.isConnected && !friendsListsTarget.panel.hidden;
+}
+function friendsChangedForLists(before) {
+  if (JSON.stringify([...friendsBySlug()]) !== before && friendsListsTarget) friendsListsTarget.onChange();
+}
+function refreshFriendsForLists(onChange, panel) {
+  friendsListsTarget = { onChange, panel };
   // 21/10 : pas de relecture des amis pendant une partie (une seule a la fermeture du jeu).
   if (!signedIn || gamePlaying || Date.now() - friendsForListsAt < FRIENDS_FOR_LISTS_MS) return;
+  if (pulseGivesFriends && friendsForListsAt && Date.now() - friendsForListsAt < FRIENDS_STALE_MS) return;
   friendsForListsAt = Date.now();
   const before = JSON.stringify([...friendsBySlug()]);
-  refreshFriends({ background: true }).then(() => {
-    if (JSON.stringify([...friendsBySlug()]) !== before) onChange();
-  });
+  refreshFriends({ background: true }).then(() => friendsChangedForLists(before));
 }
 
 function serverMatches(server, f, skip, friends) {
@@ -877,6 +913,7 @@ async function renderRowsInto(container, servers, origin, onFavoriteToggled, pla
       btn.setAttribute("aria-expanded", String(opening));
     });
   });
+  hideInstallItemsForInstalled(container);
   container.querySelectorAll("[data-row-install]").forEach((btn) => {
     btn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -975,7 +1012,7 @@ async function renderList(servers) {
   renderFilteredList();
   refreshFriendsForLists(() => {
     if (!listEl.hidden) renderFilteredList();
-  });
+  }, listEl);
 }
 
 // Recherche en direct (nom, description, modpack), sans appel reseau : la liste est deja la.
@@ -1239,17 +1276,16 @@ function pageSectionBodyHtml(section, page, server) {
         <p class="page-video-note">${t("serverPage.videoCaption")}</p>`;
       }
       // Vignette sans requete vers YouTube, lecteur youtube-nocookie au clic (ou tout seul et
-      // sans le son si le proprietaire a coche « Lancer automatiquement », voir setupPageVideo).
+      // Audit du 01/11 : plus de lancement automatique, même si le propriétaire l'a coché).
       return `
-        <div class="page-video-box" data-video-id="${escapeHtml(page.videoId)}" data-video-autoplay="${page.videoAutoplay ? "1" : ""}">
+        <div class="page-video-box" data-video-id="${escapeHtml(page.videoId)}" data-video-autoplay="">
           <button type="button" class="page-video" aria-label="${escapeHtml(t("serverPage.videoPlay"))}">
             <span class="page-video-play"></span>
           </button>
         </div>
         <p class="page-video-note">${t("serverPage.videoCookies")}
           <button type="button" class="page-video-open" data-link-kind="video" data-link-value="${escapeHtml(page.videoId)}">${t("serverPage.videoOpen")}</button>
-        </p>
-        <p class="page-video-autonote">${t("serverPage.videoAutoplayNote")}</p>`;
+        </p>`;
     case "rules":
       return `<ol class="page-rules">${page.rules.map((rule) => `<li>${escapeHtml(rule)}</li>`).join("")}</ol>`;
     case "social": {
@@ -1296,15 +1332,24 @@ function openGalleryLightbox(item, index) {
 // Lecteur integre, lancement automatique, reglage « Bloquer » et petite phrase : coupes le 16/10
 // (YouTube demandait de se connecter, « pas un robot »). Le code reste ; true pour les reactiver.
 const VIDEO_EMBED_ENABLED = true; // rallume le 18/10 (test de Rushi : le lecteur marche)
+const VIDEO_AUTOPLAY_ENABLED = false; // audit du 01/11 : aucune vidéo sans clic (voir lib/serverPage.ts du site)
 
 // Video de la fiche (16/10) : le lecteur YouTube (domaine youtube-nocookie) ne se charge qu'au
 // clic, ou des que la video est visible a 90 % si le proprietaire a coche « Lancer
 // automatiquement » (alors sans le son). L'identifiant est deja verifie par readServerPage.
 // Le joueur peut l'interdire dans Parametres > Divers (blockVideoAutoplay) : clic seulement.
+// Rushi 25/10 : la video s'arrete des que la fiche n'est plus affichee (autre onglet du menu,
+// fiche fermee, retour a l'annuaire) : le lecteur est retire et la vignette revient, prete a
+// relancer. Faire defiler la fiche ne coupe rien, seule une fiche cachee compte.
 function setupPageVideo(box, blockAutoplay) {
   const id = box.dataset.videoId;
   if (!/^[\w-]{11}$/.test(id || "")) return;
+  const thumbHtml = box.innerHTML;
   let observer = null;
+  const stop = () => {
+    box.innerHTML = thumbHtml;
+    setupPageVideo(box, blockAutoplay);
+  };
   const play = (muted) => {
     if (observer) observer.disconnect();
     if (box.querySelector("iframe")) return;
@@ -1315,6 +1360,15 @@ function setupPageVideo(box, blockAutoplay) {
     frame.allowFullscreen = true;
     frame.referrerPolicy = "strict-origin-when-cross-origin";
     box.replaceChildren(frame);
+    // Une fiche cachee (hidden sur elle ou sur un parent) ramene la boite a 0 x 0.
+    const hideWatch = new ResizeObserver(() => {
+      if (!box.isConnected) return hideWatch.disconnect();
+      if (!box.checkVisibility()) {
+        hideWatch.disconnect();
+        stop();
+      }
+    });
+    hideWatch.observe(box);
   };
   box.querySelector(".page-video")?.addEventListener("click", () => play(false));
   if (box.dataset.videoAutoplay === "1" && !blockAutoplay) {
@@ -1473,6 +1527,7 @@ async function renderDetail(server) {
           ${server.addToServerList === false ? `<p class="detail-list-note"><i aria-hidden="true"></i>${escapeHtml(t("serverDetail.noServerListNote"))}</p>` : ""}
           <div class="detail-actions-row">
             ${showInstallBtn && action.kind !== "install" ? `<button class="btn-secondary" id="install-btn" type="button">${DOWNLOAD_SVG}${t("serverDetail.installBtn")}</button>` : ""}
+            ${!showInstallBtn ? `<button class="btn-secondary" id="uninstall-btn" type="button">${escapeHtml(t("myInstances.menuUninstall"))}</button>` : ""}
             <button class="btn-secondary detail-fav-btn${isFav ? " active" : ""}" type="button" aria-pressed="${isFav}">${STAR_SVG}${isFav ? t("serverPage.favOn") : t("serverPage.fav")}</button>
             ${
               signedIn
@@ -1560,6 +1615,10 @@ async function renderDetail(server) {
     syncJoinButtons();
   }
 
+  // Deja installe (Rushi 25/10) : « Désinstaller » a la place de « Installer », avec confirmation.
+  document.getElementById("uninstall-btn")?.addEventListener("click", async () => {
+    if ((await uninstallServer({ slug: server.slug, name: server.name, type: server.type === "modded" ? "modded" : "vanilla" })) && !detailEl.hidden) renderDetail(server);
+  });
   const installBtn = document.getElementById("install-btn");
   if (installBtn) {
     installBtn.addEventListener("click", () => installServerStandalone(server, installBtn));
@@ -2014,6 +2073,9 @@ function activityPillParts(state) {
         icon: '<span class="status-dot online"></span>',
         long: state.name ? t("activity.pillPlay", { name: state.name, time: formatPlayMinutes(activity.playingSince || Date.now()) }) : t("activity.shortPlay"),
         short: t("activity.shortPlay"),
+        // 28/10 (Rushi) : un nom de pack trop long cachait le temps de jeu. Le nom est coupé (…),
+        // « En jeu » et le temps restent toujours visibles (voir renderActivity).
+        play: state.name ? { name: state.name, time: formatPlayMinutes(activity.playingSince || Date.now()) } : null,
       };
     case "fail":
       return { cls: "err", icon: '<span class="status-dot offline"></span>', long: t("activity.pillFail"), short: t("activity.shortFail") };
@@ -2318,6 +2380,9 @@ function relativeDayText(at) {
 
 let playCountsCache = {};
 let activityRenderKey = "";
+let activityIconKey = null;
+
+let activityPointerDown = false;
 
 function renderActivity() {
   const state = activityState();
@@ -2329,16 +2394,32 @@ function renderActivity() {
   const cloud = window.playCloudActivity?.() || null;
   if (cloud && (cloud.over || !["install", "move", "start", "play", "fail"].includes(state.phase))) parts = cloud.parts;
   pill.className = `activity-pill${parts.cls ? ` ${parts.cls}` : ""}`;
-  document.getElementById("activity-pill-icon").innerHTML = parts.icon;
-  document.getElementById("activity-pill-text").textContent = parts.long;
+  // Seulement si l'icone change : sinon son anneau animé repart de zéro à chaque progression.
+  if (parts.icon !== activityIconKey) {
+    activityIconKey = parts.icon;
+    document.getElementById("activity-pill-icon").innerHTML = parts.icon;
+  }
+  const pillText = document.getElementById("activity-pill-text");
+  if (parts.play) {
+    const [pre, rest = ""] = t("activity.pillPlay", { name: "\u0001", time: "\u0002" }).split("\u0001");
+    const [mid, post = ""] = rest.split("\u0002");
+    pillText.innerHTML = `${escapeHtml(pre)}<span class="activity-pill-name">${escapeHtml(parts.play.name)}</span>${escapeHtml(mid)}${escapeHtml(parts.play.time)}${escapeHtml(post)}`;
+    pillText.classList.add("split");
+  } else {
+    pillText.textContent = parts.long;
+    pillText.classList.remove("split");
+  }
   document.getElementById("activity-pill-short").textContent = parts.short;
   pill.title = parts.long;
   pill.setAttribute("aria-label", parts.long);
 
   // Le panneau n'est redessine que si son contenu change (sinon un clic en cours sur un de ses
   // boutons pourrait tomber sur un element remplace entre mousedown et click).
+  // Pendant le telechargement le texte change a chaque tick : on attend aussi que le bouton de la
+  // souris soit relache dans le panneau (26/10, Rushi : la case « Lancer le jeu quand c'est fini »
+  // demandait une dizaine de clics), puis on rattrape au relachement (voir wireTasksMenu).
   const panelHtml = (cloud?.panelHtml || "") + activityPanelHtml(state);
-  if (panelHtml !== activityRenderKey) {
+  if (panelHtml !== activityRenderKey && !activityPointerDown) {
     activityRenderKey = panelHtml;
     document.getElementById("activity-panel").innerHTML = panelHtml;
   }
@@ -2569,6 +2650,17 @@ async function loadActivityHistory() {
   renderActivity();
 }
 
+// Instance deja installee sur ce PC pour ce serveur (lecture disque seule), sinon null.
+async function installedInstanceFor(server) {
+  try {
+    const local = await window.mchub.listLocalInstances();
+    const instance = local?.ok ? local.instances.find((entry) => entry.slug === server.slug) : null;
+    return instance ? { ...instance, modpackName: instance.modpackName || server.name } : null;
+  } catch {
+    return null;
+  }
+}
+
 async function launchServer(server) {
   // Le flag doit etre pose ICI, avant le moindre await — pas apres
   // applyRecommendedRamIfNeeded() (qui peut ouvrir une modale bloquante et
@@ -2582,8 +2674,21 @@ async function launchServer(server) {
 
   // Connexion demandee ici, pas avant (2026-10-11, audit onboarding) : premier
   // moment ou elle est reellement necessaire, quel que soit le point d'entree.
+  // Mode hors ligne (25/10, test de Rushi sur son portable) : sans internet, la connexion
+  // Microsoft echoue forcement et le joueur revenait a l'annuaire sans rien pouvoir faire.
+  // Si le serveur est deja installe sur ce PC, on lance le jeu en solo hors ligne a la place
+  // (meme chemin que « Jouer en solo » dans Mes instances).
   if (!signedIn) {
-    const signedInNow = await attemptSignIn(true);
+    const offlineInstance = await installedInstanceFor(server);
+    if (offlineInstance && !navigator.onLine) {
+      launchInProgress = false;
+      return launchOfflineInstance(offlineInstance);
+    }
+    const signedInNow = await attemptSignIn(true, { offlineInstance });
+    if (signedInNow === "offline") {
+      launchInProgress = false;
+      return launchOfflineInstance(offlineInstance);
+    }
     if (!signedInNow) {
       launchInProgress = false;
       return null;
@@ -2705,6 +2810,10 @@ async function confirmFirstInstall(server, { launch }) {
   if (installed) return true;
 
   const need = server.type === "modded" ? FIRST_INSTALL_NEED_BYTES.modded : FIRST_INSTALL_NEED_BYTES.vanilla;
+  // 25/10 (demande de Rushi) : la source du modpack (CurseForge, Modrinth, FTB) est en maintenance.
+  const SOURCE_SYSTEMS = { curseforge: "CurseForge", modrinth: "Modrinth", ftb: "FTB" };
+  const sourceDisruption =
+    server.type === "modded" && currentDisruption && currentDisruption.system === SOURCE_SYSTEMS[server.modpackSource || "curseforge"] ? currentDisruption : null;
   let low = false;
   const bodyHtml = (free) => {
     low = free != null && free < need;
@@ -2720,7 +2829,10 @@ async function confirmFirstInstall(server, { launch }) {
     const manual = manualCount > 0 ? `<p class="first-install-line">ⓘ ${escapeHtml(t("manualMods.badgeTip", { count: manualCount }))}</p>` : "";
     const ownerMessage = ownerInstallMessage(server);
     const message = ownerMessage ? `<div class="owner-message"><span class="owner-message-label">${escapeHtml(t("firstInstall.ownerLabel"))}</span>${escapeHtml(ownerMessage)}</div>` : "";
-    return `${size}${ram}${manual}${message}<p class="first-install-note">${escapeHtml(t("firstInstall.onlyOnce"))}</p>`;
+    const maintenance = sourceDisruption
+      ? `<div class="disruption-banner" role="status" style="margin: 0;"><span aria-hidden="true">🛠</span><div style="min-width: 0;"><strong>${escapeHtml(t("firstInstall.sourceMaintenance", { source: sourceDisruption.system }))}</strong><div class="disruption-text">${escapeHtml(sourceDisruption.message || "")}<br>${escapeHtml(t("firstInstall.sourceMaintenanceHint"))}</div></div></div>`
+      : "";
+    return `${size}${ram}${manual}${message}${maintenance}<p class="first-install-note">${escapeHtml(t("firstInstall.onlyOnce"))}</p>`;
   };
   const readFree = async () => {
     try {
@@ -2736,7 +2848,7 @@ async function confirmFirstInstall(server, { launch }) {
     bodyHtml: bodyHtml(await readFree()),
     actions: [],
   });
-  const goLabel = launch ? t("firstInstall.installPlay") : t("firstInstall.install");
+  const goLabel = sourceDisruption ? t("firstInstall.installAnyway") : launch ? t("firstInstall.installPlay") : t("firstInstall.install");
   const renderActions = () =>
     modal.setActions([
       { label: t("firstInstall.cancel"), value: "cancel" },
@@ -2791,6 +2903,65 @@ async function joinServer(server, joinBtn) {
 // fait plus que declencher la tache, brievement desactive pour eviter un
 // double-clic qui en creerait une seconde pour rien (meme si server:install
 // la rejette aussi de son cote, par securite).
+// Menus « … » (lignes de la bibliotheque, cartes Mes instances) : pour un serveur deja installe
+// sur ce PC, « Installer » devient « Désinstaller » (Rushi 25/10 : on pouvait reinstaller une 2e
+// fois). Meme fenetre de confirmation que « Supprimer les fichiers » des Reglages (mondes toujours
+// gardes, captures et reglages de jeu gardes par defaut). Un serveur vanilla n'a que des fichiers
+// partages : rien a desinstaller, l'entree disparait simplement.
+// `installed` : Map slug -> type ("modded" | "vanilla").
+function hideInstallItems(root, installed) {
+  root.querySelectorAll("[data-row-install], .my-instance-install").forEach((item) => {
+    const slug = item.dataset.rowInstall || item.dataset.slug;
+    if (!installed.has(slug)) return;
+    const type = installed.get(slug);
+    const name = item.parentElement.closest("[data-slug]")?.querySelector("h3")?.textContent || slug;
+    const uninstall = document.createElement("button");
+    uninstall.type = "button";
+    uninstall.className = "instance-menu-item instance-uninstall";
+    uninstall.innerHTML = `${TOOLS_ICONS.trash}<span>${escapeHtml(t("myInstances.menuUninstall"))}</span>`;
+    uninstall.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      closeInstanceMenus();
+      if (!(await uninstallServer({ slug, name, type }))) return;
+      if (!favoritesPanelEl.hidden && libraryTab === "installed") renderInstalledList();
+      else if (document.body.contains(uninstall)) uninstall.replaceWith(item);
+    });
+    item.replaceWith(uninstall);
+  });
+}
+
+// « Désinstaller » : un moddé passe par la fenêtre « Supprimer les fichiers » (mondes toujours
+// gardés, captures et réglages gardés par défaut) ; un vanilla n'a que son marqueur à retirer.
+async function uninstallServer(server) {
+  if (server.type === "modded") return deleteInstanceFiles(server);
+  if (runningGameSlug) {
+    toolsToast(t("instanceTools.delRefusedRunning"));
+    return false;
+  }
+  const modal = openToolsModal({
+    title: t("myInstances.uninstallVanillaTitle", { name: server.name }),
+    tone: "danger",
+    bodyHtml: `<p>${escapeHtml(t("myInstances.uninstallVanillaBody"))}</p><p class="tools-note">${escapeHtml(t("myInstances.uninstallVanillaKeep"))}</p>`,
+    actions: [
+      { label: t("instanceTools.cancel"), value: "cancel" },
+      { label: t("myInstances.uninstallConfirm"), cls: "btn-danger", value: "delete" },
+    ],
+  });
+  if ((await modal.done) !== "delete") return false;
+  const result = await window.mchub.instances.deleteFiles(server.slug, { uninstall: true });
+  if (result?.ok) {
+    toolsToast(t("myInstances.uninstalledVanilla", { name: server.name }));
+    return true;
+  }
+  toolsToast(result?.code === "running" ? t("instanceTools.delRefusedRunning") : result?.code === "installing" || result?.code === "launching" ? t("instanceTools.delRefusedInstalling") : t("instanceTools.delError", { error: result?.error || "?" }));
+  return false;
+}
+
+async function hideInstallItemsForInstalled(root) {
+  const local = await window.mchub.listLocalInstances().catch(() => null);
+  hideInstallItems(root, new Map((local?.ok ? local.instances : []).map((instance) => [instance.slug, instance.type])));
+}
+
 async function installServerStandalone(server, btn) {
   // `btn` peut manquer : « Réessayer » de la pilule relance une installation sans bouton.
   if (btn) btn.disabled = true;
@@ -2798,8 +2969,8 @@ async function installServerStandalone(server, btn) {
     if (btn) btn.disabled = false;
     return;
   }
-  // « Lancer le jeu quand c'est fini » (point 4, L3-G) : coche par defaut, decochable dans la pilule.
-  activity.autoLaunch.add(server.slug);
+  // « Lancer le jeu quand c'est fini » (point 4, L3-G) : DECOCHE par defaut depuis le 25/10 (Rushi :
+  // « Installer » doit seulement installer) ; le joueur peut le cocher dans la pilule pendant l'installation.
   activity.failure = null;
   renderActivity();
   let retry = false;
@@ -2810,6 +2981,7 @@ async function installServerStandalone(server, btn) {
       // Disparait tout de suite pour CE serveur (2026-10-11) — pas besoin de
       // quitter puis revenir sur la fiche pour que ça se mette a jour.
       btn?.remove();
+      hideInstallItems(document, new Map([[server.slug, server.type === "modded" ? "modded" : "vanilla"]]));
       launchAfter = activity.autoLaunch.has(server.slug);
       notifyIfAway(
         launchAfter ? t("activity.notifyLaunchingTitle", { name: server.name }) : t("activity.notifyReadyTitle", { name: server.name }),
@@ -2868,15 +3040,17 @@ function boldLabelIn(el, text, label) {
 // serveur » (jamais d'envoi sans clic, audit du 19/10), une fois par serveur et par session.
 const removedModsReported = new Set();
 function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = [], context = {}) {
+  window.mchub.bugs?.signal("manual_download_required"); // catalogue de bugs : la marche à suivre, une fois par session
   return new Promise((resolve) => {
     const modrinthEl = document.getElementById("manual-mods-modrinth");
     modrinthEl.hidden = !(fromModrinth > 0);
     modrinthEl.textContent = fromModrinth > 0 ? t("manualMods.modrinthBanner", { count: fromModrinth }) : "";
     const viaModrinthEl = document.getElementById("manual-mods-via-modrinth");
     viaModrinthEl.innerHTML = Array.isArray(fromModrinthMods) && fromModrinthMods.length
-      ? `<p class="manual-mods-section">${escapeHtml(t("manualMods.fromModrinthTitle"))}</p>${fromModrinthMods
+      // Repliee par defaut (26/10, Rushi) : le joueur la deplie s'il veut voir la liste.
+      ? `<details class="manual-mods-fold"><summary class="manual-mods-section">${escapeHtml(t("manualMods.fromModrinthTitle"))} (${fromModrinthMods.length})</summary>${fromModrinthMods
           .map((name) => `<div class="manual-mod"><div class="manual-mod-text"><span class="manual-mod-name">${escapeHtml(name)}</span><span class="manual-mod-file">${escapeHtml(t("manualMods.sameFile"))}</span></div><span class="manual-mod-chip done">${escapeHtml(t("manualMods.modrinthOk"))}</span></div>`)
-          .join("")}`
+          .join("")}</details>`
       : "";
     viaModrinthEl.hidden = !viaModrinthEl.innerHTML;
     const overlay = document.getElementById("manual-mods-overlay");
@@ -2955,7 +3129,8 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
     const markReceived = (fileName) => {
       if (finished || received.has(fileName) || !rowsByFile.has(fileName)) return;
       received.add(fileName);
-      const { chip, row } = rowsByFile.get(fileName);
+      const { chip, row, wrong } = rowsByFile.get(fileName);
+      wrong.hidden = true;
       chip.className = "manual-mod-chip done";
       chip.textContent = t("manualMods.received");
       row.classList.add("received");
@@ -2969,6 +3144,7 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
         stepsEl.hidden = true;
         progressBar.classList.add("done");
         noteEl.textContent = t("manualMods.continuing");
+        noteEl.classList.remove("bad");
         noteEl.classList.add("ok");
         setTimeout(() => finish("retry"), 1600);
       }
@@ -2985,10 +3161,20 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
       name.textContent = mod.modName || mod.fileName || t("manualMods.fileFallback", { id: mod.fileId });
       const file = document.createElement("span");
       file.className = "manual-mod-file";
-      file.textContent = mod.fileName || "—";
-      // Sans nom de mod connu, le nom de fichier sert deja de titre : pas besoin de le repeter.
-      file.hidden = !mod.modName && Boolean(mod.fileName);
-      text.append(name, file);
+      // Nom exact du fichier toujours affiche (26/10) : c'est lui que le joueur doit prendre sur la page.
+      file.textContent = mod.fileName ? t("manualMods.fileToGet", { file: mod.fileName }) : "—";
+      file.hidden = !mod.fileName;
+      // « Mauvaise version » : autre fichier du meme mod trouve dans Telechargements (voir poll).
+      const wrong = document.createElement("span");
+      wrong.className = "manual-mod-wrong";
+      wrong.hidden = true;
+      text.append(name);
+      // Nom du fichier et « Mauvaise version » sur toute la largeur, sous la ligne (26/10, Rushi) :
+      // dans la colonne du nom ils rendaient chaque ligne tres haute.
+      const extra = document.createElement("div");
+      extra.className = "manual-mod-extra";
+      extra.hidden = !mod.fileName;
+      extra.append(file, wrong);
       const chip = document.createElement("span");
       const gone = mod.reason === "removed";
       chip.className = `manual-mod-chip ${gone ? "gone" : "todo"}`;
@@ -3006,7 +3192,7 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
         row.append(open);
       }
       if (!gone && mod.fileName) {
-        rowsByFile.set(mod.fileName, { chip, row });
+        rowsByFile.set(mod.fileName, { chip, row, wrong });
         const have = document.createElement("button");
         have.type = "button";
         have.className = "btn-ghost";
@@ -3014,6 +3200,7 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
         have.addEventListener("click", () => markReceived(mod.fileName));
         row.append(have);
       }
+      row.append(extra);
       listEl2.append(row);
     }
 
@@ -3031,17 +3218,37 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
       if (finished) return;
       finished = true;
       clearInterval(pollTimer);
-      noteEl.classList.remove("ok");
+      noteEl.classList.remove("ok", "bad");
       overlay.hidden = true;
       document.body.classList.remove("modal-blocking");
       resolve(choice);
+    };
+    // Fichiers d'une autre version du meme mod (26/10) : la ligne dit lequel a ete trouve et
+    // qu'il ne sera pas utilise, la note du bas compte les fichiers refuses.
+    const showWrongVersions = (wrongMap) => {
+      if (finished) return;
+      let count = 0;
+      for (const [fileName, entry] of rowsByFile) {
+        if (received.has(fileName)) continue;
+        const got = typeof wrongMap[fileName] === "string" ? wrongMap[fileName] : null;
+        entry.wrong.hidden = !got;
+        entry.wrong.textContent = got ? t("manualMods.wrongLine", { file: got }) : "";
+        entry.chip.className = `manual-mod-chip ${got ? "gone" : "todo"}`;
+        entry.chip.textContent = got ? t("manualMods.wrongChip") : t("manualMods.waiting");
+        if (got) count++;
+      }
+      if (onlyRemoved || received.size === rowsByFile.size) return;
+      noteEl.classList.toggle("bad", count > 0);
+      noteEl.textContent = count > 0 ? t("manualMods.wrongNote", { count }) : t("manualMods.note");
     };
     // Surveillance du dossier Telechargements tant que la fenetre est ouverte.
     if (rowsByFile.size) {
       const poll = async () => {
         try {
-          const found = await window.mchub.findModsInDownloads([...rowsByFile.keys()]);
+          const result = await window.mchub.findModsInDownloads([...rowsByFile.keys()]);
+          const found = Array.isArray(result) ? result : result?.found || [];
           found.forEach(markReceived);
+          showWrongVersions(result?.wrong || {});
         } catch {
           // Dossier illisible : le joueur peut toujours cocher a la main.
         }
@@ -3438,15 +3645,30 @@ const MC_STATUS_CLASS = { ok: "online", degraded: "degraded", offline: "offline"
 const MC_STATUS_TILE = { minecraft: ["MC", "#62b246"], modrinth: ["Mr", "#1bd96a"], curseforge: ["CF", "#f16436"], ftb: ["FTB", "#6b7280"] };
 const MC_STATUS_REFRESH_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>';
 const MC_STATUS_CHEV_SVG = '<svg class="mc-status-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
-// Replies par defaut : seul le test de connexion reste ouvert. Un clic sur un
-// fournisseur l'ouvre (il sort de cet ensemble).
-const mcStatusCollapsed = new Set(["minecraft", "modrinth", "curseforge", "ftb"]);
+// Replies par defaut, test de connexion compris (demande de Rushi le 25/10). Un clic sur un
+// bloc l'ouvre (il sort de cet ensemble).
+const MC_STATUS_GROUPS = ["connection", "minecraft", "modrinth", "curseforge", "ftb"];
+const mcStatusCollapsed = new Set(MC_STATUS_GROUPS);
 let mcStatusData = null; // derniere reponse { fetchedAt, groups }
 let mcStatusLoading = false;
 // Test de debit de CE PC : state "idle" | "running" | "done" | "error" (voir main.js status:getConnection).
 let mcConnection = { state: "idle", phase: "", percent: 0, result: null };
 
+// Ligne de "Ta connexion" repliee : ping · ↓ telechargement · ↑ envoi, ou l'etape en cours.
+function mcConnectionSummary() {
+  if (mcConnection.state === "running") {
+    const step = mcConnection.phase === "ping" ? 1 : mcConnection.phase === "download" ? 2 : 3;
+    return `<span class="mc-conn-spin"></span>${escapeHtml(t("serviceStatus.connStep", { n: step }))}`;
+  }
+  if (mcConnection.state === "error") return `<span style="color: var(--warn);">${escapeHtml(t("serviceStatus.connUnavailable"))}</span>`;
+  if (mcConnection.state !== "done") return "";
+  const r = mcConnection.result || {};
+  const v = (n) => (n == null ? "—" : n);
+  return `${v(r.pingMs)} ms <span class="mc-conn-sep">·</span> ↓ ${v(r.downloadMbps)} <span class="mc-conn-sep">·</span> ↑ ${v(r.uploadMbps)} Mb/s`;
+}
+
 function mcConnectionHtml() {
+  const collapsed = mcStatusCollapsed.has("connection");
   let body;
   if (mcConnection.state === "running" || mcConnection.state === "done") {
     // Etapes : 1 = ping, 2 = telechargement, 3 = envoi (barre animee, pas de progression reelle).
@@ -3490,12 +3712,14 @@ function mcConnectionHtml() {
     body = `<div class="mc-status-rows"><div class="mc-status-row"><span class="mc-status-row-label">${escapeHtml(t("serviceStatus.connIdle"))}</span></div></div>`;
   }
   return `
-    <section class="mc-status-group">
-      <div class="mc-status-group-head" style="cursor: default;">
-        <span class="mc-status-tile" style="background: #9184d9;">Ta</span>
+    <section class="mc-status-group${collapsed ? " collapsed" : ""}">
+      <button class="mc-status-group-head" type="button" data-group="connection" aria-expanded="${!collapsed}">
+        <span class="mc-status-tile" style="background: #9184d9;" aria-hidden="true">⇅</span>
         <span class="mc-status-group-name">${escapeHtml(t("serviceStatus.connTitle"))}</span>
-      </div>
-      ${body}
+        ${collapsed ? `<span class="mc-status-count mc-conn-summary">${mcConnectionSummary()}</span>` : ""}
+        ${MC_STATUS_CHEV_SVG}
+      </button>
+      ${collapsed ? "" : body}
     </section>`;
 }
 
@@ -3652,7 +3876,12 @@ function wireMcStatus() {
     event.stopPropagation();
     const wasHidden = mcStatusPanel.hidden;
     mcStatusPanel.hidden = !mcStatusPanel.hidden;
-    if (wasHidden) loadMcStatus();
+    // Tout se replie à chaque ouverture (29/10 : un bloc ouvert restait ouvert à la suivante).
+    if (wasHidden) {
+      MC_STATUS_GROUPS.forEach((id) => mcStatusCollapsed.add(id));
+      if (mcStatusData) renderMcStatus(mcStatusData);
+      loadMcStatus();
+    }
   });
   // Un clic DANS le panneau (replier un bloc, actualiser) ne doit pas le fermer.
   mcStatusPanel.addEventListener("click", (event) => event.stopPropagation());
@@ -3681,11 +3910,19 @@ function scheduleStartupMcStatus() {
 }
 
 // Cloche de notifications : alertes personnelles du joueur (reponse/
-// resolution de signalement, voir site/src/lib/notifications.ts) — pas les
-// Actualites (diffusion admin, distincte, pas encore construite).
+// resolution de signalement, voir site/src/lib/notifications.ts) et messages diffuses.
+// 25/10 : centre de notifications (preview validee par Rushi) : onglets Tout / Actualites /
+// Perturbations / Mes serveurs, perturbation en cours epinglee en haut (remplace le bandeau de
+// l'accueil), article lisible en entier au clic, pastille orange pendant une perturbation.
 let notifBadgeEl;
 let notifListEl;
+let notifTabsEl;
 let latestNotifications = [];
+let notifTab = "all";
+let openNotifId = null;
+// Articles deja charges (id -> { title, body } ou "loading" / "error").
+const newsCache = new Map();
+const NOTIF_TABS = ["all", "news", "disruptions", "servers"];
 
 function notifTimeLabel(iso) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -3721,7 +3958,79 @@ const BROADCAST_TITLE_KEYS = {
   broadcast_promotion: "broadcastPromotionTitle",
 };
 
+// Une actualite = message « news:<id> » (voir site/src/lib/newsNotify.ts). Les anciennes, sans id,
+// sont reconnues a leur texte mais ne s'ouvrent pas.
+const NEWS_PREFIX = /^Nouvel article : /;
+function notifNewsId(notif) {
+  const name = String(notif.serverName || "");
+  return name.startsWith("news:") ? name.slice(5) : null;
+}
+function notifCategory(notif) {
+  if (notifNewsId(notif) || (notif.type === "broadcast_announcement" && NEWS_PREFIX.test(notif.message || ""))) return "news";
+  if (notif.type === "broadcast_maintenance" || notif.type === "broadcast_alert") return "disruptions";
+  if (notif.type.startsWith("broadcast_")) return "other";
+  return "servers";
+}
+function newsTitleFromMessage(message) {
+  return String(message || "").replace(NEWS_PREFIX, "").replace(/ \(à lire dans Actualités sur le site\)$/, "");
+}
+const NOTIF_KIND_KEYS = { news: "kindNews", disruptions: "kindDisruption", servers: "kindServer", other: "kindInfo" };
+
+function newsItemHtml(notif) {
+  const id = notifNewsId(notif);
+  const open = id && openNotifId === notif.id;
+  const cached = id ? newsCache.get(id) : null;
+  let body = "";
+  if (open) {
+    if (cached === "loading" || !cached) body = `<div class="notif-news-body notif-news-wait">${t("notifications.newsLoading")}</div>`;
+    else if (cached === "error") body = `<div class="notif-news-body notif-news-wait">${t("notifications.newsError")}</div>`;
+    else body = `<div class="notif-news-body">${escapeHtml(cached.body)}</div>`;
+  }
+  const title = cached && typeof cached === "object" ? cached.title : newsTitleFromMessage(notif.message);
+  return `
+    <div class="notif-item notif-item-news${notif.read ? "" : " unread"}${id ? " notif-item-openable" : ""}" data-id="${escapeHtml(notif.id)}" data-cat="news"${id ? ' role="button" tabindex="0"' : ""}>
+      <button type="button" class="notif-item-delete" data-id="${escapeHtml(notif.id)}" title="${t("notifications.deleteOne")}">×</button>
+      <div class="notif-item-kind notif-kind-news">${t("notifications.kindNews")}</div>
+      <div class="notif-item-title" style="overflow-wrap:anywhere">${escapeHtml(title)}</div>
+      ${body}
+      ${id && !open ? `<div class="notif-item-more">${t("notifications.readArticle")}</div>` : ""}
+      <div class="notif-item-time">${notifTimeLabel(notif.createdAt)}</div>
+    </div>
+  `;
+}
+
+// 26/10 : nouveau signalement pour le proprietaire du serveur (voir site/src/lib/reportNotify.ts) :
+// serverName « report:<serverId> », message « <nombre>|<nom du serveur> ». Un clic ouvre la page
+// Signalements de ce serveur sur le site.
+function notifReportInfo(notif) {
+  const name = String(notif.serverName || "");
+  if (!name.startsWith("report:")) return null;
+  const match = /^(\d+)\|([\s\S]*)$/.exec(String(notif.message || ""));
+  return { serverId: name.slice(7), count: match ? Number(match[1]) : 1, serverName: match ? match[2] : "" };
+}
+
+function reportItemHtml(notif, report) {
+  const many = report.count > 1;
+  const title = many
+    ? t("notifications.reportReceivedTitleMany", { count: String(report.count), server: report.serverName })
+    : t("notifications.reportReceivedTitle", { server: report.serverName });
+  return `
+    <div class="notif-item notif-item-openable${notif.read ? "" : " unread"}" data-id="${escapeHtml(notif.id)}" data-cat="servers" role="button" tabindex="0">
+      <button type="button" class="notif-item-delete" data-id="${escapeHtml(notif.id)}" title="${t("notifications.deleteOne")}">×</button>
+      <div class="notif-item-kind notif-kind-servers">${t("notifications.kindServer")}</div>
+      <div class="notif-item-title" style="color:var(--warn);overflow-wrap:anywhere">${escapeHtml(title)}</div>
+      <div class="notif-item-message">${t(many ? "notifications.reportReceivedBodyMany" : "notifications.reportReceivedBody")}</div>
+      <div class="notif-item-more">${t("notifications.viewReports")}</div>
+      <div class="notif-item-time">${notifTimeLabel(notif.createdAt)}</div>
+    </div>
+  `;
+}
+
 function notifItemHtml(notif) {
+  const category = notifCategory(notif);
+  if (category === "news") return newsItemHtml(notif);
+  const report = notifReportInfo(notif);
+  if (report) return reportItemHtml(notif, report);
   const color = NOTIF_COLORS[notif.type];
   const colorStyle = color ? ` style="color:${color};overflow-wrap:anywhere"` : "";
   const isAdmin = notif.type.startsWith("admin_");
@@ -3748,8 +4057,9 @@ function notifItemHtml(notif) {
     message = `<div class="notif-item-message"${colorStyle}>${escapeHtml(notif.message)}</div>`;
   }
   return `
-    <div class="notif-item${notif.read ? "" : " unread"}" data-id="${escapeHtml(notif.id)}">
+    <div class="notif-item${notif.read ? "" : " unread"}" data-id="${escapeHtml(notif.id)}" data-cat="${category}">
       <button type="button" class="notif-item-delete" data-id="${escapeHtml(notif.id)}" title="${t("notifications.deleteOne")}">×</button>
+      <div class="notif-item-kind notif-kind-${category}">${t(`notifications.${NOTIF_KIND_KEYS[category]}`)}</div>
       <div class="notif-item-title"${colorStyle}>${escapeHtml(title)}</div>
       ${message}
       <div class="notif-item-time">${notifTimeLabel(notif.createdAt)}</div>
@@ -3757,16 +4067,75 @@ function notifItemHtml(notif) {
   `;
 }
 
+function notifInTab(notif, tab) {
+  if (tab === "all") return true;
+  return notifCategory(notif) === tab;
+}
+
+function renderNotifTabs() {
+  if (!notifTabsEl) return;
+  const unread = latestNotifications.filter((n) => !n.read);
+  const labels = { all: "tabAll", news: "tabNews", disruptions: "tabDisruptions", servers: "tabServers" };
+  notifTabsEl.innerHTML = NOTIF_TABS.map((tab) => {
+    const count = unread.filter((n) => notifInTab(n, tab)).length;
+    return `<button type="button" class="notif-tab" role="tab" data-tab="${tab}" aria-selected="${notifTab === tab}">${t(`notifications.${labels[tab]}`)}${count ? `<span class="notif-tab-count">${count > 9 ? "9+" : count}</span>` : ""}</button>`;
+  }).join("");
+}
+
+// Perturbation en cours (pulse, voir applyDisruption) : epinglee en haut de Tout et Perturbations.
+function pinnedDisruptionHtml() {
+  if (!currentDisruption || (notifTab !== "all" && notifTab !== "disruptions")) return "";
+  return `<div class="notif-pin" role="status"><span aria-hidden="true">🛠</span><div style="min-width:0"><strong>${escapeHtml(t("maintenance.disruptionTitle", { system: currentDisruption.system }))}</strong><span>${escapeHtml(currentDisruption.message || "")}</span></div></div>`;
+}
+
 function renderNotifications() {
-  if (!latestNotifications.length) {
-    notifListEl.className = "";
+  renderNotifTabs();
+  const pinned = pinnedDisruptionHtml();
+  const shown = latestNotifications.filter((n) => notifInTab(n, notifTab));
+  notifListEl.className = "";
+  if (!shown.length && !pinned) {
     // Pas de bouton ici (audit 17/10, lot 1) : « Régler les notifications » menait a des
     // Parametres sans aucun reglage de notifications.
-    notifListEl.innerHTML = emptyStateHtml({ icon: "bell", title: t("notifications.emptyTitle"), text: t("notifications.emptyText"), extraClass: "notif-empty-state" });
+    notifListEl.innerHTML = notifTab === "all"
+      ? emptyStateHtml({ icon: "bell", title: t("notifications.emptyTitle"), text: t("notifications.emptyText"), extraClass: "notif-empty-state" })
+      : `<div class="notif-empty">${t("notifications.tabEmpty")}</div>`;
     return;
   }
-  notifListEl.className = "";
-  notifListEl.innerHTML = latestNotifications.map(notifItemHtml).join("");
+  notifListEl.innerHTML = pinned + shown.map(notifItemHtml).join("");
+}
+
+// Numero rouge = messages non lus ; orange pendant une perturbation (« ! » s'il n'y a rien de non lu).
+function updateNotifBadge() {
+  if (!notifBadgeEl) return;
+  const unreadCount = latestNotifications.filter((n) => !n.read).length;
+  notifBadgeEl.classList.toggle("busy", !!currentDisruption);
+  notifBadgeEl.hidden = unreadCount === 0 && !currentDisruption;
+  notifBadgeEl.textContent = unreadCount > 9 ? "9+" : unreadCount > 0 ? String(unreadCount) : "!";
+}
+
+async function openNotification(id) {
+  const notif = latestNotifications.find((n) => n.id === id);
+  if (!notif) return;
+  if (!notif.read) {
+    notif.read = true;
+    window.mchub.markNotificationsRead(id);
+  }
+  const report = notifReportInfo(notif);
+  if (report) {
+    window.mchub.openManageServer(report.serverId, "reports");
+    renderNotifications();
+    updateNotifBadge();
+    return;
+  }
+  const newsId = notifNewsId(notif);
+  openNotifId = newsId && openNotifId !== id ? id : null;
+  renderNotifications();
+  updateNotifBadge();
+  if (!openNotifId || (newsCache.has(newsId) && newsCache.get(newsId) !== "error")) return;
+  newsCache.set(newsId, "loading");
+  const result = await window.mchub.getNews(newsId);
+  newsCache.set(newsId, result.ok ? result.news : "error");
+  renderNotifications();
 }
 
 // Pop-up : un message diffuse (voir BROADCAST_TITLE_KEYS) jamais vu dans cette fenetre de
@@ -3785,28 +4154,124 @@ let maintenanceBypassed = false;
 // Ecran plein (voir Design/Omniscient Launcher UI Mockups, "01a Maintenance") : bloque tout
 // le reste de l'appli jusqu'a un code valide. Reutilisable au demarrage (ensureNotInMaintenance)
 // et depuis le pop-up d'une notification "maintenance" deja en session.
-function showMaintenanceScreen(message) {
+// 25/10 : ecran refait (preview validee par Rushi). `info` = { system, startsAt, endsAt } renvoyes
+// par le site (absents sur un site plus ancien). L'ecran revérifie toutes les 30 s et se ferme
+// tout seul quand la maintenance est finie ; « Fermer le launcher » / ✕ ferment l'appli.
+function formatMaintenanceTime(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(window.i18n.getLocale() === "en" ? "en-GB" : "fr-FR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+function formatMaintenanceLeft(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  if (days > 0) return window.i18n.getLocale() === "en" ? `${days} d ${hours} h` : `${days} j ${hours} h`;
+  if (hours > 0) return `${hours} h ${String(mins).padStart(2, "0")}`;
+  return `${mins} min`;
+}
+function renderMaintenanceInfo(message, info) {
+  document.getElementById("maintenance-message").textContent = message || t("maintenance.defaultMessage");
+  const chip = document.getElementById("maintenance-chip");
+  chip.textContent = info?.system === "Launcher" ? t("maintenance.chipLauncher") : info?.system ? t("maintenance.chipAll") : "";
+  document.getElementById("maintenance-start").textContent = formatMaintenanceTime(info?.startsAt);
+  const endEl = document.getElementById("maintenance-end");
+  const leftEl = document.getElementById("maintenance-left");
+  const bar = document.getElementById("maintenance-bar");
+  if (info?.endsAt) {
+    endEl.textContent = formatMaintenanceTime(info.endsAt);
+    const start = Date.parse(info.startsAt || "") || Date.now();
+    const end = Date.parse(info.endsAt);
+    const left = end - Date.now();
+    leftEl.hidden = left <= 0;
+    leftEl.textContent = t("maintenance.timeLeft", { time: formatMaintenanceLeft(left) });
+    bar.hidden = false;
+    const total = Math.max(1, end - start);
+    document.getElementById("maintenance-bar-fill").style.width = `${Math.min(100, Math.max(2, ((Date.now() - start) / total) * 100))}%`;
+  } else {
+    endEl.textContent = t("maintenance.endUnknown");
+    leftEl.hidden = true;
+    bar.hidden = true;
+  }
+}
+
+function showMaintenanceScreen(message, info) {
   return new Promise((resolve) => {
     const overlay = document.getElementById("maintenance-overlay");
-    const input = document.getElementById("maintenance-code-input");
+    const cells = [...document.querySelectorAll("#maintenance-code input")];
+    const codeBox = document.getElementById("maintenance-code");
     const errorEl = document.getElementById("maintenance-code-error");
     const continueBtn = document.getElementById("maintenance-continue");
+    const staffToggle = document.getElementById("maintenance-staff-toggle");
+    const staffForm = document.getElementById("maintenance-staff");
+    const quitButtons = [document.getElementById("maintenance-quit"), document.getElementById("maintenance-close")];
 
-    document.getElementById("maintenance-message").textContent = message || t("maintenance.defaultMessage");
+    codeBox.setAttribute("aria-label", t("maintenance.codeLabel"));
+    renderMaintenanceInfo(message, info);
     errorEl.hidden = true;
-    input.value = "";
+    codeBox.classList.remove("bad");
+    cells.forEach((cell) => { cell.value = ""; });
+    staffForm.hidden = true;
+    staffToggle.hidden = false;
     overlay.hidden = false;
     document.body.classList.add("modal-blocking");
-    input.focus();
 
+    let checking = false;
+    const poll = setInterval(async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const status = await window.mchub.checkMaintenance({ background: true });
+        if (!status.active) {
+          cleanup();
+          resolve();
+          return;
+        }
+        renderMaintenanceInfo(status.message, status);
+      } finally {
+        checking = false;
+      }
+    }, 30000);
+
+    const onStaff = () => {
+      staffToggle.hidden = true;
+      staffForm.hidden = false;
+      cells[0].focus();
+    };
+    const onQuit = () => window.mchub.windowControls.close();
+    const onCellInput = (event) => {
+      const cell = event.target;
+      const index = cells.indexOf(cell);
+      // Coller le code entier dans la 1re case le repartit sur les 6.
+      const chars = cell.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (chars.length > 1) {
+        chars.slice(0, cells.length - index).split("").forEach((ch, i) => { cells[index + i].value = ch; });
+        cells[Math.min(cells.length - 1, index + chars.length - 1)].focus();
+        return;
+      }
+      cell.value = chars;
+      codeBox.classList.remove("bad");
+      if (chars && cells[index + 1]) cells[index + 1].focus();
+    };
+    const onCellKey = (event) => {
+      const index = cells.indexOf(event.target);
+      if (event.key === "Backspace" && !event.target.value && cells[index - 1]) cells[index - 1].focus();
+      if (event.key === "Enter") onSubmit();
+    };
     const cleanup = () => {
+      clearInterval(poll);
       overlay.hidden = true;
       document.body.classList.remove("modal-blocking");
       continueBtn.removeEventListener("click", onSubmit);
-      input.removeEventListener("keydown", onKey);
+      staffToggle.removeEventListener("click", onStaff);
+      quitButtons.forEach((btn) => btn.removeEventListener("click", onQuit));
+      cells.forEach((cell) => {
+        cell.removeEventListener("input", onCellInput);
+        cell.removeEventListener("keydown", onCellKey);
+      });
     };
     const onSubmit = async () => {
-      const code = input.value.trim();
+      const code = cells.map((cell) => cell.value).join("").trim();
       if (!code) return;
       continueBtn.disabled = true;
       const result = await window.mchub.verifyMaintenanceCode(code);
@@ -3819,12 +4284,17 @@ function showMaintenanceScreen(message) {
       }
       errorEl.textContent = t("maintenance.wrongCode");
       errorEl.hidden = false;
-    };
-    const onKey = (event) => {
-      if (event.key === "Enter") onSubmit();
+      codeBox.classList.remove("bad");
+      void codeBox.offsetWidth;
+      codeBox.classList.add("bad");
     };
     continueBtn.addEventListener("click", onSubmit);
-    input.addEventListener("keydown", onKey);
+    staffToggle.addEventListener("click", onStaff);
+    quitButtons.forEach((btn) => btn.addEventListener("click", onQuit));
+    cells.forEach((cell) => {
+      cell.addEventListener("input", onCellInput);
+      cell.addEventListener("keydown", onCellKey);
+    });
   });
 }
 
@@ -3832,9 +4302,10 @@ function showMaintenanceScreen(message) {
 // passe sans le code (voir platformSettings.ts cote site, activateLauncherMaintenance).
 async function ensureNotInMaintenance(pendingCheck) {
   const status = await (pendingCheck || window.mchub.checkMaintenance());
+  applyDisruption(status.disruption);
   if (!status.active) return;
   bootstrapEl.hidden = true;
-  await showMaintenanceScreen(status.message);
+  await showMaintenanceScreen(status.message, status);
 }
 
 // Re-verifiee periodiquement (voir scheduleRefresh plus bas) : une maintenance activee
@@ -3842,29 +4313,45 @@ async function ensureNotInMaintenance(pendingCheck) {
 // pas seulement au demarrage. maintenanceBypassed evite de rebloquer la meme session
 // une fois le bon code entre.
 async function checkMaintenanceLoop() {
-  if (maintenanceBypassed || pulseIsFresh()) return;
+  if (pulseIsFresh()) return;
   const status = await window.mchub.checkMaintenance({ background: true });
-  if (status.active) await showMaintenanceScreen(status.message);
+  applyDisruption(status.disruption);
+  if (maintenanceBypassed) return;
+  if (status.active) await showMaintenanceScreen(status.message, status);
 }
 
-// Idee 2 du lancement (19/10) : le signal de presence (sendPresenceHeartbeat, chaque minute)
-// rapporte aussi la maintenance et, une fois sur 5, les notifications. Tant qu'il repond, les
+// 25/10 : maintenance d'un seul systeme (Site, CurseForge, Modrinth, FTB) programmee dans
+// /admin/notifications : le launcher reste utilisable, un bandeau previent des perturbations.
+// Seuls « Tout » et « Launcher » bloquent (ecran de maintenance ci-dessus).
+const disruptionBannerEl = document.getElementById("disruption-banner");
+// Derniere perturbation connue : reprise dans la fenetre avant d'installer (confirmFirstInstall).
+let currentDisruption = null;
+// 25/10 (centre de notifications) : plus de bandeau sur l'accueil, la perturbation est epinglee
+// dans la cloche et la pastille passe en orange.
+function applyDisruption(disruption) {
+  currentDisruption = disruption || null;
+  if (disruptionBannerEl) disruptionBannerEl.hidden = true;
+  if (notifListEl) renderNotifications();
+  updateNotifBadge();
+}
+
+// Idee 2 du lancement (19/10) : le signal de presence (sendPresenceHeartbeat, toutes les 3 min
+// depuis le 28/10) rapporte aussi la maintenance et, environ toutes les 5 min, les notifications. Tant qu'il repond, les
 // verifications separees ci-dessus et plus bas ne refont pas l'appel (moins de charge sur la
 // base du site). Pas connecte ou site pas encore a jour : elles tournent comme avant.
 let lastGroupedPulseAt = 0;
 let maintenanceScreenOpen = false;
-// Frais = recu depuis moins de 2,5 envois de presence (en jeu, la presence ne part que toutes les
-// 5 min : voir window.OMNI_REFRESH dans refreshSettings.js).
+// Frais = recu depuis moins de 2,5 envois de presence (3 min hors partie, 5 min fenetre reduite
+// ou en jeu : voir presenceDelayMs plus bas et window.OMNI_REFRESH dans refreshSettings.js).
 function pulseIsFresh() {
-  const every = gamePlaying ? window.OMNI_REFRESH.PRESENCE_PLAYING_MS : window.OMNI_REFRESH.PRESENCE_IDLE_MS;
-  return Date.now() - lastGroupedPulseAt < every * 2.5;
+  return Date.now() - lastGroupedPulseAt < presenceDelayMs() * 2.5;
 }
 
-async function showMaintenanceFromPulse(message) {
+async function showMaintenanceFromPulse(message, info) {
   if (maintenanceBypassed || maintenanceScreenOpen) return;
   maintenanceScreenOpen = true;
   try {
-    await showMaintenanceScreen(message);
+    await showMaintenanceScreen(message, info);
   } finally {
     maintenanceScreenOpen = false;
   }
@@ -3886,7 +4373,7 @@ async function showNotificationPopup(notif) {
   // pour une maintenance, verifie si elle est reellement active et bloque si oui.
   if (isMaintenance && !result.confirmed) {
     const status = await window.mchub.checkMaintenance();
-    if (status.active) await showMaintenanceScreen(status.message);
+    if (status.active) await showMaintenanceScreen(status.message, status);
   }
 }
 
@@ -3906,9 +4393,7 @@ async function scheduledRefreshNotifications() {
 async function applyNotifications(notifications) {
   latestNotifications = notifications;
   renderNotifications();
-  const unreadCount = latestNotifications.filter((n) => !n.read).length;
-  notifBadgeEl.hidden = unreadCount === 0;
-  if (unreadCount > 0) notifBadgeEl.textContent = unreadCount > 9 ? "9+" : String(unreadCount);
+  updateNotifBadge();
 
   // Au tout premier chargement, les notifications deja la ne sont pas "nouvelles" : on les
   // marque vues sans pop-up, pour n'afficher que celles qui arrivent vraiment pendant la session.
@@ -3994,8 +4479,11 @@ function renderTasksPanel(tasks) {
   document.getElementById("tasks-active-section").hidden = active.length === 0;
   document.getElementById("tasks-complete-section").hidden = complete.length === 0;
   document.getElementById("tasks-list-scroll").classList.toggle("empty", active.length === 0 && complete.length === 0);
-  document.getElementById("tasks-active-list").innerHTML = active.map((task) => taskRowHtml(task, true)).join("");
-  document.getElementById("tasks-complete-list").innerHTML = complete.map((task) => taskRowHtml(task, false)).join("");
+  // Clic en cours dans le panneau (Pause, Annuler…) : pas de remplacement des boutons sous la souris.
+  if (!activityPointerDown) {
+    document.getElementById("tasks-active-list").innerHTML = active.map((task) => taskRowHtml(task, true)).join("");
+    document.getElementById("tasks-complete-list").innerHTML = complete.map((task) => taskRowHtml(task, false)).join("");
+  }
   renderActivity();
 }
 
@@ -4013,6 +4501,17 @@ function wireTasksMenu() {
     const btn = event.target.closest("[data-activity]");
     if (btn) handleActivityAction(btn);
   });
+  panel.addEventListener("pointerdown", () => {
+    activityPointerDown = true;
+  });
+  const releasePointer = () => {
+    if (!activityPointerDown) return;
+    activityPointerDown = false;
+    // Apres le click (qui suit pointerup) : la case a deja change d'etat quand on redessine.
+    setTimeout(() => (activity.tasks ? renderTasksPanel(activity.tasks) : renderActivity()), 0);
+  };
+  document.addEventListener("pointerup", releasePointer, true);
+  document.addEventListener("pointercancel", releasePointer, true);
   panel.addEventListener("change", (event) => {
     const box = event.target.closest("[data-autolaunch]");
     if (!box) return;
@@ -4046,6 +4545,7 @@ function wireNotifications() {
   const panel = document.getElementById("notif-panel");
   notifBadgeEl = document.getElementById("notif-badge");
   notifListEl = document.getElementById("notif-list");
+  notifTabsEl = document.getElementById("notif-tabs");
   const markAllReadBtn = document.getElementById("notif-mark-all-read");
   const clearReadBtn = document.getElementById("notif-clear-read");
 
@@ -4063,11 +4563,29 @@ function wireNotifications() {
     panel.hidden = true;
   });
 
+  notifTabsEl.addEventListener("click", (event) => {
+    const tab = event.target.closest(".notif-tab");
+    if (!tab) return;
+    notifTab = tab.dataset.tab;
+    renderNotifications();
+  });
+
   notifListEl.addEventListener("click", async (event) => {
     const deleteBtn = event.target.closest(".notif-item-delete");
-    if (!deleteBtn) return;
-    await window.mchub.deleteNotification(deleteBtn.dataset.id);
-    await refreshNotifications();
+    if (deleteBtn) {
+      await window.mchub.deleteNotification(deleteBtn.dataset.id);
+      await refreshNotifications();
+      return;
+    }
+    const item = event.target.closest(".notif-item");
+    if (item) await openNotification(item.dataset.id);
+  });
+  notifListEl.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const item = event.target.closest(".notif-item-openable");
+    if (!item || event.target.closest(".notif-item-delete")) return;
+    event.preventDefault();
+    openNotification(item.dataset.id);
   });
 
   markAllReadBtn.addEventListener("click", async () => {
@@ -4207,9 +4725,14 @@ async function refreshFriends({ background = false } = {}) {
     renderFriendsList();
     return;
   }
-  friendsList = result.friends;
-  friendsIncoming = result.incoming;
-  friendsOutgoing = result.outgoing;
+  applyFriendsOverview(result);
+}
+
+// Aussi appele par le signal de presence quand il rapporte les amis (correctif 3, 28/10).
+function applyFriendsOverview(overview) {
+  friendsList = overview.friends ?? [];
+  friendsIncoming = overview.incoming ?? [];
+  friendsOutgoing = overview.outgoing ?? [];
   friendsStatus = "loaded";
   renderFriendsList();
 }
@@ -4309,25 +4832,47 @@ function wireFriends() {
   });
 }
 
-// Heartbeat de presence : greffe sur le cycle de 60s existant (scheduleRefresh(sendPresenceHeartbeat)
-// plus bas, meme intervalle que silentRefreshList — REFRESH_INTERVAL_MS), jamais un intervalle a
-// part. Echec silencieux (voir presence:heartbeat cote main.js, qui ne rejette jamais) : un
-// heartbeat rate ne fait que retarder le passage "hors ligne" d'un ami, jamais a signaler au joueur.
-let presencePulseCount = 0;
+// Heartbeat de presence : son propre cycle (schedulePresence plus bas : 3 min hors partie, 5 min
+// fenetre reduite ou en jeu). Echec silencieux (voir presence:heartbeat cote main.js, qui ne
+// rejette jamais) : un heartbeat rate ne fait que retarder le passage "hors ligne" d'un ami,
+// jamais a signaler au joueur.
+let lastPresenceSentAt = 0;
+let lastPulseNotificationsAt = 0;
+// Notifications demandees au plus toutes les ~5 min (28/10 : selon l'heure, plus « 1 envoi sur 5 »,
+// qui serait passe a 15 min avec la presence toutes les 3 min) ; en jeu, a chaque envoi (5 min).
+const PULSE_NOTIFICATIONS_MS = 4 * 60_000;
+// Amis demandes au plus toutes les ~5 min, seulement si une liste de serveurs est affichee.
+const PULSE_FRIENDS_MS = FRIENDS_FOR_LISTS_MS - 60_000;
 async function sendPresenceHeartbeat() {
   if (!signedIn) return;
-  // Notifications 1 fois sur 5 (toutes les 5 min, comme avant) ; en jeu, a chaque envoi (il n'y en
-  // a qu'un toutes les 5 min).
-  presencePulseCount += 1;
-  const result = await window.mchub.sendPresenceHeartbeat({ withNotifications: gamePlaying || presencePulseCount % 5 === 0 });
+  const now = Date.now();
+  lastPresenceSentAt = now;
+  const withNotifications = gamePlaying || now - lastPulseNotificationsAt >= PULSE_NOTIFICATIONS_MS;
+  const withFriends = !gamePlaying && !document.hidden && friendsListsVisible() && now - friendsForListsAt >= PULSE_FRIENDS_MS;
+  const ownerId = currentProfile?.id ?? null;
+  const result = await window.mchub.sendPresenceHeartbeat({ withNotifications, withFriends });
   if (result?.accountDeleted) {
     handleAccountDeleted();
     return;
   }
   if (!result?.ok || !result.grouped || !signedIn) return;
   lastGroupedPulseAt = Date.now();
+  if (withNotifications) lastPulseNotificationsAt = now;
+  if (withFriends) {
+    pulseGivesFriends = !!result.friends;
+    // Compte change pendant l'envoi : ces amis ne le concernent plus.
+    if (result.friends && (currentProfile?.id ?? null) === ownerId) {
+      if (friendsOwnerId !== ownerId) resetFriendsState();
+      friendsOwnerId = ownerId;
+      friendsForListsAt = now;
+      const before = JSON.stringify([...friendsBySlug()]);
+      applyFriendsOverview(result.friends);
+      friendsChangedForLists(before);
+    }
+  }
   if (result.notifications) await applyNotifications(result.notifications);
-  if (result.maintenance?.active) showMaintenanceFromPulse(result.maintenance.message);
+  applyDisruption(result.disruption);
+  if (result.maintenance?.active) showMaintenanceFromPulse(result.maintenance.message, result.maintenance);
 }
 
 // Compte Omniscient supprime sur le site pendant que le launcher etait connecte (voir
@@ -4741,6 +5286,23 @@ function paintHomeView({ settings, favoriteSlugs, myServersResult, continueResol
 // son proprietaire. Avant d'effacer un slug, on verifie donc qu'il n'est pas dans « Mes
 // instances » (servers:mine) ; si cette liste est illisible (hors ligne, pas connecte), on
 // garde le slug plutot que de risquer de l'effacer a tort.
+// 25/10 : un serveur absent de l'annuaire (prive, en attente de validation) arrive ici sous forme
+// de FICHE : ses etiquettes et langues sont dans `page`, pas a la racine comme dans la liste.
+// Sans ceci, sa ligne affichait « Langue ? » et aucune etiquette alors que la fiche les a.
+function asListServer(server) {
+  if (!server || Array.isArray(server.languages) || !server.page) return server;
+  const page = server.page;
+  const mainTags = Array.isArray(page.tags) ? page.tags : [];
+  const extra = Array.isArray(page.extraTags) ? page.extraTags : [];
+  return {
+    ...server,
+    tags: [...new Set([...mainTags, ...extra])],
+    mainTags,
+    languages: Array.isArray(page.languages) ? page.languages : [],
+    modpackName: server.modpackName ?? server.curseforgeModpackName ?? null,
+  };
+}
+
 async function resolveServersBySlug(slugs) {
   const result = await fetchServerList();
   const allServers = result.ok ? result.servers : [];
@@ -4753,7 +5315,7 @@ async function resolveServersBySlug(slugs) {
       const found = allServers.find((s) => s.slug === slug);
       if (found) return found;
       const single = await window.mchub.getServer(slug);
-      if (single.ok) return single.server;
+      if (single.ok) return asListServer(single.server);
       if (single.notFound) {
         const owned = await myServers();
         if (!owned?.ok) return placeholder(slug);
@@ -5033,7 +5595,7 @@ function wirePageToolbar(panelEl, kind, servers, render) {
   update();
   refreshFriendsForLists(() => {
     if (!panelEl.hidden) update();
-  });
+  }, panelEl);
 }
 
 function pageNoMatchHtml() {
@@ -5478,12 +6040,27 @@ async function openInstanceSettingsModal(server, options) {
   }
 }
 
-// Chargement de la fenetre (variante B validee par Rushi, 2026-10-14) : le losange Omniscient
-// qui pulse au centre, un message si le site tarde (apres 3 s), et en cas d'erreur un ecran
-// avec Reessayer / Fermer plutot qu'une simple ligne rouge.
+// Ouverture instantanee (26/10, Rushi : la fenetre mettait plusieurs secondes a s'ouvrir).
+// Avant, elle attendait les reponses du site (canal du modpack puis suivi de statut, l'une
+// apres l'autre, chacune avec une verification du compte Minecraft cote site) avant de
+// s'afficher. Maintenant elle s'affiche tout de suite avec la derniere valeur connue (sinon la
+// valeur par defaut), la case/la liste restent grisees le temps que le site reponde (les deux
+// demandes partent en meme temps), puis prennent la vraie valeur. Les fichiers du serveur
+// (dossier, logs, reparer) sont utilisables des l'ouverture : ils ne dependent pas du site.
 const SETTINGS_SLOW_DELAY_MS = 3000;
-const ICON_ALERT =
-  '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>';
+const INSTANCE_SETTINGS_DEFAULTS = { modpackChannel: "release", notifyOnStatusChange: false };
+// Derniere valeur lue ou enregistree, par serveur puis par reglage (memoire du launcher seulement).
+const instanceSettingsCache = new Map();
+
+function setInstanceSettingControl(fieldId, value, disabled) {
+  const control = document.getElementById(`instance-setting-${fieldId}`);
+  if (!control) return;
+  if (value !== undefined) {
+    if (control.type === "checkbox") control.checked = !!value;
+    else control.value = value === "beta" ? "beta" : "release";
+  }
+  control.disabled = disabled;
+}
 
 async function showInstanceSettingsModal(server, { owned = true } = {}) {
   const overlay = document.getElementById("modal-overlay");
@@ -5493,24 +6070,99 @@ async function showInstanceSettingsModal(server, { owned = true } = {}) {
   const bodyEl = document.getElementById("modal-body");
 
   const fields = INSTANCE_SETTINGS_FIELDS.filter((field) => field.appliesTo(server, { owned }));
+  const cached = instanceSettingsCache.get(server.slug) || {};
+  // Valeurs confirmees par le site (seuls ces reglages sont enregistres, et seulement s'ils ont change).
+  const loadedValues = {};
+  let closed = false;
+  let slowTimer = null;
 
-  // Zone d'attente/erreur a part : #modal-body est un <p>, qui ne peut pas contenir de blocs.
+  // Zone d'etat a part : #modal-body est un <p>, qui ne peut pas contenir de blocs.
   document.getElementById("instance-settings-state")?.remove();
+  document.getElementById("instance-settings-fields")?.remove();
   const stateEl = document.createElement("div");
   stateEl.id = "instance-settings-state";
   bodyEl.after(stateEl);
 
   document.getElementById("modal-title").textContent = t("channelSettings.title", { name: server.name });
   checkboxRow.hidden = true;
-  bodyEl.textContent = "";
-  bodyEl.hidden = true;
+  // La description du canal du modpack ne s'applique qu'a ce reglage precis — vide sinon (le
+  // texte d'aide de la case de suivi, juste en dessous d'elle, suffit dans ce cas).
+  const hasDescription = fields.some((field) => field.id === "modpackChannel");
+  bodyEl.textContent = hasDescription ? t("channelSettings.description") : "";
+  bodyEl.hidden = !hasDescription;
   bodyEl.style.color = "";
+
+  const fieldsContainer = document.createElement("div");
+  fieldsContainer.id = "instance-settings-fields";
+  fieldsContainer.innerHTML =
+    fields.map((field) => field.renderHtml(cached[field.id] ?? INSTANCE_SETTINGS_DEFAULTS[field.id])).join("") +
+    instanceFilesSectionHtml(server);
+  stateEl.after(fieldsContainer);
+  wireInstanceFilesSection(fieldsContainer, server);
+  fields.forEach((field) => setInstanceSettingControl(field.id, undefined, true));
+
   cancelBtn.hidden = false;
+  cancelBtn.textContent = t("common.cancel");
+  confirmBtn.hidden = false;
+  confirmBtn.disabled = false;
+  confirmBtn.textContent = t("channelSettings.save");
   overlay.querySelector(".modal-box").classList.add("pop-in");
   overlay.hidden = false;
 
-  let slowTimer = null;
+  // Petit indicateur discret sous le titre pendant que le site repond (texte « le site met plus
+  // de temps » apres 3 s), ou une ligne d'erreur avec « Reessayer » si une demande echoue.
+  const lineStyle = "margin:8px 0 0;font-size:12px;text-align:left;";
+  const showLoading = () => {
+    stateEl.innerHTML = `<p role="status" aria-live="polite" style="${lineStyle}color:var(--muted);">${t("channelSettings.loading")}</p>`;
+    clearTimeout(slowTimer);
+    slowTimer = setTimeout(() => {
+      const line = stateEl.querySelector("[role=status]");
+      if (line) line.textContent = t("channelSettings.slow");
+    }, SETTINGS_SLOW_DELAY_MS);
+  };
+  const showError = (message) => {
+    clearTimeout(slowTimer);
+    stateEl.innerHTML = `
+      <p role="alert" style="${lineStyle}color:var(--danger);">
+        ${escapeHtml(message)}
+        <button type="button" class="link-btn" id="instance-settings-retry">${t("channelSettings.retry")}</button>
+      </p>`;
+    document.getElementById("instance-settings-retry")?.addEventListener("click", loadPending);
+  };
+
+  // Les demandes au site partent toutes en meme temps ; chacune debloque son propre reglage
+  // des qu'elle repond. Une fenetre fermee entre-temps ignore les reponses qui arrivent.
+  async function loadPending() {
+    const pending = fields.filter((field) => !(field.id in loadedValues));
+    if (pending.length === 0) return;
+    showLoading();
+    const results = await Promise.all(
+      pending.map((field) =>
+        Promise.resolve()
+          .then(() => field.load(server))
+          .catch((error) => ({ ok: false, error: error?.message }))
+          .then((result) => {
+            if (closed) return result;
+            if (result.ok) {
+              loadedValues[field.id] = result.value;
+              instanceSettingsCache.set(server.slug, { ...(instanceSettingsCache.get(server.slug) || {}), [field.id]: result.value });
+              setInstanceSettingControl(field.id, result.value, false);
+            }
+            return result;
+          }),
+      ),
+    );
+    if (closed) return;
+    const failed = results.find((result) => !result.ok);
+    if (failed) showError(failed.error || t("channelSettings.loadError"));
+    else {
+      clearTimeout(slowTimer);
+      stateEl.innerHTML = "";
+    }
+  }
+
   const cleanup = () => {
+    closed = true;
     clearTimeout(slowTimer);
     overlay.hidden = true;
     bodyEl.hidden = false;
@@ -5518,114 +6170,33 @@ async function showInstanceSettingsModal(server, { owned = true } = {}) {
     confirmBtn.hidden = false;
     confirmBtn.disabled = false;
     stateEl.remove();
-    document.getElementById("instance-settings-fields")?.remove();
+    fieldsContainer.remove();
   };
 
-  const showLoading = () => {
-    stateEl.innerHTML = `
-      <div class="settings-loader" role="status" aria-live="polite">
-        <div class="settings-loader-halo"><span class="settings-loader-mark"></span></div>
-        <span class="settings-loader-text">${t("channelSettings.loading")}</span>
-      </div>`;
-    cancelBtn.textContent = t("common.cancel");
-    confirmBtn.hidden = true;
-    clearTimeout(slowTimer);
-    slowTimer = setTimeout(() => {
-      stateEl.querySelector(".settings-loader")?.insertAdjacentHTML("beforeend", `<p class="settings-loader-slow">${t("channelSettings.slow")}</p>`);
-    }, SETTINGS_SLOW_DELAY_MS);
-  };
-
-  const showError = (message) => {
-    clearTimeout(slowTimer);
-    stateEl.innerHTML = `
-      <div class="settings-error" role="alert">
-        <span class="settings-error-icon">${ICON_ALERT}</span>
-        <p>${escapeHtml(message)}</p>
-      </div>`;
-    cancelBtn.textContent = t("common.close");
-    confirmBtn.hidden = false;
-    confirmBtn.disabled = false;
-    confirmBtn.textContent = t("channelSettings.retry");
-  };
-
-  // Annuler marche aussi pendant le chargement (avant, le bouton ne faisait rien a ce stade) ;
-  // apres une erreur, Reessayer relance le chargement dans la meme fenetre.
-  const currentValues = {};
-  for (;;) {
-    showLoading();
-    let cancelledWhileLoading = false;
-    const onLoadingCancel = () => {
-      cancelledWhileLoading = true;
-      // L'ecouteur est retire ici : la boucle ci-dessous sort par `return` sans l'atteindre.
-      cancelBtn.removeEventListener("click", onLoadingCancel);
-      cleanup();
-      instanceSettingsOpen = false;
-    };
-    cancelBtn.addEventListener("click", onLoadingCancel);
-    let failure = null;
-    for (const field of fields) {
-      const result = await field.load(server);
-      if (cancelledWhileLoading) return;
-      if (!result.ok) {
-        failure = result.error || t("channelSettings.loadError");
-        break;
-      }
-      currentValues[field.id] = result.value;
-    }
-    cancelBtn.removeEventListener("click", onLoadingCancel);
-    if (!failure) break;
-
-    showError(failure);
-    const retry = await new Promise((resolve) => {
-      const onRetry = () => done(true);
-      const onClose = () => done(false);
-      const done = (value) => {
-        confirmBtn.removeEventListener("click", onRetry);
-        cancelBtn.removeEventListener("click", onClose);
-        resolve(value);
-      };
-      confirmBtn.addEventListener("click", onRetry);
-      cancelBtn.addEventListener("click", onClose);
-    });
-    if (!retry) {
-      cleanup();
-      return;
-    }
-  }
-
-  clearTimeout(slowTimer);
-  stateEl.innerHTML = "";
-  // La description du canal du modpack ne s'applique qu'a ce reglage precis — vide sinon (le
-  // texte d'aide de la case de suivi, juste en dessous d'elle, suffit dans ce cas).
-  const hasDescription = fields.some((field) => field.id === "modpackChannel");
-  bodyEl.textContent = hasDescription ? t("channelSettings.description") : "";
-  bodyEl.hidden = !hasDescription;
-  const fieldsContainer = document.createElement("div");
-  fieldsContainer.id = "instance-settings-fields";
-  fieldsContainer.className = "settings-fade-in";
-  document.getElementById("instance-settings-fields")?.remove();
-  fieldsContainer.innerHTML = fields.map((field) => field.renderHtml(currentValues[field.id])).join("") + instanceFilesSectionHtml(server);
-  stateEl.after(fieldsContainer);
-  wireInstanceFilesSection(fieldsContainer, server);
-
-  cancelBtn.textContent = t("common.cancel");
-  confirmBtn.hidden = false;
-  confirmBtn.textContent = t("channelSettings.save");
+  loadPending();
 
   await new Promise((resolve) => {
     const onConfirm = async () => {
-      confirmBtn.disabled = true;
-      confirmBtn.textContent = t("channelSettings.saving");
-      const values = Object.fromEntries(fields.map((field) => [field.id, field.readValue()]));
-      for (const field of fields) {
-        const save = await field.save(server, values[field.id]);
-        if (!save.ok) {
-          confirmBtn.disabled = false;
-          confirmBtn.textContent = t("channelSettings.save");
-          bodyEl.hidden = false;
-          bodyEl.textContent = save.error || t("channelSettings.saveError");
-          bodyEl.style.color = "var(--danger)";
-          return;
+      // Seuls les reglages confirmes par le site et modifies par le joueur sont envoyes : un
+      // reglage encore en chargement (ou en erreur) n'est jamais ecrase par la valeur par defaut.
+      const changed = fields.filter((field) => field.id in loadedValues && field.readValue() !== loadedValues[field.id]);
+      if (changed.length > 0) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = t("channelSettings.saving");
+        for (const field of changed) {
+          const value = field.readValue();
+          const save = await field.save(server, value);
+          if (closed) return;
+          if (!save.ok) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = t("channelSettings.save");
+            bodyEl.hidden = false;
+            bodyEl.textContent = save.error || t("channelSettings.saveError");
+            bodyEl.style.color = "var(--danger)";
+            return;
+          }
+          loadedValues[field.id] = value;
+          instanceSettingsCache.set(server.slug, { ...(instanceSettingsCache.get(server.slug) || {}), [field.id]: value });
         }
       }
       confirmBtn.removeEventListener("click", onConfirm);
@@ -5833,6 +6404,7 @@ function renderMyInstancesGrid() {
     });
   });
   myInstancesPanelEl.querySelectorAll(".instance-menu-item").forEach((item) => item.addEventListener("click", () => setTimeout(closeInstanceMenus, 0)));
+  hideInstallItemsForInstalled(myInstancesPanelEl);
   myInstancesPanelEl.querySelectorAll(".my-instance-install").forEach((btn) => {
     btn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -6127,7 +6699,7 @@ async function renderSettingsTab(tab) {
   // onglets gardent leur colonne etroite.
   contentEl.classList.toggle("settings-content-wide", tab === "debug" || tab === "misc");
   if (tab === "language") return renderLanguageTab(contentEl, settings);
-  if (tab === "privacy") return renderPrivacyTab(contentEl);
+  if (tab === "privacy") return renderPrivacyTab(contentEl, settings);
   if (tab === "memory") return renderMemoryTab(contentEl, settings);
   if (tab === "misc") return renderMiscTab(contentEl, settings);
   if (tab === "debug") return renderDebugTab(contentEl, settings);
@@ -6530,6 +7102,8 @@ function renderMemoryTab(contentEl, settings) {
     renderMemoryTab(contentEl, { ...settings, ...updated });
     flashSavedButton(document.getElementById("settings-save-memory"));
   });
+  // RAM par pack (Laboratoire « packRam ») : la liste repliée « RAM de chaque pack » (play.js).
+  window.__omRamSettings?.(contentEl);
 }
 
 // Confirmation visuelle : le bouton passe au vert « Enregistré ✓ » pendant un instant.
@@ -6616,7 +7190,7 @@ function renderMiscTab(contentEl, settings, { betaPending = false } = {}) {
         <input type="checkbox" id="settings-discord-presence" ${settings.discordPresence !== false ? "checked" : ""} />
       </div>
     </section>
-    ${VIDEO_EMBED_ENABLED ? `
+    ${VIDEO_AUTOPLAY_ENABLED ? `
     <section class="settings-section">
       <h3 class="settings-section-title">${t("settings.videoSection")}</h3>
       <div class="settings-row">
@@ -7417,11 +7991,18 @@ async function applyDefaultRamSilently(settings) {
 // clic sur "Jouer" quand le joueur n'est pas encore connecte.
 let signInCountdownTimer = null;
 
-async function attemptSignIn(remember) {
+async function attemptSignIn(remember, { offlineInstance = null } = {}) {
   const result = await window.mchub.signIn(remember);
   if (result.ok) {
     enterApp(result.profile, { rememberFailed: result.rememberFailed });
     return true;
+  }
+  // Pas d'internet et serveur deja installe : pas d'ecran d'erreur, launchServer() lance en solo
+  // hors ligne (cas du Wi-Fi « connecte » mais sans internet, que navigator.onLine ne voit pas).
+  if (result.network && offlineInstance) {
+    gateEl.hidden = true;
+    appEl.hidden = false;
+    return "offline";
   }
   // Echec ou approbation en attente : seul cas ou l'ancien ecran de connexion
   // reapparait, pour afficher l'erreur et permettre de reessayer.
@@ -7592,6 +8173,9 @@ async function boot() {
     // relai tout de suite — jamais d'ecran d'erreur pour une verification de
     // mise a jour ratee (pas de connexion, releases indisponibles...).
   });
+  // Laboratoire (audit du 01/11, L1) : droits demandés dès maintenant, en parallèle de la mise à jour,
+  // au lieu d'attendre qu'elle soit finie pour commencer.
+  const labReady = window.mchub.featuresReady?.().catch(() => null);
   await Promise.all([window.mchub.updates.check(), new Promise((resolve) => setTimeout(resolve, 500))]);
   stopUpdateStatus();
 
@@ -7621,7 +8205,7 @@ async function boot() {
   bootstrapProgressEl.parentElement.classList.add("indeterminate");
   // Laboratoire : droits de ce compte lus pendant le chargement, pour que le menu apparaisse
   // complet du premier coup (Jouer, Amis…), sans icône qui surgit après.
-  const labState = await window.mchub.featuresReady?.().catch(() => null);
+  const labState = await labReady;
   if (labState) {
     applyLabFeatures(labState);
     window.dispatchEvent(new CustomEvent("omniscient:features", { detail: labState }));
@@ -7692,7 +8276,7 @@ boot();
 // 21/10 (cache des fiches) : delais lus dans refreshSettings.js (un seul fichier de reglages).
 // La liste ne se rafraichit seule qu'au plus toutes les 3 min, hors partie, et seulement si la
 // fenetre du launcher est visible (pas reduite ni cachee).
-const REFRESH_INTERVAL_MS = window.OMNI_REFRESH.PRESENCE_IDLE_MS;
+const REFRESH_INTERVAL_MS = window.OMNI_REFRESH.LIST_REFRESH_MS;
 let lastSilentListRefreshAt = Date.now();
 
 async function silentRefreshList() {
@@ -7762,10 +8346,10 @@ document.addEventListener("visibilitychange", () => {
 // Notifications : toutes les 5 minutes (chaque appel interroge la base du site).
 scheduleRefresh(scheduledRefreshNotifications, 300_000);
 scheduleRefresh(checkMaintenanceLoop, 120_000);
-// Presence (systeme d'amis) : son propre cycle de 2 min (audit 25/10, charge du site : avant 60 s,
-// comme silentRefreshList). Le site compte un ami « en ligne » pendant 5 min apres son dernier
-// heartbeat (ONLINE_WINDOW_MS cote site), donc un heartbeat rate ne le fait pas encore passer
-// « hors ligne ». Delibérément PAS via scheduleRefresh() : ce helper ralentit a
+// Presence (systeme d'amis) : son propre cycle, 3 min hors partie et 5 min fenetre reduite (audit
+// du 28/10, valide par Rushi : avant, chaque minute). Le site compte un ami « en ligne » pendant
+// 7 min apres son dernier heartbeat (ONLINE_WINDOW_SECONDS cote site), donc un heartbeat rate ne
+// le fait pas encore passer « hors ligne ». Delibérément PAS via scheduleRefresh() : ce helper ralentit a
 // REFRESH_PLAYING_INTERVAL_MS (5 min) pendant une partie, ce qui est le bon choix pour la liste
 // de serveurs (pas besoin de la rafraichir pendant que le joueur est en jeu) mais serait exactement
 // le mauvais choix ici — un ami en train de JOUER est le cas ou on veut le plus montrer "en
@@ -7775,17 +8359,29 @@ scheduleRefresh(checkMaintenanceLoop, 120_000);
 // 5 min (PRESENCE_PLAYING_MS), plus un envoi immediat au lancement et a la fermeture du jeu (voir
 // onGameState). Le site garde « en ligne » 7 min : pas de clignotement pour un ami en partie.
 var presenceTimer = null;
+// `function` (pas une constante) : lue aussi par pulseIsFresh, definie plus haut.
+function presenceDelayMs() {
+  if (gamePlaying) return window.OMNI_REFRESH.PRESENCE_PLAYING_MS;
+  return document.hidden ? window.OMNI_REFRESH.PRESENCE_HIDDEN_MS : window.OMNI_REFRESH.PRESENCE_IDLE_MS;
+}
 function schedulePresence(delayMs) {
   clearTimeout(presenceTimer);
   presenceTimer = setTimeout(async () => {
     try {
       await sendPresenceHeartbeat();
     } finally {
-      schedulePresence(gamePlaying ? window.OMNI_REFRESH.PRESENCE_PLAYING_MS : window.OMNI_REFRESH.PRESENCE_IDLE_MS);
+      schedulePresence(presenceDelayMs());
     }
   }, delayMs);
 }
-schedulePresence(REFRESH_INTERVAL_MS);
+// Premier envoi une minute apres le demarrage, comme avant.
+schedulePresence(60_000);
+// Fenetre de nouveau visible (28/10) : on revient au rythme de 3 min sans attendre la fin des
+// 5 min de la fenetre reduite ; envoi tout de suite si le dernier date deja de 3 min.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || gamePlaying || !lastPresenceSentAt) return;
+  schedulePresence(Math.max(0, window.OMNI_REFRESH.PRESENCE_IDLE_MS - (Date.now() - lastPresenceSentAt)));
+});
 
 // --- Fichiers de l'instance + « Arrêter le jeu » (16/10, option B validee par Rushi) ----------
 // Les actions sur les fichiers vivent dans la fenetre Reglages (engrenage, tout a droite de la
@@ -8067,6 +8663,7 @@ async function deleteInstanceFiles(server) {
   const result = await window.mchub.instances.deleteFiles(server.slug, { keepPersonal });
   if (result?.ok) {
     toolsToast(t("instanceTools.deleted", { name: server.name, size: formatSize(result.freedBytes) }));
+    return true;
   } else if (result?.code === "running") {
     toolsToast(t("instanceTools.delRefusedRunning"));
   } else if (result?.code === "installing" || result?.code === "launching") {
@@ -8224,6 +8821,12 @@ window.mchub.settings
   .get()
   .then((settings) => {
     sidebarExpandedSetting = settings.sidebarExpanded === true;
+    // Tout premier demarrage : depliee une fois (sans toucher a sidebarExpanded), pour que le
+    // joueur lise le nom des pages ; repliee aux demarrages suivants sauf s'il la deplie lui-meme.
+    if (!settings.sidebarIntroShown) {
+      sidebarExpandedSetting = true;
+      window.mchub.settings.set({ sidebarIntroShown: true }).catch(() => {});
+    }
   })
   .catch(() => {})
   .finally(() => {
@@ -9563,14 +10166,28 @@ document.addEventListener("keydown", (event) => {
 
 // Parametres > Confidentialite : pour l'instant ce seul reglage (le Mode discret reste dans
 // Apparence, son deplacement est un autre sujet).
-function renderPrivacyTab(contentEl) {
+function renderPrivacyTab(contentEl, settings) {
   contentEl.innerHTML = `
     <section class="settings-section">
       <h3 class="settings-section-title">${escapeHtml(t("friends.policyQ"))}</h3>
       <div class="settings-wide-slot" id="settings-friend-policy-${contentEl.id || "search"}"></div>
+    </section>
+    <section class="settings-section">
+      <h3 class="settings-section-title">${escapeHtml(t("settings.errorReportsTitle"))}</h3>
+      <div class="settings-row">
+        <span>
+          <label class="settings-row-label" for="settings-error-reports">${t("settings.errorReports")}</label>
+          <p class="settings-row-desc">${t("settings.errorReportsDesc")}</p>
+        </span>
+        <input type="checkbox" id="settings-error-reports" ${settings.errorReports !== false ? "checked" : ""} />
+      </div>
     </section>`;
   const slot = contentEl.querySelector(".settings-wide-slot");
   renderFriendPolicyCard(slot, { where: "settings" });
+  contentEl.querySelector("#settings-error-reports").addEventListener("change", async (event) => {
+    settings.errorReports = event.target.checked;
+    await window.mchub.settings.set({ errorReports: event.target.checked });
+  });
 }
 
 // --- Menus « … » (option C, 18/10) : fermeture commune ---------------------------------------
@@ -9589,3 +10206,57 @@ document.addEventListener("keydown", (event) => {
     closeInstanceMenus();
   }
 }, true);
+
+// --- « Tester dans le launcher » (31/10) : un pack proposé, installé en privé pour l'essayer ---------
+// Le launcher (main.js, installTestPack) envoie les étapes : la question (showModal), une petite carte
+// de progression, puis le résultat. Accepter ou refuser le pack se fait sur le site.
+(function initTestPack() {
+  const api = window.mchub?.play?.testPack;
+  if (!api) return;
+  const fr = () => String(document.documentElement.lang || "fr").startsWith("fr");
+  const tx = (a, b) => (fr() ? a : b);
+  let card = null;
+  const hideCard = () => {
+    card?.remove();
+    card = null;
+  };
+  const showCard = (title, sub, pct) => {
+    if (!card) {
+      card = document.createElement("div");
+      card.setAttribute("role", "status");
+      card.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:9999;width:320px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-l);box-shadow:var(--shadow-pop);color:var(--foreground);font-size:13px;";
+      document.body.appendChild(card);
+    }
+    card.innerHTML = `<div style="font-weight:600">${escapeHtml(title)}</div><div style="color:var(--muted);margin-top:2px">${escapeHtml(sub)}</div><div style="height:6px;border-radius:99px;background:var(--surface-raised);margin-top:10px;overflow:hidden"><div style="height:100%;width:${Math.max(2, Math.min(100, pct))}%;background:var(--accent);transition:width .2s"></div></div>`;
+  };
+  api.onEvent(async (ev) => {
+    if (ev.kind === "ask") {
+      const r = await showModal({
+        title: tx("Installer ce pack pour le tester ?", "Install this pack to test it?"),
+        body: tx(`« ${ev.name} » sera téléchargé et installé dans ton menu Jouer, avec la mention « Test Omnipack ». Les joueurs ne le voient pas. Accepter ou refuser le pack se fait ensuite sur le site.`, `“${ev.name}” will be downloaded and installed in your Play menu, tagged “Omnipack test”. Players can't see it. Accepting or refusing the pack is done on the site afterwards.`),
+        confirmLabel: tx("Installer", "Install"),
+        cancelLabel: tx("Annuler", "Cancel"),
+        tone: "ok",
+      });
+      api.answer(!!r.confirmed);
+    } else if (ev.kind === "progress") {
+      showCard(
+        ev.step === "install" ? tx("Installation du pack…", "Installing the pack…") : tx("Téléchargement du pack…", "Downloading the pack…"),
+        ev.step === "download" ? tx(`Partie ${ev.part} sur ${ev.parts} · ${ev.name}`, `Part ${ev.part} of ${ev.parts} · ${ev.name}`) : ev.name,
+        ev.pct || 0,
+      );
+    } else if (ev.kind === "done") {
+      hideCard();
+      const list = (ev.versions || []).slice(0, 6).join(", ") + ((ev.versions || []).length > 6 ? "…" : "");
+      await showModal({
+        title: tx(`« ${ev.name} » est installé`, `“${ev.name}” is installed`),
+        body: tx(`Il est dans Jouer › Mes versions (${list}) avec la mention « Test Omnipack ». Lance-le pour l'essayer, puis accepte ou refuse-le sur le site.`, `It is in Play › My versions (${list}) tagged “Omnipack test”. Launch it to try it, then accept or refuse it on the site.`),
+        confirmLabel: "OK",
+        tone: "ok",
+      });
+    } else if (ev.kind === "error") {
+      hideCard();
+      await showModal({ title: tx("Impossible de tester ce pack", "Can't test this pack"), body: ev.message || "", confirmLabel: "OK", tone: "warn" });
+    }
+  });
+})();

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { adminForAction, backToServers } from "@/lib/adminServers";
-import { deletePack, parseProjectList, savePack, setPackVersionState } from "@/lib/playPacks";
+import { deletePack, listAdminPacks, parseProjectList, savePack, setPackVersionState } from "@/lib/playPacks";
 import { listOffers, setSimulatedOffer } from "@/lib/playWorlds";
 import { db } from "@/lib/db";
+import { importSubmission, refuseSubmission } from "@/lib/omniPacks";
 
 // Actions de la page admin « Packs officiels (bêta) » (mode Jouer, 24/10) et de l'offre simulée
 // sur la fiche joueur. Vrais formulaires (sans JavaScript), même garde que les autres actions du
@@ -68,6 +69,34 @@ export async function POST(request: Request) {
     const problem = await setPackVersionState(versionId, change);
     const packId = clean(form.get("packId"), 80);
     return problem ? back(request, `error=${encodeURIComponent(problem)}`, `#pack-${packId}`) : back(request, `done=${what}&pack=${packId}`, `#pack-${packId}`);
+  }
+
+  // Toutes les versions d'un pack d'un coup (31/10, demande de Rushi) : testées, publiées ou retirées.
+  if (action === "versionAll") {
+    const packId = clean(form.get("packId"), 80);
+    const what = clean(form.get("what"), 20);
+    const change =
+      what === "tested" ? { status: "tested" as const } : what === "untested" ? { status: "to_test" as const } : what === "publish" ? { published: true } : what === "unpublish" ? { published: false } : null;
+    const pack = (await listAdminPacks()).find((p) => p.id === packId);
+    if (!change || !pack) return back(request, "error=action");
+    for (const v of pack.versions) {
+      if (v.status === "not_enough") continue;
+      const problem = await setPackVersionState(v.id, change);
+      if (problem) return back(request, `error=${encodeURIComponent(problem)}`, `#pack-${packId}`);
+    }
+    return back(request, `done=all${what}&pack=${packId}`, `#pack-${packId}`);
+  }
+
+  // Pack Omniscient (27/10) : packs proposés par les joueurs (.omnipack).
+  if (action === "importSubmission") {
+    const r = await importSubmission(clean(form.get("submissionId"), 80), clean(form.get("note"), 300));
+    return "error" in r ? back(request, `error=${encodeURIComponent(r.error.slice(0, 180))}`) : back(request, `done=imported&pack=${r.packId}`, `#pack-${r.packId}`);
+  }
+  if (action === "refuseSubmission") {
+    const note = clean(form.get("note"), 300);
+    if (!note) return back(request, `error=${encodeURIComponent("Écris un message pour le joueur.")}`);
+    const ok = await refuseSubmission(clean(form.get("submissionId"), 80), note);
+    return back(request, ok ? "done=refused" : "error=action");
   }
 
   if (action === "delete") {

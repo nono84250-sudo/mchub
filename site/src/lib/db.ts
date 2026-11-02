@@ -89,14 +89,18 @@ const D1_TIMEOUT_MS = 10_000;
 let d1CallCount = 0;
 
 async function d1Rest(sql: string, params: unknown[]): Promise<Row[]> {
+  return (await d1Call(sql, { sql, params }))[0]?.results ?? [];
+}
+
+async function d1Call(logLabel: string, body: unknown): Promise<{ results: Row[] }[]> {
   if (Date.now() < busyUntil) throw new D1BusyError("D1 : pause apres une limite de debit");
-  if (process.env.D1_LOG === "1") console.log(`[D1 #${++d1CallCount}] ${sql.replace(/\s+/g, " ").slice(0, 60)}`);
+  if (process.env.D1_LOG === "1") console.log(`[D1 #${++d1CallCount}] ${logLabel.replace(/\s+/g, " ").slice(0, 60)}`);
   let res: Response;
   try {
     res = await fetch(CF_ENDPOINT(), {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.CF_D1_API_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ sql, params }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(D1_TIMEOUT_MS),
     });
   } catch (error) {
@@ -119,7 +123,7 @@ async function d1Rest(sql: string, params: unknown[]): Promise<Row[]> {
     throw new Error(`D1 : reponse non-JSON (HTTP ${res.status} ${res.statusText}) : ${text.slice(0, 200)}`);
   }
   if (!json.success) throw new Error(`D1 : ${json.errors?.map((e) => e.message).join(", ") ?? res.statusText}`);
-  return json.result?.[0]?.results ?? [];
+  return json.result ?? [];
 }
 
 // Imite l'API D1Database (prepare/bind/all/run) utilisee plus bas, pour ne pas reecrire
@@ -307,12 +311,13 @@ export async function execSql(sql: string, params: unknown[] = []) {
   return (await d1()).prepare(sql).bind(...params.map(toDb)).run();
 }
 
-// ponytail: l'API REST D1 n'offre pas de transaction (contrairement a database.batch() en
-// Workers) : ces instructions s'executent l'une apres l'autre, pas de facon atomique. Risque
-// mineur ici (compteur de vue/lancement + evenement) ; passer par un Worker intermediaire si
-// ca doit un jour etre garanti atomique.
-export async function execBatch(stmts: { sql: string; params?: unknown[] }[]) {
-  for (const s of stmts) await execSql(s.sql, s.params ?? []);
+// Panel Analytique (31/10) : plusieurs instructions en UN SEUL appel a Cloudflare (champ « batch »
+// de l'API REST, execute comme une transaction). Renvoie les lignes de chaque instruction, dans le
+// meme ordre. Audit du 01/11 (S3) : les compteurs de vue et de lancement passent aussi par ici.
+export async function execSqlBatch(stmts: { sql: string; params?: unknown[] }[]): Promise<Row[][]> {
+  const batch = stmts.map((s) => ({ sql: s.sql, params: (s.params ?? []).map(toDb) }));
+  const results = await d1Call(`batch(${stmts.length}) ${stmts[0]?.sql ?? ""}`, { batch });
+  return stmts.map((_, i) => results[i]?.results ?? []);
 }
 
 const model = (name: string) => ({

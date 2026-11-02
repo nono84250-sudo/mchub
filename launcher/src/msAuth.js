@@ -26,7 +26,9 @@ async function fetchWithTimeout(url, options) {
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
-    if (error.name === "AbortError") throw new Error("Le serveur Microsoft n'a pas répondu à temps.");
+    if (error.name === "AbortError") throw Object.assign(new Error("Le serveur Microsoft n'a pas répondu à temps."), { code: "network" });
+    // fetch() qui echoue sans reponse (pas d'internet, DNS) : TypeError "fetch failed".
+    if (error instanceof TypeError) error.code = "network";
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -134,7 +136,7 @@ function openLoginWindow(authUrl, expectedState) {
       // vraie panne reseau, `finish` ignore de toute facon les appels une
       // fois la connexion deja resolue.
       if (errorCode === -3) return;
-      finish(reject, new Error("Impossible de contacter Microsoft — vérifie ta connexion internet."));
+      finish(reject, Object.assign(new Error("Impossible de contacter Microsoft — vérifie ta connexion internet."), { code: "network" }));
     });
     win.on("closed", () => finish(reject, new Error("Fenêtre de connexion fermée")));
 
