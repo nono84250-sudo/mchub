@@ -10,7 +10,7 @@ import type { Locale } from "@/i18n/locales";
 // faire relire par un avocat, est Legal/DOCUMENTS_LEGAUX_OMNISCIENT.md.
 export const LEGAL_EDITOR = "Rushifa";
 export const LEGAL_EMAIL = "omniscient.launchermc@gmail.com";
-const UPDATED = { fr: "Dernière mise à jour : 1er novembre 2026", en: "Last updated: November 1, 2026" };
+const UPDATED = { fr: "Dernière mise à jour : 2 novembre 2026", en: "Last updated: November 2, 2026" };
 
 type LegalPage = { title: string; updated: string; intro: ReactNode; sections: LegalSection[] };
 
@@ -313,7 +313,8 @@ export function privacyPolicy(locale: Locale): LegalPage {
                 <B>Vercel Inc.</B> : hébergement du site et de l&apos;API (fonctions exécutées à Paris).
               </>,
               <>
-                <B>Cloudflare, Inc.</B> : base de données, stockage des images et tâches planifiées.
+                <B>Cloudflare, Inc.</B> : base de données, stockage des fichiers (images, packs proposés, mondes en ligne) et tâches
+                planifiées. La base de données et les fichiers sont stockés en Europe de l&apos;Ouest.
               </>,
               <>
                 <B>Sentry</B> (Functional Software, Inc., données stockées dans l&apos;Union européenne) : rapports
@@ -350,7 +351,9 @@ export function privacyPolicy(locale: Locale): LegalPage {
         title: "8. Transferts hors de l'Union européenne",
         body: (
           <p>
-            Vercel, Cloudflare, Sentry, Google et GitHub sont des sociétés américaines : l&apos;accès de leurs équipes ou
+            Vos données sont stockées en Europe : la base de données et les fichiers chez Cloudflare (Europe de
+            l&apos;Ouest), les fonctions du site chez Vercel (Paris) et les rapports d&apos;erreurs chez Sentry (Union
+            européenne). Vercel, Cloudflare, Sentry, Google et GitHub sont toutefois des sociétés américaines : l&apos;accès de leurs équipes ou
             l&apos;acheminement du trafic peut impliquer les États-Unis. Ces transferts sont encadrés par les garanties de ces prestataires
             (Data Privacy Framework UE–États-Unis et clauses contractuelles types).
           </p>
@@ -657,7 +660,8 @@ function privacyEn(): LegalPage {
                 <B>Vercel Inc.</B>: hosting of the website and API (functions run in Paris).
               </>,
               <>
-                <B>Cloudflare, Inc.</B>: database, image storage and scheduled tasks.
+                <B>Cloudflare, Inc.</B>: database, file storage (images, submitted packs, online worlds) and scheduled tasks. The
+                database and the files are stored in Western Europe.
               </>,
               <>
                 <B>Sentry</B> (Functional Software, Inc., data stored in the European Union): error reports from the
@@ -693,7 +697,9 @@ function privacyEn(): LegalPage {
         title: "8. Transfers outside the European Union",
         body: (
           <p>
-            Vercel, Cloudflare, Sentry, Google and GitHub are US companies: access by their staff or traffic routing may
+            Your data is stored in Europe: the database and files at Cloudflare (Western Europe), the website&apos;s
+            functions at Vercel (Paris) and error reports at Sentry (European Union). Vercel, Cloudflare, Sentry, Google
+            and GitHub are nevertheless US companies: access by their staff or traffic routing may
             involve the United States. These transfers are covered by these providers&apos; safeguards (EU–US Data Privacy Framework and
             standard contractual clauses).
           </p>
