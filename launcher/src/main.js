@@ -3121,6 +3121,9 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
   // remplace alors le modpack du serveur pour ce lancement (meme dossier d'instance).
   const cloudPack = await fetchCloudPack(slug);
   const useCloud = Boolean(cloudPack && (cloudPack.mode === "required" || cloudChoice(slug) === true));
+  // Choix « juste cette fois » : il ne sert qu'à ce lancement (03/11, bug vu par Rushi : sans
+  // « Retenir mon choix », la question ne revenait plus jusqu'à la fermeture du launcher).
+  cloudChoiceOnce.delete(slug);
   // Nom et type du serveur pour le panneau de la pilule (etapes moddé / vanilla).
   onProgress({ name: server.name, modded: useCloud || (server.type === "modded" && Boolean(server.curseforgeModpackId)) });
   const settings = settingsStore.loadSettings();
@@ -3210,19 +3213,24 @@ async function fetchCloudPack(slug) {
 
 // Choix du joueur pour un modpack « Conseillé » (03/11, preview « Modpack relié au serveur ») :
 // true = avec le modpack, false = sans (vanilla), absent = lui demander au clic sur Jouer.
-// « Retenir mon choix » l'écrit dans les réglages ; sinon il ne vaut que jusqu'à la fermeture du launcher.
+// « Retenir mon choix » l'écrit dans les réglages (modifiable dans ⋯ › Réglages) ; sinon il ne vaut
+// que pour le lancement qui suit, et la question revient au prochain clic sur Jouer.
 const cloudChoiceOnce = new Map();
-function cloudChoice(slug) {
-  if (cloudChoiceOnce.has(slug)) return cloudChoiceOnce.get(slug);
+function savedCloudChoice(slug) {
   const saved = settingsStore.loadSettings().cloudPackOptIn?.[slug];
   return typeof saved === "boolean" ? saved : null;
+}
+function cloudChoice(slug) {
+  if (cloudChoiceOnce.has(slug)) return cloudChoiceOnce.get(slug);
+  return savedCloudChoice(slug);
 }
 
 ipcMain.handle("cloudPack:get", async (_event, slug) => {
   if (!isValidInstanceSlug(slug)) return null;
   const pack = await fetchCloudPack(slug);
   if (!pack) return null;
-  const choice = cloudChoice(slug);
+  // `choice` : seulement le choix RETENU (sinon le launcher redemande au clic sur Jouer).
+  const choice = savedCloudChoice(slug);
   return { ...pack, optedIn: choice === true, choice };
 });
 
@@ -3370,10 +3378,12 @@ ipcMain.handle("cloudPack:upload", async (event, id, opts = {}) => {
 
 ipcMain.handle("cloudPack:setOptIn", (_event, slug, on) => {
   if (!isValidInstanceSlug(slug)) return false;
-  // Bouton de la carte « Modpack du serveur » : un choix retenu (avec ou sans le modpack).
+  // Bouton de la carte « Modpack du serveur » et ⋯ › Réglages : un choix retenu (avec ou sans le
+  // modpack), ou null pour ne plus retenir (le launcher redemande à chaque clic sur Jouer).
   const map = { ...(settingsStore.loadSettings().cloudPackOptIn || {}) };
   cloudChoiceOnce.delete(slug);
-  map[slug] = Boolean(on);
+  if (on === null) delete map[slug];
+  else map[slug] = Boolean(on);
   settingsStore.saveSettings({ cloudPackOptIn: map });
   return true;
 });
