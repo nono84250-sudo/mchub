@@ -419,6 +419,7 @@ const uploadPrefix = (userId: string) => `${WORLDS_PREFIX}${userId}/cloudupload/
 // Lien de dépôt (1 h) d'un .mrpack, rangé à part jusqu'à son contrôle.
 export function startLauncherUpload(userId: string): { key: string; url: string } {
   const key = `${uploadPrefix(userId)}${randomUUID()}.mrpack`;
+  console.log(`[Mon cloud] lien de dépôt : bucket=${PACKS_BUCKET} clé=${key}`);
   return { key, url: presignPut(key, PACKS_BUCKET) };
 }
 
@@ -427,6 +428,7 @@ export async function storeUploadedPack(userId: string, offer: PlayOffer, givenN
   if (!key.startsWith(uploadPrefix(userId)) || !/^[\w/.-]+\.mrpack$/.test(key) || key.includes("..")) return { ok: false as const, error: "Envoi introuvable." };
   try {
     const size = await objectSize(key, PACKS_BUCKET).catch(() => null);
+    console.log(`[Mon cloud] relecture : bucket=${PACKS_BUCKET} clé=${key} taille=${size ?? "introuvable"}`);
     if (!size) return { ok: false as const, error: "Le modpack n'est pas arrivé dans le stockage : réessaie." };
     if (size > MRPACK_MAX_BYTES) return { ok: false as const, error: "100 Mo au maximum pour un modpack (sans les mods)." };
     const data = await readWorldObject(key, MRPACK_MAX_BYTES + 1, PACKS_BUCKET);

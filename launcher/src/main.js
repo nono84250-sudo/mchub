@@ -3224,6 +3224,20 @@ ipcMain.handle("cloudPack:get", async (_event, slug) => {
 // Modpack PRIVE, relie au serveur du proprietaire : CurseForge y est permis en liens. Le jour ou des
 // modpacks seront publies sur Omniscient, CurseForge y sera bloque (decision de Rushi, 03/11).
 const CLOUD_PACK_MAX = 100 * 1000 * 1000;
+// Traces de débogage (03/11, test de Rushi) : dans la console du launcher et dans ses journaux.
+// Jamais la signature d'un lien signé : seulement l'hôte et le chemin (bucket/clé).
+function cloudDebug(step, url, status, detail) {
+  let where = String(url || "");
+  try {
+    const u = new URL(where);
+    where = `${u.host}${u.pathname}`;
+  } catch {
+    // adresse illisible : gardée telle quelle
+  }
+  const message = `[Mon cloud] ${step} → ${status} ${where}${detail ? ` | ${String(detail).replace(/\s+/g, " ").slice(0, 400)}` : ""}`;
+  console.log(message);
+  logStore.pushLog({ level: status >= 400 ? "warn" : "info", source: "launcher", message });
+}
 const CLOUD_JAR_MAX = 30 * 1000 * 1000;
 ipcMain.handle("cloudPack:upload", async (_event, id) => {
   if (!features.visible("cloudPacks")) return pageOff;
@@ -3254,6 +3268,7 @@ ipcMain.handle("cloudPack:upload", async (_event, id) => {
     const send = async (url, body, type) => {
       const res = await fetch(url, { method: "POST", headers: { ...launcherAuthHeaders(), "Content-Type": type }, body, signal: AbortSignal.timeout(120000) });
       const data = await res.json().catch(() => null);
+      cloudDebug("site", url.replace(/minecraftUuid=[^&]+/, "minecraftUuid=…"), res.status, data?.error || "");
       if (!res.ok || !data?.ok) throw Object.assign(new Error(data?.error || `Réponse ${res.status} du site Omniscient`), { status: res.status });
       return data;
     };
@@ -3262,6 +3277,7 @@ ipcMain.handle("cloudPack:upload", async (_event, id) => {
     const slot = await withSessionRetry(async () => send(`${base}&start=1`, "{}", "application/json"));
     if (typeof slot.url !== "string" || !/^https:\/\/[a-z0-9-]+\.r2\.cloudflarestorage\.com\//.test(slot.url)) throw new Error("Lien de stockage refusé.");
     const put = await fetch(slot.url, { method: "PUT", body: await fsp.readFile(tmp), signal: AbortSignal.timeout(10 * 60 * 1000) });
+    cloudDebug("dépôt du modpack", slot.url, put.status, put.ok ? "" : await put.text().catch(() => ""));
     if (!put.ok) throw new Error(`Envoi du modpack impossible (réponse ${put.status}). Réessaie.`);
     const up = await send(`${base}&upload=1&name=${encodeURIComponent(name)}&key=${encodeURIComponent(slot.key)}`, "{}", "application/json");
     const refs = await send(`${base}&refs=1&pack=${encodeURIComponent(up.id)}`, JSON.stringify({ curseforge, custom: custom.map(({ file, name: n, size, sha1 }) => ({ file, name: n, size, sha1 })) }), "application/json");
@@ -3270,6 +3286,7 @@ ipcMain.handle("cloudPack:upload", async (_event, id) => {
       const x = custom.find((c) => c.sha1 === u.sha1);
       if (!x || typeof u.url !== "string" || !/^https:\/\/[a-z0-9-]+\.r2\.cloudflarestorage\.com\//.test(u.url)) continue;
       const res = await fetch(u.url, { method: "PUT", body: await fsp.readFile(x.abs), signal: AbortSignal.timeout(10 * 60 * 1000) });
+      cloudDebug(`dépôt de ${x.file}`, u.url, res.status, res.ok ? "" : await res.text().catch(() => ""));
       if (!res.ok) throw new Error(`Envoi de ${x.file} impossible (réponse ${res.status}). Réessaie.`);
     }
     const fin = refs.uploads?.length ? await send(`${base}&finalize=1&pack=${encodeURIComponent(up.id)}`, "{}", "application/json") : refs;
