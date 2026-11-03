@@ -28,11 +28,12 @@ export async function deleteCloudPackAction(id: string): Promise<boolean> {
   return done;
 }
 
-export async function linkCloudPackAction(packId: string, serverId: string, mode: string): Promise<LinkResult> {
+export async function linkCloudPackAction(packId: string, serverId: string, mode: string, note?: string): Promise<LinkResult> {
   const userId = await sessionUser();
   if (!userId || limited(userId)) return { ok: false, error: "notFound" };
-  const r = await linkCloudPack(userId, await getUserOffer(userId), String(packId), String(serverId), mode === "required" ? "required" : "suggested");
+  const r = await linkCloudPack(userId, await getUserOffer(userId), String(packId), String(serverId), mode === "required" ? "required" : "suggested", typeof note === "string" ? note : null);
   revalidatePath(PAGE);
+  revalidatePath(`/manage/${String(serverId)}/settings`);
   return r;
 }
 

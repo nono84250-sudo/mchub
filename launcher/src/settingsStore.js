@@ -101,8 +101,9 @@ const DEFAULTS = {
   // Mode Jouer (24/10) : petite notification par-dessus le jeu après une sauvegarde automatique
   // (toutes les 30 min). F6 / Maj+F6 affichent toujours leur petit menu.
   playSaveToast: true,
-  // Mon cloud (03/11) : serveurs dont le joueur a choisi d'installer le modpack « Conseillé »
-  // ({ slug: true }). Un modpack « Obligatoire pour rejoindre » s'installe sans ce choix.
+  // Mon cloud (03/11) : choix retenu pour un modpack « Conseillé » ({ slug: true } = avec le modpack,
+  // { slug: false } = sans). Absent : le launcher demande au clic sur Jouer. Un modpack
+  // « Obligatoire pour rejoindre » s'installe sans ce choix.
   cloudPackOptIn: {},
 };
 

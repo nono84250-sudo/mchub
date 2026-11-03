@@ -74,6 +74,7 @@ function Modal({ title, onClose, children, footer }: { title: string; onClose: (
 function LinkDialog({ L, pack, servers, limit, onClose, onDone }: { L: L; pack: CloudPack; servers: ServerLite[]; limit: number; onClose: () => void; onDone: (text: string) => void }) {
   const [serverId, setServerId] = useState(pack.serverId ?? servers[0]?.id ?? "");
   const [mode, setMode] = useState<"required" | "suggested">(pack.linkMode ?? "required");
+  const [note, setNote] = useState(pack.linkNote ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const server = servers.find((s) => s.id === serverId);
@@ -83,7 +84,7 @@ function LinkDialog({ L, pack, servers, limit, onClose, onDone }: { L: L; pack: 
     setBusy(true);
     setError(null);
     try {
-      const r = await linkCloudPackAction(pack.id, serverId, mode);
+      const r = await linkCloudPackAction(pack.id, serverId, mode, note);
       if (r.ok) onDone(fmt(L.linkedOk, { p: pack.name, s: server?.name ?? "" }));
       else setError(r.error === "limit" ? fmt(L.limitLink, { n: r.limit ?? limit }) : L.error);
     } catch {
@@ -143,6 +144,17 @@ function LinkDialog({ L, pack, servers, limit, onClose, onDone }: { L: L; pack: 
           </button>
         ))}
       </div>
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-semibold text-foreground">{L.noteL}</span>
+        <textarea
+          className="field-input min-h-[72px] resize-y"
+          maxLength={200}
+          value={note}
+          placeholder={L.noteP}
+          onChange={(e) => setNote(e.target.value.replace(/\n/g, " "))}
+        />
+        <span className="text-xs text-muted">{fmt(L.noteH, { n: note.length })}</span>
+      </label>
       {error ? (
         <p role="alert" className="text-sm text-[var(--danger)]">
           {error}
@@ -360,6 +372,7 @@ export function CloudPanel(props: {
                           {fmt(L.updated, { t: agoFmt(p.updatedAt, locale) })}
                         </span>
                       </p>
+                      {p.linkNote ? <p className="mt-1 text-xs italic text-muted">« {p.linkNote} »</p> : null}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {p.serverId ? (

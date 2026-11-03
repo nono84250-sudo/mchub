@@ -711,7 +711,15 @@
     "modpackNote": "Players download this modpack automatically on first launch, and always stay on its latest version — no manual setup.",
     "inviteResetTitle": "Change the invite link?",
     "inviteResetBtn": "Change the link",
-    "identityMoved": "Name, description and images: now in My page →"
+    "identityMoved": "Name, description and images: now in My page →",
+    "linkedPack": "Linked to a modpack",
+    "linkedPackName": "“{p}” ({m})",
+    "linkedPackReq": "Required to join",
+    "linkedPackSug": "Suggested",
+    "linkedPackHelp": "While a modpack from your cloud is linked, it decides whether your server is modded. Your other settings stay the same.",
+    "linkedPackChange": "Change in Cloud",
+    "linkedPackUnlink": "Unlink",
+    "linkedPackUnlinkErr": "That didn't work. Try again in a moment."
   },
   "imageUpload": {
     "failed": "Couldn't upload the image — check the format and size shown above."
@@ -985,7 +993,8 @@
     "cloudPackMods": "{n} mods",
     "cloudPackConfigs": "{n} config files",
     "cloudPackInstall": "Install in the launcher",
-    "cloudPackList": "See the mods"
+    "cloudPackList": "See the mods",
+    "cloudPackWhy": "From the server: “{note}”"
   },
   "faq": {
     "title": "Frequently asked questions",
@@ -1541,7 +1550,7 @@
     "req": "Required to join",
     "reqD": "The launcher installs the modpack before connecting.",
     "sug": "Suggested",
-    "sugD": "Players can play without it, the button stays available.",
+    "sugD": "When they click Play, players choose: with the modpack or without.",
     "limitLink": "Your plan allows {n} linked server(s). Unlink the other one or move to a bigger plan.",
     "verWarn": "Careful: this server runs {s}, the modpack is for {p}.",
     "playerT": "What a player sees",
@@ -1554,6 +1563,9 @@
     "createdOk": "Modpack “{p}” saved.",
     "linkedOk": "“{p}” is linked to {s}.",
     "unlinkedOk": "Modpack unlinked.",
-    "error": "That didn't work. Try again in a moment."
+    "error": "That didn't work. Try again in a moment.",
+    "noteL": "Why use this modpack?",
+    "noteP": "E.g. this modpack lets you talk to other players and get the server's official textures.",
+    "noteH": "Players will see it when they choose. {n}/200 characters."
   }
 }

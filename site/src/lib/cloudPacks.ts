@@ -80,6 +80,7 @@ export type CloudPack = {
   serverName: string | null;
   serverSlug: string | null;
   linkMode: LinkMode | null;
+  linkNote: string | null;
   installCount: number;
   updatedAt: string;
 };
@@ -105,6 +106,7 @@ function toPack(r: Row): CloudPack {
     serverName: r.serverName ?? null,
     serverSlug: r.serverSlug ?? null,
     linkMode: r.serverId ? (r.linkMode === "required" ? "required" : "suggested") : null,
+    linkNote: r.serverId && typeof r.linkNote === "string" && r.linkNote.trim() ? r.linkNote : null,
     installCount: Number(r.installCount) || 0,
     updatedAt: r.updatedAt,
   };
@@ -313,7 +315,14 @@ export async function ownedServers(userId: string): Promise<{ id: string; name: 
   return rows.map((r: Row) => ({ id: r.id, name: r.name, slug: r.slug, minecraftVersion: r.minecraftVersion, type: r.type }));
 }
 
-export async function linkCloudPack(userId: string, offer: PlayOffer, packId: string, serverId: string, mode: LinkMode): Promise<LinkResult> {
+// « Pourquoi utiliser ce modpack ? » (03/11) : un texte court, sans retour à la ligne.
+export const LINK_NOTE_MAX = 200;
+export const cleanLinkNote = (v: unknown) => {
+  const t = String(v ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, LINK_NOTE_MAX);
+  return t || null;
+};
+
+export async function linkCloudPack(userId: string, offer: PlayOffer, packId: string, serverId: string, mode: LinkMode, note?: string | null): Promise<LinkResult> {
   const pack = await findPack(userId, packId);
   if (!pack) return { ok: false, error: "notFound" };
   const [server] = await execSql('SELECT "id" FROM "server" WHERE "id" = ? AND "ownerId" = ?', [String(serverId), userId]);
@@ -325,15 +334,15 @@ export async function linkCloudPack(userId: string, offer: PlayOffer, packId: st
     if (Number(n) >= offer.packServers) return { ok: false, error: "limit", limit: offer.packServers };
   }
   // Un serveur n'a qu'un modpack relié : l'ancien est délié.
-  await execSql('UPDATE "cloudPack" SET "serverId" = NULL, "linkMode" = NULL WHERE "serverId" = ? AND "id" <> ?', [server.id, pack.id]);
-  await execSql('UPDATE "cloudPack" SET "serverId" = ?, "linkMode" = ?, "updatedAt" = ? WHERE "id" = ?', [server.id, mode === "required" ? "required" : "suggested", now(), pack.id]);
+  await execSql('UPDATE "cloudPack" SET "serverId" = NULL, "linkMode" = NULL, "linkNote" = NULL WHERE "serverId" = ? AND "id" <> ?', [server.id, pack.id]);
+  await execSql('UPDATE "cloudPack" SET "serverId" = ?, "linkMode" = ?, "linkNote" = ?, "updatedAt" = ? WHERE "id" = ?', [server.id, mode === "required" ? "required" : "suggested", cleanLinkNote(note), now(), pack.id]);
   return { ok: true };
 }
 
 export async function unlinkCloudPack(userId: string, packId: string): Promise<boolean> {
   const pack = await findPack(userId, packId);
   if (!pack) return false;
-  await execSql('UPDATE "cloudPack" SET "serverId" = NULL, "linkMode" = NULL, "updatedAt" = ? WHERE "id" = ?', [now(), pack.id]);
+  await execSql('UPDATE "cloudPack" SET "serverId" = NULL, "linkMode" = NULL, "linkNote" = NULL, "updatedAt" = ? WHERE "id" = ?', [now(), pack.id]);
   return true;
 }
 
@@ -710,6 +719,7 @@ export type ServerCloudPack = {
   id: string;
   name: string;
   mode: LinkMode;
+  note: string | null;
   minecraftVersion: string;
   loader: CloudLoader;
   modCount: number;
@@ -741,6 +751,7 @@ export function publicPackInfo(row: Row): ServerCloudPack {
     id: p.id,
     name: p.name,
     mode: p.linkMode ?? "suggested",
+    note: p.linkNote,
     minecraftVersion: p.minecraftVersion,
     loader: p.loader,
     modCount: p.files.filter((f) => !f.pending && (!f.path || f.path.startsWith("mods/"))).length,

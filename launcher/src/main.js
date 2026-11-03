@@ -3120,7 +3120,7 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
   // avant de se connecter ; « Conseillé » : seulement si le joueur l'a choisi sur la fiche. Il
   // remplace alors le modpack du serveur pour ce lancement (meme dossier d'instance).
   const cloudPack = await fetchCloudPack(slug);
-  const useCloud = Boolean(cloudPack && (cloudPack.mode === "required" || settingsStore.loadSettings().cloudPackOptIn?.[slug]));
+  const useCloud = Boolean(cloudPack && (cloudPack.mode === "required" || cloudChoice(slug) === true));
   // Nom et type du serveur pour le panneau de la pilule (etapes moddé / vanilla).
   onProgress({ name: server.name, modded: useCloud || (server.type === "modded" && Boolean(server.curseforgeModpackId)) });
   const settings = settingsStore.loadSettings();
@@ -3208,10 +3208,36 @@ async function fetchCloudPack(slug) {
   }
 }
 
+// Choix du joueur pour un modpack « Conseillé » (03/11, preview « Modpack relié au serveur ») :
+// true = avec le modpack, false = sans (vanilla), absent = lui demander au clic sur Jouer.
+// « Retenir mon choix » l'écrit dans les réglages ; sinon il ne vaut que jusqu'à la fermeture du launcher.
+const cloudChoiceOnce = new Map();
+function cloudChoice(slug) {
+  if (cloudChoiceOnce.has(slug)) return cloudChoiceOnce.get(slug);
+  const saved = settingsStore.loadSettings().cloudPackOptIn?.[slug];
+  return typeof saved === "boolean" ? saved : null;
+}
+
 ipcMain.handle("cloudPack:get", async (_event, slug) => {
   if (!isValidInstanceSlug(slug)) return null;
   const pack = await fetchCloudPack(slug);
-  return pack ? { ...pack, optedIn: Boolean(settingsStore.loadSettings().cloudPackOptIn?.[slug]) } : null;
+  if (!pack) return null;
+  const choice = cloudChoice(slug);
+  return { ...pack, optedIn: choice === true, choice };
+});
+
+ipcMain.handle("cloudPack:choose", (_event, slug, withPack, remember) => {
+  if (!isValidInstanceSlug(slug)) return false;
+  const map = { ...(settingsStore.loadSettings().cloudPackOptIn || {}) };
+  if (remember) {
+    cloudChoiceOnce.delete(slug);
+    map[slug] = Boolean(withPack);
+  } else {
+    cloudChoiceOnce.set(slug, Boolean(withPack));
+    delete map[slug];
+  }
+  settingsStore.saveSettings({ cloudPackOptIn: map });
+  return true;
 });
 
 // « Envoyer dans le cloud » (03/11, Rushi) : le modpack se fait dans le launcher. Trois envois :
@@ -3344,9 +3370,10 @@ ipcMain.handle("cloudPack:upload", async (event, id, opts = {}) => {
 
 ipcMain.handle("cloudPack:setOptIn", (_event, slug, on) => {
   if (!isValidInstanceSlug(slug)) return false;
+  // Bouton de la carte « Modpack du serveur » : un choix retenu (avec ou sans le modpack).
   const map = { ...(settingsStore.loadSettings().cloudPackOptIn || {}) };
-  if (on) map[slug] = true;
-  else delete map[slug];
+  cloudChoiceOnce.delete(slug);
+  map[slug] = Boolean(on);
   settingsStore.saveSettings({ cloudPackOptIn: map });
   return true;
 });

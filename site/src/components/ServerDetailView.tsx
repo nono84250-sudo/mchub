@@ -258,6 +258,7 @@ export async function ServerDetailView({ slug, server: raw, inviteCode }: { slug
                   {cloudPack.configCount ? ` · ${t(dict, "serverPage.cloudPackConfigs", { n: cloudPack.configCount })}` : ""}
                 </p>
                 <p className="text-[13px] text-muted">{cloudPack.mode === "required" ? dict.serverPage.cloudPackReq : dict.serverPage.cloudPackSug}</p>
+                {cloudPack.note ? <p className="text-[13px] italic text-foreground">{t(dict, "serverPage.cloudPackWhy", { note: cloudPack.note })}</p> : null}
                 <details className="text-[13px]">
                   <summary className="cursor-pointer text-accent">{dict.serverPage.cloudPackList}</summary>
                   <ul className="mt-1.5 flex flex-col gap-0.5 text-muted">

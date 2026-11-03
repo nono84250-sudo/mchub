@@ -1455,6 +1455,7 @@ async function fillCloudPackCard(server) {
     <p><b>${escapeHtml(pack.name)}</b></p>
     <p class="muted">${meta}</p>
     <p class="muted">${t(pack.mode === "required" ? "serverPage.cloudPackRequired" : "serverPage.cloudPackSuggested")}</p>
+    ${pack.note ? `<p style="font-style:italic;">${escapeHtml(t("serverPage.cloudPackWhy", { note: String(pack.note) }))}</p>` : ""}
     ${Number(pack.customCount) > 0 ? `<p style="color:var(--warn);">${escapeHtml(t("serverPage.cloudPackCustom", { n: Number(pack.customCount) }))}</p>` : ""}
     ${mods.length ? `<details><summary>${t("serverPage.cloudPackSeeMods")}</summary><ul>${mods.map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul></details>` : ""}
     ${
@@ -1472,6 +1473,67 @@ async function fillCloudPackCard(server) {
     await window.mchub.setCloudPackOptIn(server.slug, on).catch(() => false);
     if (on) await installServerStandalone(server, btn);
     if (!detailEl.hidden) renderDetail(server);
+  });
+}
+
+// Preview « Modpack relié au serveur » (03/11, validée par Rushi) : modpack « Conseillé » et pas
+// encore de choix retenu : au clic sur Jouer, le joueur choisit. À gauche Vanilla (ou le jeu
+// habituel d'un serveur moddé), à droite « <modpack> (moddé) » avec le mot du propriétaire.
+// « Obligatoire pour rejoindre » : rien à demander. Résout false si le joueur annule.
+async function askCloudPackChoice(server) {
+  if (!window.mchub.getCloudPack || !window.mchub.chooseCloudPack) return true;
+  const pack = await window.mchub.getCloudPack(server.slug).catch(() => null);
+  if (!pack || pack.mode === "required" || typeof pack.choice === "boolean") return true;
+  const modded = server.type === "modded" && Boolean(server.curseforgeModpackId);
+  return new Promise((resolve) => {
+    const ov = document.createElement("div");
+    ov.className = "modal-overlay";
+    ov.style.pointerEvents = "auto";
+    const card = (id, title, desc, extra, accent) => `
+      <button type="button" data-choice="${id}" style="flex:1 1 200px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;text-align:left;padding:14px;border-radius:12px;border:1px solid ${accent ? "var(--accent)" : "var(--border)"};background:${accent ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "var(--surface, transparent)"};color:var(--foreground);cursor:pointer;font:inherit;">
+        <b style="font-size:15px;">${escapeHtml(title)}</b>
+        <span class="muted" style="font-size:12px;">${escapeHtml(desc)}</span>
+        ${extra}
+      </button>`;
+    const note = pack.note ? `<span style="font-size:12px;font-style:italic;">« ${escapeHtml(String(pack.note))} »</span>` : "";
+    const warn = Number(pack.customCount) > 0 ? `<span style="font-size:11px;color:var(--warn);">${escapeHtml(t("serverPage.cloudPackCustom", { n: Number(pack.customCount) }))}</span>` : "";
+    ov.innerHTML = `
+      <div class="modal-box pop-in" role="dialog" aria-modal="true" aria-labelledby="cloud-choice-title" style="max-width:560px;width:100%;text-align:left;">
+        <h3 id="cloud-choice-title" style="margin:0 0 4px;">${escapeHtml(t("serverPage.cloudChoiceTitle", { s: server.name }))}</h3>
+        <p class="muted" style="margin:0 0 14px;">${escapeHtml(t("serverPage.cloudChoiceSub"))}</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;">
+          ${card("vanilla", modded ? t("serverPage.cloudChoiceWithout") : t("serverPage.cloudChoiceVanilla"), modded ? t("serverPage.cloudChoiceWithoutD") : t("serverPage.cloudChoiceVanillaD"), "", false)}
+          ${card("pack", t("serverPage.cloudChoicePack", { p: pack.name }), t("serverPage.cloudChoicePackD", { n: Number(pack.modCount) || 0 }), note + warn, true)}
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer;"><input type="checkbox" data-remember> ${escapeHtml(t("serverPage.cloudChoiceRemember"))}</label>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px;"><button type="button" class="btn-secondary" data-cancel>${escapeHtml(t("serverPage.cloudChoiceCancel"))}</button></div>
+      </div>`;
+    document.body.appendChild(ov);
+    document.body.classList.add("modal-blocking");
+    const done = async (choice) => {
+      document.removeEventListener("keydown", onKey, true);
+      const remember = Boolean(ov.querySelector("[data-remember]")?.checked);
+      ov.remove();
+      document.body.classList.remove("modal-blocking");
+      if (choice === null) return resolve(false);
+      await window.mchub.chooseCloudPack(server.slug, choice === "pack", remember).catch(() => false);
+      if (currentDetailServer?.slug === server.slug && !detailEl.hidden) fillCloudPackCard(server);
+      resolve(true);
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        done(null);
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    ov.addEventListener("mousedown", (event) => {
+      if (event.target === ov) done(null);
+    });
+    ov.querySelector("[data-cancel]").addEventListener("click", () => done(null));
+    ov.querySelectorAll("[data-choice]").forEach((btn) => btn.addEventListener("click", () => done(btn.dataset.choice)));
+    ov.querySelector('[data-choice="pack"]').focus();
   });
 }
 
@@ -2731,6 +2793,11 @@ async function launchServer(server) {
       launchInProgress = false;
       return null;
     }
+  }
+
+  if (!(await askCloudPackChoice(server))) {
+    launchInProgress = false;
+    return null;
   }
 
   if (!(await confirmFirstInstall(server, { launch: true }))) {
