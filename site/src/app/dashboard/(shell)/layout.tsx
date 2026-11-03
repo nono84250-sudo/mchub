@@ -15,8 +15,14 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
     <div className="mx-auto flex max-w-6xl gap-8 px-4 sm:px-6 py-12">
       <DashboardNav
         unread={unread}
-        playBeta={features.worlds.beta}
-        show={{ friends: features.friends.visible, team: features.team.visible, worlds: features.worlds.visible, packs: features.omniPack?.visible ?? false }}
+        playBeta={features.worlds.visible ? features.worlds.beta || !!features.cloudPacks?.beta : !!features.cloudPacks?.beta}
+        show={{
+          friends: features.friends.visible,
+          team: features.team.visible,
+          // Menu « Cloud » (03/11) : modpacks du cloud ou mondes en ligne.
+          worlds: features.worlds.visible || !!features.cloudPacks?.visible,
+          packs: features.omniPack?.visible ?? false,
+        }}
       />
       <div className="min-w-0 flex-1">{children}</div>
     </div>

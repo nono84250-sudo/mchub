@@ -118,6 +118,10 @@ contextBridge.exposeInMainWorld("mchub", {
   // La progression ne remonte plus par un canal dedie : elle passe par le
   // meme panneau de taches que "Rejoindre" (tasks:*, ci-dessous).
   installServer: (slug, name) => ipcRenderer.invoke("server:install", slug, name),
+  // Mon cloud (03/11) : modpack relié au serveur par son propriétaire, et choix du joueur pour un
+  // modpack « Conseillé ».
+  getCloudPack: (slug) => ipcRenderer.invoke("cloudPack:get", slug),
+  setCloudPackOptIn: (slug, on) => ipcRenderer.invoke("cloudPack:setOptIn", slug, on),
   // Mods qu'un modpack CurseForge interdit de telecharger (14/10) : page du mod sur CurseForge
   // (adresse verifiee cote main.js) et dossier Telechargements ou le joueur les depose.
   openModPage: (pageUrl) => ipcRenderer.invoke("modpack:openModPage", pageUrl),

@@ -1440,6 +1440,40 @@ function fitDetailIcon() {
   }
 }
 
+// Mon cloud (03/11, preview v2 validée par Rushi) : carte « Modpack du serveur » de la fiche.
+// « Obligatoire pour rejoindre » : rien à choisir, Jouer l'installe. « Conseillé » : le joueur
+// choisit de l'installer (retenu pour ce serveur) ou de jouer sans.
+async function fillCloudPackCard(server) {
+  const card = document.getElementById("cloud-pack-card");
+  if (!card || !window.mchub.getCloudPack) return;
+  const pack = await window.mchub.getCloudPack(server.slug).catch(() => null);
+  if (!pack || !card.isConnected || detailEl.hidden) return;
+  const meta = [escapeHtml(pack.minecraftVersion), t("serverPage.cloudPackMods", { n: pack.modCount }), pack.configCount ? t("serverPage.cloudPackConfigs", { n: pack.configCount }) : ""].filter(Boolean).join(" · ");
+  const mods = Array.isArray(pack.mods) ? pack.mods : [];
+  card.innerHTML = `
+    <h3 class="detail-card-title">${t("serverPage.cloudPackTitle")}</h3>
+    <p><b>${escapeHtml(pack.name)}</b></p>
+    <p class="muted">${meta}</p>
+    <p class="muted">${t(pack.mode === "required" ? "serverPage.cloudPackRequired" : "serverPage.cloudPackSuggested")}</p>
+    ${mods.length ? `<details><summary>${t("serverPage.cloudPackSeeMods")}</summary><ul>${mods.map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul></details>` : ""}
+    ${
+      pack.mode === "required"
+        ? ""
+        : pack.optedIn
+          ? `<p class="muted">${t("serverPage.cloudPackChosen")}</p><button class="btn-secondary" type="button" data-cloud-pack="off">${t("serverPage.cloudPackWithout")}</button>`
+          : `<button class="btn-primary" type="button" data-cloud-pack="on">${t("serverPage.cloudPackInstall")}</button>`
+    }`;
+  card.hidden = false;
+  card.querySelector("[data-cloud-pack]")?.addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    const on = btn.dataset.cloudPack === "on";
+    btn.disabled = true;
+    await window.mchub.setCloudPackOptIn(server.slug, on).catch(() => false);
+    if (on) await installServerStandalone(server, btn);
+    if (!detailEl.hidden) renderDetail(server);
+  });
+}
+
 async function renderDetail(server) {
   currentDetailServer = server;
   // Une fiche s'affiche seule : jamais l'en-tete de la page Serveurs (titre, recherche, filtres).
@@ -1578,11 +1612,14 @@ async function renderDetail(server) {
               : ""
           }
         </section>
+        <section class="detail-card" id="cloud-pack-card" hidden></section>
       </aside>
     </div>
   `;
 
   wireDetailBreadcrumb();
+  // Mon cloud (03/11) : modpack relié par le propriétaire, lu à part (la fiche s'affiche sans attendre).
+  fillCloudPackCard(server);
   fitDetailIcon();
   // Fiche partielle (19/10) : un de SES serveurs pas encore dans l'annuaire, lu par la route du
   // lancement (sans banniere ni description). On le dit plutot que de montrer des cases vides.

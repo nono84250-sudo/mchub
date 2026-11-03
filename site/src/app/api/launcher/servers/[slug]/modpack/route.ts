@@ -10,6 +10,8 @@ import { getModrinthModpackInstallFile } from "@/lib/modrinth";
 import { getFtbModpackInstallFile } from "@/lib/ftb";
 import { parseModpackSource } from "@/lib/modpack-types";
 import { withD1Busy } from "@/lib/d1Busy";
+import { requireLauncherFeature } from "@/lib/features";
+import { countInstall, launcherInstallPayload, serverCloudPackRow } from "@/lib/cloudPacks";
 
 // Fichier du modpack d'un serveur moddé (CurseForge, Modrinth ou FTB), pour que le
 // launcher l'installe (voir launcher/src/modpack.js). La cle CurseForge reste
@@ -49,6 +51,18 @@ async function handleGET(request: Request, ctx: RouteContext<"/api/launcher/serv
   // public mais pas encore publié/validé ne doit pas fuiter son modpack (audit 2026-10-10 §1.3).
   if (!server || !(await isVisibleRow(server, proofFromRequest(request)))) {
     return NextResponse.json({ error: "Serveur introuvable" }, { status: 404 });
+  }
+  // Mon cloud (03/11) : ?cloud=1 = le modpack relié par le propriétaire (liens Modrinth + configs),
+  // demandé par le launcher quand il est « Obligatoire pour rejoindre » ou que le joueur a choisi
+  // de l'installer (« Conseillé »). &first=1 : première installation chez ce joueur (compteur).
+  const url = new URL(request.url);
+  if (url.searchParams.get("cloud") === "1") {
+    const off = await requireLauncherFeature(request, "cloudPacks");
+    if (off) return off;
+    const row = await serverCloudPackRow(server.id);
+    if (!row) return NextResponse.json({ error: "Ce serveur n'a pas de modpack relié." }, { status: 404 });
+    if (url.searchParams.get("first") === "1") await countInstall(row.id);
+    return NextResponse.json(launcherInstallPayload(row));
   }
   if (server.type !== "modded" || !server.curseforgeModpackId) {
     return NextResponse.json({ error: "Ce serveur n'a pas de modpack." }, { status: 404 });

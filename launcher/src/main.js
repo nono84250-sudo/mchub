@@ -3116,8 +3116,13 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
         headers: inviteHeaders(slug),
       });
   const server = data.server;
+  // Mon cloud (03/11) : modpack relie par le proprietaire. « Obligatoire pour rejoindre » : installe
+  // avant de se connecter ; « Conseillé » : seulement si le joueur l'a choisi sur la fiche. Il
+  // remplace alors le modpack du serveur pour ce lancement (meme dossier d'instance).
+  const cloudPack = await fetchCloudPack(slug);
+  const useCloud = Boolean(cloudPack && (cloudPack.mode === "required" || settingsStore.loadSettings().cloudPackOptIn?.[slug]));
   // Nom et type du serveur pour le panneau de la pilule (etapes moddé / vanilla).
-  onProgress({ name: server.name, modded: server.type === "modded" && Boolean(server.curseforgeModpackId) });
+  onProgress({ name: server.name, modded: useCloud || (server.type === "modded" && Boolean(server.curseforgeModpackId)) });
   const settings = settingsStore.loadSettings();
   // `memoryOverride` sert un lancement "juste cette fois" avec la RAM
   // recommandee du serveur (voir applyRecommendedRamIfNeeded cote
@@ -3130,8 +3135,9 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
   // Serveur moddé : installe (ou met à jour) son modpack CurseForge dans une
   // instance propre au serveur avant de lancer. Voir modpack.js.
   let modded = null;
-  if (server.type === "modded" && server.curseforgeModpackId) {
+  if (useCloud || (server.type === "modded" && server.curseforgeModpackId)) {
     modded = await installModpack({
+      cloud: useCloud,
       config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) } },
       slug,
       gameRoot: GAME_ROOT,
@@ -3186,6 +3192,36 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
 
   return { server, settings, modded, gameJava, memoryMinGB, memoryMaxGB };
 }
+
+// Mon cloud (03/11) : modpack relie au serveur par son proprietaire (voir
+// site/src/app/api/launcher/servers/[slug]/cloud-pack). null s'il n'y en a pas, si l'interrupteur
+// du Laboratoire est cache pour ce joueur, ou si le site ne repond pas (le serveur se lance alors
+// comme avant).
+async function fetchCloudPack(slug) {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/cloud-pack`, {
+      headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+    });
+    return data?.pack && typeof data.pack === "object" ? data.pack : null;
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle("cloudPack:get", async (_event, slug) => {
+  if (!isValidInstanceSlug(slug)) return null;
+  const pack = await fetchCloudPack(slug);
+  return pack ? { ...pack, optedIn: Boolean(settingsStore.loadSettings().cloudPackOptIn?.[slug]) } : null;
+});
+
+ipcMain.handle("cloudPack:setOptIn", (_event, slug, on) => {
+  if (!isValidInstanceSlug(slug)) return false;
+  const map = { ...(settingsStore.loadSettings().cloudPackOptIn || {}) };
+  if (on) map[slug] = true;
+  else delete map[slug];
+  settingsStore.saveSettings({ cloudPackOptIn: map });
+  return true;
+});
 
 // Installe un serveur (modpack + Java) sans le lancer : le bouton "Installer"
 // a cote de "Rejoindre" (2026-10-11, audit onboarding) — aucune connexion

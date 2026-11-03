@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { execSql } from "@/lib/db";
 import { featureState } from "@/lib/features";
-import { abortMultipart, deleteObjects, deletePrefix, userWorldsPrefix, worldPrefix } from "@/lib/worldStorage";
+import { PACKS_BUCKET, WORLDS_BUCKET, abortMultipart, deleteObjects, deletePrefix, userWorldsPrefix, worldPrefix } from "@/lib/worldStorage";
 
 // Mode « Jouer » (bêta, 24/10) : offres, mondes en ligne et packs officiels. Tables créées par
 // d1/migrations/2026-10-24-mode-jouer.sql. Le quota et la durée de conservation viennent TOUJOURS
@@ -29,6 +29,10 @@ export type PlayOffer = {
   keepDays: number;
   priceCents: number;
   cloudVersions: number; // versions en ligne par monde, au maximum (le launcher en garde 1 à ce nombre)
+  // Mon cloud (03/11) : place pour les modpacks (partagée avec les mondes quand cloud = true) et
+  // nombre de serveurs reliés à un modpack (0 = sans limite).
+  packQuotaBytes: number;
+  packServers: number;
 };
 const toOffer = (r: Row): PlayOffer => ({
   id: r.id,
@@ -38,20 +42,24 @@ const toOffer = (r: Row): PlayOffer => ({
   keepDays: Number(r.keepDays) || 0,
   priceCents: Number(r.priceCents) || 0,
   cloudVersions: Number(r.cloudVersions) || 10,
+  // Base pas encore migrée (colonnes absentes) : valeurs de l'offre gratuite.
+  packQuotaBytes: r.packQuotaBytes == null ? 500_000_000 : Number(r.packQuotaBytes) || 0,
+  packServers: r.packServers == null ? 1 : Number(r.packServers) || 0,
 });
 
 export const listOffers = unstable_cache(
   async (): Promise<PlayOffer[]> => (await execSql('SELECT * FROM "playOffer" ORDER BY "sortOrder"')).map(toOffer),
   // Clé changée le 25/10 (colonne cloudVersions, quota 10 Go) : l'ancienne liste gardée en cache
-  // affichait encore 10,7 Go. À changer aussi après chaque modification de la table des offres.
-  ["play-offers-v2"],
+  // affichait encore 10,7 Go. À changer aussi après chaque modification de la table des offres
+  // (v3 le 03/11 : colonnes packQuotaBytes / packServers et offre Créateur).
+  ["play-offers-v3"],
   { revalidate: 300, tags: [PLAY_TAG] },
 );
 
 // Offre du joueur : sans ligne (ou expirée), l'offre gratuite.
 export async function getUserOffer(userId: string): Promise<PlayOffer & { source: string | null }> {
   const offers = await listOffers();
-  const free = offers.find((o) => o.id === "free") ?? { id: "free", name: { fr: "Gratuit", en: "Free" }, cloud: false, quotaBytes: 0, keepDays: 0, priceCents: 0, cloudVersions: 0 };
+  const free = offers.find((o) => o.id === "free") ?? { id: "free", name: { fr: "Gratuit", en: "Free" }, cloud: false, quotaBytes: 0, keepDays: 0, priceCents: 0, cloudVersions: 0, packQuotaBytes: 500_000_000, packServers: 1 };
   const [row] = await execSql('SELECT "offerId", "source", "expiresAt" FROM "userPlayOffer" WHERE "userId" = ?', [userId]);
   if (!row || (row.expiresAt && row.expiresAt < now())) return { ...free, source: null };
   const offer = offers.find((o) => o.id === row.offerId);
@@ -402,6 +410,8 @@ export async function deleteAllCloudData(userId: string): Promise<void> {
     for (const u of await execSql('SELECT "objectKey", "uploadId" FROM "cloudUpload" WHERE "userId" = ?', [userId])) await abortMultipart(u.objectKey, u.uploadId);
     // Filet : tout le dossier du joueur, même un fichier que la base n'aurait plus.
     await deletePrefix(userWorldsPrefix(userId));
+    // Mon cloud (03/11) : configs des modpacks, rangées dans le bucket des packs.
+    if (PACKS_BUCKET !== WORLDS_BUCKET) await deletePrefix(userWorldsPrefix(userId), PACKS_BUCKET);
   } catch (error) {
     // Base pas encore migrée (tables du mode Jouer absentes) : rien à effacer, la suppression du
     // compte continue. Toute autre erreur l'arrête, pour ne pas laisser de fichiers derrière.

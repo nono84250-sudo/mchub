@@ -472,11 +472,15 @@ CREATE TABLE "playOffer" (
   "priceCents"  INTEGER NOT NULL DEFAULT 0,
   "sortOrder"   INTEGER NOT NULL DEFAULT 0,
   -- Versions gardées en ligne par monde, au maximum (le joueur choisit de 1 à ce nombre).
-  "cloudVersions" INTEGER NOT NULL DEFAULT 10
+  "cloudVersions" INTEGER NOT NULL DEFAULT 10,
+  -- Mon cloud (migration 2026-11-03-mon-cloud.sql) : place pour les modpacks et serveurs reliés (0 = sans limite).
+  "packQuotaBytes" INTEGER NOT NULL DEFAULT 500000000,
+  "packServers"    INTEGER NOT NULL DEFAULT 1
 );
-INSERT INTO "playOffer" ("id", "nameFr", "nameEn", "cloud", "quotaBytes", "keepDays", "priceCents", "sortOrder") VALUES
-  ('free', 'Gratuit', 'Free', 0, 0, 0, 0, 0),
-  ('supporter', 'Supporter', 'Supporter', 1, 10000000000, 30, 299, 1);
+INSERT INTO "playOffer" ("id", "nameFr", "nameEn", "cloud", "quotaBytes", "keepDays", "priceCents", "sortOrder", "packQuotaBytes", "packServers") VALUES
+  ('free', 'Gratuit', 'Free', 0, 0, 0, 0, 0, 500000000, 1),
+  ('supporter', 'Supporter', 'Supporter', 1, 10000000000, 30, 299, 1, 10000000000, 3),
+  ('creator', 'Créateur', 'Creator', 1, 50000000000, 90, 0, 2, 50000000000, 0);
 
 -- Offre d'un joueur. Pas de ligne = Gratuit. source : 'simulated' (réglée dans l'admin pour les
 -- tests, tant que le paiement n'existe pas) ; plus tard 'payment'.
@@ -619,3 +623,33 @@ CREATE TABLE IF NOT EXISTS "bugCatalogStat" (
   "refused"  INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY ("entryId", "day")
 );
+
+-- Mon cloud (03/11) : migration 2026-11-03-mon-cloud.sql
+-- Un modpack du cloud. files : JSON [{ projectId, title, url (cdn.modrinth.com), filename, sha1, size }]
+-- (versions résolues sur Modrinth à l'enregistrement, mods demandés + dépendances obligatoires).
+-- projects : JSON [{ slug, title }] (ce que le propriétaire a choisi). configKey : archive .zip des
+-- fichiers de configuration dans R2 (bucket des packs, worlds/<compte>/cloudpack.<id>/), ou NULL.
+-- serverId + linkMode ('required' ou 'suggested') : serveur relié (un modpack = un serveur au plus).
+CREATE TABLE IF NOT EXISTS "cloudPack" (
+  "id"               TEXT PRIMARY KEY,
+  "userId"           TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "name"             TEXT NOT NULL,
+  "minecraftVersion" TEXT NOT NULL,
+  "loader"           TEXT NOT NULL,
+  "loaderVersion"    TEXT NOT NULL,
+  "projects"         TEXT NOT NULL DEFAULT '[]',
+  "files"            TEXT NOT NULL DEFAULT '[]',
+  "missing"          TEXT NOT NULL DEFAULT '[]',
+  "configKey"        TEXT,
+  "configBytes"      INTEGER NOT NULL DEFAULT 0,
+  "configCount"      INTEGER NOT NULL DEFAULT 0,
+  "configSha1"       TEXT,
+  "serverId"         TEXT REFERENCES "server"("id") ON DELETE SET NULL,
+  "linkMode"         TEXT,
+  "installCount"     INTEGER NOT NULL DEFAULT 0,
+  "createdAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt"        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS "cloudPack_user_idx" ON "cloudPack"("userId");
+-- Un serveur n'a qu'un modpack relié.
+CREATE UNIQUE INDEX IF NOT EXISTS "cloudPack_server_idx" ON "cloudPack"("serverId") WHERE "serverId" IS NOT NULL;

@@ -304,7 +304,8 @@
   .disruption-banner { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; margin-bottom: 16px; border-radius: 10px; font-size: 13px; background: color-mix(in srgb, var(--state-busy) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--state-busy) 40%, transparent); }
   .disruption-banner[hidden] { display: none; }
   /* Ecran de maintenance (25/10) : plein ecran, au-dessus de tout, avec un halo orange « occupe ». */
-  /* .modal-overlay.maint-screen : la regle .modal-overlay (fond semi-transparent) est plus bas dans?
+  /* .modal-overlay.maint-screen : la regle .modal-overlay (fond semi-transparent) est plus bas dans
+?
      la feuille, il faut une specificite plus forte pour qu on ne voie rien derriere. */
   .modal-overlay.maint-screen { background: var(--background); z-index: 200; overflow-y: auto; padding: 40px 20px; }
   .maint-screen::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(60% 50% at 50% 30%, color-mix(in srgb, var(--state-busy) 14%, transparent), transparent 70%); }
@@ -1640,6 +1641,14 @@
     .detail-columns { grid-template-columns: minmax(0, 1fr); }
     .detail-side { order: -1; position: static; }
   }
+  /* Mon cloud (03/11) : carte « Modpack du serveur » de la fiche. */
+  #cloud-pack-card { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  #cloud-pack-card[hidden] { display: none; }
+  #cloud-pack-card p { margin: 0; }
+  #cloud-pack-card .muted { color: var(--text-muted, var(--muted)); }
+  #cloud-pack-card details summary { cursor: pointer; color: var(--accent); }
+  #cloud-pack-card ul { margin: 6px 0 0; padding-left: 18px; color: var(--text-muted, var(--muted)); }
+  #cloud-pack-card button { align-self: flex-start; }
   .detail-card {
     background: var(--surface);
     border: 1px solid var(--border);
