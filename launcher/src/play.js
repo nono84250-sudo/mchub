@@ -1486,7 +1486,29 @@
     const ids = new Set(pjGroup(v).map((x) => x.id));
     return data.worlds.filter((w) => ids.has(w.lastVersionId));
   };
-  const pjLast = (v) => Math.max(...pjGroup(v).map((x) => pjTime(x.lastPlayedAt)), ...pjWorlds(v).map((w) => w.lastPlayed || 0));
+  // 03/11 (Rushi) : l'ordre des tuiles suit aussi la dernière OUVERTURE de la page d'une installation
+  // (pas seulement le dernier lancement) : la plus récente en premier, de gauche à droite.
+  const PJ_OPENED = "omni.pjOpened";
+  const pjOpenedMap = () => {
+    try {
+      return JSON.parse(localStorage.getItem(PJ_OPENED) || "{}") || {};
+    } catch {
+      return {};
+    }
+  };
+  const pjMarkOpened = (id) => {
+    try {
+      const m = pjOpenedMap();
+      m[id] = Date.now();
+      localStorage.setItem(PJ_OPENED, JSON.stringify(m));
+    } catch {
+      // Stockage indisponible : l'ordre reste celui des lancements.
+    }
+  };
+  const pjLast = (v) => {
+    const opened = pjOpenedMap();
+    return Math.max(...pjGroup(v).map((x) => Math.max(pjTime(x.lastPlayedAt), Number(opened[x.id]) || 0)), ...pjWorlds(v).map((w) => w.lastPlayed || 0));
+  };
   function pjSorted() {
     const seen = new Set();
     const list = [];
@@ -4300,6 +4322,7 @@
   // La page s'ouvre tout de suite (27/10) : d'abord l'en-tête, puis ce qui se lit sur le PC (mods,
   // problèmes), puis ce qui vient d'Internet (versions Modrinth, solutions) et les tailles.
   async function openPackPage(id) {
+    pjMarkOpened(id);
     const v = data.versions.find((x) => x.id === id) || {};
     const st = { id, p: null, tab: null, filter: "all", q: "" };
     packPage = st;
