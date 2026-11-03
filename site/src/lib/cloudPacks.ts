@@ -1,13 +1,12 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
-import { inflateRawSync } from "node:zlib";
 import { execSql } from "@/lib/db";
 import { featureState } from "@/lib/features";
 import type { PackFile, PlayOffer } from "@/lib/playWorlds";
 import { usedBytes as worldsUsedBytes } from "@/lib/playWorlds";
 import { readCentralDirectory, readZipTail } from "@/lib/omniArchiveCheck";
 import { PACKS_BUCKET, WORLDS_PREFIX, deleteObjects, deletePrefix, objectSize, presignDownload, presignPut, putWorldObject, readWorldObject } from "@/lib/worldStorage";
-import { JAR_MAX_BYTES, curseforgeFingerprint, scanJar } from "@/lib/jarScan";
+import { JAR_MAX_BYTES, curseforgeFingerprint, scanJar, zipEntries, zipRead, type Entry as ZipEntry } from "@/lib/jarScan";
 import { matchCurseforgeFingerprints } from "@/lib/curseforge";
 
 // Mon cloud (03/11, preview « Mon cloud » v2 validée par Rushi). Un propriétaire de serveur garde
@@ -411,19 +410,31 @@ export async function removeConfigs(userId: string, packId: string): Promise<boo
 // un .mrpack (mods en liens Modrinth, configs, packs de ressources et shaders de l'installation).
 // Le site lit modrinth.index.json, vérifie chaque fichier de l'archive, puis range le .mrpack tel
 // quel dans le cloud du compte. Même nom qu'un modpack déjà envoyé = mise à jour (reste relié).
-export const MRPACK_MAX_BYTES = 4 * 1000 * 1000;
-type ZipEntry = { name: string; size: number; localOffset: number };
+// 03/11 (Rushi : « 4 Mo, c'est pas assez ») : le .mrpack part directement du launcher vers le
+// stockage (lien signé), jamais par le site ; le site le relit ensuite pour le contrôler.
+export const MRPACK_MAX_BYTES = 100 * 1000 * 1000;
+const MRPACK_MAX_UNPACKED = 500 * 1000 * 1000;
+const uploadPrefix = (userId: string) => `${WORLDS_PREFIX}${userId}/cloudupload/`;
 
-function readEntry(buf: Buffer, e: ZipEntry, max: number): Buffer {
-  const at = e.localOffset;
-  if (at + 30 > buf.length || buf.readUInt32LE(at) !== 0x04034b50) throw new Error("Archive illisible.");
-  const method = buf.readUInt16LE(at + 8);
-  const compSize = buf.readUInt32LE(at + 18);
-  const start = at + 30 + buf.readUInt16LE(at + 26) + buf.readUInt16LE(at + 28);
-  const raw = buf.subarray(start, start + compSize);
-  if (method === 0) return raw;
-  if (method !== 8) throw new Error("Archive compressée d'une façon inconnue.");
-  return inflateRawSync(raw, { maxOutputLength: max });
+// Lien de dépôt (1 h) d'un .mrpack, rangé à part jusqu'à son contrôle.
+export function startLauncherUpload(userId: string): { key: string; url: string } {
+  const key = `${uploadPrefix(userId)}${randomUUID()}.mrpack`;
+  return { key, url: presignPut(key, PACKS_BUCKET) };
+}
+
+// Relit le .mrpack déposé (seulement sous le dossier de CE compte), le contrôle et le range.
+export async function storeUploadedPack(userId: string, offer: PlayOffer, givenName: string, key: string) {
+  if (!key.startsWith(uploadPrefix(userId)) || !/^[\w/.-]+\.mrpack$/.test(key) || key.includes("..")) return { ok: false as const, error: "Envoi introuvable." };
+  try {
+    const size = await objectSize(key, PACKS_BUCKET).catch(() => null);
+    if (!size) return { ok: false as const, error: "Le modpack n'est pas arrivé dans le stockage : réessaie." };
+    if (size > MRPACK_MAX_BYTES) return { ok: false as const, error: "100 Mo au maximum pour un modpack (sans les mods)." };
+    const data = await readWorldObject(key, MRPACK_MAX_BYTES + 1, PACKS_BUCKET);
+    if (!data) return { ok: false as const, error: "Le modpack n'est pas arrivé dans le stockage : réessaie." };
+    return await storeLauncherPack(userId, offer, givenName, data);
+  } finally {
+    await deleteObjects([key], PACKS_BUCKET).catch(() => undefined);
+  }
 }
 
 // Ce que l'archive peut contenir. Renvoie la raison du refus, ou null.
@@ -443,12 +454,11 @@ function refusedPackEntry(name: string): string | null {
 type MrIndex = { formatVersion?: number; game?: string; name?: string; files?: { path?: string; hashes?: { sha1?: string }; downloads?: string[]; fileSize?: number; env?: { client?: string } }[]; dependencies?: Record<string, string> };
 
 export async function storeLauncherPack(userId: string, offer: PlayOffer, givenName: string, data: Uint8Array): Promise<{ ok: true; id: string; name: string; mods: number; configs: number; updated: boolean } | { ok: false; error: string }> {
-  if (data.byteLength > MRPACK_MAX_BYTES) return { ok: false, error: "4 Mo au maximum pour un modpack du cloud (liens + configs + packs de ressources)." };
+  if (data.byteLength > MRPACK_MAX_BYTES) return { ok: false, error: "100 Mo au maximum pour un modpack (sans les mods)." };
   const buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   let entries: ZipEntry[];
   try {
-    const tail = readZipTail(buf.subarray(Math.max(0, buf.length - 22)), buf.length);
-    entries = readCentralDirectory(buf.subarray(tail.centralOffset, tail.centralOffset + tail.centralSize), tail.count);
+    entries = zipEntries(buf, CONFIG_MAX_ENTRIES);
   } catch {
     return { ok: false, error: "Le fichier envoyé par le launcher est illisible." };
   }
@@ -460,14 +470,14 @@ export async function storeLauncherPack(userId: string, offer: PlayOffer, givenN
     if (why === "hors Modrinth") return { ok: false, error: "Ce modpack a des mods qui ne viennent pas de Modrinth : ils ne peuvent pas aller dans le cloud." };
     if (why) return { ok: false, error: `Fichier refusé dans le modpack : ${e.name.slice(0, 80)}${why === "programme" ? " (jamais de .jar ni de programme)" : ""}` };
     unpacked += e.size;
-    if (unpacked > CONFIG_MAX_UNPACKED) return { ok: false, error: "Ce modpack est trop gros une fois décompressé." };
+    if (unpacked > MRPACK_MAX_UNPACKED) return { ok: false, error: "Ce modpack est trop gros une fois décompressé." };
     if (!e.name.endsWith("/") && e.name.startsWith("overrides/") && !/^overrides\/(resourcepacks|shaderpacks)\//.test(e.name) && e.name !== "overrides/options.txt") configs++;
   }
   const head = entries.find((e) => e.name === "modrinth.index.json");
   if (!head) return { ok: false, error: "modrinth.index.json manquant." };
   let index: MrIndex;
   try {
-    index = JSON.parse(readEntry(buf, head, 8 * 1024 * 1024).toString("utf8")) as MrIndex;
+    index = JSON.parse(zipRead(buf, head, 8 * 1024 * 1024).toString("utf8")) as MrIndex;
   } catch {
     return { ok: false, error: "modrinth.index.json illisible." };
   }
@@ -624,7 +634,7 @@ export async function finalizePackJars(userId: string, offer: PlayOffer, packId:
   const drop = new Set<CloudFile>();
   const checked: { f: CloudFile; data: Uint8Array }[] = [];
   for (const f of pending) {
-    const size = await objectSize(f.key!).catch(() => null);
+    const size = await objectSize(f.key!, PACKS_BUCKET).catch(() => null);
     const data = size && size <= JAR_MAX_BYTES ? await readWorldObject(f.key!, JAR_MAX_BYTES + 1, PACKS_BUCKET) : null;
     const reason = !data
       ? "fichier pas reçu (réessaie l'envoi)"

@@ -4,7 +4,7 @@ import { rateLimitResponse } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { isVisibleRow, limitInviteAttempts, proofFromRequest } from "@/lib/public-servers";
 import { requireLauncherFeature } from "@/lib/features";
-import { MRPACK_MAX_BYTES, countInstall, finalizePackJars, launcherInstallPayload, publicPackInfo, serverCloudPackRow, setPackRefs, storeLauncherPack } from "@/lib/cloudPacks";
+import { countInstall, finalizePackJars, launcherInstallPayload, publicPackInfo, serverCloudPackRow, setPackRefs, startLauncherUpload, storeUploadedPack } from "@/lib/cloudPacks";
 import { withD1Busy } from "@/lib/d1Busy";
 import { playLauncherUser } from "@/lib/playLauncher";
 import { getUserOffer } from "@/lib/playWorlds";
@@ -42,7 +42,8 @@ async function handleGET(request: Request) {
 export const GET = withD1Busy(handleGET);
 
 // « Envoyer dans le cloud » depuis le launcher (03/11), identité du joueur VÉRIFIÉE :
-//   POST ?upload=1&name=…            corps = le .mrpack (4 Mo au plus) → { id, name, mods, configs }
+//   POST ?start=1                    → { key, url } : lien de dépôt direct du .mrpack (1 h, 100 Mo au plus)
+//   POST ?upload=1&name=…&key=…      le site relit le .mrpack déposé, le contrôle → { id, name, mods, configs }
 //   POST ?refs=1&pack=<id>           corps = { curseforge: [...], custom: [...] } → liens de dépôt des mods perso
 //   POST ?finalize=1&pack=<id>       contrôle des mods perso déposés → gardés / liens / refusés
 const err = (error: string, status = 400) => NextResponse.json({ error }, { status });
@@ -52,11 +53,10 @@ async function handlePOST(request: Request) {
   if ("response" in who) return who.response;
   const offer = await getUserOffer(who.userId);
   const pack = url.searchParams.get("pack") ?? "";
+  // Le fichier ne passe jamais par le site (Rushi, 03/11) : lien de dépôt direct vers le stockage.
+  if (url.searchParams.get("start") === "1") return NextResponse.json({ ok: true, ...startLauncherUpload(who.userId) });
   if (url.searchParams.get("upload") === "1") {
-    if (Number(request.headers.get("content-length") ?? 0) > MRPACK_MAX_BYTES) return err("4 Mo au maximum pour un modpack du cloud (sans les mods).", 413);
-    const body = new Uint8Array(await request.arrayBuffer());
-    if (!body.byteLength) return err("Fichier vide.");
-    const r = await storeLauncherPack(who.userId, offer, url.searchParams.get("name") ?? "", body);
+    const r = await storeUploadedPack(who.userId, offer, url.searchParams.get("name") ?? "", url.searchParams.get("key") ?? "");
     if (!r.ok) return err(r.error);
     revalidatePath("/dashboard/cloud");
     return NextResponse.json(r);

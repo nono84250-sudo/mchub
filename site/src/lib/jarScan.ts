@@ -1,6 +1,5 @@
 import "server-only";
 import { inflateRawSync } from "node:zlib";
-import { readCentralDirectory, readZipTail } from "@/lib/omniArchiveCheck";
 
 // Mon cloud (03/11, accord de Rushi) : contrôles d'un .jar perso envoyé par un propriétaire de
 // serveur. Personne ne sait prouver qu'un mod est sain : on bloque ce qu'on sait reconnaître.
@@ -40,24 +39,78 @@ const KNOWN_BAD = [
 
 export type JarScan = { ok: true; loaders: string[]; classes: number } | { ok: false; reason: string };
 
-type Entry = { name: string; size: number; localOffset: number };
+// Lecture d'un zip en mémoire, ZIP64 compris (le launcher écrit toujours ses archives en ZIP64, avec
+// les tailles après les données : on se fie donc au répertoire central, jamais à l'en-tête local).
+export type Entry = { name: string; size: number; compSize: number; localOffset: number; method: number };
+const MAX32 = 0xffffffff;
 
-function entriesOf(buf: Buffer): Entry[] {
-  const tail = readZipTail(buf.subarray(Math.max(0, buf.length - 22)), buf.length);
-  return readCentralDirectory(buf.subarray(tail.centralOffset, tail.centralOffset + tail.centralSize), tail.count);
+export function zipEntries(buf: Buffer, maxEntries = MAX_ENTRIES): Entry[] {
+  const from = Math.max(0, buf.length - 22 - 0xffff);
+  let end = -1;
+  for (let i = buf.length - 22; i >= from; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) throw new Error("fin introuvable");
+  let count = buf.readUInt16LE(end + 10);
+  let centralSize = buf.readUInt32LE(end + 12);
+  let centralOffset = buf.readUInt32LE(end + 16);
+  if ((count === 0xffff || centralSize === MAX32 || centralOffset === MAX32) && end >= 20 && buf.readUInt32LE(end - 20) === 0x07064b50) {
+    const at = Number(buf.readBigUInt64LE(end - 20 + 8));
+    if (at + 56 > buf.length || buf.readUInt32LE(at) !== 0x06064b50) throw new Error("zip64");
+    count = Number(buf.readBigUInt64LE(at + 32));
+    centralSize = Number(buf.readBigUInt64LE(at + 40));
+    centralOffset = Number(buf.readBigUInt64LE(at + 48));
+  }
+  if (count > maxEntries) throw new Error("trop de fichiers");
+  if (centralOffset + centralSize > buf.length) throw new Error("répertoire");
+  const out: Entry[] = [];
+  let p = centralOffset;
+  for (let i = 0; i < count; i++) {
+    if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) throw new Error("répertoire");
+    const method = buf.readUInt16LE(p + 10);
+    let compSize = buf.readUInt32LE(p + 20);
+    let size = buf.readUInt32LE(p + 24);
+    const nameLen = buf.readUInt16LE(p + 28);
+    const extraLen = buf.readUInt16LE(p + 30);
+    const commentLen = buf.readUInt16LE(p + 32);
+    let localOffset = buf.readUInt32LE(p + 42);
+    const name = buf.subarray(p + 46, p + 46 + nameLen).toString("utf8");
+    // Champ ZIP64 (0x0001) : dans l'ordre, seulement les valeurs saturées.
+    let x = p + 46 + nameLen;
+    const xEnd = x + extraLen;
+    while (x + 4 <= xEnd) {
+      const id = buf.readUInt16LE(x);
+      const len = buf.readUInt16LE(x + 2);
+      if (id === 0x0001) {
+        let q = x + 4;
+        if (size === MAX32 && q + 8 <= x + 4 + len) (size = Number(buf.readBigUInt64LE(q))), (q += 8);
+        if (compSize === MAX32 && q + 8 <= x + 4 + len) (compSize = Number(buf.readBigUInt64LE(q))), (q += 8);
+        if (localOffset === MAX32 && q + 8 <= x + 4 + len) localOffset = Number(buf.readBigUInt64LE(q));
+      }
+      x += 4 + len;
+    }
+    out.push({ name, size, compSize, localOffset, method });
+    p = xEnd + commentLen;
+  }
+  return out;
 }
 
-function readEntry(buf: Buffer, e: Entry, max: number): Buffer {
+export function zipRead(buf: Buffer, e: Entry, max: number): Buffer {
   const at = e.localOffset;
   if (at + 30 > buf.length || buf.readUInt32LE(at) !== 0x04034b50) throw new Error("illisible");
-  const method = buf.readUInt16LE(at + 8);
-  const compSize = buf.readUInt32LE(at + 18);
   const start = at + 30 + buf.readUInt16LE(at + 26) + buf.readUInt16LE(at + 28);
-  const raw = buf.subarray(start, start + compSize);
-  if (method === 0) return raw;
-  if (method !== 8) throw new Error("compression inconnue");
+  if (start + e.compSize > buf.length) throw new Error("illisible");
+  const raw = buf.subarray(start, start + e.compSize);
+  if (e.method === 0) return raw;
+  if (e.method !== 8) throw new Error("compression inconnue");
   return inflateRawSync(raw, { maxOutputLength: max });
 }
+
+const entriesOf = (buf: Buffer) => zipEntries(buf);
+const readEntry = zipRead;
 
 // Ce qu'une classe Java fait de dangereux, d'après les noms qu'elle utilise (table des constantes).
 function classVerdict(text: string): string | null {

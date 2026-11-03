@@ -86,9 +86,9 @@ export async function abortMultipart(objectKey: string, uploadId: string): Promi
   await r2.send(new AbortMultipartUploadCommand({ Bucket: WORLDS_BUCKET, Key: objectKey, UploadId: uploadId })).catch(() => {});
 }
 
-export async function objectSize(objectKey: string): Promise<number | null> {
+export async function objectSize(objectKey: string, bucket: string = WORLDS_BUCKET): Promise<number | null> {
   try {
-    const out = await r2.send(new HeadObjectCommand({ Bucket: WORLDS_BUCKET, Key: objectKey }));
+    const out = await r2.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey }));
     return out.ContentLength ?? null;
   } catch {
     return null;

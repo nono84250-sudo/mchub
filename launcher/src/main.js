@@ -3223,7 +3223,7 @@ ipcMain.handle("cloudPack:get", async (_event, slug) => {
 //      un (programme cache, vrai mod, virus connus) et dit ce qu'il a garde.
 // Modpack PRIVE, relie au serveur du proprietaire : CurseForge y est permis en liens. Le jour ou des
 // modpacks seront publies sur Omniscient, CurseForge y sera bloque (decision de Rushi, 03/11).
-const CLOUD_PACK_MAX = 4 * 1000 * 1000;
+const CLOUD_PACK_MAX = 100 * 1000 * 1000;
 const CLOUD_JAR_MAX = 30 * 1000 * 1000;
 ipcMain.handle("cloudPack:upload", async (_event, id) => {
   if (!features.visible("cloudPacks")) return pageOff;
@@ -3237,7 +3237,7 @@ ipcMain.handle("cloudPack:upload", async (_event, id) => {
     const plan = await omniPack.friendMods(v.id, { cfMatch: cfFingerprintMatch });
     const isCf = (x) => x.mrpack !== "link" && !!x.cf;
     const r = await omniPack.exportMrpack(v.id, tmp, { parts: { cfg: true, rp: true, dp: false, w: false }, plan: { ...plan, mods: plan.mods.filter((x) => !isCf(x)) }, cloud: true });
-    if (r.size > CLOUD_PACK_MAX) return { ok: false, error: `Le modpack fait ${Math.ceil(r.size / 1e6)} Mo sans les mods : 4 Mo au maximum (souvent un gros pack de ressources ; retire-le de l'installation ou mets-le sur Modrinth).` };
+    if (r.size > CLOUD_PACK_MAX) return { ok: false, error: `Le modpack fait ${Math.ceil(r.size / 1e6)} Mo sans les mods : 100 Mo au maximum (souvent de gros packs de ressources).` };
     const curseforge = [];
     for (const x of plan.mods.filter(isCf)) {
       const st = x.abs ? await fsp.stat(x.abs).catch(() => null) : null;
@@ -3258,7 +3258,12 @@ ipcMain.handle("cloudPack:upload", async (_event, id) => {
       return data;
     };
     const name = String(v.name || v.pack?.name || `Minecraft ${v.minecraftVersion}`).slice(0, 60);
-    const up = await withSessionRetry(async () => send(`${base}&upload=1&name=${encodeURIComponent(name)}`, await fsp.readFile(tmp), "application/zip"));
+    // Le fichier part directement vers le stockage (lien signé), jamais par le site (Rushi, 03/11).
+    const slot = await withSessionRetry(async () => send(`${base}&start=1`, "{}", "application/json"));
+    if (typeof slot.url !== "string" || !/^https:\/\/[a-z0-9-]+\.r2\.cloudflarestorage\.com\//.test(slot.url)) throw new Error("Lien de stockage refusé.");
+    const put = await fetch(slot.url, { method: "PUT", body: await fsp.readFile(tmp), signal: AbortSignal.timeout(10 * 60 * 1000) });
+    if (!put.ok) throw new Error(`Envoi du modpack impossible (réponse ${put.status}). Réessaie.`);
+    const up = await send(`${base}&upload=1&name=${encodeURIComponent(name)}&key=${encodeURIComponent(slot.key)}`, "{}", "application/json");
     const refs = await send(`${base}&refs=1&pack=${encodeURIComponent(up.id)}`, JSON.stringify({ curseforge, custom: custom.map(({ file, name: n, size, sha1 }) => ({ file, name: n, size, sha1 })) }), "application/json");
     // Mods perso : envoyés un par un vers le lien signé que le site a donné (1 h).
     for (const u of Array.isArray(refs.uploads) ? refs.uploads : []) {
