@@ -233,7 +233,13 @@ contextBridge.exposeInMainWorld("mchub", {
   play: {
     packs: (opts) => ipcRenderer.invoke("play:packs", opts),
     // Mon cloud (03/11) : « Envoyer dans le cloud » depuis le menu ⚙ d'une installation.
-    cloudUpload: (id) => ipcRenderer.invoke("cloudPack:upload", String(id)),
+    cloudUpload: (id, opts) => ipcRenderer.invoke("cloudPack:upload", String(id), opts && typeof opts === "object" ? opts : {}),
+    cloudPlan: (id) => ipcRenderer.invoke("cloudPack:plan", String(id)),
+    onCloudProgress: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("cloudPack:progress", listener);
+      return () => ipcRenderer.removeListener("cloudPack:progress", listener);
+    },
     mcVersions: () => ipcRenderer.invoke("play:mcVersions"),
     listVersions: () => ipcRenderer.invoke("play:listVersions"),
     createVersion: (opts) => ipcRenderer.invoke("play:createVersion", opts),

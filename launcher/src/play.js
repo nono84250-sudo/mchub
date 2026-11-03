@@ -5520,32 +5520,125 @@
   // Mon cloud (03/11, Rushi) : le modpack se crée ici, puis se relie au serveur sur le site.
   // Tout part : mods Modrinth et CurseForge (en liens), configs, packs de ressources et shaders,
   // mods perso (contrôlés un par un par le site). Jamais le fichier d'un mod CurseForge.
-  function omOpenCloud(st) {
+  async function omOpenCloud(st) {
     const name = data.versions.find((x) => x.id === st.id)?.name || st.p.name;
-    const li = (t) => `<li style="margin:3px 0;">${t}</li>`;
-    const m = overlay(`<div class="modal-box pop-in om-modal" role="dialog" aria-modal="true" style="max-width:540px;width:100%;text-align:left;max-height:calc(100vh - 48px);overflow:auto;">
-      <h3>☁ ${esc(rmTr("Envoyer dans le cloud", "Send to the cloud"))}</h3><p class="sub">${esc(rmTr(`« ${name} » va dans ton cloud Omniscient. Ensuite, sur le site (Cloud), relie-le à ton serveur : les joueurs l'auront en un clic.`, `“${name}” goes to your Omniscient cloud. Then, on the website (Cloud), link it to your server: players get it in one click.`))}</p>
-      <div class="om-sec">${esc(rmTr("Ce qui part", "What is sent"))}</div>
-      <ul style="margin:0 0 8px 18px;padding:0;font-size:13px;">${li(esc(rmTr("Les mods Modrinth (en liens, ils ne prennent presque pas de place)", "Modrinth mods (as links, they take almost no space)")))}${li(esc(rmTr("Les réglages (config, defaultconfigs, kubejs, options.txt)", "Settings (config, defaultconfigs, kubejs, options.txt)")))}${li(esc(rmTr("Les packs de ressources et les shaders de l'installation", "The installation's resource packs and shaders")))}${li(esc(rmTr("Les mods CurseForge (en liens)", "CurseForge mods (as links)")))}${li(esc(rmTr("Tes mods perso (.jar ni Modrinth ni CurseForge) : le site les contrôle un par un", "Your own mods (.jar not on Modrinth or CurseForge): the website checks each one")))}</ul>
-      <p class="om-note">${esc(rmTr("Les mods CurseForge restent des liens : chaque joueur les télécharge depuis CurseForge (Omniscient ne garde jamais leur fichier). Pas de monde. Ton modpack reste privé : seuls les joueurs de ton serveur l'ont. Même nom qu'un modpack déjà envoyé = il est mis à jour.", "CurseForge mods stay links: each player downloads them from CurseForge (Omniscient never keeps their file). No worlds. Your pack stays private: only your server's players get it. Same name as a pack already sent = it gets updated."))}</p>
-      <p class="fx-msg" data-msg aria-live="polite"></p><div data-res></div>
-      <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;"><button type="button" class="btn-secondary" data-x>${esc(omT("cancel"))}</button><button type="button" class="join-btn" data-go>☁ ${esc(rmTr("Envoyer", "Send"))}</button></div></div>`);
+    const KIND = {
+      mr: [rmTr("Modrinth (en liens)", "Modrinth (as links)"), rmTr("téléchargé par le joueur", "downloaded by the player"), "var(--success)"],
+      cf: [rmTr("CurseForge (en liens)", "CurseForge (as links)"), rmTr("téléchargé depuis CurseForge", "downloaded from CurseForge"), "var(--warn)"],
+      custom: [rmTr("Mods perso (contrôlés par le site)", "Own mods (checked by the website)"), rmTr("gardé dans ton cloud", "kept in your cloud"), "var(--accent)"],
+      missing: [rmTr("Pas envoyés", "Not sent"), rmTr("fichier introuvable", "file not found"), "var(--muted)"],
+    };
+    // Même fenêtre que « Exporter pour un ami » (Rushi 03/11) : squelette, puis la liste à cocher.
+    const m = overlay(`<div class="modal-box pop-in om-modal" role="dialog" aria-modal="true" style="max-width:580px;width:100%;text-align:left;max-height:calc(100vh - 48px);overflow:auto;"><div data-cl></div></div>`);
+    const box = m.$("[data-cl]");
+    const skl = (w, h = 12) => `<span class="sk" style="display:block;width:${w};height:${h}px;border-radius:6px;margin:6px 0;"></span>`;
+    const head = `<h3>☁ ${esc(rmTr("Envoyer dans le cloud", "Send to the cloud"))}</h3><p class="sub">${esc(rmTr(`« ${name} » va dans ton cloud Omniscient. Ensuite, sur le site (Cloud), relie-le à ton serveur : ses joueurs l'auront en un clic.`, `“${name}” goes to your Omniscient cloud. Then, on the website (Cloud), link it to your server: its players get it in one click.`))}</p>`;
+    box.innerHTML = `${head}${skl("100%", 58)}<div class="om-sec">${esc(rmTr("Lecture des mods…", "Reading the mods…"))}</div>${[70, 55, 62, 48, 66].map((w) => skl(`${w}%`, 30)).join("")}
+      <div class="modal-actions" style="display:flex;justify-content:flex-end;margin-top:16px;"><button type="button" class="btn-secondary" data-x>${esc(omT("cancel"))}</button></div>`;
+    box.setAttribute("aria-busy", "true");
+    let stage = "load";
+    m.ov.addEventListener("click", (e) => { if (stage === "load" && e.target.closest("[data-x]")) m.close(); });
+    const plan = await api.cloudPlan(st.id).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+    if (!document.body.contains(m.ov)) return;
+    if (!plan?.ok) {
+      m.close();
+      return packErr(plan);
+    }
+    stage = "choose";
+    box.removeAttribute("aria-busy");
+    const off = new Set();
+    const keep = { cfg: true, rp: true };
+    const draw = () => {
+      const by = (k) => plan.mods.filter((x) => x.kind === k);
+      const row = (x) => {
+        const k = KIND[x.kind];
+        const dis = x.kind === "missing";
+        return `<label class="play-row" style="padding:5px 10px;${dis ? "opacity:.6;" : ""}"><input type="checkbox" data-mod="${esc(x.key)}" ${!dis && !off.has(x.key) ? "checked" : ""} ${dis ? "disabled" : ""}><span class="t">${esc(x.name)}<small>${x.file ? esc(x.file) : ""}</small></span><span style="font-size:11px;color:${k[2]};white-space:nowrap;">${esc(k[1])}</span></label>`;
+      };
+      const sec = (k) => {
+        const list = by(k);
+        if (!list.length) return "";
+        const n = list.filter((x) => !off.has(x.key) && x.kind !== "missing").length;
+        return `<div class="om-sec" style="display:flex;justify-content:space-between;align-items:center;"><span>${esc(KIND[k][0])} (${k === "missing" ? list.length : `${n}/${list.length}`})</span>${k === "missing" ? "" : `<button type="button" class="link-btn" data-all="${k}" style="font-size:11px;">${esc(n === list.length ? rmTr("Tout décocher", "Untick all") : rmTr("Tout cocher", "Tick all"))}</button>`}</div><div class="om-wl">${list.map(row).join("")}</div>`;
+      };
+      const total = plan.mods.filter((x) => x.kind !== "missing" && !off.has(x.key)).length;
+      box.innerHTML = `${head}
+        <div class="om-file"><span class="ic">☁</span><span><b>${esc(name)}</b><small>${esc(rmTr(`${total} mods envoyés sur ${plan.mods.length}`, `${total} of ${plan.mods.length} mods sent`))}</small></span></div>
+        ${plan.signedIn ? "" : `<p class="om-note" style="color:var(--warn)">⚠ ${esc(rmTr("Connecte-toi à ton compte Minecraft pour envoyer dans le cloud.", "Sign in to your Minecraft account to send to the cloud."))}</p>`}
+        ${sec("mr")}${sec("cf")}${sec("custom")}${sec("missing")}
+        <div class="om-sec">${esc(omT("inc"))}</div>
+        ${omCheck("cfg", rmTr("Réglages", "Settings"), rmTr("config, defaultconfigs, kubejs, options.txt", "config, defaultconfigs, kubejs, options.txt"), keep.cfg)}${omCheck("rp", rmTr("Packs de ressources et shaders", "Resource packs and shaders"), rmTr("ceux de l'installation", "the installation's ones"), keep.rp)}
+        <p class="om-note">${esc(rmTr("Les mods CurseForge restent des liens : chaque joueur les télécharge depuis CurseForge (Omniscient ne garde jamais leur fichier). Pas de monde. Ton modpack reste privé : seuls les joueurs de ton serveur l'ont. Même nom qu'un modpack déjà envoyé = il est mis à jour.", "CurseForge mods stay links: each player downloads them from CurseForge (Omniscient never keeps their file). No worlds. Your pack stays private: only your server's players get it. Same name as a pack already sent = it gets updated."))}</p>
+        <div data-prog hidden style="margin-top:12px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span data-pstep></span><span data-ppct></span></div><div style="height:8px;border-radius:99px;background:color-mix(in srgb, var(--muted) 25%, transparent);overflow:hidden;"><i data-pbar style="display:block;height:100%;width:0%;background:var(--accent);border-radius:99px;transition:width .35s ease;"></i></div></div>
+        <p class="fx-msg" data-msg aria-live="polite"></p><div data-res></div>
+        <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;"><button type="button" class="btn-secondary" data-x>${esc(omT("cancel"))}</button><button type="button" class="join-btn" data-go ${plan.signedIn && (total || keep.cfg || keep.rp) ? "" : "disabled"}>☁ ${esc(rmTr("Envoyer", "Send"))}</button></div>`;
+    };
+    draw();
+    const STEPS = {
+      prepare: [rmTr("Préparation du modpack…", "Preparing the pack…"), 5, 15],
+      pack: [rmTr("Envoi du modpack…", "Sending the pack…"), 15, 45],
+      check: [rmTr("Contrôle par le site…", "Website check…"), 45, 55],
+      jars: [rmTr("Envoi des mods perso", "Sending own mods"), 55, 85],
+      checkJars: [rmTr("Contrôle des mods perso…", "Checking own mods…"), 85, 97],
+    };
+    const setProg = (step, done = 0, total = 0) => {
+      const s2 = STEPS[step];
+      if (!s2) return;
+      const pct = Math.round(s2[1] + (total ? (done / total) * (s2[2] - s2[1]) : 0));
+      m.$("[data-prog]").hidden = false;
+      m.$("[data-pstep]").textContent = step === "jars" && total ? `${s2[0]} (${done + 1}/${total})…` : s2[0];
+      m.$("[data-ppct]").textContent = `${pct} %`;
+      m.$("[data-pbar]").style.width = `${pct}%`;
+    };
+    const stopProg = api.onCloudProgress?.((d) => { if (d?.id === st.id && stage === "send") setProg(d.step, d.done, d.total); }) || (() => {});
+    m.ov.addEventListener("change", (e) => {
+      const c = e.target.closest("[data-mod]");
+      if (c) {
+        if (c.checked) off.delete(c.dataset.mod);
+        else off.add(c.dataset.mod);
+        return draw();
+      }
+      const p2 = e.target.closest("[data-part]");
+      if (p2) keep[p2.dataset.part] = p2.checked;
+    });
     m.ov.addEventListener("click", async (e) => {
-      if (e.target.closest("[data-x]")) return m.close();
+      if (stage === "load") return;
+      if (e.target.closest("[data-x]")) {
+        stopProg();
+        return m.close();
+      }
+      const all = e.target.closest("[data-all]");
+      if (all && stage === "choose") {
+        const list = plan.mods.filter((x) => x.kind === all.dataset.all);
+        const allOn = list.every((x) => !off.has(x.key));
+        list.forEach((x) => (allOn ? off.add(x.key) : off.delete(x.key)));
+        return draw();
+      }
       const b = e.target.closest("[data-go]");
-      if (!b) return;
+      if (!b || stage !== "choose") return;
+      stage = "send";
       b.disabled = true;
+      m.ov.querySelectorAll("input,[data-all]").forEach((x) => (x.disabled = true));
       const msg = m.$("[data-msg]");
-      msg.style.color = "";
-      msg.textContent = rmTr("Envoi en cours… (les mods perso peuvent prendre une minute)", "Sending… (own mods can take a minute)");
-      const r = await api.cloudUpload(st.id).catch((err) => ({ ok: false, error: String(err?.message || err) }));
-      b.disabled = false;
+      msg.textContent = "";
+      setProg("prepare");
+      const r = await api.cloudUpload(st.id, { skip: [...off], parts: { cfg: keep.cfg, rp: keep.rp } }).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+      if (!document.body.contains(m.ov)) return stopProg();
       if (!r?.ok) {
-        msg.style.color = "var(--danger,#e5484d)";
-        msg.textContent = r?.error || "?";
+        stage = "choose";
+        m.$("[data-prog]").hidden = true;
+        draw();
+        const msg2 = m.$("[data-msg]");
+        msg2.style.color = "var(--danger,#e5484d)";
+        msg2.textContent = r?.error || "?";
         return;
       }
-      msg.textContent = "";
+      stage = "done";
+      stopProg();
+      m.$("[data-pstep]").textContent = rmTr("Terminé", "Done");
+      m.$("[data-ppct]").textContent = "100 %";
+      m.$("[data-pbar]").style.width = "100%";
+      m.$("[data-pbar]").style.background = "var(--success)";
       b.hidden = true;
       m.$("[data-x]").textContent = rmTr("Fermer", "Close");
       const lines = [
@@ -5553,11 +5646,10 @@
         esc(rmTr(`${r.mods} fichiers Modrinth · ${r.curseforge ? `${r.curseforge} mods CurseForge (liens) · ` : ""}${r.custom ? `${r.custom} mod(s) perso · ` : ""}${r.configs} fichiers de réglages`, `${r.mods} Modrinth files · ${r.curseforge ? `${r.curseforge} CurseForge mods (links) · ` : ""}${r.custom ? `${r.custom} own mod(s) · ` : ""}${r.configs} settings files`)),
         ...(r.modrinth || []).map((f) => esc(rmTr(`${f} existe sur Modrinth : gardé en lien`, `${f} is on Modrinth: kept as a link`))),
         ...(r.refused || []).map((f) => `<span style="color:var(--danger,#e5484d);">✕ ${esc(rmTr(`${f.file} refusé : ${f.reason}`, `${f.file} refused: ${f.reason}`))}</span>`),
-        ...(r.missing?.length ? [`<span style="color:var(--warn);">${esc(rmTr(`Pas trouvés dans le dossier mods (pas envoyés) : ${r.missing.slice(0, 6).join(", ")}`, `Not found in the mods folder (not sent): ${r.missing.slice(0, 6).join(", ")}`))}</span>`] : []),
         ...(r.usage ? [esc(rmTr(`Ton cloud : ${sizeFmt(r.usage.total)} utilisés sur ${sizeFmt(r.usage.quota)}`, `Your cloud: ${sizeFmt(r.usage.total)} used of ${sizeFmt(r.usage.quota)}`))] : []),
         esc(rmTr("Dernière étape : sur le site, menu Cloud, « Relier à un serveur ».", "Last step: on the website, Cloud menu, “Link to a server”.")),
       ];
-      m.$("[data-res]").innerHTML = `<div class="pk-check" role="status" style="display:block;line-height:1.6;">${lines.join("<br>")}</div>`;
+      m.$("[data-res]").innerHTML = `<div class="pk-check" role="status" style="display:block;line-height:1.6;margin-top:10px;">${lines.join("<br>")}</div>`;
     });
   }
   async function omOpenFriend(st) {

@@ -3239,7 +3239,31 @@ function cloudDebug(step, url, status, detail) {
   logStore.pushLog({ level: status >= 400 ? "warn" : "info", source: "launcher", message });
 }
 const CLOUD_JAR_MAX = 30 * 1000 * 1000;
-ipcMain.handle("cloudPack:upload", async (_event, id) => {
+// Liste de la fenêtre « Envoyer dans le cloud » (cases à cocher, comme l'export pour un ami).
+const cloudKind = (x) => (x.mrpack === "link" ? "mr" : x.cf ? "cf" : x.abs ? "custom" : "missing");
+const cloudModKey = (x) => `${x.file || ""}|${x.name}`;
+ipcMain.handle("cloudPack:plan", async (_event, id) => {
+  if (!features.visible("cloudPacks")) return pageOff;
+  const v = playMode.getVersion(String(id));
+  if (!v) return { ok: false, error: "Cette version n'existe plus." };
+  try {
+    const plan = await omniPack.friendMods(v.id, { cfMatch: currentSession ? cfFingerprintMatch : null });
+    return {
+      ok: true,
+      signedIn: !!currentSession,
+      vanilla: !v.pack,
+      mods: plan.mods.map((x) => ({ key: cloudModKey(x), name: x.name.slice(0, 80), file: x.file, kind: cloudKind(x) })),
+    };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("cloudPack:upload", async (event, id, opts = {}) => {
+  const progress = (step, done = 0, total = 0) => {
+    if (!event.sender.isDestroyed()) event.sender.send("cloudPack:progress", { id: String(id), step, done, total });
+  };
+  const skip = new Set(Array.isArray(opts?.skip) ? opts.skip.map(String) : []);
+  const parts = { cfg: opts?.parts?.cfg !== false, rp: opts?.parts?.rp !== false, dp: false, w: false };
   if (!features.visible("cloudPacks")) return pageOff;
   if (!currentSession) return { ok: false, error: "Connecte-toi d'abord à ton compte Minecraft." };
   const v = playMode.getVersion(String(id));
@@ -3248,9 +3272,11 @@ ipcMain.handle("cloudPack:upload", async (_event, id) => {
   const uuid = currentSession.profile.id;
   const tmp = path.join(os.tmpdir(), `omni-cloud-${crypto.randomBytes(4).toString("hex")}.mrpack`);
   try {
-    const plan = await omniPack.friendMods(v.id, { cfMatch: cfFingerprintMatch });
+    progress("prepare");
+    const plan0 = await omniPack.friendMods(v.id, { cfMatch: cfFingerprintMatch });
+    const plan = { ...plan0, mods: plan0.mods.filter((x) => !skip.has(cloudModKey(x))) };
     const isCf = (x) => x.mrpack !== "link" && !!x.cf;
-    const r = await omniPack.exportMrpack(v.id, tmp, { parts: { cfg: true, rp: true, dp: false, w: false }, plan: { ...plan, mods: plan.mods.filter((x) => !isCf(x)) }, cloud: true });
+    const r = await omniPack.exportMrpack(v.id, tmp, { parts, plan: { ...plan, mods: plan.mods.filter((x) => !isCf(x)) }, cloud: true });
     if (r.size > CLOUD_PACK_MAX) return { ok: false, error: `Le modpack fait ${Math.ceil(r.size / 1e6)} Mo sans les mods : 100 Mo au maximum (souvent de gros packs de ressources).` };
     const curseforge = [];
     for (const x of plan.mods.filter(isCf)) {
@@ -3274,21 +3300,27 @@ ipcMain.handle("cloudPack:upload", async (_event, id) => {
     };
     const name = String(v.name || v.pack?.name || `Minecraft ${v.minecraftVersion}`).slice(0, 60);
     // Le fichier part directement vers le stockage (lien signé), jamais par le site (Rushi, 03/11).
+    progress("pack", 0, r.size);
     const slot = await withSessionRetry(async () => send(`${base}&start=1`, "{}", "application/json"));
     if (typeof slot.url !== "string" || !/^https:\/\/[a-z0-9-]+\.r2\.cloudflarestorage\.com\//.test(slot.url)) throw new Error("Lien de stockage refusé.");
     const put = await fetch(slot.url, { method: "PUT", body: await fsp.readFile(tmp), signal: AbortSignal.timeout(10 * 60 * 1000) });
     cloudDebug("dépôt du modpack", slot.url, put.status, put.ok ? "" : await put.text().catch(() => ""));
     if (!put.ok) throw new Error(`Envoi du modpack impossible (réponse ${put.status}). Réessaie.`);
+    progress("check");
     const up = await send(`${base}&upload=1&name=${encodeURIComponent(name)}&key=${encodeURIComponent(slot.key)}`, "{}", "application/json");
     const refs = await send(`${base}&refs=1&pack=${encodeURIComponent(up.id)}`, JSON.stringify({ curseforge, custom: custom.map(({ file, name: n, size, sha1 }) => ({ file, name: n, size, sha1 })) }), "application/json");
     // Mods perso : envoyés un par un vers le lien signé que le site a donné (1 h).
-    for (const u of Array.isArray(refs.uploads) ? refs.uploads : []) {
+    const jarsToSend = Array.isArray(refs.uploads) ? refs.uploads : [];
+    let sentJars = 0;
+    for (const u of jarsToSend) {
+      progress("jars", sentJars++, jarsToSend.length);
       const x = custom.find((c) => c.sha1 === u.sha1);
       if (!x || typeof u.url !== "string" || !/^https:\/\/[a-z0-9-]+\.r2\.cloudflarestorage\.com\//.test(u.url)) continue;
       const res = await fetch(u.url, { method: "PUT", body: await fsp.readFile(x.abs), signal: AbortSignal.timeout(10 * 60 * 1000) });
       cloudDebug(`dépôt de ${x.file}`, u.url, res.status, res.ok ? "" : await res.text().catch(() => ""));
       if (!res.ok) throw new Error(`Envoi de ${x.file} impossible (réponse ${res.status}). Réessaie.`);
     }
+    if (jarsToSend.length) progress("checkJars", jarsToSend.length, jarsToSend.length);
     const fin = refs.uploads?.length ? await send(`${base}&finalize=1&pack=${encodeURIComponent(up.id)}`, "{}", "application/json") : refs;
     return {
       ok: true,
