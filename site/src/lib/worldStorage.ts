@@ -158,6 +158,13 @@ export function presignPart(objectKey: string, uploadId: string, partNumber: num
   return presign("PUT", objectKey, { partNumber: String(partNumber), uploadId });
 }
 
+// Mon cloud (03/11) : dépôt d'un fichier en une fois (mod perso d'un modpack, 30 Mo au plus), lien
+// signé de 1 h donné au launcher du propriétaire ; le site contrôle le fichier ensuite.
+export function presignPut(objectKey: string, bucket: string = WORLDS_BUCKET): string {
+  if (!isWorldObjectKey(objectKey)) throw new Error("Clé refusée");
+  return presign("PUT", objectKey, {}, PRESIGN_SECONDS, new Date(), bucket);
+}
+
 // Téléchargement : le nom proposé au navigateur (site) vient de filename.
 export function presignDownload(objectKey: string, filename?: string, bucket: string = WORLDS_BUCKET): string {
   const extra: Record<string, string> = {};

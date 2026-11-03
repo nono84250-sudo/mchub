@@ -3214,6 +3214,80 @@ ipcMain.handle("cloudPack:get", async (_event, slug) => {
   return pack ? { ...pack, optedIn: Boolean(settingsStore.loadSettings().cloudPackOptIn?.[slug]) } : null;
 });
 
+// « Envoyer dans le cloud » (03/11, Rushi) : le modpack se fait dans le launcher. Trois envois :
+//   1. un .mrpack : mods Modrinth en liens, configs, packs de ressources et shaders de l'installation ;
+//   2. la liste des mods CurseForge (une REFERENCE projet + fichier : chaque joueur le telecharge
+//      depuis CurseForge, Omniscient ne garde jamais le fichier) et des mods perso (.jar hors
+//      Modrinth et CurseForge), que le site autorise a deposer dans le stockage ;
+//   3. chaque mod perso, directement vers le stockage (lien signe), puis le site les controle un par
+//      un (programme cache, vrai mod, virus connus) et dit ce qu'il a garde.
+// Modpack PRIVE, relie au serveur du proprietaire : CurseForge y est permis en liens. Le jour ou des
+// modpacks seront publies sur Omniscient, CurseForge y sera bloque (decision de Rushi, 03/11).
+const CLOUD_PACK_MAX = 4 * 1000 * 1000;
+const CLOUD_JAR_MAX = 30 * 1000 * 1000;
+ipcMain.handle("cloudPack:upload", async (_event, id) => {
+  if (!features.visible("cloudPacks")) return pageOff;
+  if (!currentSession) return { ok: false, error: "Connecte-toi d'abord à ton compte Minecraft." };
+  const v = playMode.getVersion(String(id));
+  if (!v) return { ok: false, error: "Cette version n'existe plus." };
+  if (!v.pack) return { ok: false, error: "Une version vanilla n'a pas de mods : choisis une version avec Fabric, NeoForge, Forge ou Quilt." };
+  const uuid = currentSession.profile.id;
+  const tmp = path.join(os.tmpdir(), `omni-cloud-${crypto.randomBytes(4).toString("hex")}.mrpack`);
+  try {
+    const plan = await omniPack.friendMods(v.id, { cfMatch: cfFingerprintMatch });
+    const isCf = (x) => x.mrpack !== "link" && !!x.cf;
+    const r = await omniPack.exportMrpack(v.id, tmp, { parts: { cfg: true, rp: true, dp: false, w: false }, plan: { ...plan, mods: plan.mods.filter((x) => !isCf(x)) }, cloud: true });
+    if (r.size > CLOUD_PACK_MAX) return { ok: false, error: `Le modpack fait ${Math.ceil(r.size / 1e6)} Mo sans les mods : 4 Mo au maximum (souvent un gros pack de ressources ; retire-le de l'installation ou mets-le sur Modrinth).` };
+    const curseforge = [];
+    for (const x of plan.mods.filter(isCf)) {
+      const st = x.abs ? await fsp.stat(x.abs).catch(() => null) : null;
+      curseforge.push({ file: x.file || `${x.name}.jar`, name: x.name.slice(0, 80), projectId: x.cf.projectId, fileId: x.cf.fileId, sha1: x.sha1 || null, size: st?.size || null });
+    }
+    const custom = [];
+    for (const x of r.custom || []) {
+      const st = await fsp.stat(x.abs).catch(() => null);
+      if (!st?.isFile()) continue;
+      if (st.size > CLOUD_JAR_MAX) return { ok: false, error: `${x.file} fait plus de 30 Mo : trop gros pour le cloud.` };
+      custom.push({ file: x.file, name: x.name.slice(0, 80), size: st.size, sha1: x.sha1 || crypto.createHash("sha1").update(await fsp.readFile(x.abs)).digest("hex"), abs: x.abs });
+    }
+    const base = `${SITE_URL}/api/launcher/cloud-pack?minecraftUuid=${encodeURIComponent(uuid)}`;
+    const send = async (url, body, type) => {
+      const res = await fetch(url, { method: "POST", headers: { ...launcherAuthHeaders(), "Content-Type": type }, body, signal: AbortSignal.timeout(120000) });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) throw Object.assign(new Error(data?.error || `Réponse ${res.status} du site Omniscient`), { status: res.status });
+      return data;
+    };
+    const name = String(v.name || v.pack?.name || `Minecraft ${v.minecraftVersion}`).slice(0, 60);
+    const up = await withSessionRetry(async () => send(`${base}&upload=1&name=${encodeURIComponent(name)}`, await fsp.readFile(tmp), "application/zip"));
+    const refs = await send(`${base}&refs=1&pack=${encodeURIComponent(up.id)}`, JSON.stringify({ curseforge, custom: custom.map(({ file, name: n, size, sha1 }) => ({ file, name: n, size, sha1 })) }), "application/json");
+    // Mods perso : envoyés un par un vers le lien signé que le site a donné (1 h).
+    for (const u of Array.isArray(refs.uploads) ? refs.uploads : []) {
+      const x = custom.find((c) => c.sha1 === u.sha1);
+      if (!x || typeof u.url !== "string" || !/^https:\/\/[a-z0-9-]+\.r2\.cloudflarestorage\.com\//.test(u.url)) continue;
+      const res = await fetch(u.url, { method: "PUT", body: await fsp.readFile(x.abs), signal: AbortSignal.timeout(10 * 60 * 1000) });
+      if (!res.ok) throw new Error(`Envoi de ${x.file} impossible (réponse ${res.status}). Réessaie.`);
+    }
+    const fin = refs.uploads?.length ? await send(`${base}&finalize=1&pack=${encodeURIComponent(up.id)}`, "{}", "application/json") : refs;
+    return {
+      ok: true,
+      name: up.name,
+      updated: !!up.updated,
+      mods: up.mods,
+      configs: up.configs,
+      curseforge: curseforge.length,
+      custom: fin.custom ?? 0,
+      modrinth: fin.modrinth || [],
+      refused: fin.refused || [],
+      missing: r.manual || [],
+      usage: fin.usage || null,
+    };
+  } catch (error) {
+    return playError(error);
+  } finally {
+    await fsp.rm(tmp, { force: true }).catch(() => {});
+  }
+});
+
 ipcMain.handle("cloudPack:setOptIn", (_event, slug, on) => {
   if (!isValidInstanceSlug(slug)) return false;
   const map = { ...(settingsStore.loadSettings().cloudPackOptIn || {}) };

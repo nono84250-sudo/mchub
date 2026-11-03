@@ -367,7 +367,9 @@ function createOmniPack({ playMode }) {
   // Pour un ami (.mrpack, format Modrinth) : mods en liens Modrinth, réglages, packs, mondes cochés.
   // Les mods qui ne viennent pas de Modrinth ne sont JAMAIS dans le fichier : leur liste (avec la page)
   // est dans « omniscient-a-telecharger.txt ».
-  async function exportMrpack(id, outFile, { parts = {}, worlds = [], plan = null, ramGB = null } = {}) {
+  // `cloud` (03/11, « Envoyer dans le cloud ») : les mods perso ne vont PAS dans le fichier, ils sont
+  // renvoyés dans `custom` (le launcher les envoie à part, le site les contrôle un par un).
+  async function exportMrpack(id, outFile, { parts = {}, worlds = [], plan = null, ramGB = null, cloud = false } = {}) {
     const { v, dir } = playMode.omniSource(id);
     const index = {
       formatVersion: 1,
@@ -382,6 +384,7 @@ function createOmniPack({ playMode }) {
     if (loaderKey) index.dependencies[loaderKey] = v.pack.loaderVersion;
     const zipFiles = [];
     const manual = [];
+    const custom = [];
     const mods = (v.mods || []).filter((m) => m.on !== false);
     const needHashes = plan ? [] : mods.filter((m) => isMrUrl(m.file?.url) && m.file?.sha1 && !m.file?.sha512).map((m) => m.file.sha1);
     const hashes = needHashes.length ? await packs.lookupHashes(needHashes).catch(() => new Map()) : new Map();
@@ -390,10 +393,11 @@ function createOmniPack({ playMode }) {
     if (plan) {
       for (const x of plan.mods) {
         if (x.mrpack === "link") index.files.push({ path: `mods/${x.mr.filename}`, hashes: { sha1: x.mr.sha1, sha512: x.mr.sha512 }, env: { client: "required", server: "required" }, downloads: [x.mr.url], fileSize: x.mr.size || 0 });
+        else if (x.mrpack === "jar" && cloud) custom.push(x);
         else if (x.mrpack === "jar") zipFiles.push({ abs: x.abs, rel: `overrides/mods/${x.file}`, mtimeMs: Date.now() });
         else manual.push(`${x.name}${x.page ? ` : ${x.page}` : ""}`);
       }
-      zipFiles.push(...(await creditsFile(plan)));
+      if (!cloud) zipFiles.push(...(await creditsFile(plan)));
     }
     for (const m of plan ? [] : mods) {
       if (m.source === "mr" && isMrUrl(m.file?.url) && SAFE_JAR.test(m.file?.filename || "")) {
@@ -438,7 +442,7 @@ function createOmniPack({ playMode }) {
         for (const f of files.files) zipFiles.push({ abs: f.abs, rel: `overrides/saves/${found.world.folder}/${f.rel}`, mtimeMs: f.mtimeMs });
       }
     }
-    if (manual.length) {
+    if (manual.length && !cloud) {
       const txt = path.join(os.tmpdir(), `omni-manual-${crypto.randomBytes(4).toString("hex")}.txt`);
       await fsp.writeFile(txt, `Mods à télécharger à la main (pas sur Modrinth) :\r\n\r\n${manual.join("\r\n")}\r\n`);
       zipFiles.push({ abs: txt, rel: "overrides/omniscient-a-telecharger.txt", mtimeMs: Date.now(), tmp: true });
@@ -452,7 +456,7 @@ function createOmniPack({ playMode }) {
     }
     try {
       const size = await writeArchive(outFile, index, "modrinth.index.json", zipFiles);
-      return { file: outFile, size, manual };
+      return { file: outFile, size, manual, custom };
     } finally {
       for (const f of zipFiles) if (f.tmp) await fsp.rm(f.abs, { force: true });
     }

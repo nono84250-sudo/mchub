@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { CaretDown, Check, Cube, Eye, Gear, LinkSimple, Lock, MagnifyingGlass, Minus, Package, PencilSimple, Plus, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { CaretDown, Check, Cube, Eye, Gear, LinkSimple, Lock, Minus, Package, Trash, X } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useConfirm } from "@/components/ConfirmDialog";
 import type { Dictionary } from "@/i18n/getDictionary";
-import type { CloudPack, CloudUsage, ModHit } from "@/lib/cloudPacks";
-import { deleteCloudPackAction, linkCloudPackAction, removeConfigsAction, saveCloudPackAction, searchCloudModsAction, unlinkCloudPackAction } from "@/lib/actions/cloud";
+import type { CloudPack, CloudUsage } from "@/lib/cloudPacks";
+import { deleteCloudPackAction, linkCloudPackAction, unlinkCloudPackAction } from "@/lib/actions/cloud";
 
-// Page « Mon cloud » (03/11, preview v2 validée par Rushi). Tout ce qui écrit passe par les actions
-// de lib/actions/cloud.ts (compte connecté) ou /api/me/cloud/configs (le .zip des configs).
+// Page « Mon cloud » (03/11, preview v2 validée par Rushi). Un modpack se crée et se met à jour dans
+// le launcher (Jouer › une version › ⚙ › « Envoyer dans le cloud », retour de Rushi du 03/11) : ici on
+// le voit, on le relie à un serveur et on le supprime (actions de lib/actions/cloud.ts).
 type L = Dictionary["cloud"];
 type OfferLite = { id: string; cloud: boolean; quotaBytes: number; priceCents: number; keepDays: number; packServers: number };
 type ServerLite = { id: string; name: string; slug: string; minecraftVersion: string; type: string };
@@ -46,7 +47,6 @@ function agoFmt(iso: string, locale: string): string {
 const btn = "inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-surface-raised disabled:opacity-50";
 const btnFill = "inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[13px] font-semibold text-[var(--accent-foreground,#fff)] hover:opacity-90 disabled:opacity-50";
 const btnDanger = "inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[13px] text-[var(--danger)] hover:bg-surface-raised disabled:opacity-50";
-const input = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--accent)]";
 
 function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer: ReactNode }) {
   useEffect(() => {
@@ -67,150 +67,6 @@ function Modal({ title, onClose, children, footer }: { title: string; onClose: (
         <div className="flex flex-wrap justify-end gap-2">{footer}</div>
       </div>
     </div>
-  );
-}
-
-// --- Créer / modifier un modpack ---------------------------------------------------------------
-function PackEditor({ L, pack, mcVersions, onClose, onDone }: { L: L; pack: CloudPack | null; mcVersions: string[]; onClose: () => void; onDone: (text: string) => void }) {
-  const [name, setName] = useState(pack?.name ?? "");
-  const [mc, setMc] = useState(pack?.minecraftVersion ?? mcVersions[0] ?? "1.21.1");
-  const [loader, setLoader] = useState<string>(pack?.loader ?? "fabric");
-  const [mods, setMods] = useState<{ slug: string; title: string }[]>(pack?.projects ?? []);
-  const [q, setQ] = useState("");
-  const [hits, setHits] = useState<ModHit[] | null>(null);
-  const [searchErr, setSearchErr] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const seq = useRef(0);
-
-  useEffect(() => {
-    const id = ++seq.current;
-    const timer = setTimeout(async () => {
-      const r = await searchCloudModsAction(q, mc, loader).catch(() => null);
-      if (id !== seq.current) return;
-      setSearchErr(r === null);
-      setHits(r ?? []);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [q, mc, loader]);
-
-  async function save() {
-    setError(null);
-    if (!name.trim()) return setError(L.errName);
-    if (!mc) return setError(L.errVer);
-    if (!mods.length) return setError(L.errMods);
-    setSaving(true);
-    try {
-      const r = await saveCloudPackAction({ id: pack?.id, name, minecraftVersion: mc, loader, mods: mods.map((m) => m.slug) });
-      if (!r.ok) return setError(r.error);
-      onDone(fmt(L.createdOk, { p: name.trim() }) + (r.missing.length ? ` ${fmt(L.missing, { m: r.missing.join(", ") })}` : ""));
-    } catch {
-      setError(L.error);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal
-      title={pack ? fmt(L.editT, { p: pack.name }) : L.newT}
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className={btn} onClick={onClose}>
-            {L.cancel}
-          </button>
-          <button type="button" className={btnFill} onClick={save} disabled={saving}>
-            {saving ? L.saving : pack ? L.save : L.create}
-          </button>
-        </>
-      }
-    >
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted">{L.mName}</span>
-        <input className={input} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="Valoria" />
-      </label>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">{L.mVer}</span>
-          <select className={input} value={mc} onChange={(e) => setMc(e.target.value)}>
-            {(mcVersions.includes(mc) ? mcVersions : [mc, ...mcVersions]).map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">{L.mLoader}</span>
-          <select className={input} value={loader} onChange={(e) => setLoader(e.target.value)}>
-            {LOADERS.map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="flex flex-col gap-2 text-sm">
-        <span className="text-muted">
-          {L.mMods} · {mods.length}
-        </span>
-        {mods.length ? (
-          <div className="flex flex-wrap gap-1.5">
-            {mods.map((m) => (
-              <span key={m.slug} className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-xs text-foreground">
-                {m.title}
-                <button type="button" aria-label={`${L.remove} ${m.title}`} className="text-muted hover:text-[var(--danger)]" onClick={() => setMods((s) => s.filter((x) => x.slug !== m.slug))}>
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : null}
-        <div className="relative">
-          <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          <input className={`${input} pl-9`} value={q} onChange={(e) => setQ(e.target.value)} placeholder={L.mSearch} />
-        </div>
-        <div className="flex max-h-60 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-1">
-          {hits === null ? <p className="px-2 py-3 text-xs text-muted">…</p> : null}
-          {searchErr ? <p className="px-2 py-3 text-xs text-[var(--danger)]">{L.searchErr}</p> : null}
-          {hits && !hits.length && !searchErr ? <p className="px-2 py-3 text-xs text-muted">{L.noHits}</p> : null}
-          {(hits ?? []).map((h) => {
-            const added = mods.some((m) => m.slug === h.slug);
-            return (
-              <div key={h.slug} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-raised">
-                {h.icon ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={h.icon} alt="" width={28} height={28} className="h-7 w-7 flex-shrink-0 rounded" loading="lazy" />
-                ) : (
-                  <Package className="h-7 w-7 flex-shrink-0 text-muted" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium text-foreground">{h.title}</p>
-                  <p className="truncate text-[11px] text-muted">{h.description}</p>
-                </div>
-                <button
-                  type="button"
-                  className={added ? `${btn} text-[var(--success)]` : btn}
-                  disabled={added || mods.length >= 150}
-                  onClick={() => setMods((s) => [...s, { slug: h.slug, title: h.title }])}
-                >
-                  {added ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-                  {added ? L.added : L.add}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-        <p className="text-xs text-muted">{L.rpLater}</p>
-      </div>
-      {error ? (
-        <p role="alert" className="text-sm text-[var(--danger)]">
-          {error}
-        </p>
-      ) : null}
-    </Modal>
   );
 }
 
@@ -336,7 +192,6 @@ export function CloudPanel(props: {
   usage: CloudUsage;
   packs: CloudPack[];
   servers: ServerLite[];
-  mcVersions: string[];
   worldsSlot: ReactNode;
 }) {
   const { L, offer, usage, packs, servers } = props;
@@ -347,19 +202,15 @@ export function CloudPanel(props: {
   const [plansOpen, setPlansOpen] = useState(false);
   const [cmpOpen, setCmpOpen] = useState(false);
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const [editing, setEditing] = useState<CloudPack | "new" | null>(null);
   const [linking, setLinking] = useState<CloudPack | null>(null);
   const [preview, setPreview] = useState<CloudPack | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const uploadFor = useRef<string | null>(null);
 
   const pct = usage.quota ? Math.min(100, (usage.total / usage.quota) * 100) : 100;
   const planLabel = offer.id === "creator" ? L.cre : offer.cloud ? L.sup : L.free;
   const say = (text: string, ok = true) => setMessage({ text, ok });
   const done = (text: string) => {
-    setEditing(null);
     setLinking(null);
     say(text);
     router.refresh();
@@ -379,26 +230,7 @@ export function CloudPanel(props: {
     }
   }
 
-  async function uploadConfigs(file: File) {
-    const packId = uploadFor.current;
-    if (!packId) return;
-    if (!/\.zip$/i.test(file.name)) return say(L.configsHint, false);
-    setBusy(`c:${packId}`);
-    setMessage(null);
-    try {
-      const res = await fetch(`/api/me/cloud/configs?pack=${encodeURIComponent(packId)}`, { method: "POST", body: file, headers: { "Content-Type": "application/zip" } });
-      const out = (await res.json().catch(() => ({}))) as { error?: string; count?: number };
-      if (!res.ok) say(out.error ?? L.error, false);
-      else {
-        say(fmt(L.configsOk, { n: out.count ?? 0 }));
-        router.refresh();
-      }
-    } catch {
-      say(L.error, false);
-    } finally {
-      setBusy(null);
-    }
-  }
+
 
   const tabs: { id: "packs" | "worlds"; label: string; count: number | null }[] = [
     ...(props.showPacks ? [{ id: "packs" as const, label: L.tabPacks, count: packs.length }] : []),
@@ -425,17 +257,6 @@ export function CloudPanel(props: {
   return (
     <div>
       {dialog}
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".zip,application/zip"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = "";
-          if (f) void uploadConfigs(f);
-        }}
-      />
       <h1 className="text-2xl font-bold tracking-tight text-foreground">
         {L.title}
         {props.beta ? (
@@ -505,25 +326,19 @@ export function CloudPanel(props: {
         <div className="mt-4 flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-xl text-sm text-muted">{L.packsLead}</p>
-            <button type="button" className={btnFill} onClick={() => setEditing("new")}>
-              <Plus className="h-4 w-4" />
-              {L.newPack}
-            </button>
           </div>
           {!packs.length ? (
             <div className="panel flex flex-col items-center gap-2 px-6 py-10 text-center text-sm text-muted">
               <Package className="h-7 w-7" />
               <h3 className="text-base font-semibold text-foreground">{L.emptyPackT}</h3>
               <p className="max-w-[46ch]">{L.emptyPackD}</p>
-              <button type="button" className={`${btnFill} mt-2`} onClick={() => setEditing("new")}>
-                <Plus className="h-4 w-4" />
-                {L.newPack}
-              </button>
+              <p className="mt-1 rounded-md border border-border px-3 py-2 text-xs text-foreground">{L.howLauncher}</p>
             </div>
           ) : (
             packs.map((p) => {
               const isOpen = open.has(p.id);
-              const meta = [`${p.minecraftVersion} · ${loaderName(p.loader)}`, fmt(L.mods, { n: p.files.length }), p.configCount ? fmt(L.configs, { n: p.configCount }) : L.noConfigs, sizeFmt(p.sizeBytes, locale)].join(" · ");
+              const mods = p.files.filter((f) => !f.path || f.path.startsWith("mods/"));
+              const meta = [`${p.minecraftVersion} · ${loaderName(p.loader)}`, fmt(L.mods, { n: mods.length }), p.configCount ? fmt(L.configs, { n: p.configCount }) : L.noConfigs, sizeFmt(p.sizeBytes, locale)].join(" · ");
               return (
                 <div key={p.id} className="panel p-4">
                   <div className="flex flex-wrap items-center gap-3">
@@ -594,46 +409,25 @@ export function CloudPanel(props: {
                   </div>
                   {isOpen ? (
                     <div className="mt-3 flex flex-col gap-1.5 border-t border-border pt-3 text-[13px]">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{fmt(L.mods, { n: p.files.length })}</p>
-                      {p.files.map((f) => (
-                        <div key={f.projectId + f.filename} className="flex items-center gap-2">
-                          <span className="rounded bg-[color-mix(in_srgb,var(--success)_16%,transparent)] px-1.5 text-[10px] font-semibold text-[var(--success)]">Modrinth</span>
-                          <span className="flex-1 truncate text-foreground">{f.title ?? f.filename}</span>
-                          <span className="truncate text-xs text-muted">{f.filename}</span>
-                        </div>
-                      ))}
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{fmt(L.mods, { n: mods.length })}</p>
+                      {p.files.map((f) => {
+                        const kind = f.source === "cf" ? ["CurseForge", "var(--state-busy)"] : f.source === "custom" ? [f.pending ? L.srcPending : L.srcCustom, "var(--accent)"] : ["Modrinth", "var(--success)"];
+                        const folder = f.path && !f.path.startsWith("mods/") ? (f.path.startsWith("shaderpacks/") ? L.srcShader : L.srcRp) : null;
+                        return (
+                          <div key={(f.path ?? "") + f.filename} className="flex items-center gap-2">
+                            <span className="rounded px-1.5 text-[10px] font-semibold" style={{ color: kind[1], background: `color-mix(in srgb, ${kind[1]} 16%, transparent)` }}>{kind[0]}</span>
+                            {folder ? <span className="rounded bg-[var(--surface-2,transparent)] px-1.5 text-[10px] text-muted">{folder}</span> : null}
+                            <span className="flex-1 truncate text-foreground">{f.title ?? f.filename}</span>
+                            <span className="truncate text-xs text-muted">{f.filename}</span>
+                          </div>
+                        );
+                      })}
                       {p.missing.length ? <p className="text-xs text-[var(--state-busy)]">{fmt(L.missing, { m: p.missing.map((m) => m.title).join(", ") })}</p> : null}
                       <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
                         <Gear className="h-4 w-4 text-muted" />
-                        <span className="flex-1 text-foreground">
-                          {p.configCount ? fmt(L.configs, { n: p.configCount }) : L.noConfigs} <span className="text-xs text-muted">(config/*.json, *.toml…)</span>
-                        </span>
-                        <button
-                          type="button"
-                          className={btn}
-                          disabled={busy === `c:${p.id}`}
-                          onClick={() => {
-                            uploadFor.current = p.id;
-                            fileRef.current?.click();
-                          }}
-                        >
-                          <UploadSimple className="h-3.5 w-3.5" />
-                          {p.configCount ? L.replaceConfigs : L.upConfigs}
-                        </button>
-                        {p.configCount ? (
-                          <button type="button" className={btnDanger} disabled={busy === `r:${p.id}`} onClick={() => run(`r:${p.id}`, () => removeConfigsAction(p.id), L.configsRemoved)}>
-                            {L.removeConfigs}
-                          </button>
-                        ) : null}
+                        <span className="flex-1 text-foreground">{p.configCount ? fmt(L.configs, { n: p.configCount }) : L.noConfigs}</span>
                       </div>
-                      <p className="text-xs text-muted">{L.configsHint}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className="flex-1 text-xs text-muted">{L.rpLater}</span>
-                        <button type="button" className={btn} onClick={() => setEditing(p)}>
-                          <PencilSimple className="h-3.5 w-3.5" />
-                          {L.edit}
-                        </button>
-                      </div>
+                      <p className="text-xs text-muted">{L.updateHint}</p>
                     </div>
                   ) : null}
                 </div>
@@ -752,7 +546,6 @@ export function CloudPanel(props: {
         </div>
       </div>
 
-      {editing ? <PackEditor L={L} pack={editing === "new" ? null : editing} mcVersions={props.mcVersions} onClose={() => setEditing(null)} onDone={done} /> : null}
       {linking ? <LinkDialog L={L} pack={linking} servers={servers} limit={offer.packServers} onClose={() => setLinking(null)} onDone={done} /> : null}
       {preview ? <PlayerPreview L={L} pack={preview} onClose={() => setPreview(null)} /> : null}
     </div>

@@ -5224,7 +5224,8 @@
       <div class="om-menu" hidden>${friend || omni ? `<div class="om-mh">${esc(omT("exp"))}</div>` : ""}
         ${friend ? `<button type="button" data-om="friend"><b>${esc(omT("friend"))}</b><small>${esc(omT("friendD"))}</small></button>` : ""}
         ${omni ? `<button type="button" data-om="export"><b>${esc(omT("omni"))}</b><small>${esc(omT("omniD"))}</small></button><hr><button type="button" data-om="gen"><b>${esc(omT("gen"))}</b><small>${esc(omT("genD"))}</small></button>` : ""}
-        ${friend || omni ? "<hr>" : ""}<div class="om-mh">${esc(omT("inst"))}</div>
+        ${on("cloudPacks") && !p.vanilla ? `${friend || omni ? "<hr>" : ""}<div class="om-mh">${esc(rmTr("Mon cloud", "My cloud"))}</div><button type="button" data-om="cloud"><b>☁ ${esc(rmTr("Envoyer dans le cloud", "Send to the cloud"))}</b><small>${esc(rmTr("Pour le relier à ton serveur sur le site", "To link it to your server on the website"))}</small></button>` : ""}
+        ${friend || omni || (on("cloudPacks") && !p.vanilla) ? "<hr>" : ""}<div class="om-mh">${esc(omT("inst"))}</div>
         ${on("packRam") && packPage ? (() => { const c = rmCtxOf(packPage.id), st = rmStOf(packPage.id), v = rmValue(st, c), tn = rmVerdict(v, c)[0]; return `<button type="button" data-om="ram"><b>🧠 ${esc(rmTr("Mémoire (RAM)", "Memory (RAM)"))}${tn === "warn" || tn === "bad" ? " ⚠" : ""}</b><small>${esc(`${rmGo(v)} · ${rmModeName(st.mode)}`)}</small></button>`; })() : ""}
         <button type="button" data-om="rename"><b>✎ ${esc(T("rename"))}</b>${p.omni ? `<small>${esc(omT("renD"))}</small>` : ""}</button>
         <button type="button" data-om="remove" style="color:var(--danger,#e5484d);"><b>🗑 ${esc(omT("rmB"))}</b>${(p.omni?.versions || []).length > 1 ? `<small>${esc(omT("rmD"))}</small>` : ""}</button></div></span>`;
@@ -5493,6 +5494,49 @@
       toast(omT("saved", { n: out.name, s: sizeFmt(out.size) }));
     });
   }
+  // Mon cloud (03/11, Rushi) : le modpack se crée ici, puis se relie au serveur sur le site.
+  // Tout part : mods Modrinth et CurseForge (en liens), configs, packs de ressources et shaders,
+  // mods perso (contrôlés un par un par le site). Jamais le fichier d'un mod CurseForge.
+  function omOpenCloud(st) {
+    const name = data.versions.find((x) => x.id === st.id)?.name || st.p.name;
+    const li = (t) => `<li style="margin:3px 0;">${t}</li>`;
+    const m = overlay(`<div class="modal-box pop-in om-modal" role="dialog" aria-modal="true" style="max-width:540px;width:100%;text-align:left;max-height:calc(100vh - 48px);overflow:auto;">
+      <h3>☁ ${esc(rmTr("Envoyer dans le cloud", "Send to the cloud"))}</h3><p class="sub">${esc(rmTr(`« ${name} » va dans ton cloud Omniscient. Ensuite, sur le site (Cloud), relie-le à ton serveur : les joueurs l'auront en un clic.`, `“${name}” goes to your Omniscient cloud. Then, on the website (Cloud), link it to your server: players get it in one click.`))}</p>
+      <div class="om-sec">${esc(rmTr("Ce qui part", "What is sent"))}</div>
+      <ul style="margin:0 0 8px 18px;padding:0;font-size:13px;">${li(esc(rmTr("Les mods Modrinth (en liens, ils ne prennent presque pas de place)", "Modrinth mods (as links, they take almost no space)")))}${li(esc(rmTr("Les réglages (config, defaultconfigs, kubejs, options.txt)", "Settings (config, defaultconfigs, kubejs, options.txt)")))}${li(esc(rmTr("Les packs de ressources et les shaders de l'installation", "The installation's resource packs and shaders")))}${li(esc(rmTr("Les mods CurseForge (en liens)", "CurseForge mods (as links)")))}${li(esc(rmTr("Tes mods perso (.jar ni Modrinth ni CurseForge) : le site les contrôle un par un", "Your own mods (.jar not on Modrinth or CurseForge): the website checks each one")))}</ul>
+      <p class="om-note">${esc(rmTr("Les mods CurseForge restent des liens : chaque joueur les télécharge depuis CurseForge (Omniscient ne garde jamais leur fichier). Pas de monde. Ton modpack reste privé : seuls les joueurs de ton serveur l'ont. Même nom qu'un modpack déjà envoyé = il est mis à jour.", "CurseForge mods stay links: each player downloads them from CurseForge (Omniscient never keeps their file). No worlds. Your pack stays private: only your server's players get it. Same name as a pack already sent = it gets updated."))}</p>
+      <p class="fx-msg" data-msg aria-live="polite"></p><div data-res></div>
+      <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;"><button type="button" class="btn-secondary" data-x>${esc(omT("cancel"))}</button><button type="button" class="join-btn" data-go>☁ ${esc(rmTr("Envoyer", "Send"))}</button></div></div>`);
+    m.ov.addEventListener("click", async (e) => {
+      if (e.target.closest("[data-x]")) return m.close();
+      const b = e.target.closest("[data-go]");
+      if (!b) return;
+      b.disabled = true;
+      const msg = m.$("[data-msg]");
+      msg.style.color = "";
+      msg.textContent = rmTr("Envoi en cours… (les mods perso peuvent prendre une minute)", "Sending… (own mods can take a minute)");
+      const r = await api.cloudUpload(st.id).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+      b.disabled = false;
+      if (!r?.ok) {
+        msg.style.color = "var(--danger,#e5484d)";
+        msg.textContent = r?.error || "?";
+        return;
+      }
+      msg.textContent = "";
+      b.hidden = true;
+      m.$("[data-x]").textContent = rmTr("Fermer", "Close");
+      const lines = [
+        `✓ ${esc(rmTr(`${r.updated ? "Mis à jour" : "Envoyé"} : « ${r.name} »`, `${r.updated ? "Updated" : "Sent"}: “${r.name}”`))}`,
+        esc(rmTr(`${r.mods} fichiers Modrinth · ${r.curseforge ? `${r.curseforge} mods CurseForge (liens) · ` : ""}${r.custom ? `${r.custom} mod(s) perso · ` : ""}${r.configs} fichiers de réglages`, `${r.mods} Modrinth files · ${r.curseforge ? `${r.curseforge} CurseForge mods (links) · ` : ""}${r.custom ? `${r.custom} own mod(s) · ` : ""}${r.configs} settings files`)),
+        ...(r.modrinth || []).map((f) => esc(rmTr(`${f} existe sur Modrinth : gardé en lien`, `${f} is on Modrinth: kept as a link`))),
+        ...(r.refused || []).map((f) => `<span style="color:var(--danger,#e5484d);">✕ ${esc(rmTr(`${f.file} refusé : ${f.reason}`, `${f.file} refused: ${f.reason}`))}</span>`),
+        ...(r.missing?.length ? [`<span style="color:var(--warn);">${esc(rmTr(`Pas trouvés dans le dossier mods (pas envoyés) : ${r.missing.slice(0, 6).join(", ")}`, `Not found in the mods folder (not sent): ${r.missing.slice(0, 6).join(", ")}`))}</span>`] : []),
+        ...(r.usage ? [esc(rmTr(`Ton cloud : ${sizeFmt(r.usage.total)} utilisés sur ${sizeFmt(r.usage.quota)}`, `Your cloud: ${sizeFmt(r.usage.total)} used of ${sizeFmt(r.usage.quota)}`))] : []),
+        esc(rmTr("Dernière étape : sur le site, menu Cloud, « Relier à un serveur ».", "Last step: on the website, Cloud menu, “Link to a server”.")),
+      ];
+      m.$("[data-res]").innerHTML = `<div class="pk-check" role="status" style="display:block;line-height:1.6;">${lines.join("<br>")}</div>`;
+    });
+  }
   async function omOpenFriend(st) {
     if (on("addMenus") && !st.p.vanilla) return omOpenFriend2(st);
     const p = st.p;
@@ -5608,6 +5652,7 @@
     if (a === "menu") { if (menu) menu.hidden = !menu.hidden; return; }
     if (menu) menu.hidden = true;
     if (a === "friend") return omOpenFriend(st);
+    if (a === "cloud") return omOpenCloud(st);
     if (a === "export") return omOpenExport(st);
     if (a === "gen") return omOpenGen(st);
     if (a === "det") { omJobOpen = !omJobOpen; return drawPackPage(); }

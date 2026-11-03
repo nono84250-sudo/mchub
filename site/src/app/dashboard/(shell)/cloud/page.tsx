@@ -4,7 +4,6 @@ import { getT } from "@/i18n/getDictionary";
 import { featureOnSite } from "@/lib/features";
 import { getUserOffer, listCloudWorlds, listOffers, pruneCloud } from "@/lib/playWorlds";
 import { cloudUsage, listCloudPacks, ownedServers } from "@/lib/cloudPacks";
-import { getMinecraftVersions } from "@/lib/minecraft-versions";
 import { CloudPanel } from "@/components/CloudPanel";
 import { WorldsPanel } from "@/components/WorldsPanel";
 
@@ -25,13 +24,12 @@ export default async function CloudPage({ searchParams }: PageProps<"/dashboard/
   const offer = await getUserOffer(userId);
   const worldsOn = worldsFeature.visible && offer.cloud;
   if (worldsOn) await pruneCloud(userId, offer, { throttle: true });
-  const [packs, servers, usage, offers, worlds, versions] = await Promise.all([
+  const [packs, servers, usage, offers, worlds] = await Promise.all([
     packsFeature.visible ? listCloudPacks(userId) : Promise.resolve([]),
     packsFeature.visible ? ownedServers(userId) : Promise.resolve([]),
     cloudUsage(userId, offer),
     listOffers(),
     worldsOn ? listCloudWorlds(userId) : Promise.resolve([]),
-    packsFeature.visible ? getMinecraftVersions() : Promise.resolve([]),
   ]);
   const tabParam = (await searchParams).tab;
   const tab = tabParam === "worlds" || !packsFeature.visible ? "worlds" : "packs";
@@ -48,7 +46,6 @@ export default async function CloudPage({ searchParams }: PageProps<"/dashboard/
       usage={usage}
       packs={packs}
       servers={servers}
-      mcVersions={versions.filter((v) => /^\d+\.\d+(\.\d+)?$/.test(v)).slice(0, 60)}
       worldsSlot={worldsOn ? <WorldsPanel worlds={worlds} usedBytes={usage.worlds} quotaBytes={offer.quotaBytes} keepDays={offer.keepDays} /> : null}
     />
   );

@@ -691,7 +691,8 @@ const DICTIONARIES = {
       modpack: "Modpack",
       // Mon cloud (03/11) : modpack relié par le propriétaire.
       cloudPackTitle: "Modpack du serveur",
-      cloudPackMods: "{n} mods Modrinth",
+      cloudPackMods: "{n} mods",
+      cloudPackCustom: "⚠ {n} mod(s) fourni(s) par le propriétaire du serveur, non vérifié(s) par Omniscient (contrôles automatiques seulement). Installe seulement si tu fais confiance à ce serveur.",
       cloudPackConfigs: "{n} fichiers de config",
       cloudPackRequired: "Obligatoire pour rejoindre : le launcher l'installe avant de te connecter.",
       cloudPackSuggested: "Conseillé par le serveur : tu peux aussi jouer sans.",
@@ -2007,7 +2008,8 @@ const DICTIONARIES = {
       modpack: "Modpack",
       // My cloud (03/11): modpack linked by the owner.
       cloudPackTitle: "Server's modpack",
-      cloudPackMods: "{n} Modrinth mods",
+      cloudPackMods: "{n} mods",
+      cloudPackCustom: "⚠ {n} mod(s) provided by the server owner, not verified by Omniscient (automatic checks only). Install only if you trust this server.",
       cloudPackConfigs: "{n} config files",
       cloudPackRequired: "Required to join: the launcher installs it before connecting you.",
       cloudPackSuggested: "Suggested by the server: you can also play without it.",

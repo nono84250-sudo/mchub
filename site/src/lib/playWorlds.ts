@@ -43,8 +43,10 @@ const toOffer = (r: Row): PlayOffer => ({
   priceCents: Number(r.priceCents) || 0,
   cloudVersions: Number(r.cloudVersions) || 10,
   // Base pas encore migrée (colonnes absentes) : valeurs de l'offre gratuite.
-  packQuotaBytes: r.packQuotaBytes == null ? 500_000_000 : Number(r.packQuotaBytes) || 0,
-  packServers: r.packServers == null ? 1 : Number(r.packServers) || 0,
+  // 03/11 (capture de Rushi : « 0 Ko sur 0 Ko ») : une valeur absente, vide ou à 0 ne doit jamais
+  // fermer le cloud. Sans valeur : 500 Mo (Gratuit), ou la place de l'offre pour les autres.
+  packQuotaBytes: Number(r.packQuotaBytes) > 0 ? Number(r.packQuotaBytes) : r.cloud && Number(r.quotaBytes) > 0 ? Number(r.quotaBytes) : 500_000_000,
+  packServers: r.packServers == null || r.packServers === "" ? (r.id === "creator" ? 0 : 1) : Number(r.packServers) || 0,
 });
 
 export const listOffers = unstable_cache(
@@ -52,7 +54,7 @@ export const listOffers = unstable_cache(
   // Clé changée le 25/10 (colonne cloudVersions, quota 10 Go) : l'ancienne liste gardée en cache
   // affichait encore 10,7 Go. À changer aussi après chaque modification de la table des offres
   // (v3 le 03/11 : colonnes packQuotaBytes / packServers et offre Créateur).
-  ["play-offers-v3"],
+  ["play-offers-v4"],
   { revalidate: 300, tags: [PLAY_TAG] },
 );
 

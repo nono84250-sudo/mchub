@@ -57,10 +57,21 @@ function isAllowedCloudConfigUrl(value) {
 }
 // Fichiers de configuration seulement (meme liste que le site, lib/cloudPacks.ts), sous config/ ou
 // defaultconfigs/. Un fichier envoye sans dossier va dans config/.
+// 03/11 : le modpack envoye depuis le launcher est un .mrpack (« overrides/… ») : reglages
+// (config, defaultconfigs, kubejs, options.txt), packs de ressources et shaders (.zip).
 const CLOUD_CONFIG_EXT = /\.(json|json5|jsonc|toml|cfg|conf|config|properties|txt|ya?ml|snbt|ini|csv|md|xml|lang)$/i;
+const CLOUD_FORBIDDEN_EXT = /\.(jar|exe|dll|bat|cmd|com|scr|msi|msp|ps1|psm1|vbs|vbe|wsf|wsh|hta|lnk|sh|so|dylib|class|pif|reg|cpl|jse|url)$/i;
 function cloudConfigTarget(name) {
-  const clean = String(name || "").replace(/\\/g, "/");
+  let clean = String(name || "").replace(/\\/g, "/");
   if (!clean || clean.endsWith("/") || clean.startsWith("/") || clean.split("/").includes("..")) return null;
+  if (clean.startsWith("overrides/")) {
+    clean = clean.slice("overrides/".length);
+    if (CLOUD_FORBIDDEN_EXT.test(clean)) return null;
+    if (clean === "options.txt" || /^(config|defaultconfigs|kubejs)\/.+/.test(clean)) return clean;
+    if (/^(resourcepacks|shaderpacks)\/[^/]+\.zip$/i.test(clean)) return clean;
+    return null;
+  }
+  if (clean === "modrinth.index.json" || clean === "omniscient.json") return null;
   if (!CLOUD_CONFIG_EXT.test(clean)) return null;
   return /^(config|defaultconfigs)\//.test(clean) ? clean : `config/${clean}`;
 }
@@ -76,6 +87,23 @@ function cloudConfigView(zip) {
         .map(({ target, e }) => ({ entryName: `overrides/${target}`, isDirectory: false, getData: () => e.getData() })),
   };
 }
+const CLOUD_FILE_PATH = /^(mods\/[^/\\]+\.jar|(resourcepacks|shaderpacks)\/[^/\\]+\.zip)$/i;
+const hostOf = (value) => {
+  try {
+    const u = new URL(String(value || ""));
+    return u.protocol === "https:" && !u.username && !u.password ? u.hostname : "";
+  } catch {
+    return "";
+  }
+};
+// Fichiers d'un modpack du cloud, trois sortes (03/11) :
+// - Modrinth : lien cdn.modrinth.com.
+// - CurseForge : une reference (projet + fichier). Le lien est demande a CurseForge au moment de
+//   l'installation (route du site, notre cle) : Omniscient ne garde jamais le fichier. Un mod dont
+//   l'auteur bloque les autres launchers : le joueur le telecharge sur sa page (comme un modpack
+//   CurseForge), le launcher le retrouve dans Telechargements.
+// - Mod perso du proprietaire (controle par le site) : lien signe vers notre stockage, empreinte
+//   obligatoire. Seulement pour les joueurs de son serveur.
 function readCloudPack(info) {
   const cloud = info.cloud || {};
   if (!cloud.minecraftVersion || !cloud.loaderId || !Array.isArray(cloud.files)) throw new ModpackError("Modpack du cloud illisible ou incomplet.");
@@ -83,21 +111,72 @@ function readCloudPack(info) {
     minecraftVersion: cloud.minecraftVersion,
     loaderId: cloud.loaderId,
     overrideDirs: ["overrides"],
-    resolveFiles: async () =>
-      cloud.files.map((file) => {
-        const url = String(file.url || "");
-        let ok = false;
-        try {
-          const parsed = new URL(url);
-          ok = parsed.protocol === "https:" && parsed.hostname === "cdn.modrinth.com";
-        } catch {
-          ok = false;
+    resolveFiles: async ({ config, onProgress = () => {}, instanceDir, manualSearchDirs = [] } = {}) => {
+      const entries = [];
+      const cfItems = [];
+      for (const file of cloud.files) {
+        const rel = String(file.path || "");
+        if (!CLOUD_FILE_PATH.test(rel)) throw new ModpackError(`Fichier refusé dans le modpack du cloud : ${rel.slice(0, 80)}`, { code: "disallowed_download_host" });
+        const sha1 = /^[0-9a-f]{40}$/i.test(String(file.sha1 || "")) ? String(file.sha1).toLowerCase() : null;
+        const entry = { path: rel, url: null, sha1, sha512: null, size: Number(file.size) || null };
+        if (file.source === "cf") {
+          const fileId = Number(file.cf?.fileId);
+          if (!(fileId > 0) || !rel.startsWith("mods/")) throw new ModpackError(`Mod CurseForge illisible : ${file.title || rel}`);
+          cfItems.push({ fileId, modId: Number(file.cf?.projectId) || null, name: file.title || rel.slice(5), entry });
+          continue;
         }
-        if (!ok || !/^mods\/[^/\\]+\.jar$/i.test(String(file.path || ""))) {
-          throw new ModpackError(`Le mod "${file.title || file.path}" ne vient pas de Modrinth : installation refusée.`, { code: "disallowed_download_host" });
+        const host = hostOf(file.url);
+        const ok = file.source === "custom" ? host.endsWith(".r2.cloudflarestorage.com") && !!sha1 && rel.startsWith("mods/") : host === "cdn.modrinth.com";
+        if (!ok) throw new ModpackError(`Le mod "${file.title || rel}" ne vient ni de Modrinth ni du cloud Omniscient : installation refusée.`, { code: "disallowed_download_host" });
+        entry.url = String(file.url);
+        entries.push(entry);
+      }
+      if (!cfItems.length) return entries;
+      onProgress({ text: "Récupération des mods CurseForge…" });
+      const infos = new Map();
+      for (let i = 0; i < cfItems.length; i += FILE_INFO_BATCH) {
+        const data = await siteJson(config, "/api/launcher/curseforge/files", {
+          method: "POST",
+          body: JSON.stringify({ fileIds: cfItems.slice(i, i + FILE_INFO_BATCH).map((x) => x.fileId) }),
+        });
+        for (const x of data.files || []) infos.set(x.id, x);
+      }
+      const blocked = [];
+      for (const item of cfItems) {
+        const x = infos.get(item.fileId);
+        if (x?.downloadUrl && hostOf(x.downloadUrl).endsWith(".forgecdn.net")) {
+          item.entry.url = x.downloadUrl;
+          item.entry.sha1 = x.sha1 || item.entry.sha1;
+          item.entry.size = x.fileLength || item.entry.size;
+          entries.push(item.entry);
+        } else {
+          blocked.push({ info: x || { id: item.fileId, modId: item.modId, modName: item.name, fileName: item.entry.path.slice(5), pageUrl: null }, entry: item.entry, isMod: true, removed: !x });
         }
-        return { path: file.path, url, sha1: file.sha1 || null, sha512: null, size: file.size || null };
-      }),
+      }
+      if (blocked.length && instanceDir) reportManualFiles(await findManualFiles(blocked, { instanceDir, searchDirs: manualSearchDirs }), onProgress);
+      const manualMods = [];
+      for (const item of blocked) {
+        if (item.ready) {
+          entries.push(item.entry);
+          continue;
+        }
+        manualMods.push({
+          fileId: item.info.id,
+          modId: item.info.modId,
+          modName: typeof item.info.modName === "string" ? item.info.modName : null,
+          fileName: item.info.fileName,
+          pageUrl: safeCurseforgeUrl(item.info.pageUrl) || curseforgeProjectUrl(item.info.modId),
+          reason: item.removed ? "removed" : "blocked",
+        });
+      }
+      if (manualMods.length) {
+        throw new ModpackError(
+          `${manualMods.length} mod(s) du modpack ne peuvent pas être installés automatiquement : ${manualMods.map((m) => m.modName || m.fileName || `fichier ${m.fileId}`).join(", ")}.`,
+          { code: "manual_mods", manualMods },
+        );
+      }
+      return entries;
+    },
   };
 }
 

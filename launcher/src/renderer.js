@@ -1455,6 +1455,7 @@ async function fillCloudPackCard(server) {
     <p><b>${escapeHtml(pack.name)}</b></p>
     <p class="muted">${meta}</p>
     <p class="muted">${t(pack.mode === "required" ? "serverPage.cloudPackRequired" : "serverPage.cloudPackSuggested")}</p>
+    ${Number(pack.customCount) > 0 ? `<p style="color:var(--warn);">${escapeHtml(t("serverPage.cloudPackCustom", { n: Number(pack.customCount) }))}</p>` : ""}
     ${mods.length ? `<details><summary>${t("serverPage.cloudPackSeeMods")}</summary><ul>${mods.map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul></details>` : ""}
     ${
       pack.mode === "required"

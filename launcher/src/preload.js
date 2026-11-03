@@ -232,6 +232,8 @@ contextBridge.exposeInMainWorld("mchub", {
   // synchro des mondes avec le cloud pour les Supporters (worldCloud.js).
   play: {
     packs: (opts) => ipcRenderer.invoke("play:packs", opts),
+    // Mon cloud (03/11) : « Envoyer dans le cloud » depuis le menu ⚙ d'une installation.
+    cloudUpload: (id) => ipcRenderer.invoke("cloudPack:upload", String(id)),
     mcVersions: () => ipcRenderer.invoke("play:mcVersions"),
     listVersions: () => ipcRenderer.invoke("play:listVersions"),
     createVersion: (opts) => ipcRenderer.invoke("play:createVersion", opts),
