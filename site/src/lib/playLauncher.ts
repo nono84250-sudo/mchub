@@ -10,14 +10,15 @@ import { requireLauncherFeature } from "@/lib/features";
 export async function playLauncherUser(
   request: Request,
   minecraftUuid: string | null,
-  { bucket, limit }: { bucket: string; limit: number },
+  { bucket, limit, feature = "worlds" }: { bucket: string; limit: number; feature?: string },
 ): Promise<{ userId: string } | { response: NextResponse }> {
   if (!isAuthorizedLauncherRequest(request)) return { response: NextResponse.json({ error: "Non autorisé" }, { status: 401 }) };
   const limited = rateLimitResponse(request, bucket, limit);
   if (limited) return { response: limited };
   // Laboratoire (25/10) : toutes ces routes sont celles des mondes en ligne. Cachées pour ce
   // joueur : 404, comme si elles n'existaient pas (rien n'est lu ni écrit).
-  const off = await requireLauncherFeature(request, "worlds");
+  // Mon cloud (03/11) : l'envoi d'un modpack passe par « cloudPacks ».
+  const off = await requireLauncherFeature(request, feature);
   if (off) return { response: off };
   if (!minecraftUuid) return { response: NextResponse.json({ error: "minecraftUuid manquant" }, { status: 400 }) };
   const { check, name } = await verifyLauncherProfile(request, minecraftUuid);

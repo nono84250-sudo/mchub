@@ -56,10 +56,26 @@ export const FEATURES: FeatureDef[] = [
     minLauncher: "0.4.0",
     group: "play",
     section: "worldsSaves",
-    name: { fr: "Mondes en ligne (cloud)", en: "Online worlds (cloud)" },
+    // 03/11 : la page « Mes mondes » du site devient l'onglet Mondes de « Mon cloud ».
+    name: { fr: "Mon cloud : mondes en ligne", en: "My cloud: online worlds" },
     description: {
-      fr: "Envoi des mondes en ligne, versions gardées, mondes sur plusieurs PC, page Mes mondes du site.",
-      en: "Sending worlds online, kept versions, worlds on several PCs, the site's My worlds page.",
+      fr: "Envoi des mondes en ligne, versions gardées, mondes sur plusieurs PC, onglet Mondes de la page Mon cloud du site (Supporter et Créateur).",
+      en: "Sending worlds online, kept versions, worlds on several PCs, the Worlds tab of the site's My cloud page (Supporter and Creator).",
+    },
+  },
+  // 03/11 (preview « Mon cloud » v2 validée par Rushi) : défaut « Test ». Indépendant du Mode Jouer :
+  // rejoindre un serveur avec son modpack n'a pas besoin de l'onglet Jouer.
+  {
+    id: "cloudPacks",
+    defaultState: "test",
+    where: ["site", "launcher"],
+    minLauncher: "0.4.3",
+    group: "play",
+    section: "worldsSaves",
+    name: { fr: "Mon cloud : modpacks reliés aux serveurs", en: "My cloud: modpacks linked to servers" },
+    description: {
+      fr: "Page Mon cloud du site (menu Cloud) : le modpack est envoyé depuis le launcher (liens Modrinth, configs, mods perso contrôlés), le site sert à le voir, le relier à son serveur (« Obligatoire pour rejoindre » ou « Conseillé ») ; le launcher l'installe avant de rejoindre. Offres repliées, « Bientôt disponible ».",
+      en: "The site's My cloud page (Cloud menu): the modpack is sent from the launcher (Modrinth links, configs, checked custom mods); the site shows it and links it to your server (“Required to join” or “Suggested”); the launcher installs it before joining. Plans collapsed, “Coming soon”.",
     },
   },
   {

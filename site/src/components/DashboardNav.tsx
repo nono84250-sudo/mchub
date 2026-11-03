@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SquaresFour, Bell, Newspaper, Gear, Users, UsersThree, Cube, Package } from "@phosphor-icons/react";
+import { SquaresFour, Bell, Newspaper, Gear, Users, UsersThree, Cloud, Package } from "@phosphor-icons/react";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { UnreadBadge } from "@/components/UnreadBadge";
@@ -22,7 +22,8 @@ export function DashboardNav({ unread = 0, playBeta = true, show = { friends: tr
     ...(TEAMS_READY && show.team ? [{ href: "/dashboard/team", label: t("dashboard.navTeam"), icon: UsersThree }] : []),
     // Mode Jouer (24/10) : « Mes mondes », avec « Bêta » tant que le reglage central est allume.
     // Laboratoire (25/10) : affiche seulement si « Mondes en ligne » est visible pour ce compte.
-    ...(show.worlds ? [{ href: "/dashboard/mondes", label: t("dashboard.navWorlds"), icon: Cube }] : []),
+    // Mon cloud (03/11) : remplace « Mes mondes » ; visible si les modpacks OU les mondes en ligne le sont.
+    ...(show.worlds ? [{ href: "/dashboard/cloud", label: t("dashboard.navCloud"), icon: Cloud }] : []),
     // Pack Omniscient (27/10) : « Proposer un pack », si l'interrupteur du Laboratoire le montre.
     ...(show.packs ? [{ href: "/dashboard/packs", label: t("dashboard.navPacks"), icon: Package }] : []),
     { href: "/dashboard/news", label: t("dashboard.navNews"), icon: Newspaper },
@@ -37,7 +38,7 @@ export function DashboardNav({ unread = 0, playBeta = true, show = { friends: tr
           <Link
             key={href}
             href={href}
-            title={href === "/dashboard/mondes" && playBeta ? `${label} (${t("dashboard.navBeta")})` : label}
+            title={href === "/dashboard/cloud" && playBeta ? `${label} (${t("dashboard.navBeta")})` : label}
             className={`flex items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors sm:justify-start sm:px-3 ${
               active ? "bg-surface text-foreground" : "text-muted hover:bg-surface hover:text-foreground"
             }`}
@@ -45,7 +46,7 @@ export function DashboardNav({ unread = 0, playBeta = true, show = { friends: tr
             <Icon className="h-4 w-4 flex-shrink-0" />
             <span className="hidden flex-1 sm:inline">{label}</span>
             {href === "/dashboard/notifications" ? <UnreadBadge count={unread} className="hidden sm:inline-grid" /> : null}
-            {href === "/dashboard/mondes" && playBeta ? (
+            {href === "/dashboard/cloud" && playBeta ? (
               <span className="hidden text-[10px] font-bold uppercase tracking-wide text-[var(--state-busy)] sm:inline">{t("dashboard.navBeta")}</span>
             ) : null}
           </Link>

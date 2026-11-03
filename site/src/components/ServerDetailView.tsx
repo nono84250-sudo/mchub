@@ -25,6 +25,7 @@ import { tagName } from "@/lib/tagCatalog";
 import { MODPACK_SOURCE_LABELS } from "@/lib/modpack-types";
 import { ftbModpackPageUrl } from "@/lib/ftb";
 import { PUBLIC_PAGE_REFRESH_MS } from "@/lib/refreshSettings";
+import { publicCloudPackForSlug } from "@/lib/cloudPacks";
 
 // Libelles des sections, lus une fois dans le dictionnaire (partages avec l'editeur).
 export function serverPageLabels(dict: Dictionary): ServerPageLabels {
@@ -62,10 +63,12 @@ export async function ServerDetailView({ slug, server: raw, inviteCode }: { slug
   // Laboratoire : pas de team sur la fiche tant que « Ma team » n'est pas ouverte à tous.
   const server = (await teamsPublic()) ? raw : withoutTeam(raw);
   // Teams (19/10) : autres serveurs publics de la meme team, tires de la liste en cache (0 appel).
-  const [{ dict, locale }, { custom }, teamServers] = await Promise.all([
+  const [{ dict, locale }, { custom }, teamServers, cloudPack] = await Promise.all([
     getT(),
     getTagCatalog(),
     server.team ? listTeamServers(server.team.slug, slug) : Promise.resolve([]),
+    // Mon cloud (03/11) : modpack relié par le propriétaire (null tant que la fonction est en test).
+    publicCloudPackForSlug(slug),
   ]);
   // Etiquettes en dur ou ajoutees par l'equipe (liste en cache) ; une etiquette inconnue n'est pas montree.
   const tagLabel = (tag: string) => tagName(tag, locale, custom);
@@ -246,6 +249,30 @@ export async function ServerDetailView({ slug, server: raw, inviteCode }: { slug
                 </Link>
               </p>
             </div>
+            {cloudPack ? (
+              <section className="panel flex flex-col gap-2 p-4">
+                <h2 className="text-xs font-bold uppercase tracking-[0.07em] text-accent">{dict.serverPage.cloudPackT}</h2>
+                <p className="font-semibold text-foreground">{cloudPack.name}</p>
+                <p className="text-xs text-muted">
+                  {cloudPack.minecraftVersion} · {t(dict, "serverPage.cloudPackMods", { n: cloudPack.modCount })}
+                  {cloudPack.configCount ? ` · ${t(dict, "serverPage.cloudPackConfigs", { n: cloudPack.configCount })}` : ""}
+                </p>
+                <p className="text-[13px] text-muted">{cloudPack.mode === "required" ? dict.serverPage.cloudPackReq : dict.serverPage.cloudPackSug}</p>
+                {cloudPack.note ? <p className="text-[13px] italic text-foreground">{t(dict, "serverPage.cloudPackWhy", { note: cloudPack.note })}</p> : null}
+                <details className="text-[13px]">
+                  <summary className="cursor-pointer text-accent">{dict.serverPage.cloudPackList}</summary>
+                  <ul className="mt-1.5 flex flex-col gap-0.5 text-muted">
+                    {cloudPack.mods.map((m) => (
+                      <li key={m}>{m}</li>
+                    ))}
+                  </ul>
+                </details>
+                <a href={launcherHref} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-[13px] font-semibold text-foreground hover:bg-surface-raised">
+                  <ArrowSquareOut className="h-4 w-4" />
+                  {dict.serverPage.cloudPackInstall}
+                </a>
+              </section>
+            ) : null}
             <section className="panel p-4">
               <h2 className="mb-3 text-xs font-bold uppercase tracking-[0.07em] text-accent">{dict.serverPage.infos}</h2>
               <div className="grid grid-cols-2 gap-2.5">

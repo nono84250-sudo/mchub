@@ -377,7 +377,7 @@ function serverRowHtml(server, isFav, playedAt = null, withPlay = false) {
       <div class="row-side">${side}<span class="row-langs">${langsHtml}</span></div>
       ${played ? `<div class="row-played">${escapeHtml(played.line)}</div>` : ""}
       ${withPlay ? `<button type="button" class="row-play" data-play-slug="${escapeHtml(server.slug)}" title="${escapeHtml(t("home.playOn", { name: server.name }))}" aria-label="${escapeHtml(t("home.playOn", { name: server.name }))}">▶</button>` : ""}
-      ${withPlay ? `<span class="instance-more row-more"><button type="button" class="row-more-btn" data-more-slug="${escapeHtml(server.slug)}" aria-haspopup="menu" aria-expanded="false" title="${escapeHtml(t("myInstances.menuMore"))}" aria-label="${escapeHtml(t("myInstances.menuMore"))}">…</button><span class="instance-menu" role="menu" hidden><button type="button" class="instance-menu-item" data-row-install="${escapeHtml(server.slug)}">⬇<span>${escapeHtml(t("myInstances.menuInstall"))}<small>${escapeHtml(t("myInstances.menuInstallHint"))}</small></span></button><button type="button" class="instance-menu-item" data-row-open="${escapeHtml(server.slug)}">↗ ${escapeHtml(t("myInstances.menuPage"))}</button></span></span>` : ""}
+      ${withPlay ? `<span class="instance-more row-more"><button type="button" class="row-more-btn" data-more-slug="${escapeHtml(server.slug)}" aria-haspopup="menu" aria-expanded="false" title="${escapeHtml(t("myInstances.menuMore"))}" aria-label="${escapeHtml(t("myInstances.menuMore"))}">…</button><span class="instance-menu" role="menu" hidden><button type="button" class="instance-menu-item" data-row-install="${escapeHtml(server.slug)}">⬇<span>${escapeHtml(t("myInstances.menuInstall"))}<small>${escapeHtml(t("myInstances.menuInstallHint"))}</small></span></button><button type="button" class="instance-menu-item" data-row-open="${escapeHtml(server.slug)}">↗ ${escapeHtml(t("myInstances.menuPage"))}</button><button type="button" class="instance-menu-item" data-row-settings="${escapeHtml(server.slug)}">⚙ ${escapeHtml(t("myInstances.channelButton"))}</button></span></span>` : ""}
       ${favoriteBtnHtml(server.slug, isFav)}
     </div>`;
 }
@@ -922,6 +922,15 @@ async function renderRowsInto(container, servers, origin, onFavoriteToggled, pla
       if (server) installServerStandalone(server, null);
     });
   });
+  // ⋯ › Réglages (03/11) : même fenêtre que dans Mes instances (modpack conseillé, suivi, fichiers).
+  container.querySelectorAll("[data-row-settings]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeInstanceMenus();
+      const server = servers.find((item) => item.slug === btn.dataset.rowSettings);
+      if (server) openInstanceSettingsModal(server, { owned: myInstancesServers.some((s) => s.slug === server.slug) });
+    });
+  });
   container.querySelectorAll("[data-row-open]").forEach((btn) => {
     btn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -1440,6 +1449,103 @@ function fitDetailIcon() {
   }
 }
 
+// Mon cloud (03/11, preview v2 validée par Rushi) : carte « Modpack du serveur » de la fiche.
+// « Obligatoire pour rejoindre » : rien à choisir, Jouer l'installe. « Conseillé » : le joueur
+// choisit de l'installer (retenu pour ce serveur) ou de jouer sans.
+async function fillCloudPackCard(server) {
+  const card = document.getElementById("cloud-pack-card");
+  if (!card || !window.mchub.getCloudPack) return;
+  const pack = await window.mchub.getCloudPack(server.slug).catch(() => null);
+  if (!pack || !card.isConnected || detailEl.hidden) return;
+  const meta = [escapeHtml(pack.minecraftVersion), t("serverPage.cloudPackMods", { n: pack.modCount }), pack.configCount ? t("serverPage.cloudPackConfigs", { n: pack.configCount }) : ""].filter(Boolean).join(" · ");
+  const mods = Array.isArray(pack.mods) ? pack.mods : [];
+  card.innerHTML = `
+    <h3 class="detail-card-title">${t("serverPage.cloudPackTitle")}</h3>
+    <p><b>${escapeHtml(pack.name)}</b></p>
+    <p class="muted">${meta}</p>
+    <p class="muted">${t(pack.mode === "required" ? "serverPage.cloudPackRequired" : "serverPage.cloudPackSuggested")}</p>
+    ${pack.note ? `<p style="font-style:italic;">${escapeHtml(t("serverPage.cloudPackWhy", { note: String(pack.note) }))}</p>` : ""}
+    ${Number(pack.customCount) > 0 ? `<p style="color:var(--warn);">${escapeHtml(t("serverPage.cloudPackCustom", { n: Number(pack.customCount) }))}</p>` : ""}
+    ${mods.length ? `<details><summary>${t("serverPage.cloudPackSeeMods")}</summary><ul>${mods.map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul></details>` : ""}
+    ${
+      pack.mode === "required"
+        ? ""
+        : pack.optedIn
+          ? `<p class="muted">${t("serverPage.cloudPackChosen")}</p><button class="btn-secondary" type="button" data-cloud-pack="off">${t("serverPage.cloudPackWithout")}</button>`
+          : `<button class="btn-primary" type="button" data-cloud-pack="on">${t("serverPage.cloudPackInstall")}</button>`
+    }`;
+  card.hidden = false;
+  card.querySelector("[data-cloud-pack]")?.addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    const on = btn.dataset.cloudPack === "on";
+    btn.disabled = true;
+    await window.mchub.setCloudPackOptIn(server.slug, on).catch(() => false);
+    if (on) await installServerStandalone(server, btn);
+    if (!detailEl.hidden) renderDetail(server);
+  });
+}
+
+// Preview « Modpack relié au serveur » (03/11, validée par Rushi) : modpack « Conseillé » et pas
+// encore de choix retenu : au clic sur Jouer, le joueur choisit. À gauche Vanilla (ou le jeu
+// habituel d'un serveur moddé), à droite « <modpack> (moddé) » avec le mot du propriétaire.
+// « Obligatoire pour rejoindre » : rien à demander. Résout false si le joueur annule.
+async function askCloudPackChoice(server) {
+  if (!window.mchub.getCloudPack || !window.mchub.chooseCloudPack) return true;
+  const pack = await window.mchub.getCloudPack(server.slug).catch(() => null);
+  if (!pack || pack.mode === "required" || typeof pack.choice === "boolean") return true;
+  const modded = server.type === "modded" && Boolean(server.curseforgeModpackId);
+  return new Promise((resolve) => {
+    const ov = document.createElement("div");
+    ov.className = "modal-overlay";
+    ov.style.pointerEvents = "auto";
+    const card = (id, title, desc, extra, accent) => `
+      <button type="button" data-choice="${id}" style="flex:1 1 200px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;text-align:left;padding:14px;border-radius:12px;border:1px solid ${accent ? "var(--accent)" : "var(--border)"};background:${accent ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "var(--surface, transparent)"};color:var(--foreground);cursor:pointer;font:inherit;">
+        <b style="font-size:15px;">${escapeHtml(title)}</b>
+        <span class="muted" style="font-size:12px;">${escapeHtml(desc)}</span>
+        ${extra}
+      </button>`;
+    const note = pack.note ? `<span style="font-size:12px;font-style:italic;">« ${escapeHtml(String(pack.note))} »</span>` : "";
+    const warn = Number(pack.customCount) > 0 ? `<span style="font-size:11px;color:var(--warn);">${escapeHtml(t("serverPage.cloudPackCustom", { n: Number(pack.customCount) }))}</span>` : "";
+    ov.innerHTML = `
+      <div class="modal-box pop-in" role="dialog" aria-modal="true" aria-labelledby="cloud-choice-title" style="max-width:560px;width:100%;text-align:left;">
+        <h3 id="cloud-choice-title" style="margin:0 0 4px;">${escapeHtml(t("serverPage.cloudChoiceTitle", { s: server.name }))}</h3>
+        <p class="muted" style="margin:0 0 14px;">${escapeHtml(t("serverPage.cloudChoiceSub"))}</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;">
+          ${card("vanilla", modded ? t("serverPage.cloudChoiceWithout") : t("serverPage.cloudChoiceVanilla"), modded ? t("serverPage.cloudChoiceWithoutD") : t("serverPage.cloudChoiceVanillaD"), "", false)}
+          ${card("pack", t("serverPage.cloudChoicePack", { p: pack.name }), t("serverPage.cloudChoicePackD", { n: Number(pack.modCount) || 0 }), note + warn, true)}
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer;"><input type="checkbox" data-remember> ${escapeHtml(t("serverPage.cloudChoiceRemember"))}</label>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px;"><button type="button" class="btn-secondary" data-cancel>${escapeHtml(t("serverPage.cloudChoiceCancel"))}</button></div>
+      </div>`;
+    document.body.appendChild(ov);
+    document.body.classList.add("modal-blocking");
+    const done = async (choice) => {
+      document.removeEventListener("keydown", onKey, true);
+      const remember = Boolean(ov.querySelector("[data-remember]")?.checked);
+      ov.remove();
+      document.body.classList.remove("modal-blocking");
+      if (choice === null) return resolve(false);
+      await window.mchub.chooseCloudPack(server.slug, choice === "pack", remember).catch(() => false);
+      if (currentDetailServer?.slug === server.slug && !detailEl.hidden) fillCloudPackCard(server);
+      resolve(true);
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        done(null);
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    ov.addEventListener("mousedown", (event) => {
+      if (event.target === ov) done(null);
+    });
+    ov.querySelector("[data-cancel]").addEventListener("click", () => done(null));
+    ov.querySelectorAll("[data-choice]").forEach((btn) => btn.addEventListener("click", () => done(btn.dataset.choice)));
+    ov.querySelector('[data-choice="pack"]').focus();
+  });
+}
+
 async function renderDetail(server) {
   currentDetailServer = server;
   // Une fiche s'affiche seule : jamais l'en-tete de la page Serveurs (titre, recherche, filtres).
@@ -1528,6 +1634,7 @@ async function renderDetail(server) {
           <div class="detail-actions-row">
             ${showInstallBtn && action.kind !== "install" ? `<button class="btn-secondary" id="install-btn" type="button">${DOWNLOAD_SVG}${t("serverDetail.installBtn")}</button>` : ""}
             ${!showInstallBtn ? `<button class="btn-secondary" id="uninstall-btn" type="button">${escapeHtml(t("myInstances.menuUninstall"))}</button>` : ""}
+            <button class="btn-secondary" id="detail-settings-btn" type="button" title="${escapeHtml(t("myInstances.channelButton"))}">⚙ ${escapeHtml(t("myInstances.channelButton"))}</button>
             <button class="btn-secondary detail-fav-btn${isFav ? " active" : ""}" type="button" aria-pressed="${isFav}">${STAR_SVG}${isFav ? t("serverPage.favOn") : t("serverPage.fav")}</button>
             ${
               signedIn
@@ -1578,11 +1685,14 @@ async function renderDetail(server) {
               : ""
           }
         </section>
+        <section class="detail-card" id="cloud-pack-card" hidden></section>
       </aside>
     </div>
   `;
 
   wireDetailBreadcrumb();
+  // Mon cloud (03/11) : modpack relié par le propriétaire, lu à part (la fiche s'affiche sans attendre).
+  fillCloudPackCard(server);
   fitDetailIcon();
   // Fiche partielle (19/10) : un de SES serveurs pas encore dans l'annuaire, lu par la route du
   // lancement (sans banniere ni description). On le dit plutot que de montrer des cases vides.
@@ -1624,6 +1734,9 @@ async function renderDetail(server) {
     installBtn.addEventListener("click", () => installServerStandalone(server, installBtn));
   }
 
+  document.getElementById("detail-settings-btn")?.addEventListener("click", () => {
+    openInstanceSettingsModal(server, { owned: myInstancesServers.some((s) => s.slug === server.slug) });
+  });
   const favBtn = detailEl.querySelector(".detail-fav-btn");
   favBtn.addEventListener("click", async () => {
     await toggleFavorite(server.slug);
@@ -2693,6 +2806,11 @@ async function launchServer(server) {
       launchInProgress = false;
       return null;
     }
+  }
+
+  if (!(await askCloudPackChoice(server))) {
+    launchInProgress = false;
+    return null;
   }
 
   if (!(await confirmFirstInstall(server, { launch: true }))) {
@@ -6010,7 +6128,75 @@ const INSTANCE_SETTINGS_FIELDS = [
       </div>`,
     readValue: () => document.getElementById("instance-setting-notifyOnStatusChange").checked,
   },
+  // Modpack « Conseillé » d'un serveur (03/11, preview validée par Rushi) : jouer en Vanilla ou
+  // avec le modpack, et « Retenir mon choix ». Décoché : le launcher demande à chaque clic sur
+  // Jouer. La partie reste cachée tant que le serveur n'a pas de modpack conseillé.
+  // Valeur : "ask" (demander), "mod" ou "vanilla" (choix retenu) ; null = rien à régler ici.
+  {
+    id: "cloudPackChoice",
+    appliesTo: () => Boolean(window.mchub.getCloudPack && window.mchub.setCloudPackOptIn),
+    load: (server) =>
+      window.mchub.getCloudPack(server.slug).then((pack) => {
+        if (!pack || pack.mode === "required") return { ok: true, value: null, pack: null };
+        return { ok: true, value: pack.choice === true ? "mod" : pack.choice === false ? "vanilla" : "ask", pack };
+      }),
+    save: async (server, value) => {
+      if (value === null) return { ok: true };
+      const ok = await window.mchub.setCloudPackOptIn(server.slug, value === "ask" ? null : value === "mod").catch(() => false);
+      if (ok && currentDetailServer?.slug === server.slug && !detailEl.hidden) fillCloudPackCard(server);
+      return ok ? { ok: true } : { ok: false };
+    },
+    renderHtml: () => `<div id="instance-setting-cloudPackChoice" data-value="" hidden style="margin-top:12px;text-align:left;"></div>`,
+    // Dessine la partie quand le site a répondu (le nom du modpack et le mot du serveur en ont besoin).
+    apply: (value, disabled, result) => {
+      const box = document.getElementById("instance-setting-cloudPackChoice");
+      if (!box) return;
+      if (result) box.cloudPack = result.pack;
+      const pack = box.cloudPack;
+      if (value !== undefined) box.dataset.value = value === null ? "" : value;
+      if (!pack || !box.dataset.value) {
+        box.hidden = true;
+        return;
+      }
+      const remember = box.dataset.value !== "ask";
+      const pick = remember ? box.dataset.value : box.dataset.pick || "mod";
+      box.dataset.pick = pick;
+      const radio = (id, title, desc) => `
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-top:6px;cursor:${remember ? "pointer" : "default"};opacity:${remember ? 1 : 0.5};">
+          <input type="radio" name="cloud-pack-pick" value="${id}" ${pick === id ? "checked" : ""} ${remember && !disabled ? "" : "disabled"} style="margin-top:2px;" />
+          <span><b>${escapeHtml(title)}</b><br><span style="font-size:12px;color:var(--muted);">${escapeHtml(desc)}</span></span>
+        </label>`;
+      box.innerHTML = `
+        <div style="font-size:12px;color:var(--muted);margin-bottom:2px;">${escapeHtml(t("channelSettings.cloudFieldLabel"))}</div>
+        <div style="font-size:12px;color:var(--muted);">${escapeHtml(t("channelSettings.cloudFieldHelp", { p: pack.name }))}</div>
+        ${radio("vanilla", t("channelSettings.cloudVanilla"), t("channelSettings.cloudVanillaD"))}
+        ${radio("mod", t("channelSettings.cloudPack", { p: pack.name }), [t("serverPage.cloudPackMods", { n: Number(pack.modCount) || 0 }), pack.note ? `« ${pack.note} »` : ""].filter(Boolean).join(" · "))}
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:10px;cursor:pointer;">
+          <input type="checkbox" data-cloud-remember ${remember ? "checked" : ""} ${disabled ? "disabled" : ""} />
+          <span>${escapeHtml(t("channelSettings.cloudRemember"))}</span>
+        </label>
+        <p style="font-size:12px;color:var(--muted);margin:4px 0 0 24px;">${escapeHtml(t(remember ? "channelSettings.cloudRememberOn" : "channelSettings.cloudRememberOff"))}</p>`;
+      box.hidden = false;
+      box.querySelectorAll('input[name="cloud-pack-pick"]').forEach((input) =>
+        input.addEventListener("change", () => {
+          box.dataset.value = input.value;
+          box.dataset.pick = input.value;
+        }),
+      );
+      box.querySelector("[data-cloud-remember]")?.addEventListener("change", (event) => {
+        const fieldDef = INSTANCE_SETTINGS_FIELDS.find((f) => f.id === "cloudPackChoice");
+        fieldDef.apply(event.target.checked ? box.dataset.pick || "mod" : "ask", false);
+      });
+    },
+    readValue: () => {
+      const v = document.getElementById("instance-setting-cloudPackChoice")?.dataset.value;
+      return v ? v : null;
+    },
+  },
 ];
+
+// « Modpack du serveur » en premier dans la fenêtre (comme sur la preview du 03/11).
+INSTANCE_SETTINGS_FIELDS.unshift(INSTANCE_SETTINGS_FIELDS.pop());
 
 // Petite fenetre "Reglages" d'une instance (reutilise le modal de confirmation generique, meme
 // pattern que askJoinCode ci-dessus) : charge les reglages applicables (voir appliesTo/load de
@@ -6052,7 +6238,9 @@ const INSTANCE_SETTINGS_DEFAULTS = { modpackChannel: "release", notifyOnStatusCh
 // Derniere valeur lue ou enregistree, par serveur puis par reglage (memoire du launcher seulement).
 const instanceSettingsCache = new Map();
 
-function setInstanceSettingControl(fieldId, value, disabled) {
+function setInstanceSettingControl(fieldId, value, disabled, result) {
+  const custom = INSTANCE_SETTINGS_FIELDS.find((field) => field.id === fieldId && field.apply);
+  if (custom) return custom.apply(value, disabled, result);
   const control = document.getElementById(`instance-setting-${fieldId}`);
   if (!control) return;
   if (value !== undefined) {
@@ -6146,7 +6334,7 @@ async function showInstanceSettingsModal(server, { owned = true } = {}) {
             if (result.ok) {
               loadedValues[field.id] = result.value;
               instanceSettingsCache.set(server.slug, { ...(instanceSettingsCache.get(server.slug) || {}), [field.id]: result.value });
-              setInstanceSettingControl(field.id, result.value, false);
+              setInstanceSettingControl(field.id, result.value, false, result);
             }
             return result;
           }),

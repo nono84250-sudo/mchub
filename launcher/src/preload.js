@@ -118,6 +118,11 @@ contextBridge.exposeInMainWorld("mchub", {
   // La progression ne remonte plus par un canal dedie : elle passe par le
   // meme panneau de taches que "Rejoindre" (tasks:*, ci-dessous).
   installServer: (slug, name) => ipcRenderer.invoke("server:install", slug, name),
+  // Mon cloud (03/11) : modpack relié au serveur par son propriétaire, et choix du joueur pour un
+  // modpack « Conseillé ».
+  getCloudPack: (slug) => ipcRenderer.invoke("cloudPack:get", slug),
+  setCloudPackOptIn: (slug, on) => ipcRenderer.invoke("cloudPack:setOptIn", slug, on === null ? null : Boolean(on)),
+  chooseCloudPack: (slug, withPack, remember) => ipcRenderer.invoke("cloudPack:choose", slug, Boolean(withPack), Boolean(remember)),
   // Mods qu'un modpack CurseForge interdit de telecharger (14/10) : page du mod sur CurseForge
   // (adresse verifiee cote main.js) et dossier Telechargements ou le joueur les depose.
   openModPage: (pageUrl) => ipcRenderer.invoke("modpack:openModPage", pageUrl),
@@ -228,6 +233,14 @@ contextBridge.exposeInMainWorld("mchub", {
   // synchro des mondes avec le cloud pour les Supporters (worldCloud.js).
   play: {
     packs: (opts) => ipcRenderer.invoke("play:packs", opts),
+    // Mon cloud (03/11) : « Envoyer dans le cloud » depuis le menu ⚙ d'une installation.
+    cloudUpload: (id, opts) => ipcRenderer.invoke("cloudPack:upload", String(id), opts && typeof opts === "object" ? opts : {}),
+    cloudPlan: (id) => ipcRenderer.invoke("cloudPack:plan", String(id)),
+    onCloudProgress: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("cloudPack:progress", listener);
+      return () => ipcRenderer.removeListener("cloudPack:progress", listener);
+    },
     mcVersions: () => ipcRenderer.invoke("play:mcVersions"),
     listVersions: () => ipcRenderer.invoke("play:listVersions"),
     createVersion: (opts) => ipcRenderer.invoke("play:createVersion", opts),
@@ -287,6 +300,7 @@ contextBridge.exposeInMainWorld("mchub", {
     myPack: {
       get: (id, opts) => ipcRenderer.invoke("myPack:get", id, opts),
       create: (o) => ipcRenderer.invoke("myPack:create", o),
+      loaderOk: (loader, mc) => ipcRenderer.invoke("myPack:loaderOk", loader, mc),
       add: (id, mods) => ipcRenderer.invoke("myPack:add", id, mods),
       setMod: (id, modId, patch) => ipcRenderer.invoke("myPack:setMod", id, modId, patch),
       fix: (id, problem) => ipcRenderer.invoke("myPack:fix", id, problem),

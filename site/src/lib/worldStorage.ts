@@ -86,9 +86,9 @@ export async function abortMultipart(objectKey: string, uploadId: string): Promi
   await r2.send(new AbortMultipartUploadCommand({ Bucket: WORLDS_BUCKET, Key: objectKey, UploadId: uploadId })).catch(() => {});
 }
 
-export async function objectSize(objectKey: string): Promise<number | null> {
+export async function objectSize(objectKey: string, bucket: string = WORLDS_BUCKET): Promise<number | null> {
   try {
-    const out = await r2.send(new HeadObjectCommand({ Bucket: WORLDS_BUCKET, Key: objectKey }));
+    const out = await r2.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey }));
     return out.ContentLength ?? null;
   } catch {
     return null;
@@ -156,6 +156,13 @@ function presign(method: "GET" | "PUT", objectKey: string, extra: Record<string,
 
 export function presignPart(objectKey: string, uploadId: string, partNumber: number): string {
   return presign("PUT", objectKey, { partNumber: String(partNumber), uploadId });
+}
+
+// Mon cloud (03/11) : dépôt d'un fichier en une fois (mod perso d'un modpack, 30 Mo au plus), lien
+// signé de 1 h donné au launcher du propriétaire ; le site contrôle le fichier ensuite.
+export function presignPut(objectKey: string, bucket: string = WORLDS_BUCKET): string {
+  if (!isWorldObjectKey(objectKey)) throw new Error("Clé refusée");
+  return presign("PUT", objectKey, {}, PRESIGN_SECONDS, new Date(), bucket);
 }
 
 // Téléchargement : le nom proposé au navigateur (site) vient de filename.

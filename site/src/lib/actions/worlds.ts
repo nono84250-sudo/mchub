@@ -27,7 +27,7 @@ export async function deleteWorldAction(worldId: string): Promise<WorldActionRes
   if (!userId) return { ok: false, error: "session" };
   if (limited(userId)) return { ok: false, error: "limit" };
   const done = await deleteCloudWorld(userId, String(worldId));
-  revalidatePath("/dashboard/mondes");
+  revalidatePath("/dashboard/cloud");
   return done ? { ok: true } : { ok: false, error: "notFound" };
 }
 
@@ -36,7 +36,7 @@ export async function deleteVersionAction(versionId: string): Promise<WorldActio
   if (!userId) return { ok: false, error: "session" };
   if (limited(userId)) return { ok: false, error: "limit" };
   const out = await deleteCloudVersion(userId, String(versionId));
-  revalidatePath("/dashboard/mondes");
+  revalidatePath("/dashboard/cloud");
   return out === "ok" ? { ok: true } : { ok: false, error: out };
 }
 
@@ -48,6 +48,6 @@ export async function restoreVersionAction(versionId: string): Promise<WorldActi
   if (limited(userId)) return { ok: false, error: "limit" };
   if (!(await getUserOffer(userId)).cloud) return { ok: false, error: "offer" };
   const done = await requestRestore(userId, String(versionId));
-  revalidatePath("/dashboard/mondes");
+  revalidatePath("/dashboard/cloud");
   return done ? { ok: true } : { ok: false, error: "notFound" };
 }
