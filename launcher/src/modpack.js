@@ -1478,9 +1478,14 @@ async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJ
   // Mon cloud (03/11) : `cloud` = le modpack relie par le proprietaire (liens Modrinth + configs) au
   // lieu du modpack CurseForge/Modrinth/FTB du serveur. first=1 : premiere installation ici.
   const firstCloud = cloud && (await readInstalledState(instanceDir))?.source !== "cloud";
-  const query = cloud ? `?cloud=1${firstCloud ? "&first=1" : ""}` : "";
   // Serveur prive : preuve d'acces (voir config.headers dans main.js, game:launch).
-  const info = await siteJson(config, `/api/launcher/servers/${encodeURIComponent(slug)}/modpack${query}`, { headers: config.headers });
+  const info = await siteJson(
+    config,
+    cloud
+      ? `/api/launcher/cloud-pack?slug=${encodeURIComponent(slug)}&install=1${firstCloud ? "&first=1" : ""}`
+      : `/api/launcher/servers/${encodeURIComponent(slug)}/modpack`,
+    { headers: config.headers },
+  );
   const source = cloud && info.source === "cloud" ? "cloud" : info.source === "modrinth" || info.source === "ftb" ? info.source : "curseforge";
   const { file } = info;
   if (cloud && source !== "cloud") throw new ModpackError("Le modpack du serveur n'a pas pu être lu.", { code: "site_error" });

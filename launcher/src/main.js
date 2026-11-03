@@ -3194,12 +3194,12 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
 }
 
 // Mon cloud (03/11) : modpack relie au serveur par son proprietaire (voir
-// site/src/app/api/launcher/servers/[slug]/cloud-pack). null s'il n'y en a pas, si l'interrupteur
+// site/src/app/api/launcher/cloud-pack). null s'il n'y en a pas, si l'interrupteur
 // du Laboratoire est cache pour ce joueur, ou si le site ne repond pas (le serveur se lance alors
 // comme avant).
 async function fetchCloudPack(slug) {
   try {
-    const data = await fetchJson(`${SITE_URL}/api/launcher/servers/${encodeURIComponent(slug)}/cloud-pack`, {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/cloud-pack?slug=${encodeURIComponent(slug)}`, {
       headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
     });
     return data?.pack && typeof data.pack === "object" ? data.pack : null;
