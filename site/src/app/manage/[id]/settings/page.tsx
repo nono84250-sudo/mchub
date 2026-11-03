@@ -11,6 +11,7 @@ import { ServerTeamPicker } from "@/components/ServerTeamPicker";
 import { listMyTeams } from "@/lib/teams";
 import { TEAMS_READY } from "@/lib/teamRules";
 import { featureVisibleOnSite } from "@/lib/features";
+import { serverCloudPackRow } from "@/lib/cloudPacks";
 
 export const metadata = { title: "Paramètres — Omniscient" };
 
@@ -29,6 +30,11 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
   const boundDuplicate = duplicateServer.bind(null, server.id);
   const showTeamPicker = TEAMS_READY && (await featureVisibleOnSite("team"));
   const [versions, sourceStates, sourceMaintenance, teams] = await Promise.all([getMinecraftVersions(), allSourceStates(), getSourceMaintenance(), showTeamPicker ? listMyTeams(session.user.id) : Promise.resolve([])]);
+  // Mon cloud : modpack du cloud relié à ce serveur (affiché à la place de « Vanilla / Moddé »).
+  const packRow = (await featureVisibleOnSite("cloudPacks").catch(() => false)) ? await serverCloudPackRow(server.id).catch(() => null) : null;
+  const cloudPack = packRow
+    ? { id: String(packRow.id), name: String(packRow.name), mode: packRow.linkMode === "required" ? ("required" as const) : ("suggested" as const), minecraftVersion: String(packRow.minecraftVersion) }
+    : null;
   const currentTeamId = (server as { teamId?: string | null }).teamId ?? null;
 
   const defaultValues = {
@@ -80,6 +86,7 @@ export default async function ManageServerSettingsPage({ params }: PageProps<"/m
           sourceStates={sourceStates}
           sourceMaintenance={sourceMaintenance}
           defaultValues={defaultValues}
+          cloudPack={cloudPack}
         >
           <div className="border-t border-border pt-5">
             <ManageActions

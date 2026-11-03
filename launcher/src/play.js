@@ -1486,7 +1486,29 @@
     const ids = new Set(pjGroup(v).map((x) => x.id));
     return data.worlds.filter((w) => ids.has(w.lastVersionId));
   };
-  const pjLast = (v) => Math.max(...pjGroup(v).map((x) => pjTime(x.lastPlayedAt)), ...pjWorlds(v).map((w) => w.lastPlayed || 0));
+  // 03/11 (Rushi) : l'ordre des tuiles suit aussi la dernière OUVERTURE de la page d'une installation
+  // (pas seulement le dernier lancement) : la plus récente en premier, de gauche à droite.
+  const PJ_OPENED = "omni.pjOpened";
+  const pjOpenedMap = () => {
+    try {
+      return JSON.parse(localStorage.getItem(PJ_OPENED) || "{}") || {};
+    } catch {
+      return {};
+    }
+  };
+  const pjMarkOpened = (id) => {
+    try {
+      const m = pjOpenedMap();
+      m[id] = Date.now();
+      localStorage.setItem(PJ_OPENED, JSON.stringify(m));
+    } catch {
+      // Stockage indisponible : l'ordre reste celui des lancements.
+    }
+  };
+  const pjLast = (v) => {
+    const opened = pjOpenedMap();
+    return Math.max(...pjGroup(v).map((x) => Math.max(pjTime(x.lastPlayedAt), Number(opened[x.id]) || 0)), ...pjWorlds(v).map((w) => w.lastPlayed || 0));
+  };
   function pjSorted() {
     const seen = new Set();
     const list = [];
@@ -3101,6 +3123,10 @@
   .ad-foot { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border); flex-wrap: wrap; }
   .ad-foot .sp { flex: 1; }
   .ad-foot .n { color: var(--muted); font-size: 12.5px; }
+  .ad-flash { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; max-width: 440px; animation: adFlashIn .25s ease-out; }
+  .ad-flash.ok { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); border: 1px solid color-mix(in srgb, var(--success) 45%, transparent); }
+  .ad-flash.bad { color: var(--danger, #e5484d); background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent); border: 1px solid color-mix(in srgb, var(--danger, #e5484d) 45%, transparent); }
+  @keyframes adFlashIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   .ad-vers { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; flex: 1; min-width: 0; }
   .ad-vchip { font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--foreground); cursor: pointer; }
   .ad-vchip.all { border-color: color-mix(in srgb, var(--success) 60%, var(--border)); }
@@ -3206,6 +3232,25 @@
   // Fichier CurseForge d'une case (chargeur, version) : Quilt prend aussi les fichiers Fabric.
   const adCfFile = (x, l, mc) => x.files?.[`${l}|${mc}`] || (l === "quilt" ? x.files?.[`fabric|${mc}`] : null) || x.files?.[`mc|${mc}`] || null;
 
+  // 03/11 (Rushi) : « si une installation est impossible, tu la bloques ». Le chargeur existe-t-il
+  // pour cette version de Minecraft ? (réponse gardée ; site ou réseau en panne = on laisse faire).
+  const adLok = new Map(); // "chargeur|version" → true / false
+  const adLokWait = new Map();
+  function adLoaderOk(l, mc) {
+    const k = `${l}|${mc}`;
+    if (adLok.has(k)) return Promise.resolve(adLok.get(k));
+    if (adLokWait.has(k)) return adLokWait.get(k);
+    const p = Promise.resolve(api.myPack.loaderOk?.(l, mc))
+      .then((r) => {
+        if (r?.ok) adLok.set(k, !!r.exists);
+        return r?.ok ? !!r.exists : true;
+      })
+      .catch(() => true)
+      .finally(() => adLokWait.delete(k));
+    adLokWait.set(k, p);
+    return p;
+  }
+  const adNoLoader = (l, mc) => toast(adTr(`${adLname(l)} n'existe pas (encore) pour Minecraft ${mc} : choisis une autre version.`, `${adLname(l)} doesn't exist (yet) for Minecraft ${mc}: pick another version.`));
   let adW = null; // fenêtre ouverte
   function adClose() {
     adW?.m.close();
@@ -3237,6 +3282,8 @@
       bl: "",
       bv: "",
       sw: null,
+      flash: null, // confirmation visible à côté du bouton d'import (03/11)
+      flashT: 0,
       name: o.name || "",
       omni: !!o.omni,
       seq: 0,
@@ -3254,6 +3301,14 @@
     const m = overlay(`<div class="ad-win" role="dialog" aria-modal="true" aria-labelledby="ad-t"></div>`, { className: "play-modal ad-ovl" });
     adW = { m, S };
     const win = m.$(".ad-win");
+    // Retour visible à côté du bouton « Importer » (tous les onglets, 03/11) : vert si réussi,
+    // rouge si échec, puis il s'efface tout seul après quelques secondes.
+    const adFlash = (c, text) => {
+      clearTimeout(S.flashT);
+      S.flash = { c, text };
+      S.flashT = setTimeout(() => { S.flash = null; if (document.body.contains(m.ov)) draw(); }, c === "bad" ? 9000 : 6000);
+      if (document.body.contains(m.ov)) draw();
+    };
     const packHas = (x) => {
       if (S.added.has(adKey(x))) return true;
       if (S.mode !== "add" || S.kind !== "mods") return false;
@@ -3411,8 +3466,8 @@
       }
       const foot = S.mode === "free" || S.mode === "ver" ? footNew()
         : S.mode === "browse" ? `<span class="n">${esc(adTr("Clique un modpack, puis une case verte de sa fiche pour l'installer dans cette version.", "Click a modpack, then a green cell of its sheet to install it on that version."))}</span><span class="sp"></span><button type="button" class="ad-btn sec" data-ad-x>${esc(adTr("Fermer", "Close"))}</button>`
-        : `${S.kind === "mods" ? `<button type="button" class="ad-btn sec" data-ad-jar>${esc(adTr("📁 J'ai le fichier (.jar)", "📁 I have the file (.jar)"))}</button>` : `<button type="button" class="ad-btn sec" data-ad-file>${esc(adTr("📁 Importer un fichier .zip", "📁 Import a .zip file"))}</button>`}
-           <span class="n">${S.added.size ? esc(adTr(`+${S.added.size} dans « ${c.name} »`, `+${S.added.size} in “${c.name}”`)) : S.kind === "mods" ? esc(adTr("Les mods nécessaires sont ajoutés tout seuls.", "Required mods are added automatically.")) : ""}</span>${S.last ? `<button type="button" class="ad-link" data-ad-undo>${esc(adTr(`Annuler l'ajout de ${S.last.name}`, `Undo adding ${S.last.name}`))}</button>` : ""}<span class="sp"></span><button type="button" class="ad-btn" data-ad-x>${esc(adTr("Terminé", "Done"))}</button>`;
+        : `${S.kind === "mods" ? `<button type="button" class="ad-btn sec" data-ad-jar>${esc(adTr("📁 J'ai le fichier (.jar)", "📁 I have the file (.jar)"))}</button>` : `<button type="button" class="ad-btn sec" data-ad-file>${esc(adTr("📁 Importer un fichier .zip", "📁 Import a .zip file"))}</button>`}${S.flash ? `<span class="ad-flash ${S.flash.c}" role="status" aria-live="polite">${esc(S.flash.text)}</span>` : ""}
+           <span class="n">${S.flash ? "" : S.added.size ? esc(adTr(`+${S.added.size} dans « ${c.name} »`, `+${S.added.size} in “${c.name}”`)) : S.kind === "mods" ? esc(adTr("Les mods nécessaires sont ajoutés tout seuls.", "Required mods are added automatically.")) : ""}</span>${S.last ? `<button type="button" class="ad-link" data-ad-undo>${esc(adTr(`Annuler l'ajout de ${S.last.name}`, `Undo adding ${S.last.name}`))}</button>` : ""}<span class="sp"></span><button type="button" class="ad-btn" data-ad-x>${esc(adTr("Terminé", "Done"))}</button>`;
       win.innerHTML = `<div class="ad-head"><h3 id="ad-t">${esc(title)}</h3>${pill}<button type="button" class="ad-x" data-ad-x aria-label="${esc(adTr("Fermer", "Close"))}">×</button></div>
         ${kinds.length > 1 ? `<div class="ad-tabs" role="tablist">${kinds.map((k) => `<button type="button" role="tab" class="ad-tab${S.kind === k ? " on" : ""}" aria-selected="${S.kind === k}" data-ad-kind="${k}">${esc(AD_KIND()[k])}</button>`).join("")}</div>` : ""}
         <div class="ad-tools">${tools}</div>
@@ -3536,7 +3591,16 @@
           for (const v of vs) cells.set(`${l}|${v}`, (cells.get(`${l}|${v}`) || 0) + 1);
         }
       }
-      return [...cells.entries()].map(([k, n]) => ({ l: k.split("|")[0], v: k.split("|")[1], n })).sort((p1, p2) => p2.n - p1.n || adCmp(p2.v, p1.v) || AD_LOADERS.indexOf(p1.l) - AD_LOADERS.indexOf(p2.l)).slice(0, 6);
+      // 03/11 : une version où le chargeur n'existe pas n'est pas proposée (vérifiée en fond, voir adLoaderOk).
+      const all = [...cells.entries()].map(([k, n]) => ({ l: k.split("|")[0], v: k.split("|")[1], n })).filter((x) => adLok.get(`${x.l}|${x.v}`) !== false).sort((p1, p2) => p2.n - p1.n || adCmp(p2.v, p1.v) || AD_LOADERS.indexOf(p1.l) - AD_LOADERS.indexOf(p2.l));
+      // 03/11 : une case verte choisie dans la grille (ex. Fabric 1.21.11) reste choisie même si elle n'est pas
+      // dans les 6 propositions du bas (avant, elle était remplacée aussitôt par la 1re proposition).
+      const top = all.slice(0, 6);
+      const mine = S.pickUser && S.pick && !top.some((x) => `${x.l}|${x.v}` === S.pick) && all.find((x) => `${x.l}|${x.v}` === S.pick);
+      const out = mine ? [mine, ...top.slice(0, 5)] : top;
+      const unknown = out.filter((x) => !adLok.has(`${x.l}|${x.v}`));
+      if (unknown.length) Promise.all(unknown.map((x) => adLoaderOk(x.l, x.v))).then((r) => r.includes(false) && draw());
+      return out;
     }
     // RAM du futur pack (Laboratoire « packRam ») : une pastille à côté du nom, un clic pour régler.
     function adRamCtx() {
@@ -3610,6 +3674,11 @@
     };
     async function createPack(l, mc, extra = [], { name, copyOf = null } = {}) {
       const mods = [...extra];
+      if (!(await adLoaderOk(l, mc))) {
+        adNoLoader(l, mc);
+        draw();
+        return null;
+      }
       const r = await api.myPack.create({ name: name || S.name || adTr("Mon pack", "My pack"), minecraftVersion: mc, loader: l, mods, omni: S.omni && on("omniPack") });
       if (!r?.ok) {
         toast(T("mpErr", { e: r?.error || "?" }));
@@ -3777,8 +3846,9 @@
       if (t.hasAttribute("data-ad-jar")) {
         const r = await api.myPack.addJar(S.ctx.id, {});
         if (r?.cancelled) return;
-        if (!r?.ok) return packErr(r);
-        toast(pkT("wzJarDone"));
+        if (!r?.ok) return adFlash("bad", adTr(`✗ Import impossible : ${r?.error || "erreur inconnue"}`, `✗ Import failed: ${r?.error || "unknown error"}`));
+        const jarN = r.name || r.file;
+        adFlash("ok", jarN ? adTr(`✓ « ${jarN} » importé`, `✓ “${jarN}” imported`) : pkT("wzJarDone"));
         if (packPage?.id === S.ctx.id) reloadPack();
         return;
       }
@@ -3786,8 +3856,10 @@
         const c = S.ctx;
         const r = S.kind === "w" ? await api.myPack.importMap(c.id) : S.kind === "dp" ? await api.myPack.addDatapack(c.id, { from: "file" }) : await api.myPack.addContent(c.id, { kind: S.kind, from: "file" });
         if (r?.cancelled) return;
-        if (!r?.ok) return packErr(r);
-        toast(S.kind === "w" ? adTr(`Monde « ${r.name} » ajouté (une sauvegarde est faite).`, `World “${r.name}” added (a backup is made).`) : pkT("dpAdded", { n: r.name }));
+        if (!r?.ok) return adFlash("bad", adTr(`✗ Import impossible : ${r?.error || "erreur inconnue"}`, `✗ Import failed: ${r?.error || "unknown error"}`));
+        const okTxt = S.kind === "w" ? adTr(`✓ Monde « ${r.name} » importé (une sauvegarde est faite)`, `✓ World “${r.name}” imported (a backup is made)`) : adTr(`✓ « ${r.name} » importé`, `✓ “${r.name}” imported`);
+        adFlash("ok", okTxt);
+        toast(okTxt);
         await refresh();
         if (packPage?.id === c.id) reloadPack();
         if (S.kind === "dp" && r.file) {
@@ -3853,10 +3925,28 @@
         }
         if (S.mode === "free") {
           if (!l) return;
+          if (!(await adLoaderOk(l, mc))) return adNoLoader(l, mc);
           S.pick = `${l}|${mc}`;
           S.pickUser = true;
           if (!S.free.has(S.sel)) S.free.set(S.sel, x);
           return draw();
+        }
+        // 03/11 (Rushi) : « version d'abord » : une case verte change la version du futur pack. Les mods
+        // déjà choisis qui n'existent pas pour la nouvelle version sont retirés (et nommés).
+        if (S.mode === "ver") {
+          if (!l || (l === S.ctx.l && mc === S.ctx.mc)) return;
+          if (!(await adLoaderOk(l, mc))) return adNoLoader(l, mc);
+          const fits = (y) => {
+            const a = adAv(y);
+            if (!Object.keys(a).length) return true; // versions inconnues : gardé, vérifié à la création
+            return a.mc ? a.mc.includes(mc) : (l === "quilt" ? ["quilt", "fabric"] : [l]).some((k) => a[k]?.includes(mc));
+          };
+          const gone = [...S.free.entries()].filter(([, y]) => !fits(y));
+          for (const [k] of gone) S.free.delete(k);
+          S.ctx = { ...S.ctx, l, mc };
+          S.pickUser = false;
+          toast(gone.length ? adTr(`Version changée : ${adTarget(l, mc)}. Retiré (n'existe pas dans cette version) : ${gone.map(([, y]) => y.name).join(", ")}.`, `Version changed: ${adTarget(l, mc)}. Removed (not available on this version): ${gone.map(([, y]) => y.name).join(", ")}.`) : adTr(`Version changée : ${adTarget(l, mc)}.`, `Version changed: ${adTarget(l, mc)}.`));
+          return load();
         }
         if (S.mode === "add" && S.kind === "mods" && l && (l !== S.ctx.l || mc !== S.ctx.mc)) {
           S.sw = { target: [l, mc, S.sel], mods: null };
@@ -3947,10 +4037,11 @@
         draw();
       } else if (e.target.matches("[data-cv]")) mc = e.target.value;
     });
-    win.addEventListener("click", (e) => {
+    win.addEventListener("click", async (e) => {
       if (e.target.closest("[data-x]")) return m.close();
       const b = e.target.closest("[data-start]");
       if (!b) return;
+      if (b.dataset.start === "ver" && !(await adLoaderOk(l, mc))) return adNoLoader(l, mc);
       m.close();
       if (b.dataset.start === "free") return openAddWin({ mode: "free", name: pre.name, omni: pre.omni });
       return openAddWin({ mode: "ver", loader: l, mc, name: pre.name, omni: pre.omni });
@@ -4300,6 +4391,7 @@
   // La page s'ouvre tout de suite (27/10) : d'abord l'en-tête, puis ce qui se lit sur le PC (mods,
   // problèmes), puis ce qui vient d'Internet (versions Modrinth, solutions) et les tailles.
   async function openPackPage(id) {
+    pjMarkOpened(id);
     const v = data.versions.find((x) => x.id === id) || {};
     const st = { id, p: null, tab: null, filter: "all", q: "" };
     packPage = st;
@@ -5224,7 +5316,8 @@
       <div class="om-menu" hidden>${friend || omni ? `<div class="om-mh">${esc(omT("exp"))}</div>` : ""}
         ${friend ? `<button type="button" data-om="friend"><b>${esc(omT("friend"))}</b><small>${esc(omT("friendD"))}</small></button>` : ""}
         ${omni ? `<button type="button" data-om="export"><b>${esc(omT("omni"))}</b><small>${esc(omT("omniD"))}</small></button><hr><button type="button" data-om="gen"><b>${esc(omT("gen"))}</b><small>${esc(omT("genD"))}</small></button>` : ""}
-        ${friend || omni ? "<hr>" : ""}<div class="om-mh">${esc(omT("inst"))}</div>
+        ${on("cloudPacks") && !p.vanilla ? `${friend || omni ? "<hr>" : ""}<div class="om-mh">${esc(rmTr("Mon cloud", "My cloud"))}</div><button type="button" data-om="cloud"><b>☁ ${esc(rmTr("Envoyer dans le cloud", "Send to the cloud"))}</b><small>${esc(rmTr("Pour le relier à ton serveur sur le site", "To link it to your server on the website"))}</small></button>` : ""}
+        ${friend || omni || (on("cloudPacks") && !p.vanilla) ? "<hr>" : ""}<div class="om-mh">${esc(omT("inst"))}</div>
         ${on("packRam") && packPage ? (() => { const c = rmCtxOf(packPage.id), st = rmStOf(packPage.id), v = rmValue(st, c), tn = rmVerdict(v, c)[0]; return `<button type="button" data-om="ram"><b>🧠 ${esc(rmTr("Mémoire (RAM)", "Memory (RAM)"))}${tn === "warn" || tn === "bad" ? " ⚠" : ""}</b><small>${esc(`${rmGo(v)} · ${rmModeName(st.mode)}`)}</small></button>`; })() : ""}
         <button type="button" data-om="rename"><b>✎ ${esc(T("rename"))}</b>${p.omni ? `<small>${esc(omT("renD"))}</small>` : ""}</button>
         <button type="button" data-om="remove" style="color:var(--danger,#e5484d);"><b>🗑 ${esc(omT("rmB"))}</b>${(p.omni?.versions || []).length > 1 ? `<small>${esc(omT("rmD"))}</small>` : ""}</button></div></span>`;
@@ -5493,6 +5586,141 @@
       toast(omT("saved", { n: out.name, s: sizeFmt(out.size) }));
     });
   }
+  // Mon cloud (03/11, Rushi) : le modpack se crée ici, puis se relie au serveur sur le site.
+  // Tout part : mods Modrinth et CurseForge (en liens), configs, packs de ressources et shaders,
+  // mods perso (contrôlés un par un par le site). Jamais le fichier d'un mod CurseForge.
+  async function omOpenCloud(st) {
+    const name = data.versions.find((x) => x.id === st.id)?.name || st.p.name;
+    const KIND = {
+      mr: [rmTr("Modrinth (en liens)", "Modrinth (as links)"), rmTr("téléchargé par le joueur", "downloaded by the player"), "var(--success)"],
+      cf: [rmTr("CurseForge (en liens)", "CurseForge (as links)"), rmTr("téléchargé depuis CurseForge", "downloaded from CurseForge"), "var(--warn)"],
+      custom: [rmTr("Mods perso (contrôlés par le site)", "Own mods (checked by the website)"), rmTr("gardé dans ton cloud", "kept in your cloud"), "var(--accent)"],
+      missing: [rmTr("Pas envoyés", "Not sent"), rmTr("fichier introuvable", "file not found"), "var(--muted)"],
+    };
+    // Même fenêtre que « Exporter pour un ami » (Rushi 03/11) : squelette, puis la liste à cocher.
+    const m = overlay(`<div class="modal-box pop-in om-modal" role="dialog" aria-modal="true" style="max-width:580px;width:100%;text-align:left;max-height:calc(100vh - 48px);overflow:auto;"><div data-cl></div></div>`);
+    const box = m.$("[data-cl]");
+    const skl = (w, h = 12) => `<span class="sk" style="display:block;width:${w};height:${h}px;border-radius:6px;margin:6px 0;"></span>`;
+    const head = `<h3>☁ ${esc(rmTr("Envoyer dans le cloud", "Send to the cloud"))}</h3><p class="sub">${esc(rmTr(`« ${name} » va dans ton cloud Omniscient. Ensuite, sur le site (Cloud), relie-le à ton serveur : ses joueurs l'auront en un clic.`, `“${name}” goes to your Omniscient cloud. Then, on the website (Cloud), link it to your server: its players get it in one click.`))}</p>`;
+    box.innerHTML = `${head}${skl("100%", 58)}<div class="om-sec">${esc(rmTr("Lecture des mods…", "Reading the mods…"))}</div>${[70, 55, 62, 48, 66].map((w) => skl(`${w}%`, 30)).join("")}
+      <div class="modal-actions" style="display:flex;justify-content:flex-end;margin-top:16px;"><button type="button" class="btn-secondary" data-x>${esc(omT("cancel"))}</button></div>`;
+    box.setAttribute("aria-busy", "true");
+    let stage = "load";
+    m.ov.addEventListener("click", (e) => { if (stage === "load" && e.target.closest("[data-x]")) m.close(); });
+    const plan = await api.cloudPlan(st.id).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+    if (!document.body.contains(m.ov)) return;
+    if (!plan?.ok) {
+      m.close();
+      return packErr(plan);
+    }
+    stage = "choose";
+    box.removeAttribute("aria-busy");
+    const off = new Set();
+    const keep = { cfg: true, rp: true };
+    const draw = () => {
+      const by = (k) => plan.mods.filter((x) => x.kind === k);
+      const row = (x) => {
+        const k = KIND[x.kind];
+        const dis = x.kind === "missing";
+        return `<label class="play-row" style="padding:5px 10px;${dis ? "opacity:.6;" : ""}"><input type="checkbox" data-mod="${esc(x.key)}" ${!dis && !off.has(x.key) ? "checked" : ""} ${dis ? "disabled" : ""}><span class="t">${esc(x.name)}<small>${x.file ? esc(x.file) : ""}</small></span><span style="font-size:11px;color:${k[2]};white-space:nowrap;">${esc(k[1])}</span></label>`;
+      };
+      const sec = (k) => {
+        const list = by(k);
+        if (!list.length) return "";
+        const n = list.filter((x) => !off.has(x.key) && x.kind !== "missing").length;
+        return `<div class="om-sec" style="display:flex;justify-content:space-between;align-items:center;"><span>${esc(KIND[k][0])} (${k === "missing" ? list.length : `${n}/${list.length}`})</span>${k === "missing" ? "" : `<button type="button" class="link-btn" data-all="${k}" style="font-size:11px;">${esc(n === list.length ? rmTr("Tout décocher", "Untick all") : rmTr("Tout cocher", "Tick all"))}</button>`}</div><div class="om-wl">${list.map(row).join("")}</div>`;
+      };
+      const total = plan.mods.filter((x) => x.kind !== "missing" && !off.has(x.key)).length;
+      box.innerHTML = `${head}
+        <div class="om-file"><span class="ic">☁</span><span><b>${esc(name)}</b><small>${esc(rmTr(`${total} mods envoyés sur ${plan.mods.length}`, `${total} of ${plan.mods.length} mods sent`))}</small></span></div>
+        ${plan.signedIn ? "" : `<p class="om-note" style="color:var(--warn)">⚠ ${esc(rmTr("Connecte-toi à ton compte Minecraft pour envoyer dans le cloud.", "Sign in to your Minecraft account to send to the cloud."))}</p>`}
+        ${sec("mr")}${sec("cf")}${sec("custom")}${sec("missing")}
+        <div class="om-sec">${esc(omT("inc"))}</div>
+        ${omCheck("cfg", rmTr("Réglages", "Settings"), rmTr("config, defaultconfigs, kubejs, options.txt", "config, defaultconfigs, kubejs, options.txt"), keep.cfg)}${omCheck("rp", rmTr("Packs de ressources et shaders", "Resource packs and shaders"), rmTr("ceux de l'installation", "the installation's ones"), keep.rp)}
+        <p class="om-note">${esc(rmTr("Les mods CurseForge restent des liens : chaque joueur les télécharge depuis CurseForge (Omniscient ne garde jamais leur fichier). Pas de monde. Ton modpack reste privé : seuls les joueurs de ton serveur l'ont. Même nom qu'un modpack déjà envoyé = il est mis à jour.", "CurseForge mods stay links: each player downloads them from CurseForge (Omniscient never keeps their file). No worlds. Your pack stays private: only your server's players get it. Same name as a pack already sent = it gets updated."))}</p>
+        <div data-prog hidden style="margin-top:12px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span data-pstep></span><span data-ppct></span></div><div style="height:8px;border-radius:99px;background:color-mix(in srgb, var(--muted) 25%, transparent);overflow:hidden;"><i data-pbar style="display:block;height:100%;width:0%;background:var(--accent);border-radius:99px;transition:width .35s ease;"></i></div></div>
+        <p class="fx-msg" data-msg aria-live="polite"></p><div data-res></div>
+        <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;"><button type="button" class="btn-secondary" data-x>${esc(omT("cancel"))}</button><button type="button" class="join-btn" data-go ${plan.signedIn && (total || keep.cfg || keep.rp) ? "" : "disabled"}>☁ ${esc(rmTr("Envoyer", "Send"))}</button></div>`;
+    };
+    draw();
+    const STEPS = {
+      prepare: [rmTr("Préparation du modpack…", "Preparing the pack…"), 5, 15],
+      pack: [rmTr("Envoi du modpack…", "Sending the pack…"), 15, 45],
+      check: [rmTr("Contrôle par le site…", "Website check…"), 45, 55],
+      jars: [rmTr("Envoi des mods perso", "Sending own mods"), 55, 85],
+      checkJars: [rmTr("Contrôle des mods perso…", "Checking own mods…"), 85, 97],
+    };
+    const setProg = (step, done = 0, total = 0) => {
+      const s2 = STEPS[step];
+      if (!s2) return;
+      const pct = Math.round(s2[1] + (total ? (done / total) * (s2[2] - s2[1]) : 0));
+      m.$("[data-prog]").hidden = false;
+      m.$("[data-pstep]").textContent = step === "jars" && total ? `${s2[0]} (${done + 1}/${total})…` : s2[0];
+      m.$("[data-ppct]").textContent = `${pct} %`;
+      m.$("[data-pbar]").style.width = `${pct}%`;
+    };
+    const stopProg = api.onCloudProgress?.((d) => { if (d?.id === st.id && stage === "send") setProg(d.step, d.done, d.total); }) || (() => {});
+    m.ov.addEventListener("change", (e) => {
+      const c = e.target.closest("[data-mod]");
+      if (c) {
+        if (c.checked) off.delete(c.dataset.mod);
+        else off.add(c.dataset.mod);
+        return draw();
+      }
+      const p2 = e.target.closest("[data-part]");
+      if (p2) keep[p2.dataset.part] = p2.checked;
+    });
+    m.ov.addEventListener("click", async (e) => {
+      if (stage === "load") return;
+      if (e.target.closest("[data-x]")) {
+        stopProg();
+        return m.close();
+      }
+      const all = e.target.closest("[data-all]");
+      if (all && stage === "choose") {
+        const list = plan.mods.filter((x) => x.kind === all.dataset.all);
+        const allOn = list.every((x) => !off.has(x.key));
+        list.forEach((x) => (allOn ? off.add(x.key) : off.delete(x.key)));
+        return draw();
+      }
+      const b = e.target.closest("[data-go]");
+      if (!b || stage !== "choose") return;
+      stage = "send";
+      b.disabled = true;
+      m.ov.querySelectorAll("input,[data-all]").forEach((x) => (x.disabled = true));
+      const msg = m.$("[data-msg]");
+      msg.textContent = "";
+      setProg("prepare");
+      const r = await api.cloudUpload(st.id, { skip: [...off], parts: { cfg: keep.cfg, rp: keep.rp } }).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+      if (!document.body.contains(m.ov)) return stopProg();
+      if (!r?.ok) {
+        stage = "choose";
+        m.$("[data-prog]").hidden = true;
+        draw();
+        const msg2 = m.$("[data-msg]");
+        msg2.style.color = "var(--danger,#e5484d)";
+        msg2.textContent = r?.error || "?";
+        return;
+      }
+      stage = "done";
+      stopProg();
+      m.$("[data-pstep]").textContent = rmTr("Terminé", "Done");
+      m.$("[data-ppct]").textContent = "100 %";
+      m.$("[data-pbar]").style.width = "100%";
+      m.$("[data-pbar]").style.background = "var(--success)";
+      b.hidden = true;
+      m.$("[data-x]").textContent = rmTr("Fermer", "Close");
+      const lines = [
+        `✓ ${esc(rmTr(`${r.updated ? "Mis à jour" : "Envoyé"} : « ${r.name} »`, `${r.updated ? "Updated" : "Sent"}: “${r.name}”`))}`,
+        esc(rmTr(`${r.mods} fichiers Modrinth · ${r.curseforge ? `${r.curseforge} mods CurseForge (liens) · ` : ""}${r.custom ? `${r.custom} mod(s) perso · ` : ""}${r.configs} fichiers de réglages`, `${r.mods} Modrinth files · ${r.curseforge ? `${r.curseforge} CurseForge mods (links) · ` : ""}${r.custom ? `${r.custom} own mod(s) · ` : ""}${r.configs} settings files`)),
+        ...(r.modrinth || []).map((f) => esc(rmTr(`${f} existe sur Modrinth : gardé en lien`, `${f} is on Modrinth: kept as a link`))),
+        ...(r.refused || []).map((f) => `<span style="color:var(--danger,#e5484d);">✕ ${esc(rmTr(`${f.file} refusé : ${f.reason}`, `${f.file} refused: ${f.reason}`))}</span>`),
+        ...(r.usage ? [esc(rmTr(`Ton cloud : ${sizeFmt(r.usage.total)} utilisés sur ${sizeFmt(r.usage.quota)}`, `Your cloud: ${sizeFmt(r.usage.total)} used of ${sizeFmt(r.usage.quota)}`))] : []),
+        esc(rmTr("Dernière étape : sur le site, menu Cloud, « Relier à un serveur ».", "Last step: on the website, Cloud menu, “Link to a server”.")),
+      ];
+      m.$("[data-res]").innerHTML = `<div class="pk-check" role="status" style="display:block;line-height:1.6;margin-top:10px;">${lines.join("<br>")}</div>`;
+    });
+  }
   async function omOpenFriend(st) {
     if (on("addMenus") && !st.p.vanilla) return omOpenFriend2(st);
     const p = st.p;
@@ -5608,6 +5836,7 @@
     if (a === "menu") { if (menu) menu.hidden = !menu.hidden; return; }
     if (menu) menu.hidden = true;
     if (a === "friend") return omOpenFriend(st);
+    if (a === "cloud") return omOpenCloud(st);
     if (a === "export") return omOpenExport(st);
     if (a === "gen") return omOpenGen(st);
     if (a === "det") { omJobOpen = !omJobOpen; return drawPackPage(); }

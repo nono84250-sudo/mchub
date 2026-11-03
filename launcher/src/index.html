@@ -1640,6 +1640,14 @@
     .detail-columns { grid-template-columns: minmax(0, 1fr); }
     .detail-side { order: -1; position: static; }
   }
+  /* Mon cloud (03/11) : carte « Modpack du serveur » de la fiche. */
+  #cloud-pack-card { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  #cloud-pack-card[hidden] { display: none; }
+  #cloud-pack-card p { margin: 0; }
+  #cloud-pack-card .muted { color: var(--text-muted, var(--muted)); }
+  #cloud-pack-card details summary { cursor: pointer; color: var(--accent); }
+  #cloud-pack-card ul { margin: 6px 0 0; padding-left: 18px; color: var(--text-muted, var(--muted)); }
+  #cloud-pack-card button { align-self: flex-start; }
   .detail-card {
     background: var(--surface);
     border: 1px solid var(--border);

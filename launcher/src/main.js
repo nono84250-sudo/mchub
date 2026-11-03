@@ -51,6 +51,12 @@ const FEATURE_IPC = [
   ["friends:", "friends"],
   // Page d'une version (27/10) : Mon pack, version vanilla (« vanillaPage ») ou Pack Omniscient.
   ["myPack:", ["myPack", "vanillaPage", "omniPack"]],
+  // 03/11 (Rushi) : l'export « Pour un ami » suit l'interrupteur « packExport » (bêta publique), pas
+  // « omniPack » (bêta fermée). Avant, il ne marchait que pour les bêta testeurs. Ces trois lignes
+  // passent avant « omniPack: » (la première qui correspond compte).
+  ["omniPack:exportFriend", ["packExport", "omniPack"]],
+  ["omniPack:friendPlan", ["packExport", "omniPack"]],
+  ["omniPack:exportPreview", ["packExport", "omniPack"]],
   ["omniPack:", "omniPack"],
   // « Importer un pack » (27/10) : export CurseForge ou pack Modrinth, l'un des deux suffit.
   ["cfPack:", ["cfImport", "mrImport"]],
@@ -3116,8 +3122,16 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
         headers: inviteHeaders(slug),
       });
   const server = data.server;
+  // Mon cloud (03/11) : modpack relie par le proprietaire. « Obligatoire pour rejoindre » : installe
+  // avant de se connecter ; « Conseillé » : seulement si le joueur l'a choisi sur la fiche. Il
+  // remplace alors le modpack du serveur pour ce lancement (meme dossier d'instance).
+  const cloudPack = await fetchCloudPack(slug);
+  const useCloud = Boolean(cloudPack && (cloudPack.mode === "required" || cloudChoice(slug) === true));
+  // Choix « juste cette fois » : il ne sert qu'à ce lancement (03/11, bug vu par Rushi : sans
+  // « Retenir mon choix », la question ne revenait plus jusqu'à la fermeture du launcher).
+  cloudChoiceOnce.delete(slug);
   // Nom et type du serveur pour le panneau de la pilule (etapes moddé / vanilla).
-  onProgress({ name: server.name, modded: server.type === "modded" && Boolean(server.curseforgeModpackId) });
+  onProgress({ name: server.name, modded: useCloud || (server.type === "modded" && Boolean(server.curseforgeModpackId)) });
   const settings = settingsStore.loadSettings();
   // `memoryOverride` sert un lancement "juste cette fois" avec la RAM
   // recommandee du serveur (voir applyRecommendedRamIfNeeded cote
@@ -3130,8 +3144,9 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
   // Serveur moddé : installe (ou met à jour) son modpack CurseForge dans une
   // instance propre au serveur avant de lancer. Voir modpack.js.
   let modded = null;
-  if (server.type === "modded" && server.curseforgeModpackId) {
+  if (useCloud || (server.type === "modded" && server.curseforgeModpackId)) {
     modded = await installModpack({
+      cloud: useCloud,
       config: { siteUrl: SITE_URL, apiKey: LAUNCHER_API_KEY, headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) } },
       slug,
       gameRoot: GAME_ROOT,
@@ -3186,6 +3201,198 @@ async function prepareServerFiles(slug, { memoryOverride, onProgress, signal, wa
 
   return { server, settings, modded, gameJava, memoryMinGB, memoryMaxGB };
 }
+
+// Mon cloud (03/11) : modpack relie au serveur par son proprietaire (voir
+// site/src/app/api/launcher/cloud-pack). null s'il n'y en a pas, si l'interrupteur
+// du Laboratoire est cache pour ce joueur, ou si le site ne repond pas (le serveur se lance alors
+// comme avant).
+async function fetchCloudPack(slug) {
+  try {
+    const data = await fetchJson(`${SITE_URL}/api/launcher/cloud-pack?slug=${encodeURIComponent(slug)}`, {
+      headers: { ...launcherAuthHeaders(), ...inviteHeaders(slug) },
+    });
+    return data?.pack && typeof data.pack === "object" ? data.pack : null;
+  } catch {
+    return null;
+  }
+}
+
+// Choix du joueur pour un modpack « Conseillé » (03/11, preview « Modpack relié au serveur ») :
+// true = avec le modpack, false = sans (vanilla), absent = lui demander au clic sur Jouer.
+// « Retenir mon choix » l'écrit dans les réglages (modifiable dans ⋯ › Réglages) ; sinon il ne vaut
+// que pour le lancement qui suit, et la question revient au prochain clic sur Jouer.
+const cloudChoiceOnce = new Map();
+function savedCloudChoice(slug) {
+  const saved = settingsStore.loadSettings().cloudPackOptIn?.[slug];
+  return typeof saved === "boolean" ? saved : null;
+}
+function cloudChoice(slug) {
+  if (cloudChoiceOnce.has(slug)) return cloudChoiceOnce.get(slug);
+  return savedCloudChoice(slug);
+}
+
+ipcMain.handle("cloudPack:get", async (_event, slug) => {
+  if (!isValidInstanceSlug(slug)) return null;
+  const pack = await fetchCloudPack(slug);
+  if (!pack) return null;
+  // `choice` : seulement le choix RETENU (sinon le launcher redemande au clic sur Jouer).
+  const choice = savedCloudChoice(slug);
+  return { ...pack, optedIn: choice === true, choice };
+});
+
+ipcMain.handle("cloudPack:choose", (_event, slug, withPack, remember) => {
+  if (!isValidInstanceSlug(slug)) return false;
+  const map = { ...(settingsStore.loadSettings().cloudPackOptIn || {}) };
+  if (remember) {
+    cloudChoiceOnce.delete(slug);
+    map[slug] = Boolean(withPack);
+  } else {
+    cloudChoiceOnce.set(slug, Boolean(withPack));
+    delete map[slug];
+  }
+  settingsStore.saveSettings({ cloudPackOptIn: map });
+  return true;
+});
+
+// « Envoyer dans le cloud » (03/11, Rushi) : le modpack se fait dans le launcher. Trois envois :
+//   1. un .mrpack : mods Modrinth en liens, configs, packs de ressources et shaders de l'installation ;
+//   2. la liste des mods CurseForge (une REFERENCE projet + fichier : chaque joueur le telecharge
+//      depuis CurseForge, Omniscient ne garde jamais le fichier) et des mods perso (.jar hors
+//      Modrinth et CurseForge), que le site autorise a deposer dans le stockage ;
+//   3. chaque mod perso, directement vers le stockage (lien signe), puis le site les controle un par
+//      un (programme cache, vrai mod, virus connus) et dit ce qu'il a garde.
+// Modpack PRIVE, relie au serveur du proprietaire : CurseForge y est permis en liens. Le jour ou des
+// modpacks seront publies sur Omniscient, CurseForge y sera bloque (decision de Rushi, 03/11).
+const CLOUD_PACK_MAX = 100 * 1000 * 1000;
+// Traces de débogage (03/11, test de Rushi) : dans la console du launcher et dans ses journaux.
+// Jamais la signature d'un lien signé : seulement l'hôte et le chemin (bucket/clé).
+function cloudDebug(step, url, status, detail) {
+  let where = String(url || "");
+  try {
+    const u = new URL(where);
+    where = `${u.host}${u.pathname}`;
+  } catch {
+    // adresse illisible : gardée telle quelle
+  }
+  const message = `[Mon cloud] ${step} → ${status} ${where}${detail ? ` | ${String(detail).replace(/\s+/g, " ").slice(0, 400)}` : ""}`;
+  console.log(message);
+  logStore.pushLog({ level: status >= 400 ? "warn" : "info", source: "launcher", message });
+}
+const CLOUD_JAR_MAX = 30 * 1000 * 1000;
+// Liste de la fenêtre « Envoyer dans le cloud » (cases à cocher, comme l'export pour un ami).
+const cloudKind = (x) => (x.mrpack === "link" ? "mr" : x.cf ? "cf" : x.abs ? "custom" : "missing");
+const cloudModKey = (x) => `${x.file || ""}|${x.name}`;
+ipcMain.handle("cloudPack:plan", async (_event, id) => {
+  if (!features.visible("cloudPacks")) return pageOff;
+  const v = playMode.getVersion(String(id));
+  if (!v) return { ok: false, error: "Cette version n'existe plus." };
+  try {
+    const plan = await omniPack.friendMods(v.id, { cfMatch: currentSession ? cfFingerprintMatch : null });
+    return {
+      ok: true,
+      signedIn: !!currentSession,
+      vanilla: !v.pack,
+      mods: plan.mods.map((x) => ({ key: cloudModKey(x), name: x.name.slice(0, 80), file: x.file, kind: cloudKind(x) })),
+    };
+  } catch (error) {
+    return playError(error);
+  }
+});
+ipcMain.handle("cloudPack:upload", async (event, id, opts = {}) => {
+  const progress = (step, done = 0, total = 0) => {
+    if (!event.sender.isDestroyed()) event.sender.send("cloudPack:progress", { id: String(id), step, done, total });
+  };
+  const skip = new Set(Array.isArray(opts?.skip) ? opts.skip.map(String) : []);
+  const parts = { cfg: opts?.parts?.cfg !== false, rp: opts?.parts?.rp !== false, dp: false, w: false };
+  if (!features.visible("cloudPacks")) return pageOff;
+  if (!currentSession) return { ok: false, error: "Connecte-toi d'abord à ton compte Minecraft." };
+  const v = playMode.getVersion(String(id));
+  if (!v) return { ok: false, error: "Cette version n'existe plus." };
+  if (!v.pack) return { ok: false, error: "Une version vanilla n'a pas de mods : choisis une version avec Fabric, NeoForge, Forge ou Quilt." };
+  const uuid = currentSession.profile.id;
+  const tmp = path.join(os.tmpdir(), `omni-cloud-${crypto.randomBytes(4).toString("hex")}.mrpack`);
+  try {
+    progress("prepare");
+    const plan0 = await omniPack.friendMods(v.id, { cfMatch: cfFingerprintMatch });
+    const plan = { ...plan0, mods: plan0.mods.filter((x) => !skip.has(cloudModKey(x))) };
+    const isCf = (x) => x.mrpack !== "link" && !!x.cf;
+    const r = await omniPack.exportMrpack(v.id, tmp, { parts, plan: { ...plan, mods: plan.mods.filter((x) => !isCf(x)) }, cloud: true });
+    if (r.size > CLOUD_PACK_MAX) return { ok: false, error: `Le modpack fait ${Math.ceil(r.size / 1e6)} Mo sans les mods : 100 Mo au maximum (souvent de gros packs de ressources).` };
+    const curseforge = [];
+    for (const x of plan.mods.filter(isCf)) {
+      const st = x.abs ? await fsp.stat(x.abs).catch(() => null) : null;
+      curseforge.push({ file: x.file || `${x.name}.jar`, name: x.name.slice(0, 80), projectId: x.cf.projectId, fileId: x.cf.fileId, sha1: x.sha1 || null, size: st?.size || null });
+    }
+    const custom = [];
+    for (const x of r.custom || []) {
+      const st = await fsp.stat(x.abs).catch(() => null);
+      if (!st?.isFile()) continue;
+      if (st.size > CLOUD_JAR_MAX) return { ok: false, error: `${x.file} fait plus de 30 Mo : trop gros pour le cloud.` };
+      custom.push({ file: x.file, name: x.name.slice(0, 80), size: st.size, sha1: x.sha1 || crypto.createHash("sha1").update(await fsp.readFile(x.abs)).digest("hex"), abs: x.abs });
+    }
+    const base = `${SITE_URL}/api/launcher/cloud-pack?minecraftUuid=${encodeURIComponent(uuid)}`;
+    const send = async (url, body, type) => {
+      const res = await fetch(url, { method: "POST", headers: { ...launcherAuthHeaders(), "Content-Type": type }, body, signal: AbortSignal.timeout(120000) });
+      const data = await res.json().catch(() => null);
+      cloudDebug("site", url.replace(/minecraftUuid=[^&]+/, "minecraftUuid=…"), res.status, data?.error || "");
+      if (!res.ok || !data?.ok) throw Object.assign(new Error(data?.error || `Réponse ${res.status} du site Omniscient`), { status: res.status });
+      return data;
+    };
+    const name = String(v.name || v.pack?.name || `Minecraft ${v.minecraftVersion}`).slice(0, 60);
+    // Le fichier part directement vers le stockage (lien signé), jamais par le site (Rushi, 03/11).
+    progress("pack", 0, r.size);
+    const slot = await withSessionRetry(async () => send(`${base}&start=1`, "{}", "application/json"));
+    if (typeof slot.url !== "string" || !/^https:\/\/[a-z0-9-]+\.r2\.cloudflarestorage\.com\//.test(slot.url)) throw new Error("Lien de stockage refusé.");
+    const put = await fetch(slot.url, { method: "PUT", body: await fsp.readFile(tmp), signal: AbortSignal.timeout(10 * 60 * 1000) });
+    cloudDebug("dépôt du modpack", slot.url, put.status, put.ok ? "" : await put.text().catch(() => ""));
+    if (!put.ok) throw new Error(`Envoi du modpack impossible (réponse ${put.status}). Réessaie.`);
+    progress("check");
+    const up = await send(`${base}&upload=1&name=${encodeURIComponent(name)}&key=${encodeURIComponent(slot.key)}`, "{}", "application/json");
+    const refs = await send(`${base}&refs=1&pack=${encodeURIComponent(up.id)}`, JSON.stringify({ curseforge, custom: custom.map(({ file, name: n, size, sha1 }) => ({ file, name: n, size, sha1 })) }), "application/json");
+    // Mods perso : envoyés un par un vers le lien signé que le site a donné (1 h).
+    const jarsToSend = Array.isArray(refs.uploads) ? refs.uploads : [];
+    let sentJars = 0;
+    for (const u of jarsToSend) {
+      progress("jars", sentJars++, jarsToSend.length);
+      const x = custom.find((c) => c.sha1 === u.sha1);
+      if (!x || typeof u.url !== "string" || !/^https:\/\/[a-z0-9-]+\.r2\.cloudflarestorage\.com\//.test(u.url)) continue;
+      const res = await fetch(u.url, { method: "PUT", body: await fsp.readFile(x.abs), signal: AbortSignal.timeout(10 * 60 * 1000) });
+      cloudDebug(`dépôt de ${x.file}`, u.url, res.status, res.ok ? "" : await res.text().catch(() => ""));
+      if (!res.ok) throw new Error(`Envoi de ${x.file} impossible (réponse ${res.status}). Réessaie.`);
+    }
+    if (jarsToSend.length) progress("checkJars", jarsToSend.length, jarsToSend.length);
+    const fin = refs.uploads?.length ? await send(`${base}&finalize=1&pack=${encodeURIComponent(up.id)}`, "{}", "application/json") : refs;
+    return {
+      ok: true,
+      name: up.name,
+      updated: !!up.updated,
+      mods: up.mods,
+      configs: up.configs,
+      curseforge: curseforge.length,
+      custom: fin.custom ?? 0,
+      modrinth: fin.modrinth || [],
+      refused: fin.refused || [],
+      missing: r.manual || [],
+      usage: fin.usage || null,
+    };
+  } catch (error) {
+    return playError(error);
+  } finally {
+    await fsp.rm(tmp, { force: true }).catch(() => {});
+  }
+});
+
+ipcMain.handle("cloudPack:setOptIn", (_event, slug, on) => {
+  if (!isValidInstanceSlug(slug)) return false;
+  // Bouton de la carte « Modpack du serveur » et ⋯ › Réglages : un choix retenu (avec ou sans le
+  // modpack), ou null pour ne plus retenir (le launcher redemande à chaque clic sur Jouer).
+  const map = { ...(settingsStore.loadSettings().cloudPackOptIn || {}) };
+  cloudChoiceOnce.delete(slug);
+  if (on === null) delete map[slug];
+  else map[slug] = Boolean(on);
+  settingsStore.saveSettings({ cloudPackOptIn: map });
+  return true;
+});
 
 // Installe un serveur (modpack + Java) sans le lancer : le bouton "Installer"
 // a cote de "Rejoindre" (2026-10-11, audit onboarding) — aucune connexion
@@ -4519,6 +4726,25 @@ ipcMain.handle("myPack:openCurseForge", async (_event, arg) => {
     return { ok: true, found: true, name: out.name };
   } catch (error) {
     return playError(error);
+  }
+});
+// 03/11 (Rushi) : une installation impossible est bloquée avant la création. La fenêtre « Nouveau
+// pack » demande si le chargeur existe pour cette version de Minecraft (ex. un chargeur pas encore
+// sorti) et ne propose pas ces cases. Réponse gardée 30 min ; site injoignable = pas de blocage.
+const loaderOkCache = new Map();
+ipcMain.handle("myPack:loaderOk", async (_event, loader, mc) => {
+  const l = playPacks.LOADER_IDS.includes(loader) ? loader : null;
+  const v = String(mc || "").slice(0, 40);
+  if (!l || !v) return { ok: true, exists: false };
+  const key = `${l}|${v}`;
+  const hit = loaderOkCache.get(key);
+  if (hit && Date.now() - hit.at < 30 * 60_000) return { ok: true, exists: hit.exists };
+  try {
+    const exists = !!(await playPacks.latestLoaderVersion(l, v));
+    loaderOkCache.set(key, { at: Date.now(), exists });
+    return { ok: true, exists };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
 ipcMain.handle("myPack:create", async (_event, o) => {

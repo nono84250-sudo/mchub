@@ -5,9 +5,10 @@ import Link from "next/link";
 import { SavedToast } from "@/components/SavedToast";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useRouter } from "next/navigation";
-import { GlobeHemisphereWest, LockSimple, Copy, ArrowsClockwise, Info } from "@phosphor-icons/react";
+import { GlobeHemisphereWest, LockSimple, Copy, ArrowsClockwise, Info, Package } from "@phosphor-icons/react";
 import type { ServerActionState } from "@/lib/actions/servers";
 import { resetInviteCode } from "@/lib/actions/servers";
+import { unlinkCloudPackAction } from "@/lib/actions/cloud";
 import { ModpackPicker, type ModpackValue } from "@/components/ModpackPicker";
 import { MinecraftVersionField } from "@/components/MinecraftVersionField";
 import { DEFAULT_MODPACK_CHANNEL, DEFAULT_MODPACK_SOURCE, type ModpackChannel, type ModpackSource } from "@/lib/modpack-types";
@@ -75,9 +76,13 @@ type ServerFormProps = {
   children?: ReactNode;
   sourceStates?: Record<ModpackSource, boolean>;
   sourceMaintenance?: { source: ModpackSource; message: string } | null;
+  // Mon cloud (03/11, preview « Modpack relié au serveur ») : modpack du cloud relié à ce serveur.
+  // Le choix « Vanilla / Moddé » est alors caché (le type enregistré est renvoyé tel quel, rien
+  // d'autre ne change) et remplacé par « Lié à un modpack ».
+  cloudPack?: { id: string; name: string; mode: "required" | "suggested"; minecraftVersion: string } | null;
 };
 
-export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode, canPublish = true, children, sourceStates, sourceMaintenance }: ServerFormProps) {
+export function ServerForm({ action, defaultValues, submitLabel, versions, serverId, inviteCode, canPublish = true, children, sourceStates, sourceMaintenance, cloudPack }: ServerFormProps) {
   const { t } = useI18n();
   const router = useRouter();
   const values = { ...EMPTY_VALUES, ...defaultValues };
@@ -102,6 +107,21 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
   // a l'etat public quand il ne l'est pas encore (voir le rendu plus bas).
   const publicOptionAllowed = canPublish || !values.isPrivate;
   const [resettingCode, setResettingCode] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
+  const [unlinkError, setUnlinkError] = useState(false);
+  async function unlinkPack() {
+    if (!cloudPack) return;
+    setUnlinking(true);
+    setUnlinkError(false);
+    try {
+      if (await unlinkCloudPackAction(cloudPack.id)) router.refresh();
+      else setUnlinkError(true);
+    } catch {
+      setUnlinkError(true);
+    } finally {
+      setUnlinking(false);
+    }
+  }
 
   // minecraftVersion/loader du modpack : connus seulement si le proprietaire
   // le reselectionne via la recherche (ModpackPicker.onChange) — jamais
@@ -260,31 +280,57 @@ export function ServerForm({ action, defaultValues, submitLabel, versions, serve
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span className="field-label">{t("serverForm.type")}</span>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm text-foreground">
-            <input
-              type="radio"
-              name="type"
-              value="vanilla"
-              checked={type === "vanilla"}
-              onChange={() => setType("vanilla")}
-            />
-            {t("serverForm.vanilla")}
-          </label>
-          <label className="flex items-center gap-2 text-sm text-foreground">
-            <input
-              type="radio"
-              name="type"
-              value="modded"
-              checked={type === "modded"}
-              onChange={() => setType("modded")}
-            />
-            {t("serverForm.modded")}
-          </label>
+      {cloudPack ? (
+        <div className="flex flex-col gap-1.5">
+          <span className="field-label">{t("serverForm.type")}</span>
+          <input type="hidden" name="type" value={type} />
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-accent/40 bg-accent/5 p-3">
+            <Package className="h-5 w-5 flex-shrink-0 text-accent" />
+            <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-0.5">
+              <span className="text-sm font-semibold text-foreground">{t("serverForm.linkedPack")}</span>
+              <span className="text-sm text-foreground">
+                {t("serverForm.linkedPackName", { p: cloudPack.name, m: cloudPack.minecraftVersion })} · {cloudPack.mode === "required" ? t("serverForm.linkedPackReq") : t("serverForm.linkedPackSug")}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/dashboard/cloud" className="btn-secondary text-sm">
+                {t("serverForm.linkedPackChange")}
+              </Link>
+              <button type="button" className="btn-secondary text-sm" disabled={unlinking} onClick={unlinkPack}>
+                {t("serverForm.linkedPackUnlink")}
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-muted">{t("serverForm.linkedPackHelp")}</p>
+          {unlinkError ? <p className="text-xs text-danger">{t("serverForm.linkedPackUnlinkErr")}</p> : null}
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <span className="field-label">{t("serverForm.type")}</span>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name="type"
+                value="vanilla"
+                checked={type === "vanilla"}
+                onChange={() => setType("vanilla")}
+              />
+              {t("serverForm.vanilla")}
+            </label>
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name="type"
+                value="modded"
+                checked={type === "modded"}
+                onChange={() => setType("modded")}
+              />
+              {t("serverForm.modded")}
+            </label>
+          </div>
+        </div>
+      )}
 
       {showManualVersion ? (
         <MinecraftVersionField versions={versions} defaultValue={values.minecraftVersion} onChange={setManualVersion} />

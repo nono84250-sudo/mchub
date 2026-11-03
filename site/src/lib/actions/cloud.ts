@@ -1,0 +1,46 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { auth } from "@/auth";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { featureVisibleOnSite } from "@/lib/features";
+import { getUserOffer } from "@/lib/playWorlds";
+import { deleteCloudPack, linkCloudPack, unlinkCloudPack, type LinkResult } from "@/lib/cloudPacks";
+
+// Actions de la page « Mon cloud » (03/11). Créer ou modifier un modpack se fait dans le launcher
+// (route /api/launcher/cloud-pack) : ici, seulement supprimer, relier et délier. Toujours sur le compte connecté : chaque fonction de
+// lib/cloudPacks.ts filtre par userId (un id envoyé par le navigateur n'ouvre jamais le modpack
+// d'un autre compte).
+const PAGE = "/dashboard/cloud";
+
+async function sessionUser(): Promise<string | null> {
+  const session = await auth();
+  if (!session?.user?.id || !(await featureVisibleOnSite("cloudPacks"))) return null;
+  return session.user.id;
+}
+const limited = (userId: string, max = 60) => checkRateLimit(`cloud-write:${userId}`, max, 60 * 60_000).limited;
+
+export async function deleteCloudPackAction(id: string): Promise<boolean> {
+  const userId = await sessionUser();
+  if (!userId || limited(userId)) return false;
+  const done = await deleteCloudPack(userId, String(id));
+  revalidatePath(PAGE);
+  return done;
+}
+
+export async function linkCloudPackAction(packId: string, serverId: string, mode: string, note?: string): Promise<LinkResult> {
+  const userId = await sessionUser();
+  if (!userId || limited(userId)) return { ok: false, error: "notFound" };
+  const r = await linkCloudPack(userId, await getUserOffer(userId), String(packId), String(serverId), mode === "required" ? "required" : "suggested", typeof note === "string" ? note : null);
+  revalidatePath(PAGE);
+  revalidatePath(`/manage/${String(serverId)}/settings`);
+  return r;
+}
+
+export async function unlinkCloudPackAction(packId: string): Promise<boolean> {
+  const userId = await sessionUser();
+  if (!userId || limited(userId)) return false;
+  const done = await unlinkCloudPack(userId, String(packId));
+  revalidatePath(PAGE);
+  return done;
+}

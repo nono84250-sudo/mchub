@@ -207,10 +207,13 @@ async function latestLoaderVersion(loader, mc) {
   }
   if (loader === "neoforge") {
     // NeoForge numérote d'après Minecraft : 1.21.1 → 21.1.x, 1.20.4 → 20.4.x, 1.21 → 21.0.x.
+    // 03/11 : nouveaux numéros de Minecraft (26.x) : 26.3 → 26.3.0.x, 26.1.2 → 26.1.2.x. Avant, ces
+    // versions étaient refusées (« Aucune version de neoforge trouvée pour Minecraft 26.3 »).
     const m = /^1\.(\d+)(?:\.(\d+))?$/.exec(mc);
-    if (!m) return null;
-    const prefix = `${m[1]}.${m[2] || 0}.`;
-    const list = ((await get("https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge")).versions || []).filter((v) => v.startsWith(prefix));
+    const n = /^(\d{2})\.(\d+)(?:\.(\d+))?$/.exec(mc);
+    const prefix = m ? `${m[1]}.${m[2] || 0}.` : n ? `${n[1]}.${n[2]}.${n[3] || 0}.` : null;
+    if (!prefix) return null;
+    const list = ((await get("https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge")).versions || []).filter((v) => v.startsWith(prefix) && !/\+snapshot/i.test(v));
     return list.filter((v) => !/beta|alpha/i.test(v)).pop() || list.pop() || null;
   }
   return null;
