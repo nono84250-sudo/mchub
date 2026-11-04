@@ -1170,7 +1170,25 @@ async function ftbVersionFiles(packId, versionId) {
 const DP_LOADERS = {
   paxi: { slug: "paxi", name: "Paxi", ids: ["paxi"], dir: "config/paxi/datapacks" },
   "global-packs": { slug: "globalpacks", name: "Global Packs", ids: ["globalpacks", "global_packs"], dir: "global_packs/required_data" },
+  // Open Loader (04/11, packs CurseForge) : config/openloader/data depuis Minecraft 1.17, openloader/data avant.
+  "open-loader": { slug: "open-loader", name: "Open Loader", ids: ["openloader"], dir: "config/openloader/data", oldDir: "openloader/data", oldBefore: "1.17" },
 };
+// Noms reconnus dans un pack CurseForge (nom du projet ou du .jar, sans espaces ni tirets).
+const DP_LOADER_NAMES = { paxi: ["paxi"], "global-packs": ["globalpacks"], "open-loader": ["openloader"] };
+const normName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+// Chargeur de data packs d'après des noms de mods ou de .jar (« Paxi-1.20-Forge-4.0.jar », « Open Loader »).
+function dpLoaderFromNames(names) {
+  const list = (names || []).map(normName).filter(Boolean);
+  for (const [k, words] of Object.entries(DP_LOADER_NAMES)) if (list.some((n) => words.some((w) => n === w || n.startsWith(w)))) return k;
+  return null;
+}
+// Dossier (relatif au dossier du jeu) que ce chargeur lit pour cette version de Minecraft.
+function dpLoaderDir(key, mc) {
+  const l = DP_LOADERS[key];
+  if (!l) return null;
+  if (l.oldDir && mc && cmpVer(parseVer(mc) || [], parseVer(l.oldBefore) || []) < 0) return l.oldDir;
+  return l.dir;
+}
 
 // --- Nouveaux menus d'ajout (31/10, preview validée par Rushi, Laboratoire « addMenus ») ----------
 // Une seule fenêtre « Ajouter » : par défaut, seulement ce qui marche avec la version ET le chargeur du
@@ -1379,6 +1397,8 @@ module.exports = {
   downloadChecked,
   lookupHashes,
   DP_LOADERS,
+  dpLoaderFromNames,
+  dpLoaderDir,
   MR_LOADERS,
   addSearch,
   addSheet,

@@ -1,0 +1,31 @@
+Fiche du catalogue de bugs (texte seulement, pas en base) — 04/11
+
+Slug proposé : fichiers-chargeur-manquants
+Titre FR : Le jeu s'arrête tout de suite (fichiers du jeu manquants)
+Titre EN : The game stops right away (missing game files)
+
+Reconnaissance (sortie du jeu, pas latest.log) :
+  « Invalid paths argument, contained no existing paths » avec un chemin dans libraries/
+  Chargeurs : Forge 1.13+ et NeoForge. Code de sortie 1, quelques secondes après le lancement.
+
+Ce qui se passe (FR) :
+  Forge et NeoForge fabriquent une partie du jeu à leur installation (le jeu modifié, dans
+  libraries/). Si l'installation a été interrompue, ou si un de ces fichiers a été effacé
+  (antivirus, nettoyage), le jeu ne trouve plus ces fichiers et s'arrête au démarrage.
+
+Marche à suivre (FR) :
+  1. Clique sur « Corriger les fichiers du jeu » (dans la fenêtre qui s'ouvre, ou Paramètres › Débogage).
+  2. Clique sur Jouer : le launcher retélécharge le jeu et réinstalle le chargeur (1 à 2 minutes).
+  Depuis la version qui suit la 0.4.4, le launcher le détecte et réinstalle le chargeur tout seul avant de lancer.
+
+What happens (EN) :
+  Forge and NeoForge build part of the game when they install (the patched game, in libraries/).
+  If that install was interrupted, or one of these files was deleted (antivirus, cleanup), the game
+  can't find them and stops at startup.
+
+Steps (EN) :
+  1. Click "Repair game files" (in the window that opens, or Settings › Debugging).
+  2. Click Play: the launcher downloads the game again and reinstalls the mod loader (1–2 minutes).
+  Since the version after 0.4.4, the launcher detects this and reinstalls the loader by itself before launching.
+
+Statut proposé : « se corrige tout seul » une fois le correctif publié (le launcher réinstalle avant de lancer).

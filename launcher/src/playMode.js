@@ -201,7 +201,33 @@ function createPlayMode({ gameRoot, appDataDir }) {
 
   // --- Mes versions -----------------------------------------------------------
   function listVersions() {
-    return loadState().versions.map((v) => ({ ...v, files: undefined, mods: undefined, installed: undefined, modCount: (v.mods || v.files || []).length, problems: v.problemCount || 0 }));
+    return loadState().versions.map((v) => ({ ...v, pack: v.pack ? { ...v.pack, cfHand: undefined } : v.pack, files: undefined, mods: undefined, installed: undefined, modCount: (v.mods || v.files || []).length, problems: v.problemCount || 0, hand: handFiles(v) }));
+  }
+  // Fichiers encore à télécharger à la main (04/11, pastille et « Reprendre » de Mes installations) :
+  // mods CurseForge sans lien pas encore dans mods/, et .zip (packs de ressources, shaders) gardés à
+  // l'import et pas encore dans leur dossier.
+  function handFiles(v) {
+    if (!v?.pack) return [];
+    const out = [];
+    try {
+      const mods = modsDirOf(v.id);
+      for (const m of v.mods || []) {
+        if (m.source !== "cf" || m.on === false || m.file?.url) continue;
+        const f = fileNameOf(m);
+        if (!f || fs.existsSync(path.join(mods, f)) || fs.existsSync(path.join(mods, `${f}.disabled`))) continue;
+        out.push({ id: m.id, name: m.name, fileName: f, kind: "mod" });
+      }
+      const dir = gameDirOf(v.id);
+      for (const c of v.pack.cfHand || []) {
+        // Data pack (04/11) : gardé dans .omniscient/datapacks/ de l'installation une fois trouvé.
+        const where = c?.kind === "dp" ? DP_STORE(v.id) : path.join(dir, c?.kind === "sh" ? "shaderpacks" : "resourcepacks");
+        if (!c?.fileName || fs.existsSync(path.join(where, c.fileName))) continue;
+        out.push({ id: c.id, name: c.name, fileName: c.fileName, kind: c.kind === "sh" || c.kind === "dp" ? c.kind : "rp" });
+      }
+    } catch {
+      return out;
+    }
+    return out.slice(0, 200);
   }
   function getVersion(id) {
     return loadState().versions.find((v) => v.id === id) || null;
@@ -1408,6 +1434,8 @@ function createPlayMode({ gameRoot, appDataDir }) {
     const { customVersion, jvmArgs } = await deps.prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersion: v.minecraftVersion });
     await syncPackFiles(v, { deps, onProgress, signal, waitIfPaused });
     await syncAutoDatapacks(v).catch(() => {});
+    // Data packs d'un pack CurseForge sans chargeur (04/11) : dans chaque monde de l'installation.
+    await spreadAllWorldDatapacks(v.id).catch(() => {});
     return { minecraftVersion: v.minecraftVersion, customVersion, jvmArgs, javaPath, gameDirectory: gameDir };
   }
 
@@ -2392,9 +2420,19 @@ function createPlayMode({ gameRoot, appDataDir }) {
   function loaderOf(v) {
     if (!isCustom(v)) return null;
     for (const [k, l] of Object.entries(packs.DP_LOADERS)) if ((v.mods || []).some((m) => m.on !== false && (l.ids.includes(m.id) || m.id === l.slug))) return k;
-    return null;
+    // Pack CurseForge importé (04/11) : mods « cf-<projet> », reconnus à leur nom ou à leur .jar
+    // (aussi ceux rangés dans le fichier du pack, présents seulement dans mods/).
+    const names = (v.mods || []).filter((m) => m.on !== false).flatMap((m) => [m.name, fileNameOf(m)]);
+    if (v.pack?.kind === "cf" || v.pack?.kind === "mr") {
+      try {
+        for (const f of fs.readdirSync(modsDirOf(v.id))) if (/\.jar$/i.test(f)) names.push(f);
+      } catch {}
+    }
+    return packs.dpLoaderFromNames(names);
   }
-  async function setDatapack(id, file, { worlds = [], auto = false }) {
+  // Dossier (absolu) que lit le chargeur de data packs de cette installation.
+  const loaderDirOf = (v, key) => path.join(pageDir(v.id), ...String(packs.dpLoaderDir(key, v.minecraftVersion) || "").split("/"));
+  async function setDatapack(id, file, { worlds = [], auto = false, keepAll = false }) {
     const v = getVersion(id);
     const d = (v?.datapacks || []).find((x) => x.file === file);
     if (!d) throw new Error("Data pack introuvable.");
@@ -2418,8 +2456,8 @@ function createPlayMode({ gameRoot, appDataDir }) {
         await fsp.rm(target, { force: true });
       }
     }
-    for (const [k, l] of Object.entries(packs.DP_LOADERS)) {
-      const target = path.join(pageDir(id), ...l.dir.split("/"), d.file);
+    for (const k of Object.keys(packs.DP_LOADERS)) {
+      const target = path.join(loaderDirOf(v, k), d.file);
       if (auto && k === loader) {
         await fsp.mkdir(path.dirname(target), { recursive: true });
         await fsp.copyFile(src, target);
@@ -2430,8 +2468,51 @@ function createPlayMode({ gameRoot, appDataDir }) {
     d.worlds = [...want].filter((k) => loadState().worlds[k]);
     d.auto = !!auto;
     delete d.pending;
+    // Choix fait à la main dans le launcher : le data pack ne suit plus « tous les mondes » (04/11).
+    if (!keepAll) delete d.allWorlds;
     await saveState();
     return { ok: true };
+  }
+  // Data pack d'un pack CurseForge (04/11) : son .zip est déjà dans .omniscient/datapacks/. Avec Paxi,
+  // Open Loader ou Global Packs dans le pack : dans le dossier de ce mod (tous les mondes). Sinon :
+  // dans chaque monde de l'installation, maintenant et à chaque lancement (nouveaux mondes compris).
+  function datapackStore(id) {
+    return DP_STORE(id);
+  }
+  async function addCfDatapack(id, { file, name }) {
+    const v = getVersion(id);
+    if (!v) throw new Error("Cette installation n'existe plus.");
+    if (!SAFE_ZIP.test(String(file || "")) || !fs.existsSync(path.join(DP_STORE(id), file))) throw new Error("Data pack introuvable.");
+    v.datapacks = (v.datapacks || []).filter((d) => d.file !== file);
+    v.datapacks.push({ file, name: String(name || file.replace(/\.zip$/i, "")).slice(0, 80), src: "cf", worlds: [], auto: false, allWorlds: true });
+    await saveState();
+    if (loaderOf(v)) {
+      await setDatapack(id, file, { worlds: [], auto: true });
+      return { where: "loader", loader: loaderOf(v) };
+    }
+    await spreadAllWorldDatapacks(id);
+    return { where: "worlds" };
+  }
+  async function spreadAllWorldDatapacks(id) {
+    const v = getVersion(id);
+    const list = (v?.datapacks || []).filter((d) => d.allWorlds && !d.auto);
+    if (!list.length) return [];
+    // Un chargeur ajouté depuis : le data pack y va (une seule fois pour tous les mondes).
+    if (loaderOf(v)) {
+      for (const d of list) await setDatapack(id, d.file, { worlds: [], auto: true });
+      return [];
+    }
+    listWorldsDirty();
+    const worlds = await worldsOfVersion(id);
+    const done = [];
+    for (const d of list) {
+      const have = new Set(d.worlds || []);
+      const missing = worlds.filter((w) => !have.has(w.key));
+      if (!missing.length) continue;
+      await setDatapack(id, d.file, { worlds: [...have, ...missing.map((w) => w.key)], auto: false, keepAll: true });
+      for (const w of missing) done.push({ name: d.name, world: w.name });
+    }
+    return done;
   }
   // Mondes d'une installation : ceux de son dossier, ou ouverts la dernière fois avec elle.
   async function worldsOfVersion(id) {
@@ -2443,7 +2524,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
   async function applyPendingDatapacks(id) {
     const v = getVersion(id);
     const wait = (v?.datapacks || []).filter((d) => d.pending && !d.auto && !(d.worlds || []).length);
-    if (!wait.length) return [];
+    if (!wait.length) return spreadAllWorldDatapacks(id);
     listWorldsDirty();
     const world = (await worldsOfVersion(id)).sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0))[0];
     if (!world) return [];
@@ -2452,7 +2533,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
       await setDatapack(id, d.file, { worlds: [world.key], auto: false });
       done.push({ name: d.name, world: world.name });
     }
-    return done;
+    return [...done, ...(await spreadAllWorldDatapacks(id))];
   }
   // Basculer une installation vanilla en version modée (28/10, preview validée par Rushi) : elle
   // devient un « Mon pack » avec son chargeur ; main.js ajoute ensuite le mod choisi (Iris, Paxi…).
@@ -2493,7 +2574,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
   async function syncAutoDatapacks(v) {
     const loader = loaderOf(v);
     if (!loader) return;
-    const dir = path.join(pageDir(v.id), ...packs.DP_LOADERS[loader].dir.split("/"));
+    const dir = loaderDirOf(v, loader);
     for (const d of v.datapacks || []) {
       if (!d.auto || fs.existsSync(path.join(dir, d.file))) continue;
       const src = path.join(DP_STORE(v.id), d.file);
@@ -2509,7 +2590,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
     const v = versionId ? getVersion(versionId) : null;
     const loader = v && loaderOf(v);
     if (!loader) return [];
-    const dir = path.join(pageDir(v.id), ...packs.DP_LOADERS[loader].dir.split("/"));
+    const dir = loaderDirOf(v, loader);
     return (v.datapacks || []).filter((d) => d.auto && fs.existsSync(path.join(dir, d.file))).map((d) => ({ abs: path.join(dir, d.file), rel: `${META_DIR}/datapacks/${d.file}` }));
   }
   async function restoreAutoDatapacks(extractedDir, versionId) {
@@ -2517,7 +2598,7 @@ function createPlayMode({ gameRoot, appDataDir }) {
     const v = versionId ? getVersion(versionId) : null;
     const loader = v && loaderOf(v);
     if (!loader || !fs.existsSync(from)) return;
-    const dir = path.join(pageDir(v.id), ...packs.DP_LOADERS[loader].dir.split("/"));
+    const dir = loaderDirOf(v, loader);
     for (const f of await fsp.readdir(from).catch(() => [])) {
       if (!SAFE_ZIP.test(f) || fs.existsSync(path.join(dir, f))) continue;
       await fsp.mkdir(dir, { recursive: true });
@@ -2683,6 +2764,9 @@ function createPlayMode({ gameRoot, appDataDir }) {
     omniSource,
     addDatapackEntry,
     applyPendingDatapacks,
+    addCfDatapack,
+    spreadAllWorldDatapacks,
+    datapackStore,
     switchToModded,
     loaderOf,
     listShaders,

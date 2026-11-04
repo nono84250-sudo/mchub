@@ -167,6 +167,7 @@ function readCloudPack(info) {
           fileName: item.info.fileName,
           pageUrl: safeCurseforgeUrl(item.info.pageUrl) || curseforgeProjectUrl(item.info.modId),
           reason: item.removed ? "removed" : "blocked",
+          kind: manualKindOfPath(item.entry?.path),
         });
       }
       if (manualMods.length) {
@@ -236,6 +237,36 @@ async function sha1File(file) {
 
 // Chemin a l'interieur de `base` uniquement : un zip malveillant ne doit pas
 // pouvoir ecrire ailleurs via des entrees "../" ("zip slip").
+// Type d'un fichier à télécharger à la main (04/11) : d'après son dossier dans le pack.
+function manualKindOfPath(rel) {
+  const low = String(rel || "").toLowerCase();
+  if (DP_DIRS.some((d) => low.startsWith(`${d}/`))) return "dp";
+  return low.startsWith("resourcepacks/") ? "rp" : low.startsWith("shaderpacks/") ? "sh" : "mod";
+}
+// Data packs d'un pack serveur (04/11) : dans le dossier de Paxi, Open Loader ou Global Packs si le
+// pack en a un (chargés dans tous les mondes), sinon datapacks/ de l'instance. Sur un serveur, ce sont
+// les data packs du serveur qui comptent : ceux du joueur ne servent qu'en solo.
+const DP_DIRS = ["datapacks", "config/paxi/datapacks", "config/openloader/data", "openloader/data", "global_packs/required_data"];
+function serverDatapackDir(jarNames, mc) {
+  const names = (jarNames || []).map((n) => String(n || "").toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const has = (w) => names.some((n) => n.startsWith(w));
+  if (has("paxi")) return "config/paxi/datapacks";
+  if (has("openloader")) {
+    const minor = Number(/^1\.(\d+)/.exec(String(mc || ""))?.[1]);
+    return minor && minor < 17 ? "openloader/data" : "config/openloader/data";
+  }
+  if (has("globalpacks")) return "global_packs/required_data";
+  return "datapacks";
+}
+// Dossier d'un .zip de la liste d'un pack : catégorie CurseForge (classId, envoyée par le site), sinon
+// deviné d'après l'adresse de sa page.
+function zipDirOf(info, dpDir) {
+  const cls = Number(info?.classId) || 0;
+  const page = String(info?.pageUrl || "");
+  if (cls === 6945 || (!cls && /\/data-packs\//i.test(page))) return dpDir;
+  if (cls === 6552 || (!cls && /\/shaders\//i.test(page))) return "shaderpacks";
+  return "resourcepacks";
+}
 function safeJoin(base, relative) {
   const root = path.resolve(base);
   const target = path.resolve(root, relative);
@@ -653,6 +684,7 @@ async function resolveFtbFiles({ config, files, onProgress, instanceDir, manualS
       fileName: info.fileName,
       pageUrl: safeCurseforgeUrl(info.pageUrl) || curseforgeProjectUrl(info.modId),
       reason: item.removed ? "removed" : "blocked",
+      kind: manualKindOfPath(item.entry?.path),
     });
   }
   onProgress({
@@ -701,13 +733,18 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
   const entries = [];
   const blocked = [];
   const manualMods = [];
+  const dpDir = serverDatapackDir([...infos.values()].map((x) => x.fileName).filter((n) => /\.jar$/i.test(String(n || ""))), manifest?.minecraft?.version);
   for (const fileId of wantedIds) {
     const info = infos.get(fileId);
     if (!info) {
       manualMods.push({ fileId, modId: null, modName: null, fileName: null, pageUrl: null, reason: "removed" });
       continue;
     }
-    const entry = { path: `mods/${path.basename(info.fileName)}`, url: info.downloadUrl, sha1: info.sha1, size: info.fileLength };
+    // .zip de la liste (pack de ressources, shader ou data pack) : rangé dans son dossier, plus dans
+    // mods/ (04/11, « Mekanism CTM w/ Fusion »).
+    const zip = /\.zip$/i.test(String(info.fileName || ""));
+    const dir = !zip ? "mods" : zipDirOf(info, dpDir);
+    const entry = { path: `${dir}/${path.basename(info.fileName)}`, url: info.downloadUrl, sha1: info.sha1, size: info.fileLength };
     if (info.downloadUrl && !isAllowedModpackUrl(info.downloadUrl)) {
       throw new ModpackError(`Le mod "${info.fileName}" du modpack se télécharge depuis un site non autorisé.`, {
         code: "disallowed_download_host",
@@ -739,6 +776,7 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
         fileName: info.fileName,
         pageUrl: safeCurseforgeUrl(info.pageUrl) || curseforgeProjectUrl(info.modId),
         reason: "blocked",
+        kind: manualKindOfPath(entry.path),
       });
     }
   }
@@ -1349,7 +1387,24 @@ async function installLegacyForge({ installerPath, gameRoot, onProgress }) {
 
 // Installe le chargeur : NeoForge/Forge avec leur installateur officiel, en mode
 // client, dans le dossier de jeu partage. Ne refait rien s'il est deja la.
-async function installLoader({ loaderId, minecraftVersion, gameRoot, javaPath, onProgress }) {
+// 04/11 : une seule installation à la fois par chargeur (Forge, NeoForge, Forge ancien, Fabric, Quilt).
+// Avant, une 2e préparation (installation en arrière-plan après un import + « Jouer », ou deux packs du
+// même chargeur) voyait le .json de version déjà écrit par l'installateur Forge encore en cours et
+// lançait le jeu sans ses fichiers : code 1.
+const loaderInstallLocks = new Map();
+async function installLoader(args) {
+  const lockKey = `${path.resolve(args.gameRoot)}|${args.loaderId}|${args.minecraftVersion}`;
+  while (loaderInstallLocks.has(lockKey)) await loaderInstallLocks.get(lockKey).catch(() => {});
+  let release;
+  loaderInstallLocks.set(lockKey, new Promise((r) => (release = r)));
+  try {
+    return await installLoaderUnlocked(args);
+  } finally {
+    loaderInstallLocks.delete(lockKey);
+    release();
+  }
+}
+async function installLoaderUnlocked({ loaderId, minecraftVersion, gameRoot, javaPath, onProgress }) {
   const { kind, installerUrls, loaderVersion } = parseLoader(loaderId, minecraftVersion);
   if (PROFILE_LOADERS[kind]) return installProfileLoader({ kind, loaderVersion, minecraftVersion, gameRoot, onProgress });
   const cacheDir = path.join(gameRoot, "cache", "installers");
@@ -1379,7 +1434,13 @@ async function installLoader({ loaderId, minecraftVersion, gameRoot, javaPath, o
 
   const versionId = readInstalledVersionId(installerPath);
   const versionJson = safeJoin(path.join(gameRoot, "versions"), path.join(versionId, `${versionId}.json`));
-  if (!fs.existsSync(versionJson)) {
+  // 04/11 (code 1 juste après un import, réglé par « Corriger ») : l'installateur écrit ce .json dès
+  // le début, avant ses « processors » qui fabriquent le jeu modifié dans libraries/ (client-…-srg.jar,
+  // client-…-extra.jar, forge-…-client.jar). Le .json seul ne prouve donc rien : s'il manque un de ces
+  // fichiers (installation interrompue, fichier effacé), l'installateur est relancé.
+  const missing = fs.existsSync(versionJson) ? expectedProcessorOutputs(installerPath, gameRoot, versionJson).filter((f) => !fs.existsSync(f)) : [];
+  if (!fs.existsSync(versionJson) || missing.length) {
+    if (missing.length) onProgress({ text: `Fichiers de ${kind === "neoforge" ? "NeoForge" : "Forge"} incomplets (${missing.map((f) => path.basename(f)).join(", ")}) : réinstallation…` });
     // L'installateur refuse de demarrer sans profil de lanceur officiel.
     const profiles = path.join(gameRoot, "launcher_profiles.json");
     if (!fs.existsSync(profiles)) await fsp.writeFile(profiles, JSON.stringify({ profiles: {}, version: 3 }));
@@ -1387,8 +1448,49 @@ async function installLoader({ loaderId, minecraftVersion, gameRoot, javaPath, o
     if (!fs.existsSync(versionJson)) {
       throw new ModpackError("Le chargeur de mods s'est installé mais sa version est introuvable.", { code: "installer_failed" });
     }
+    await noteProcessorOutputs(installerPath, gameRoot, versionJson);
   }
   return versionId;
+}
+
+// Fichiers fabriqués par les processors de l'installateur Forge / NeoForge et lus au lancement :
+// MC_SRG, MC_EXTRA et PATCHED, côté client, lus dans install_profile.json de l'installateur (en cache).
+const PROCESSOR_KEYS = ["MC_SRG", "MC_EXTRA", "PATCHED"];
+function processorOutputsOf(installerPath, gameRoot) {
+  try {
+    const zip = new AdmZip(installerPath);
+    const entry = zip.getEntry("install_profile.json");
+    if (!entry) return [];
+    const data = JSON.parse(zip.readAsText(entry))?.data || {};
+    const out = [];
+    for (const key of PROCESSOR_KEYS) {
+      const m = /^\[([^\]@]+)(?:@([\w]+))?\]$/.exec(String(data[key]?.client || ""));
+      if (!m || m[1].split(":").length < 3) continue;
+      let rel = mavenPathOf(m[1]);
+      if (m[2]) rel = rel.replace(/\.jar$/, `.${m[2]}`);
+      out.push(safeJoin(path.join(gameRoot, "libraries"), rel));
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+// Après une installation réussie, on note ceux qui existent vraiment (versions/<id>/.omniscient-processors.json) :
+// un fichier que cette version de l'installateur ne garde pas ne relance pas l'installateur à chaque partie.
+const processorNoteOf = (versionJson) => path.join(path.dirname(versionJson), ".omniscient-processors.json");
+function expectedProcessorOutputs(installerPath, gameRoot, versionJson) {
+  try {
+    const list = JSON.parse(fs.readFileSync(processorNoteOf(versionJson), "utf8"));
+    if (Array.isArray(list)) return list.filter((rel) => typeof rel === "string").map((rel) => safeJoin(path.join(gameRoot, "libraries"), rel));
+  } catch {}
+  return processorOutputsOf(installerPath, gameRoot);
+}
+async function noteProcessorOutputs(installerPath, gameRoot, versionJson) {
+  const libs = path.join(gameRoot, "libraries");
+  const there = processorOutputsOf(installerPath, gameRoot)
+    .filter((f) => fs.existsSync(f))
+    .map((f) => path.relative(libs, f).split(path.sep).join("/"));
+  await fsp.writeFile(processorNoteOf(versionJson), JSON.stringify(there)).catch(() => {});
 }
 
 // --- Version a lancer -------------------------------------------------------
@@ -1479,7 +1581,9 @@ async function prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersio
   const parentJar = path.join(versionsDir, parentId, `${parentId}.jar`);
   await fsp.copyFile(parentJson, path.join(customDir, `${minecraftVersion}.json`));
   const customJar = path.join(customDir, `${customId}.jar`);
-  if (fs.existsSync(parentJar) && !fs.existsSync(customJar)) await fsp.copyFile(parentJar, customJar);
+  // 04/11 : aussi recopié si sa taille ne correspond plus (copie interrompue) ; avant, seulement s'il manquait.
+  const sizeOf = (f) => (fs.existsSync(f) ? fs.statSync(f).size : -1);
+  if (fs.existsSync(parentJar) && sizeOf(customJar) !== sizeOf(parentJar)) await fsp.copyFile(parentJar, customJar);
 
   const merged = legacy
     ? { ...loader, id: customId }

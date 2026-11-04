@@ -1,0 +1,1837 @@
+// Installation d'un modpack (CurseForge, Modrinth ou FTB) pour un serveur moddé :
+// telecharge le modpack, ses mods et ses fichiers de config dans une instance
+// propre au serveur, installe le chargeur de mods (NeoForge / Forge / Fabric / Quilt) et prepare
+// la version a lancer avec minecraft-launcher-core.
+//
+// Node pur (aucune dependance a Electron) pour pouvoir etre teste en ligne de
+// commande. Le site donne le fichier du modpack (GET /api/launcher/servers/[slug]/modpack).
+// CurseForge : la cle reste sur le site, qui fournit aussi les liens de
+// telechargement des mods (POST /api/launcher/curseforge/files). Modrinth : le
+// fichier .mrpack liste lui-meme chaque fichier avec son lien et ses empreintes,
+// le launcher n'a besoin d'aucune cle. FTB (21/10) : pas d'archive, le launcher lit la liste
+// des fichiers de la version sur l'API publique de FTB (voir readFtbPack).
+const fs = require("node:fs");
+const fsp = require("node:fs/promises");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const { spawn } = require("node:child_process");
+const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
+const AdmZip = require("adm-zip");
+const { listZip, readZipEntry } = require("./zipStream");
+
+const MOD_DOWNLOAD_CONCURRENCY = 6;
+const FILE_INFO_BATCH = 100;
+const INSTALLER_TIMEOUT_MS = 15 * 60 * 1000;
+const STATE_FILE = ".omniscient-modpack.json";
+// Meme regle que INSTANCE_SLUG_RE dans main.js : le slug devient un nom de dossier
+// (instances/<slug>), jamais pris tel quel (audit 25/10).
+const INSTANCE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,80}$/i;
+
+// Hotes autorises pour les fichiers d'un .mrpack (specification Modrinth) : un
+// modpack ne doit pas pouvoir nous faire telecharger depuis n'importe quel serveur.
+const MRPACK_ALLOWED_HOSTS = new Set(["cdn.modrinth.com", "github.com", "raw.githubusercontent.com", "gitlab.com"]);
+// Fichier du modpack lui-meme et mods CurseForge (audit 25/10) : le site ne fait que relayer les
+// liens de l'API CurseForge (CDN *.forgecdn.net : edge., mediafilez.) ou Modrinth
+// (cdn.modrinth.com) — jamais un fichier heberge par le site Omniscient. Toujours en https.
+function isAllowedModpackUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return false;
+    return url.hostname === "cdn.modrinth.com" || url.hostname.endsWith(".forgecdn.net");
+  } catch {
+    return false;
+  }
+}
+
+// Mon cloud (03/11) : l'archive des configs d'un modpack du cloud est rangee chez Omniscient (R2,
+// lien signe d'une heure donne par le site). Seul hote accepte EN PLUS pour ce fichier-la, jamais
+// pour un mod : les mods d'un modpack du cloud viennent uniquement de cdn.modrinth.com.
+function isAllowedCloudConfigUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && url.hostname.endsWith(".r2.cloudflarestorage.com");
+  } catch {
+    return false;
+  }
+}
+// Fichiers de configuration seulement (meme liste que le site, lib/cloudPacks.ts), sous config/ ou
+// defaultconfigs/. Un fichier envoye sans dossier va dans config/.
+// 03/11 : le modpack envoye depuis le launcher est un .mrpack (« overrides/… ») : reglages
+// (config, defaultconfigs, kubejs, options.txt), packs de ressources et shaders (.zip).
+const CLOUD_CONFIG_EXT = /\.(json|json5|jsonc|toml|cfg|conf|config|properties|txt|ya?ml|snbt|ini|csv|md|xml|lang)$/i;
+const CLOUD_FORBIDDEN_EXT = /\.(jar|exe|dll|bat|cmd|com|scr|msi|msp|ps1|psm1|vbs|vbe|wsf|wsh|hta|lnk|sh|so|dylib|class|pif|reg|cpl|jse|url)$/i;
+function cloudConfigTarget(name) {
+  let clean = String(name || "").replace(/\\/g, "/");
+  if (!clean || clean.endsWith("/") || clean.startsWith("/") || clean.split("/").includes("..")) return null;
+  if (clean.startsWith("overrides/")) {
+    clean = clean.slice("overrides/".length);
+    if (CLOUD_FORBIDDEN_EXT.test(clean)) return null;
+    if (clean === "options.txt" || /^(config|defaultconfigs|kubejs)\/.+/.test(clean)) return clean;
+    if (/^(resourcepacks|shaderpacks)\/[^/]+\.zip$/i.test(clean)) return clean;
+    return null;
+  }
+  if (clean === "modrinth.index.json" || clean === "omniscient.json") return null;
+  if (!CLOUD_CONFIG_EXT.test(clean)) return null;
+  return /^(config|defaultconfigs)\//.test(clean) ? clean : `config/${clean}`;
+}
+// Vue de l'archive des configs sous la forme qu'attend extractOverrides (dossier « overrides/ »).
+function cloudConfigView(zip) {
+  return {
+    getEntries: () =>
+      zip
+        .getEntries()
+        .filter((e) => !e.isDirectory)
+        .map((e) => ({ target: cloudConfigTarget(e.entryName), e }))
+        .filter((x) => x.target)
+        .map(({ target, e }) => ({ entryName: `overrides/${target}`, isDirectory: false, getData: () => e.getData() })),
+  };
+}
+const CLOUD_FILE_PATH = /^(mods\/[^/\\]+\.jar|(resourcepacks|shaderpacks)\/[^/\\]+\.zip)$/i;
+const hostOf = (value) => {
+  try {
+    const u = new URL(String(value || ""));
+    return u.protocol === "https:" && !u.username && !u.password ? u.hostname : "";
+  } catch {
+    return "";
+  }
+};
+// Fichiers d'un modpack du cloud, trois sortes (03/11) :
+// - Modrinth : lien cdn.modrinth.com.
+// - CurseForge : une reference (projet + fichier). Le lien est demande a CurseForge au moment de
+//   l'installation (route du site, notre cle) : Omniscient ne garde jamais le fichier. Un mod dont
+//   l'auteur bloque les autres launchers : le joueur le telecharge sur sa page (comme un modpack
+//   CurseForge), le launcher le retrouve dans Telechargements.
+// - Mod perso du proprietaire (controle par le site) : lien signe vers notre stockage, empreinte
+//   obligatoire. Seulement pour les joueurs de son serveur.
+function readCloudPack(info) {
+  const cloud = info.cloud || {};
+  if (!cloud.minecraftVersion || !cloud.loaderId || !Array.isArray(cloud.files)) throw new ModpackError("Modpack du cloud illisible ou incomplet.");
+  return {
+    minecraftVersion: cloud.minecraftVersion,
+    loaderId: cloud.loaderId,
+    overrideDirs: ["overrides"],
+    resolveFiles: async ({ config, onProgress = () => {}, instanceDir, manualSearchDirs = [] } = {}) => {
+      const entries = [];
+      const cfItems = [];
+      for (const file of cloud.files) {
+        const rel = String(file.path || "");
+        if (!CLOUD_FILE_PATH.test(rel)) throw new ModpackError(`Fichier refusé dans le modpack du cloud : ${rel.slice(0, 80)}`, { code: "disallowed_download_host" });
+        const sha1 = /^[0-9a-f]{40}$/i.test(String(file.sha1 || "")) ? String(file.sha1).toLowerCase() : null;
+        const entry = { path: rel, url: null, sha1, sha512: null, size: Number(file.size) || null };
+        if (file.source === "cf") {
+          const fileId = Number(file.cf?.fileId);
+          if (!(fileId > 0) || !rel.startsWith("mods/")) throw new ModpackError(`Mod CurseForge illisible : ${file.title || rel}`);
+          cfItems.push({ fileId, modId: Number(file.cf?.projectId) || null, name: file.title || rel.slice(5), entry });
+          continue;
+        }
+        const host = hostOf(file.url);
+        const ok = file.source === "custom" ? host.endsWith(".r2.cloudflarestorage.com") && !!sha1 && rel.startsWith("mods/") : host === "cdn.modrinth.com";
+        if (!ok) throw new ModpackError(`Le mod "${file.title || rel}" ne vient ni de Modrinth ni du cloud Omniscient : installation refusée.`, { code: "disallowed_download_host" });
+        entry.url = String(file.url);
+        entries.push(entry);
+      }
+      if (!cfItems.length) return entries;
+      onProgress({ text: "Récupération des mods CurseForge…" });
+      const infos = new Map();
+      for (let i = 0; i < cfItems.length; i += FILE_INFO_BATCH) {
+        const data = await siteJson(config, "/api/launcher/curseforge/files", {
+          method: "POST",
+          body: JSON.stringify({ fileIds: cfItems.slice(i, i + FILE_INFO_BATCH).map((x) => x.fileId) }),
+        });
+        for (const x of data.files || []) infos.set(x.id, x);
+      }
+      const blocked = [];
+      for (const item of cfItems) {
+        const x = infos.get(item.fileId);
+        if (x?.downloadUrl && hostOf(x.downloadUrl).endsWith(".forgecdn.net")) {
+          item.entry.url = x.downloadUrl;
+          item.entry.sha1 = x.sha1 || item.entry.sha1;
+          item.entry.size = x.fileLength || item.entry.size;
+          entries.push(item.entry);
+        } else {
+          blocked.push({ info: x || { id: item.fileId, modId: item.modId, modName: item.name, fileName: item.entry.path.slice(5), pageUrl: null }, entry: item.entry, isMod: true, removed: !x });
+        }
+      }
+      if (blocked.length && instanceDir) reportManualFiles(await findManualFiles(blocked, { instanceDir, searchDirs: manualSearchDirs }), onProgress);
+      const manualMods = [];
+      for (const item of blocked) {
+        if (item.ready) {
+          entries.push(item.entry);
+          continue;
+        }
+        manualMods.push({
+          fileId: item.info.id,
+          modId: item.info.modId,
+          modName: typeof item.info.modName === "string" ? item.info.modName : null,
+          fileName: item.info.fileName,
+          pageUrl: safeCurseforgeUrl(item.info.pageUrl) || curseforgeProjectUrl(item.info.modId),
+          reason: item.removed ? "removed" : "blocked",
+          kind: manualKindOfPath(item.entry?.path),
+        });
+      }
+      if (manualMods.length) {
+        throw new ModpackError(
+          `${manualMods.length} mod(s) du modpack ne peuvent pas être installés automatiquement : ${manualMods.map((m) => m.modName || m.fileName || `fichier ${m.fileId}`).join(", ")}.`,
+          { code: "manual_mods", manualMods },
+        );
+      }
+      return entries;
+    },
+  };
+}
+
+// Plus aucune donnee recue pendant ce delai : le telechargement est coupe puis reessaye. Pas de
+// delai total (audit 25/10) : un gros fichier sur une connexion lente doit pouvoir aboutir.
+const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
+
+// Seuls hotes acceptes pour un fichier FTB qui n'est PAS un mod CurseForge : leurs propres
+// serveurs. Jamais edge.forgecdn.net (ni les "mirrors" de leur API) pour un mod CurseForge : ces
+// mods passent uniquement par notre route CurseForge, qui respecte le choix de leur auteur.
+const FTB_ALLOWED_HOSTS = new Set(["files.feed-the-beast.com", "cdn.feed-the-beast.com"]);
+const FTB_API = "https://api.feed-the-beast.com/v1/modpacks/public/modpack";
+
+class ModpackError extends Error {
+  constructor(message, { code, manualMods, fromModrinth, fromModrinthMods } = {}) {
+    super(message);
+    this.name = "ModpackError";
+    this.code = code || "modpack_error";
+    // Mods que CurseForge ne permet pas d'installer automatiquement.
+    this.manualMods = manualMods || [];
+    // Mods bloques retrouves sur Modrinth (bandeau et liste de la fenetre des mods, point 4).
+    // Avant, ce nombre n'etait jamais garde ici : le bandeau « récupérés sur Modrinth » restait vide.
+    this.fromModrinth = fromModrinth || 0;
+    this.fromModrinthMods = fromModrinthMods || [];
+  }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// --- Utilitaires -----------------------------------------------------------
+
+async function siteJson(config, pathname, init = {}) {
+  const res = await fetch(`${config.siteUrl}${pathname}`, {
+    ...init,
+    signal: init.signal || AbortSignal.timeout(20_000),
+    headers: {
+      // Identite du joueur (X-Launcher-Session ou X-Minecraft-Token) : exigee par
+      // les routes CurseForge du site depuis le point 3 de la securite.
+      ...config.headers,
+      ...init.headers,
+      Authorization: `Bearer ${config.apiKey}`,
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ModpackError(data.error || `Le site a répondu ${res.status}.`, { code: data.code || "site_error" });
+  }
+  return data;
+}
+
+async function sha1File(file) {
+  const hash = crypto.createHash("sha1");
+  await pipeline(fs.createReadStream(file), hash);
+  return hash.digest("hex");
+}
+
+// Chemin a l'interieur de `base` uniquement : un zip malveillant ne doit pas
+// pouvoir ecrire ailleurs via des entrees "../" ("zip slip").
+// Type d'un fichier à télécharger à la main (04/11) : d'après son dossier dans le pack.
+function manualKindOfPath(rel) {
+  const low = String(rel || "").toLowerCase();
+  if (DP_DIRS.some((d) => low.startsWith(`${d}/`))) return "dp";
+  return low.startsWith("resourcepacks/") ? "rp" : low.startsWith("shaderpacks/") ? "sh" : "mod";
+}
+// Data packs d'un pack serveur (04/11) : dans le dossier de Paxi, Open Loader ou Global Packs si le
+// pack en a un (chargés dans tous les mondes), sinon datapacks/ de l'instance. Sur un serveur, ce sont
+// les data packs du serveur qui comptent : ceux du joueur ne servent qu'en solo.
+const DP_DIRS = ["datapacks", "config/paxi/datapacks", "config/openloader/data", "openloader/data", "global_packs/required_data"];
+function serverDatapackDir(jarNames, mc) {
+  const names = (jarNames || []).map((n) => String(n || "").toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const has = (w) => names.some((n) => n.startsWith(w));
+  if (has("paxi")) return "config/paxi/datapacks";
+  if (has("openloader")) {
+    const minor = Number(/^1\.(\d+)/.exec(String(mc || ""))?.[1]);
+    return minor && minor < 17 ? "openloader/data" : "config/openloader/data";
+  }
+  if (has("globalpacks")) return "global_packs/required_data";
+  return "datapacks";
+}
+// Dossier d'un .zip de la liste d'un pack : catégorie CurseForge (classId, envoyée par le site), sinon
+// deviné d'après l'adresse de sa page.
+function zipDirOf(info, dpDir) {
+  const cls = Number(info?.classId) || 0;
+  const page = String(info?.pageUrl || "");
+  if (cls === 6945 || (!cls && /\/data-packs\//i.test(page))) return dpDir;
+  if (cls === 6552 || (!cls && /\/shaders\//i.test(page))) return "shaderpacks";
+  return "resourcepacks";
+}
+function safeJoin(base, relative) {
+  const root = path.resolve(base);
+  const target = path.resolve(root, relative);
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    throw new ModpackError(`Entrée de modpack refusée (chemin hors du dossier) : ${relative}`, { code: "unsafe_path" });
+  }
+  return target;
+}
+
+// Verrou par destination : un meme fichier peut etre demande par deux installations
+// concurrentes (cache de modpack partage entre deux serveurs utilisant le meme fichier,
+// voir installModpack ci-dessous pour le verrou par instance) — sans ca, deux fetch ecrivaient
+// vers le MEME ".part" et s'entremelaient au niveau OS sans que le SHA-1/compteur (calcules en
+// memoire a partir des seuls octets ecrits par CE process) ne le detectent (course trouvee par
+// l'audit du 2026-10-10).
+const downloadFileLocks = new Map();
+
+function downloadFile(url, destPath, options) {
+  const existing = downloadFileLocks.get(destPath);
+  if (existing) return existing;
+  const promise = downloadFileLocked(url, destPath, options).finally(() => downloadFileLocks.delete(destPath));
+  downloadFileLocks.set(destPath, promise);
+  return promise;
+}
+
+// Telecharge vers `destPath` (fichier .part puis renommage) en verifiant la
+// taille et les empreintes SHA-1 / SHA-512 quand elles sont connues, avec 3 essais.
+// `signal` (2026-10-11, gestionnaire de telechargements) : annulation
+// volontaire (bouton Annuler) — jamais reessayee, contrairement a une vraie
+// erreur reseau. `onBytes` : octets reçus pour CE fichier depuis le dernier
+// appel, pour la progression/vitesse affichees dans le panneau.
+async function downloadFileLocked(url, destPath, { sha1, sha512, size, signal, onBytes } = {}) {
+  await fsp.mkdir(path.dirname(destPath), { recursive: true });
+  const partPath = `${destPath}.part`;
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (signal?.aborted) throw new DOMException("Téléchargement annulé.", "AbortError");
+    // Delai d'inactivite, rearme a chaque morceau recu (voir DOWNLOAD_IDLE_TIMEOUT_MS).
+    const idle = new AbortController();
+    let idleTimer = null;
+    const armIdle = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => idle.abort(), DOWNLOAD_IDLE_TIMEOUT_MS);
+    };
+    try {
+      armIdle();
+      const res = await fetch(url, { signal: signal ? AbortSignal.any([idle.signal, signal]) : idle.signal });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const hash = crypto.createHash("sha1");
+      const hash512 = sha512 ? crypto.createHash("sha512") : null;
+      let received = 0;
+      const source = Readable.fromWeb(res.body);
+      source.on("data", (chunk) => {
+        armIdle();
+        hash.update(chunk);
+        hash512?.update(chunk);
+        received += chunk.length;
+        onBytes?.(chunk.length);
+      });
+      await pipeline(source, fs.createWriteStream(partPath));
+      // L'empreinte fait foi (31/10, Rushi : Controlling-fabric-1.20.1-12.0.2.jar refusé, « taille reçue
+      // 122778 au lieu de 122777 » alors que le vrai fichier fait 122778 octets : la taille annoncée était
+      // fausse d'un octet). La taille ne sert de contrôle que si aucune empreinte n'est connue.
+      if (size && received !== size && !sha1 && !sha512) throw new Error(`taille reçue ${received} au lieu de ${size}`);
+      if (sha1 && hash.digest("hex") !== sha1.toLowerCase()) throw new Error("empreinte SHA-1 différente de celle attendue");
+      if (hash512 && hash512.digest("hex") !== sha512.toLowerCase()) throw new Error("empreinte SHA-512 différente de celle attendue");
+      if (size && received !== size) bugSignal?.("size_mismatch"); // fichier bon, taille annoncée fausse (catalogue de bugs)
+      await fsp.rename(partPath, destPath);
+      return;
+    } catch (error) {
+      lastError = idle.signal.aborted && !signal?.aborted
+        ? new Error(`aucune donnée reçue pendant ${DOWNLOAD_IDLE_TIMEOUT_MS / 1000} s`)
+        : error;
+      await fsp.rm(partPath, { force: true });
+      if (error?.name === "AbortError" && signal?.aborted) throw error; // annulation volontaire : jamais de reessai
+      if (attempt < 3) await sleep(600 * attempt);
+    } finally {
+      clearTimeout(idleTimer);
+    }
+  }
+  throw new ModpackError(`Téléchargement impossible (${path.basename(destPath)}) : ${lastError.message}`, {
+    code: "download_failed",
+  });
+}
+
+// Catalogue de bugs (31/10) : prévenir main.js quand un problème connu vient d'être évité.
+let bugSignal = null;
+const setBugSignal = (fn) => {
+  bugSignal = fn;
+};
+
+async function fileMatches(file, { sha1, size }) {
+  try {
+    const stat = await fsp.stat(file);
+    // Empreinte connue : elle seule compte (taille annoncée parfois fausse, voir downloadFileLocked).
+    if (sha1) return (await sha1File(file)) === sha1.toLowerCase();
+    if (size && stat.size !== size) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Etat ecrit par l'installation precedente de cette instance (null a la
+// premiere installation, ou si le fichier est illisible/ancien format).
+async function readInstalledState(instanceDir) {
+  try {
+    const state = JSON.parse(await fsp.readFile(path.join(instanceDir, STATE_FILE), "utf8"));
+    if (Array.isArray(state.files)) return state;
+    if (Array.isArray(state.mods)) return { ...state, files: state.mods.map((name) => `mods/${name}`) }; // ancien format
+  } catch {
+    // premiere installation
+  }
+  return null;
+}
+
+// Un serveur donne a-t-il deja un modpack installe ? (2026-10-11, bouton
+// "Installer" — n'a plus besoin de s'afficher une fois fait, pour CE serveur
+// precis seulement.) Meme fichier d'etat que readInstalledState ci-dessus,
+// juste sans avoir besoin de le parser entierement.
+async function isInstalled(gameRoot, slug) {
+  if (typeof slug !== "string" || !INSTANCE_SLUG_RE.test(slug)) return false;
+  try {
+    await fsp.access(path.join(gameRoot, "instances", slug, STATE_FILE));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Instances deja presentes sur CE disque (2026-10-12, jouer en solo hors
+// ligne) : utilisee quand il n'y a pas de session Microsoft active (donc pas
+// moyen d'interroger /api/launcher/servers/mine) — scanne directement
+// instances/<slug>/ plutot que d'attendre une reponse du site. Un dossier
+// moddé a son STATE_FILE (readInstalledState ci-dessus) ; un serveur vanilla
+// "juste prepare" (bouton Installer, voir prepareServerFiles) a son
+// ".omniscient-ready.json" a la place — un dossier qui n'a ni l'un ni
+// l'autre (telechargement interrompu avant le premier etat ecrit, ou dossier
+// residuel) est simplement ignore plutot que de planter la liste entiere.
+async function listInstalledInstances(gameRoot) {
+  const instancesDir = path.join(gameRoot, "instances");
+  let entries;
+  try {
+    entries = await fsp.readdir(instancesDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const out = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const slug = entry.name;
+    const instanceDir = path.join(instancesDir, slug);
+
+    const state = await readInstalledState(instanceDir);
+    if (state) {
+      out.push({
+        slug,
+        type: "modded",
+        minecraftVersion: state.minecraftVersion,
+        loaderId: state.loaderId,
+        modpackName: state.modpackName || null,
+      });
+      continue;
+    }
+
+    try {
+      const ready = JSON.parse(await fsp.readFile(path.join(instanceDir, ".omniscient-ready.json"), "utf8"));
+      out.push({ slug, type: "vanilla", minecraftVersion: ready.minecraftVersion, modpackName: null });
+    } catch {
+      // Ni modpack installe ni vanilla pret pour ce dossier : rien a proposer hors ligne.
+    }
+  }
+  return out;
+}
+
+// --- Formats de modpack -----------------------------------------------------
+
+// Un "pack" decrit ce qu'il faut installer, quel que soit le format d'origine :
+// { minecraftVersion, loaderId, overrideDirs, resolveFiles({ config, onProgress }) }.
+// resolveFiles renvoie la liste des fichiers a telecharger :
+// [{ path (relatif a l'instance), url, sha1, size }].
+
+function readCurseforgePack(zip) {
+  const entry = zip.getEntry("manifest.json");
+  if (!entry) throw new ModpackError("Ce fichier n'est pas un modpack CurseForge (manifest.json introuvable).");
+  const manifest = JSON.parse(zip.readAsText(entry));
+  if (manifest.manifestType !== "minecraftModpack" || !manifest.minecraft?.version || !Array.isArray(manifest.files)) {
+    throw new ModpackError("Manifeste de modpack illisible ou incomplet.");
+  }
+  const loaders = manifest.minecraft.modLoaders || [];
+  return {
+    minecraftVersion: manifest.minecraft.version,
+    loaderId: (loaders.find((l) => l.primary) || loaders[0])?.id || null,
+    overrideDirs: [manifest.overrides || "overrides"],
+    resolveFiles: ({ config, onProgress, instanceDir, manualSearchDirs }) =>
+      resolveCurseforgeFiles({ config, manifest, onProgress, instanceDir, manualSearchDirs }),
+  };
+}
+
+// Format .mrpack de Modrinth : modrinth.index.json + dossiers overrides/ (tous
+// les cotes) et client-overrides/ (client seulement).
+function readModrinthPack(zip) {
+  const entry = zip.getEntry("modrinth.index.json");
+  if (!entry) throw new ModpackError("Ce fichier n'est pas un modpack Modrinth (modrinth.index.json introuvable).");
+  const index = JSON.parse(zip.readAsText(entry));
+  if (index.formatVersion !== 1 || index.game !== "minecraft" || !Array.isArray(index.files) || !index.dependencies?.minecraft) {
+    throw new ModpackError("Index de modpack Modrinth illisible ou incomplet.");
+  }
+  const dependencies = index.dependencies;
+  const loaderKey = ["neoforge", "forge", "fabric-loader", "quilt-loader"].find((key) => dependencies[key]);
+  const loaderPrefix = { neoforge: "neoforge", forge: "forge", "fabric-loader": "fabric", "quilt-loader": "quilt" }[loaderKey];
+  return {
+    minecraftVersion: dependencies.minecraft,
+    loaderId: loaderKey ? `${loaderPrefix}-${dependencies[loaderKey]}` : null,
+    overrideDirs: ["overrides", "client-overrides"],
+    resolveFiles: async () => resolveModrinthFiles(index),
+  };
+}
+
+function resolveModrinthFiles(index) {
+  const entries = [];
+  for (const file of index.files) {
+    if (file.env?.client === "unsupported") continue; // mod serveur uniquement
+    const url = (file.downloads || []).find((candidate) => {
+      try {
+        const parsed = new URL(candidate);
+        return parsed.protocol === "https:" && MRPACK_ALLOWED_HOSTS.has(parsed.hostname);
+      } catch {
+        return false;
+      }
+    });
+    if (!url) {
+      throw new ModpackError(`Le fichier "${file.path}" du modpack se télécharge depuis un site non autorisé.`, {
+        code: "disallowed_download_host",
+      });
+    }
+    // SHA-512 : toujours donne par un .mrpack conforme, verifie au telechargement en plus du SHA-1.
+    entries.push({ path: file.path, url, sha1: file.hashes?.sha1 || null, sha512: file.hashes?.sha512 || null, size: file.fileSize || null });
+  }
+  return entries;
+}
+
+// FTB (21/10) : pas d'archive. Le site donne le pack et la version a suivre (info.ftb, voir
+// /api/launcher/servers/[slug]/modpack), le launcher lit la liste des fichiers de cette version
+// sur l'API publique de FTB (sans cle, User-Agent obligatoire) : chemin, lien, SHA-1, taille,
+// et pour les mods CurseForge leur identifiant de fichier CurseForge.
+async function readFtbPack(ftb) {
+  const packId = Number(ftb?.packId);
+  const versionId = Number(ftb?.versionId);
+  if (!Number.isInteger(packId) || packId <= 0 || !Number.isInteger(versionId) || versionId <= 0) {
+    throw new ModpackError("Pack FTB invalide (identifiant manquant).", { code: "ftb_invalid" });
+  }
+  let version;
+  try {
+    const res = await fetch(`${FTB_API}/${packId}/${versionId}`, {
+      headers: { "User-Agent": MODRINTH_USER_AGENT, Accept: "application/json" },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    version = await res.json();
+  } catch (error) {
+    throw new ModpackError(`Liste des fichiers du pack FTB illisible : ${error.message}`, { code: "ftb_unavailable" });
+  }
+  if (version?.status !== "success" || !Array.isArray(version.files) || !Array.isArray(version.targets)) {
+    throw new ModpackError("Version de pack FTB illisible ou incomplète.", { code: "ftb_invalid" });
+  }
+  const minecraftVersion = version.targets.find((target) => target?.name === "minecraft")?.version || null;
+  if (!minecraftVersion) throw new ModpackError("Ce pack FTB n'indique pas sa version de Minecraft.", { code: "ftb_invalid" });
+  // Meme identifiant de chargeur que les deux autres formats ("neoforge-21.1.250"), lu par
+  // parseLoader. FTB donne la version seule ; un ancien pack Forge peut ecrire "1.20.1-47.2.0".
+  const loader = version.targets.find((target) => ["neoforge", "forge", "fabric", "quilt"].includes(target?.name));
+  let loaderVersion = loader ? String(loader.version || "") : "";
+  if (loader?.name === "forge" && loaderVersion.startsWith(`${minecraftVersion}-`)) loaderVersion = loaderVersion.slice(minecraftVersion.length + 1);
+  return {
+    minecraftVersion,
+    loaderId: loader ? `${loader.name}-${loaderVersion}` : null,
+    overrideDirs: [],
+    resolveFiles: (options) => resolveFtbFiles({ ...options, files: version.files }),
+  };
+}
+
+// Fichier de config FTB deja present : meme regle que les overrides (extractOverrides). Garde tel
+// quel s'il a ete modifie par le joueur ou s'il est inconnu de l'installation precedente, et
+// options.txt n'est jamais reecrit. Renvoie true si le fichier est garde (pas telecharge).
+async function keptByPlayer(instanceDir, relative, packSha1, previousHashes, nextHashes) {
+  const target = safeJoin(instanceDir, relative);
+  if (!fs.existsSync(target)) return false;
+  const currentHash = await sha1File(target);
+  if (packSha1 && currentHash === packSha1) return false; // deja a jour
+  const installedHash = previousHashes[relative];
+  if (relative !== "options.txt" && installedHash && currentHash === installedHash) return false; // pas touche : mis a jour
+  nextHashes[relative] = installedHash || currentHash;
+  return true;
+}
+
+// Ordre pour chaque fichier (regle validee par Rushi le 21/10) :
+// 1) mod CurseForge (champ `curseforge`) : lien demande a NOTRE route CurseForge, comme un pack
+//    CurseForge. Jamais le lien edge.forgecdn.net ni les "mirrors" que donne l'API FTB : ce serait
+//    contourner le choix d'un auteur qui interdit les autres launchers (et mettre notre cle en
+//    danger). Pas de lien (mod bloque) : meme fichier cherche sur Modrinth par SHA-1 et taille
+//    (findOnModrinth), sinon fenetre des mods a ajouter a la main.
+// 2) fichier heberge par FTB (FTB_ALLOWED_HOSTS) : telecharge chez eux, SHA-1 verifie.
+// 3) tout autre hote : jamais telecharge tel quel, traite comme un mod bloque.
+// Les fichiers "serveronly" sont ignores (mods de serveur uniquement).
+async function resolveFtbFiles({ config, files, onProgress, instanceDir, manualSearchDirs = [], previousHashes = {}, nextHashes = {} }) {
+  const entries = [];
+  const cfItems = [];
+  const blocked = [];
+  const kept = [];
+  // Origine des mods (pas des configs) : ligne « 405 depuis CurseForge · 5 depuis Modrinth… ».
+  const origins = { curseforge: 0, modrinth: 0, ftb: 0 };
+
+  for (const file of files) {
+    if (!file || file.serveronly) continue;
+    const name = String(file.name || "");
+    if (!name) continue;
+    const dir = String(file.path || ".").replace(/\\/g, "/");
+    const relative = path.posix.normalize(`${dir}/${name}`).replace(/^(\.\/)+/, "");
+    safeJoin(instanceDir, relative); // anti « zip slip » : un chemin hors de l'instance arrete tout
+    const sha1 = /^[0-9a-f]{40}$/i.test(file.sha1 || "") ? file.sha1.toLowerCase() : null;
+    const size = Number.isInteger(file.size) && file.size > 0 ? file.size : null;
+    const entry = { path: relative, url: null, sha1, size };
+    const isMod = file.type === "mod";
+
+    const cfFileId = Number(file.curseforge?.file);
+    if (file.curseforge && Number.isInteger(cfFileId) && cfFileId > 0) {
+      const modId = Number(file.curseforge.project);
+      cfItems.push({ fileId: cfFileId, modId: Number.isInteger(modId) && modId > 0 ? modId : null, name, entry, isMod });
+      continue;
+    }
+
+    let host = null;
+    try {
+      const url = new URL(file.url);
+      if (url.protocol === "https:") host = url.hostname;
+    } catch {
+      // lien illisible : traite comme un hote non autorise
+    }
+    if (host && FTB_ALLOWED_HOSTS.has(host)) {
+      if (!isMod && (await keptByPlayer(instanceDir, relative, sha1, previousHashes, nextHashes))) {
+        kept.push(relative);
+        continue;
+      }
+      entry.url = file.url;
+      entries.push(entry);
+      if (isMod) origins.ftb++;
+      else if (sha1) nextHashes[relative] = sha1;
+      continue;
+    }
+    blocked.push({ info: { id: null, modId: null, modName: null, fileName: name, pageUrl: null }, entry, isMod });
+  }
+
+  // Liens CurseForge par paquets de 100, comme resolveCurseforgeFiles. CurseForge coupe ou
+  // injoignable (interrupteur admin, cle absente) : tous ces mods passent par Modrinth / la main.
+  const infos = new Map();
+  let curseforgeAvailable = true;
+  if (cfItems.length) {
+    onProgress({ text: "Récupération de la liste des mods…" });
+    try {
+      for (let i = 0; i < cfItems.length; i += FILE_INFO_BATCH) {
+        const data = await siteJson(config, "/api/launcher/curseforge/files", {
+          method: "POST",
+          body: JSON.stringify({ fileIds: cfItems.slice(i, i + FILE_INFO_BATCH).map((item) => item.fileId) }),
+        });
+        for (const info of data.files) infos.set(info.id, info);
+      }
+    } catch (error) {
+      curseforgeAvailable = false;
+      infos.clear();
+      onProgress({ text: `CurseForge indisponible (${error.message}) : recherche des mods sur Modrinth.` });
+    }
+  }
+  for (const item of cfItems) {
+    const info = infos.get(item.fileId);
+    if (info?.downloadUrl) {
+      item.entry.url = info.downloadUrl;
+      item.entry.sha1 = info.sha1 || item.entry.sha1;
+      item.entry.size = info.fileLength || item.entry.size;
+      entries.push(item.entry);
+      if (item.isMod) origins.curseforge++;
+    } else {
+      blocked.push({
+        info: info || { id: item.fileId, modId: item.modId, modName: null, fileName: item.name, pageUrl: null },
+        entry: item.entry,
+        isMod: item.isMod,
+        removed: curseforgeAvailable && !info,
+      });
+    }
+  }
+
+  if (blocked.length && instanceDir) {
+    reportManualFiles(await findManualFiles(blocked, { instanceDir, searchDirs: manualSearchDirs }), onProgress);
+  }
+  const fromModrinth = await findOnModrinth(blocked.filter((item) => !item.ready));
+  if (fromModrinth > 0) onProgress({ text: `${fromModrinth} mod(s) récupéré(s) sur Modrinth.` });
+  if (blocked.length) onProgress({ blocked: { total: blocked.length, found: blocked.filter((item) => item.ready).length } });
+  const fromModrinthMods = blocked
+    .filter((item) => item.viaModrinth)
+    .map((item) => (typeof item.info.modName === "string" && item.info.modName) || item.info.fileName)
+    .filter(Boolean);
+
+  const manualMods = [];
+  for (const item of blocked) {
+    if (item.ready) {
+      entries.push(item.entry);
+      if (item.viaModrinth && item.isMod) origins.modrinth++;
+      continue;
+    }
+    const { info } = item;
+    manualMods.push({
+      fileId: info.id,
+      modId: info.modId,
+      modName: typeof info.modName === "string" ? info.modName : null,
+      fileName: info.fileName,
+      pageUrl: safeCurseforgeUrl(info.pageUrl) || curseforgeProjectUrl(info.modId),
+      reason: item.removed ? "removed" : "blocked",
+      kind: manualKindOfPath(item.entry?.path),
+    });
+  }
+  onProgress({
+    origins,
+    text: `Mods : ${origins.curseforge} depuis CurseForge, ${origins.modrinth} depuis Modrinth, ${origins.ftb} depuis les serveurs FTB.`,
+  });
+  if (kept.length) onProgress({ text: `${kept.length} fichier(s) modifié(s) par toi conservé(s) : ${kept.slice(0, 5).join(", ")}` });
+
+  if (manualMods.length) {
+    throw new ModpackError(
+      `${manualMods.length} mod(s) du modpack ne peuvent pas être installés automatiquement : ${manualMods
+        .map((m) => m.modName || m.fileName || `fichier ${m.fileId}`)
+        .join(", ")}.`,
+      { code: "manual_mods", manualMods, fromModrinth, fromModrinthMods },
+    );
+  }
+  entries.fromModrinthMods = fromModrinthMods;
+  // Configs gardees : a ne pas supprimer comme « anciens fichiers » (voir installFiles).
+  entries.keptPaths = kept;
+  entries.origins = origins;
+  return entries;
+}
+
+// CurseForge : les liens de telechargement des mods sont demandes au site, qui
+// garde la cle. Un mod sans lien (auteur qui interdit le telechargement par les
+// autres launchers, "allowModDistribution" faux) ne peut pas etre telecharge par nous.
+// Le joueur peut le recuperer lui-meme (14/10, demande de Rushi, comme Prism ou
+// ATLauncher) : il le telecharge depuis la page du mod et le laisse dans son dossier
+// Telechargements (`manualSearchDirs`), ou il est retrouve ici par sa taille puis son
+// empreinte SHA-1, et copie dans mods/. L'original reste dans Telechargements (audit 25/10 :
+// avant, il y etait efface sans rien demander au joueur). Ce qui manque encore fait echouer
+// l'installation avec la liste de ces mods (code "manual_mods"), affichee par le launcher.
+// Pas de lien de repli vers le CDN de CurseForge : il contournerait le choix de l'auteur.
+async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDir, manualSearchDirs = [] }) {
+  onProgress({ text: "Récupération de la liste des mods…" });
+  const wantedIds = manifest.files.map((f) => f.fileID);
+  const infos = new Map();
+  for (let i = 0; i < wantedIds.length; i += FILE_INFO_BATCH) {
+    const data = await siteJson(config, "/api/launcher/curseforge/files", {
+      method: "POST",
+      body: JSON.stringify({ fileIds: wantedIds.slice(i, i + FILE_INFO_BATCH) }),
+    });
+    for (const file of data.files) infos.set(file.id, file);
+  }
+
+  const entries = [];
+  const blocked = [];
+  const manualMods = [];
+  const dpDir = serverDatapackDir([...infos.values()].map((x) => x.fileName).filter((n) => /\.jar$/i.test(String(n || ""))), manifest?.minecraft?.version);
+  for (const fileId of wantedIds) {
+    const info = infos.get(fileId);
+    if (!info) {
+      manualMods.push({ fileId, modId: null, modName: null, fileName: null, pageUrl: null, reason: "removed" });
+      continue;
+    }
+    // .zip de la liste (pack de ressources, shader ou data pack) : rangé dans son dossier, plus dans
+    // mods/ (04/11, « Mekanism CTM w/ Fusion »).
+    const zip = /\.zip$/i.test(String(info.fileName || ""));
+    const dir = !zip ? "mods" : zipDirOf(info, dpDir);
+    const entry = { path: `${dir}/${path.basename(info.fileName)}`, url: info.downloadUrl, sha1: info.sha1, size: info.fileLength };
+    if (info.downloadUrl && !isAllowedModpackUrl(info.downloadUrl)) {
+      throw new ModpackError(`Le mod "${info.fileName}" du modpack se télécharge depuis un site non autorisé.`, {
+        code: "disallowed_download_host",
+      });
+    }
+    if (info.downloadUrl) entries.push(entry);
+    else blocked.push({ info, entry });
+  }
+
+  if (blocked.length && instanceDir) {
+    reportManualFiles(await findManualFiles(blocked, { instanceDir, searchDirs: manualSearchDirs }), onProgress);
+  }
+  const fromModrinth = await findOnModrinth(blocked.filter((item) => !item.ready));
+  if (fromModrinth > 0) onProgress({ text: `${fromModrinth} mod(s) récupéré(s) sur Modrinth.` });
+  // Etape « Mods bloqués : recherche sur Modrinth · x sur y trouvés » du panneau de la pilule.
+  if (blocked.length) onProgress({ blocked: { total: blocked.length, found: blocked.filter((item) => item.ready).length } });
+  // Noms des mods pris sur Modrinth : liste « Installés depuis Modrinth » de la fenetre des mods.
+  const fromModrinthMods = blocked
+    .filter((item) => item.viaModrinth)
+    .map((item) => (typeof item.info.modName === "string" && item.info.modName) || item.info.fileName)
+    .filter(Boolean);
+  for (const { info, entry, ready } of blocked) {
+    if (ready) entries.push(entry);
+    else {
+      manualMods.push({
+        fileId: info.id,
+        modId: info.modId,
+        modName: typeof info.modName === "string" ? info.modName : null,
+        fileName: info.fileName,
+        pageUrl: safeCurseforgeUrl(info.pageUrl) || curseforgeProjectUrl(info.modId),
+        reason: "blocked",
+        kind: manualKindOfPath(entry.path),
+      });
+    }
+  }
+
+  if (manualMods.length) {
+    throw new ModpackError(
+      `${manualMods.length} mod(s) du modpack ne peuvent pas être installés automatiquement : ${manualMods
+        .map((m) => m.modName || m.fileName || `fichier ${m.fileId}`)
+        .join(", ")}.`,
+      { code: "manual_mods", manualMods, fromModrinth, fromModrinthMods },
+    );
+  }
+  // Rapport du test de publication (lot 5) : « Récupérés sur Modrinth (N) » meme quand tout est la.
+  entries.fromModrinthMods = fromModrinthMods;
+  return entries;
+}
+
+// Mods bloques sur CurseForge que leur auteur publie aussi sur Modrinth (16/10, demande de Rushi) :
+// on cherche sur Modrinth le fichier qui a EXACTEMENT la meme empreinte SHA-1 et la meme taille
+// que celui du modpack. C'est donc le meme fichier, octet pour octet, pris sur un site ou il est
+// distribue avec l'accord de son auteur : on ne contourne pas le choix fait sur CurseForge, et une
+// autre version (ou une copie modifiee par un tiers) n'est jamais prise a la place. Le
+// telechargement reverifie taille et SHA-1 (downloadFile). Modrinth injoignable = on retombe
+// simplement sur la fenetre des mods a ajouter a la main.
+// Marque `ready` sur chaque mod trouve (avec son lien Modrinth) et renvoie leur nombre.
+const MODRINTH_API = "https://api.modrinth.com/v2";
+const MODRINTH_USER_AGENT = "Omniscient-Launcher (app.omniscient.launcher)";
+
+async function findOnModrinth(items) {
+  const wanted = items.filter((item) => /^[0-9a-f]{40}$/i.test(item.entry.sha1 || "") && item.entry.size);
+  if (!wanted.length) return 0;
+  let versions;
+  try {
+    const res = await fetch(`${MODRINTH_API}/version_files`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": MODRINTH_USER_AGENT },
+      body: JSON.stringify({ hashes: wanted.map((item) => item.entry.sha1.toLowerCase()), algorithm: "sha1" }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return 0;
+    versions = await res.json();
+  } catch {
+    return 0;
+  }
+  let found = 0;
+  for (const item of wanted) {
+    const sha1 = item.entry.sha1.toLowerCase();
+    const file = versions?.[sha1]?.files?.find((f) => f?.hashes?.sha1?.toLowerCase() === sha1 && f.size === item.entry.size);
+    let url;
+    try {
+      url = new URL(file?.url);
+    } catch {
+      continue;
+    }
+    if (url.protocol !== "https:" || url.hostname !== "cdn.modrinth.com") continue;
+    item.entry.url = url.href;
+    if (/^[0-9a-f]{128}$/i.test(file.hashes?.sha512 || "")) item.entry.sha512 = file.hashes.sha512;
+    item.ready = true;
+    item.viaModrinth = true;
+    found++;
+  }
+  return found;
+}
+
+// Seules les pages du site de CurseForge sont ouvertes depuis la liste des mods bloques.
+// Repli quand le site ne donne pas la page exacte du fichier (site en ligne pas encore a jour) :
+// https://www.curseforge.com/projects/<id du projet> redirige vers la page du mod. L'id vient du
+// manifeste, donc c'est toujours le bon mod, contrairement a une recherche par nom (plusieurs
+// mods peuvent porter le meme nom). On ouvre seulement la page : le joueur telecharge lui-meme.
+function curseforgeProjectUrl(modId) {
+  return Number.isInteger(modId) && modId > 0 ? `https://www.curseforge.com/projects/${modId}` : null;
+}
+
+function safeCurseforgeUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "www.curseforge.com" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+// Mods bloques deja presents (dans mods/ de l'instance, ou deposes par le joueur dans un
+// des dossiers `searchDirs`) : un fichier n'est accepte que si sa taille ET son empreinte
+// SHA-1 sont celles annoncees par CurseForge — sans les deux, il n'est jamais copie. Seuls les
+// .jar/.zip de la bonne taille sont lus, rien d'autre du dossier Telechargements.
+// Deplacement (26/10, demande de Rushi, remplace la copie seule de l'audit 25/10) : copie vers un
+// .part puis renommage, copie relue (taille + SHA-1), et SEULEMENT ensuite l'original est retire de
+// Telechargements pour liberer la place. Rien d'autre du dossier n'est touche (ni les autres
+// versions, ni les fichiers qui ne correspondent pas). Si l'original ne peut pas etre efface
+// (ouvert par le navigateur...), il reste et `kept` le compte.
+// Marque `ready` sur chaque mod retrouve et renvoie { copied, kept } pour les fichiers pris dans searchDirs.
+function reportManualFiles({ copied, kept }, onProgress) {
+  if (copied > 0) onProgress({ text: `${copied} mod(s) ajouté(s) à la main retrouvé(s) et déplacé(s) dans le jeu.` });
+  if (kept > 0) onProgress({ text: `${kept} fichier(s) n'ont pas pu être retirés de Téléchargements (ouverts par un autre programme ?) : ils y sont restés, tu peux les supprimer toi-même.` });
+}
+
+async function findManualFiles(blocked, { instanceDir, searchDirs }) {
+  let copied = 0;
+  let kept = 0;
+  const movedHashes = new Set();
+  const pending = [];
+  for (const item of blocked) {
+    const { sha1, size } = item.entry;
+    if (!sha1 || !size) continue;
+    item.target = safeJoin(instanceDir, item.entry.path);
+    if (await fileMatches(item.target, { sha1, size })) item.ready = true;
+    else pending.push(item);
+  }
+  if (!pending.length) return { copied, kept };
+
+  const bySize = new Map();
+  for (const item of pending) {
+    if (!bySize.has(item.entry.size)) bySize.set(item.entry.size, []);
+    bySize.get(item.entry.size).push(item);
+  }
+  for (const dir of searchDirs) {
+    let dirents;
+    try {
+      dirents = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const dirent of dirents) {
+      if (!dirent.isFile() || !/\.(jar|zip)$/i.test(dirent.name)) continue;
+      const candidate = path.join(dir, dirent.name);
+      let stat;
+      try {
+        stat = await fsp.stat(candidate);
+      } catch {
+        continue;
+      }
+      const sizeMatches = bySize.get(stat.size) || [];
+      if (!sizeMatches.length) continue;
+      let hash;
+      try {
+        hash = await sha1File(candidate);
+      } catch {
+        continue;
+      }
+      // Doublon exact d'un mod deja deplace (« nom (1).jar », meme empreinte) : retire aussi.
+      if (movedHashes.has(hash)) {
+        await fsp.rm(candidate).catch(() => kept++);
+        continue;
+      }
+      const match = sizeMatches.find((item) => !item.ready && item.entry.sha1.toLowerCase() === hash);
+      if (!match) continue;
+      await fsp.mkdir(path.dirname(match.target), { recursive: true });
+      await fsp.copyFile(candidate, `${match.target}.part`);
+      await fsp.rename(`${match.target}.part`, match.target);
+      // Copie relue : un fichier modifie entre-temps n'est pas compte comme retrouve.
+      if (!(await fileMatches(match.target, { sha1: match.entry.sha1, size: match.entry.size }))) {
+        await fsp.rm(match.target, { force: true }).catch(() => {});
+        continue;
+      }
+      match.ready = true;
+      copied++;
+      movedHashes.add(hash);
+      // Fichier tout juste telecharge (28/10) : le navigateur le fait encore analyser par
+      // l'antivirus, le retirer maintenant affichait « Echec, erreur de l'analyse antivirus ».
+      if (Date.now() - stat.mtimeMs < 30_000) {
+        setTimeout(() => fsp.rm(candidate).catch(() => {}), 30_000);
+        continue;
+      }
+      try {
+        await fsp.rm(candidate);
+      } catch {
+        kept++;
+      }
+    }
+  }
+  return { copied, kept };
+}
+
+// Copie un dossier "overrides" du modpack (configs, etc.) dans l'instance.
+// options.txt est laisse tel quel s'il existe deja : ce sont les reglages du
+// joueur (touches, video), pas ceux du modpack.
+// Renvoie { count, jars } : `jars` = les mods (.jar sous mods/) livres dans
+// l'archive elle-meme, a suivre comme les mods telecharges — sinon, en
+// changeant de modpack ou de version, ils resteraient orphelins dans mods/.
+// Fichiers du pack (configs, options, mods livrés dans les overrides). Règles :
+// - absent : copié ;
+// - options.txt existant : jamais réécrit ;
+// - modifié par le joueur (son empreinte ne correspond plus à celle installée),
+//   ou inconnu de l'installation précédente : gardé tel quel ;
+// - non modifié et changé dans le pack : mis à jour.
+// `previousHashes` / `nextHashes` : empreintes (SHA-1) des fichiers installés.
+// Audit du 01/11 (L3) : AdmZip met tout le pack en mémoire (300 Mo de plus pour un pack de 300 Mo). Ici,
+// seule la liste des fichiers et les deux petits fichiers de description sont lus d'avance ; le reste
+// l'est un fichier à la fois. Même forme que AdmZip pour le code qui suit. Archive que notre lecteur
+// refuse : ancienne lecture complète.
+async function openPackZip(zipPath) {
+  try {
+    const entries = await listZip(zipPath);
+    const small = new Map();
+    for (const e of entries) {
+      if (e.name === "manifest.json" || e.name === "modrinth.index.json") small.set(e.name, await readZipEntry(zipPath, e));
+    }
+    return {
+      getEntry: (name) => (small.has(name) ? { entryName: name } : null),
+      readAsText: (entry) => small.get(entry.entryName).toString("utf8"),
+      getEntries: () => entries.map((e) => ({ entryName: e.name, isDirectory: e.name.endsWith("/"), getData: () => readZipEntry(zipPath, e, { maxBytes: 1024 * 1024 * 1024 }) })),
+    };
+  } catch {
+    return new AdmZip(zipPath);
+  }
+}
+
+async function extractOverrides(zip, dirName, instanceDir, previousHashes, nextHashes) {
+  const prefix = `${dirName}/`;
+  let count = 0;
+  const jars = [];
+  const kept = [];
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory || !entry.entryName.startsWith(prefix)) continue;
+    // Zip fabrique sous Windows avec des "\\" dans les noms : Windows les lit comme
+    // des separateurs, Linux en ferait un nom de fichier. On aligne Linux sur Windows.
+    const rawRelative = entry.entryName.slice(prefix.length);
+    const relative = process.platform === "win32" ? rawRelative : rawRelative.replace(/\\/g, "/");
+    if (!relative) continue;
+    const target = safeJoin(instanceDir, relative);
+    const isJar = /^mods\/.+\.jar$/i.test(relative);
+    if (isJar) jars.push(relative);
+    const data = await entry.getData();
+    const packHash = crypto.createHash("sha1").update(data).digest("hex");
+
+    if (fs.existsSync(target)) {
+      const currentHash = await sha1File(target);
+      const installedHash = previousHashes[relative];
+      const untouched = installedHash && currentHash === installedHash;
+      if (relative === "options.txt" || !untouched) {
+        // Trace toujours la base de comparaison avec ce qui est REELLEMENT sur
+        // disque (currentHash), meme quand l'installation precedente ne
+        // connaissait pas ce fichier (installedHash absent : premiere
+        // installation, ancien format d'etat...) — sinon ce fichier ne redevient
+        // jamais traçable aux installations suivantes (trouve par l'audit du
+        // 2026-10-10, point mineur).
+        nextHashes[relative] = installedHash || currentHash;
+        if (relative !== "options.txt" && installedHash) kept.push(relative);
+        continue;
+      }
+      if (currentHash === packHash) {
+        nextHashes[relative] = packHash;
+        continue;
+      }
+    }
+
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+    await fsp.writeFile(target, data);
+    nextHashes[relative] = packHash;
+    count++;
+  }
+  return { count, jars, kept };
+}
+
+// --- Fichiers du modpack (mods, packs de ressources...) ---------------------
+
+// Telecharge les fichiers (6 en parallele, taille et empreinte verifiees,
+// fichiers deja corrects laisses tels quels) et supprime ceux que la version
+// precedente du modpack avait installes et que celle-ci n'a plus (sinon deux
+// versions du meme mod se retrouvent dans mods/). Les fichiers ajoutes a la
+// main par le joueur ne sont jamais touches. `keepPaths` : fichiers deja
+// ecrits par cette installation (mods livres dans les overrides), a ne pas
+// supprimer meme s'ils figuraient dans la version precedente.
+// Renvoie les chemins telecharges.
+// `signal`/`waitIfPaused` (2026-10-11, gestionnaire de telechargements) :
+// permettent au bouton Annuler/Pause du panneau de taches d'agir au milieu
+// d'une installation — modpack.js reste sans dependance a Electron (voir
+// l'en-tete du fichier), donc ni l'un ni l'autre ne connait la notion de
+// "tache", juste un AbortSignal standard et une fonction a attendre.
+// onProgress facultatif (29/10) : sans lui, l'appel plantait dans le flux à chaque morceau reçu et le
+// téléchargement restait bloqué 60 s (« aucune donnée reçue ») : ajout CurseForge d'un pack de ressources.
+async function installFiles({ entries, instanceDir, previousFiles, keepPaths = [], onProgress = () => {}, signal, waitIfPaused }) {
+  const targets = entries.map((entry) => ({ ...entry, target: safeJoin(instanceDir, entry.path) }));
+  const totalBytes = targets.reduce((sum, entry) => sum + (entry.size || 0), 0);
+
+  let done = 0;
+  let downloadedBytes = 0;
+  let failure = null;
+  // Chemins reellement telecharges pendant CETTE execution (pas ceux deja
+  // corrects avant) : les seuls a supprimer si l'installation est annulee —
+  // une mise a jour annulee ne doit jamais abimer l'installation precedente.
+  const freshlyDownloaded = [];
+  const queue = [...targets];
+  const worker = async () => {
+    while (queue.length && !failure) {
+      if (waitIfPaused) await waitIfPaused();
+      if (signal?.aborted) {
+        failure = failure || new DOMException("Installation annulée.", "AbortError");
+        break;
+      }
+      const entry = queue.shift();
+      try {
+        if (!(await fileMatches(entry.target, { sha1: entry.sha1, size: entry.size }))) {
+          await downloadFile(entry.url, entry.target, {
+            sha1: entry.sha1,
+            sha512: entry.sha512,
+            size: entry.size,
+            signal,
+            onBytes: (n) => {
+              downloadedBytes += n;
+              onProgress({ type: "mods-bytes", bytes: downloadedBytes, totalBytes });
+            },
+          });
+          freshlyDownloaded.push(entry.target);
+        }
+        done++;
+        onProgress({ text: `Téléchargement des mods : ${done}/${targets.length}`, type: "mods", task: done, total: targets.length, bytes: downloadedBytes, totalBytes });
+      } catch (error) {
+        failure = failure || error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MOD_DOWNLOAD_CONCURRENCY, targets.length) }, worker));
+  if (failure) {
+    if (failure.name === "AbortError") {
+      await Promise.all(freshlyDownloaded.map((target) => fsp.rm(target, { force: true })));
+    }
+    throw failure;
+  }
+
+  // Tous les nouveaux fichiers sont desormais confirmes presents sur disque
+  // (telecharges avec succes, ou deja corrects) : on peut supprimer sans risque
+  // les anciens fichiers que cette version du modpack n'utilise plus. Supprimer
+  // AVANT le telechargement (comme avant ce correctif) laissait l'instance
+  // incomplete — anciens fichiers deja effaces, nouveaux pas encore la — dès
+  // qu'un mod echouait apres ses tentatives (trouve par l'audit du 2026-10-10).
+  const keep = new Set([...targets.map((entry) => entry.target), ...keepPaths.map((p) => safeJoin(instanceDir, p))]);
+  for (const old of previousFiles) {
+    const oldTarget = safeJoin(instanceDir, old);
+    if (!keep.has(oldTarget)) await fsp.rm(oldTarget, { force: true });
+  }
+
+  return entries.map((entry) => entry.path);
+}
+
+// --- Chargeur de mods (NeoForge / Forge / Fabric / Quilt) --------------------
+
+// Identifiant de version Maven valide (ex. "1.20.1-47.2.0") : Fabric assainit
+// deja loaderVersion/minecraftVersion via encodeURIComponent avant de les
+// mettre dans une URL (meta.fabricmc.net) — Forge/NeoForge concatenaient ces
+// memes valeurs directement dans un chemin Maven sans aucun controle (trouve
+// par l'audit du 2026-10-10, point mineur). Ici on rejette plutot que
+// d'encoder : un identifiant de version Maven ne contient normalement que ces
+// caracteres, et encoder autoriserait silencieusement une valeur inattendue.
+const MAVEN_VERSION_PATTERN = /^[\w.+-]+$/;
+
+// Minecraft avant 1.13 : ancien format de lancement (minecraftArguments, launchwrapper, Java 8).
+// Pris en charge pour Forge a partir de 1.7 (28/10, Rushi : « la 1.12.2 et la 1.7.10 sont les
+// meilleures versions »), voir installLegacyForge et prepareLaunchVersion. Fabric, Quilt et
+// NeoForge n'existent pas avant 1.13 (1.14 / 1.20.2). Teste ici, AVANT tout telechargement :
+// sinon le joueur telechargeait tout le pack pour se voir refuser le lancement a la fin.
+function isLegacyMinecraft(minecraftVersion) {
+  const match = /^1\.(\d+)(?:\.|$)/.exec(minecraftVersion || "");
+  return Boolean(match) && Number(match[1]) < 13;
+}
+function legacyForgeSupported(minecraftVersion) {
+  const match = /^1\.(\d+)(?:\.|$)/.exec(minecraftVersion || "");
+  return Boolean(match) && Number(match[1]) >= 7;
+}
+
+function parseLoader(loaderId, minecraftVersion) {
+  // Quilt (14/10) : derive de Fabric, meme fonctionnement (profil JSON servi par son API
+  // officielle). CurseForge l'ecrit "quilt-<version>", Modrinth "quilt-loader" (voir
+  // readModrinthPack, qui donne aussi "quilt-<version>").
+  const match = /^(neoforge|forge|fabric|quilt)-(.+)$/.exec(loaderId || "");
+  if (!match) {
+    throw new ModpackError(
+      `Chargeur de mods non pris en charge pour l'instant : ${loaderId || "aucun"} (NeoForge, Forge, Fabric et Quilt seulement).`,
+      { code: "unsupported_loader" },
+    );
+  }
+  const [, kind, loaderVersion] = match;
+  if (isLegacyMinecraft(minecraftVersion) && !(kind === "forge" && legacyForgeSupported(minecraftVersion))) {
+    throw new ModpackError(
+      kind === "forge"
+        ? `Forge pour Minecraft ${minecraftVersion} (avant 1.7) n'est pas pris en charge par le launcher.`
+        : `${{ neoforge: "NeoForge", fabric: "Fabric", quilt: "Quilt" }[kind]} n'existe pas pour Minecraft ${minecraftVersion} : ce pack demande un chargeur introuvable.`,
+      { code: "unsupported_legacy" },
+    );
+  }
+  // Fabric aussi (audit 14/10, L2) : sa version servait telle quelle dans un chemin du dossier
+  // de jeu. Un pack truque pouvait donner "x/../../instances/<slug>/evil" et faire lire un faux
+  // JSON de version (depose par ses propres overrides) avec des arguments Java malveillants.
+  if (!MAVEN_VERSION_PATTERN.test(loaderVersion) || !MAVEN_VERSION_PATTERN.test(minecraftVersion || "")) {
+    throw new ModpackError(`Version de chargeur invalide : ${loaderId} (Minecraft ${minecraftVersion}).`, { code: "invalid_loader_version" });
+  }
+  if (kind === "fabric" || kind === "quilt") return { kind, loaderVersion };
+  const mavenVersion = kind === "neoforge" ? loaderVersion : `${minecraftVersion}-${loaderVersion}`;
+  if (!MAVEN_VERSION_PATTERN.test(mavenVersion)) {
+    throw new ModpackError(`Version de chargeur invalide : ${mavenVersion}.`, { code: "invalid_loader_version" });
+  }
+  const installerUrl =
+    kind === "neoforge"
+      ? `https://maven.neoforged.net/releases/net/neoforged/neoforge/${mavenVersion}/neoforge-${mavenVersion}-installer.jar`
+      : `https://maven.minecraftforge.net/net/minecraftforge/forge/${mavenVersion}/forge-${mavenVersion}-installer.jar`;
+  // Vieux Forge (1.7.10, 1.8.9, 1.9 a 1.11…) : la version Maven porte encore le nom de la branche,
+  // ex. « 1.7.10-10.13.4.1614-1.7.10 », alors que les packs n'ecrivent que « forge-10.13.4.1614 ».
+  const legacyUrl =
+    kind === "forge" && isLegacyMinecraft(minecraftVersion)
+      ? `https://maven.minecraftforge.net/net/minecraftforge/forge/${mavenVersion}-${minecraftVersion}/forge-${mavenVersion}-${minecraftVersion}-installer.jar`
+      : null;
+  return { kind, installerUrl, installerUrls: legacyUrl ? [installerUrl, legacyUrl] : [installerUrl] };
+}
+
+// Identifiant de la version que l'installateur va creer (ex. "neoforge-21.1.200"),
+// lu dans le jar de l'installateur plutot que devine.
+function readInstalledVersionId(installerPath) {
+  const zip = new AdmZip(installerPath);
+  const profile = zip.getEntry("install_profile.json");
+  if (profile) {
+    const id = JSON.parse(zip.readAsText(profile)).version;
+    if (typeof id === "string" && id) return id;
+  }
+  const version = zip.getEntry("version.json");
+  if (version) return JSON.parse(zip.readAsText(version)).id;
+  throw new ModpackError("Installateur du chargeur illisible (version introuvable).");
+}
+
+function runInstaller({ javaPath, installerPath, gameRoot, onProgress }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(javaPath || "java", ["-jar", installerPath, "--installClient", gameRoot], { cwd: gameRoot });
+    let output = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new ModpackError("L'installation du chargeur de mods a pris trop de temps.", { code: "installer_timeout" }));
+    }, INSTALLER_TIMEOUT_MS);
+    const collect = (chunk) => {
+      output += chunk.toString();
+      if (output.length > 200_000) output = output.slice(-100_000);
+    };
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(new ModpackError(`Impossible de lancer Java pour installer le chargeur : ${error.message}`, { code: "installer_failed" }));
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      if (code === 0 && /Successfully installed/i.test(output)) return resolve();
+      const tail = output.trim().split(/\r?\n/).slice(-3).join(" | ");
+      reject(new ModpackError(`L'installation du chargeur de mods a échoué (code ${code}) : ${tail}`, { code: "installer_failed" }));
+    });
+    onProgress({ text: "Installation du chargeur de mods…" });
+  });
+}
+
+// Fabric et Quilt n'ont pas d'installateur a lancer : leur API officielle sert directement le
+// JSON de version (avec le lien Maven de chaque bibliotheque, que
+// minecraft-launcher-core telecharge au lancement). On le pose tel quel.
+// Profil Quilt verifie le 14/10 (meta.quiltmc.org) : meme forme que Fabric, id
+// "quilt-loader-<version>-<minecraft>", inheritsFrom, arguments.game.
+const PROFILE_LOADERS = {
+  fabric: { name: "Fabric", prefix: "fabric-loader", meta: "https://meta.fabricmc.net/v2/versions/loader" },
+  quilt: { name: "Quilt", prefix: "quilt-loader", meta: "https://meta.quiltmc.org/v3/versions/loader" },
+};
+
+async function installProfileLoader({ kind, loaderVersion, minecraftVersion, gameRoot, onProgress }) {
+  const loader = PROFILE_LOADERS[kind];
+  const versionId = `${loader.prefix}-${loaderVersion}-${minecraftVersion}`;
+  const versionJson = safeJoin(path.join(gameRoot, "versions"), path.join(versionId, `${versionId}.json`));
+  if (fs.existsSync(versionJson)) return versionId;
+
+  onProgress({ text: `Téléchargement de ${loader.name}…` });
+  const res = await fetch(
+    `${loader.meta}/${encodeURIComponent(minecraftVersion)}/${encodeURIComponent(loaderVersion)}/profile/json`,
+    { signal: AbortSignal.timeout(15_000) },
+  );
+  if (!res.ok) {
+    throw new ModpackError(`${loader.name} ${loaderVersion} introuvable pour Minecraft ${minecraftVersion} (HTTP ${res.status}).`, { code: "installer_failed" });
+  }
+  const profile = await res.json();
+  if (profile.id !== versionId || !Array.isArray(profile.libraries)) {
+    throw new ModpackError(`Profil ${loader.name} illisible ou inattendu.`, { code: "installer_failed" });
+  }
+  await fsp.mkdir(path.dirname(versionJson), { recursive: true });
+  await fsp.writeFile(`${versionJson}.part`, JSON.stringify(profile, null, 2));
+  await fsp.rename(`${versionJson}.part`, versionJson);
+  return versionId;
+}
+
+// --- Forge avant Minecraft 1.13 (28/10) -------------------------------------------------------
+// Ces installateurs n'ont pas de mode « client » sans fenetre, et n'ont rien a calculer (pas de
+// « processors », apparus en 1.13) : on fait comme Prism ou MultiMC. Le JSON de version vient de
+// l'installateur (install_profile.json › versionInfo pour l'ancien format, version.json pour celui
+// des dernieres 1.12.2), le jar de Forge aussi (a la racine, ou dans maven/), et chaque bibliotheque
+// est telechargee chez Mojang ou sur le Maven de Forge, empreinte verifiee quand elle est connue.
+// Le JSON ecrit donne a chaque bibliotheque son chemin, son lien et son SHA-1 reel :
+// minecraft-launcher-core n'a plus rien a deviner (ni a retelecharger).
+const LEGACY_LIB_HOSTS = new Set(["libraries.minecraft.net", "maven.minecraftforge.net"]);
+const LIB_NAME_PATTERN = /^[\w.-]+:[\w.-]+:[\w.+-]+(?::[\w.-]+)?$/;
+function mavenPathOf(name) {
+  const [group, artifact, version, classifier] = String(name).split(":");
+  return `${group.replace(/\./g, "/")}/${artifact}/${version}/${artifact}-${version}${classifier ? `-${classifier}` : ""}.jar`;
+}
+function legacyLibUrl(base, rel) {
+  try {
+    // Anciens liens (http://files.minecraftforge.net/maven/) : meme depot, adresse d'aujourd'hui.
+    const fixed = String(base || "").replace(/^http:\/\//, "https://").replace("https://files.minecraftforge.net/maven/", "https://maven.minecraftforge.net/");
+    const url = new URL(rel ? `${fixed.replace(/\/?$/, "/")}${rel}` : fixed);
+    return url.protocol === "https:" && LEGACY_LIB_HOSTS.has(url.hostname) && !url.username ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+async function sha1OfFile(file) {
+  const hash = crypto.createHash("sha1");
+  await pipeline(fs.createReadStream(file), hash);
+  return hash.digest("hex");
+}
+async function installLegacyForge({ installerPath, gameRoot, onProgress }) {
+  const zip = new AdmZip(installerPath);
+  const profileEntry = zip.getEntry("install_profile.json");
+  if (!profileEntry) return null;
+  const profile = JSON.parse(zip.readAsText(profileEntry));
+  let version;
+  const extract = []; // [entree de l'installateur, chemin dans libraries/]
+  if (profile.versionInfo && profile.install?.path && profile.install?.filePath) {
+    version = profile.versionInfo;
+    if (!LIB_NAME_PATTERN.test(profile.install.path)) throw new ModpackError("Installateur de Forge illisible.", { code: "installer_failed" });
+    extract.push([String(profile.install.filePath), mavenPathOf(profile.install.path)]);
+  } else if (zip.getEntry("version.json") && !(profile.processors || []).length && /^1\.\d\./.test(String(profile.minecraft || ""))) {
+    const match = /^1\.(\d+)/.exec(String(profile.minecraft));
+    if (Number(match[1]) >= 13) return null;
+    version = JSON.parse(zip.readAsText(zip.getEntry("version.json")));
+    for (const e of zip.getEntries()) if (!e.isDirectory && e.entryName.startsWith("maven/")) extract.push([e.entryName, e.entryName.slice(6)]);
+  } else return null;
+  if (!version?.minecraftArguments || !Array.isArray(version.libraries) || !MAVEN_VERSION_PATTERN.test(String(version.id || ""))) {
+    throw new ModpackError("Installateur de Forge illisible (version introuvable).", { code: "installer_failed" });
+  }
+  const versionId = version.id;
+  const librariesDir = path.join(gameRoot, "libraries");
+  const versionJson = safeJoin(path.join(gameRoot, "versions"), path.join(versionId, `${versionId}.json`));
+
+  // Deja installe : le JSON est la et toutes ses bibliotheques aussi.
+  if (fs.existsSync(versionJson)) {
+    try {
+      const done = JSON.parse(await fsp.readFile(versionJson, "utf8"));
+      if (done.omniscientLegacy && done.libraries.every((l) => fs.existsSync(safeJoin(librariesDir, l.downloads.artifact.path)))) return versionId;
+    } catch {
+      // JSON abime : on refait tout.
+    }
+  }
+
+  onProgress({ text: "Installation de Forge…" });
+  for (const [entryName, rel] of extract) {
+    const entry = zip.getEntry(entryName);
+    if (!entry) throw new ModpackError(`Installateur de Forge incomplet (${entryName}).`, { code: "installer_failed" });
+    const dest = safeJoin(librariesDir, rel);
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    await fsp.writeFile(`${dest}.part`, entry.getData());
+    await fsp.rename(`${dest}.part`, dest);
+  }
+  const extracted = new Set(extract.map(([, rel]) => rel));
+
+  const libraries = [];
+  const wanted = version.libraries.filter((lib) => lib && lib.clientreq !== false && LIB_NAME_PATTERN.test(String(lib.name || "")));
+  let done = 0;
+  for (const lib of wanted) {
+    const rel = String(lib.downloads?.artifact?.path || mavenPathOf(lib.name));
+    const dest = safeJoin(librariesDir, rel);
+    const known = [lib.downloads?.artifact?.sha1, ...(Array.isArray(lib.checksums) ? lib.checksums : [])].filter((x) => /^[0-9a-f]{40}$/i.test(String(x || ""))).map((x) => x.toLowerCase());
+    const urls = [
+      legacyLibUrl(lib.downloads?.artifact?.url),
+      lib.url ? legacyLibUrl(lib.url, rel) : null,
+      legacyLibUrl("https://libraries.minecraft.net/", rel),
+      legacyLibUrl("https://maven.minecraftforge.net/", rel),
+    ].filter((u, i, all) => u && all.indexOf(u) === i);
+    let sha1 = fs.existsSync(dest) ? await sha1OfFile(dest) : null;
+    let usedUrl = urls[0] || "";
+    // Fichier deja la et bon (ou pose depuis l'installateur) : rien a telecharger.
+    const ok = sha1 && (extracted.has(rel) || !known.length || known.includes(sha1));
+    if (!ok) {
+      let lastError = null;
+      sha1 = null;
+      for (const url of urls) {
+        // Empreinte : celle du JSON, sinon celle que le depot publie a cote du fichier.
+        let expected = known[0] || null;
+        if (!expected) {
+          const res = await fetch(`${url}.sha1`, { signal: AbortSignal.timeout(15_000) }).catch(() => null);
+          const text = res?.ok ? (await res.text()).trim().split(/\s+/)[0] : "";
+          if (/^[0-9a-f]{40}$/i.test(text)) expected = text.toLowerCase();
+        }
+        try {
+          await downloadFile(url, dest, { sha1: expected || undefined });
+          sha1 = await sha1OfFile(dest);
+          usedUrl = url;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (!sha1) throw new ModpackError(`Bibliothèque de Forge introuvable : ${lib.name} (${lastError?.message || "aucun lien"}).`, { code: "installer_failed" });
+    }
+    const size = (await fsp.stat(dest)).size;
+    libraries.push({ name: lib.name, downloads: { artifact: { path: rel, url: extracted.has(rel) ? "" : usedUrl, sha1, size } }, ...(lib.rules ? { rules: lib.rules } : {}) });
+    done++;
+    onProgress({ text: `Installation de Forge (${done}/${wanted.length})…`, type: "forge-libraries", task: done, total: wanted.length });
+  }
+
+  const out = { ...version, libraries, omniscientLegacy: true };
+  delete out._comment_;
+  await fsp.mkdir(path.dirname(versionJson), { recursive: true });
+  await fsp.writeFile(`${versionJson}.part`, JSON.stringify(out, null, 2));
+  await fsp.rename(`${versionJson}.part`, versionJson);
+  return versionId;
+}
+
+// Installe le chargeur : NeoForge/Forge avec leur installateur officiel, en mode
+// client, dans le dossier de jeu partage. Ne refait rien s'il est deja la.
+// 04/11 : une seule installation à la fois par chargeur (Forge, NeoForge, Forge ancien, Fabric, Quilt).
+// Avant, une 2e préparation (installation en arrière-plan après un import + « Jouer », ou deux packs du
+// même chargeur) voyait le .json de version déjà écrit par l'installateur Forge encore en cours et
+// lançait le jeu sans ses fichiers : code 1.
+const loaderInstallLocks = new Map();
+async function installLoader(args) {
+  const lockKey = `${path.resolve(args.gameRoot)}|${args.loaderId}|${args.minecraftVersion}`;
+  while (loaderInstallLocks.has(lockKey)) await loaderInstallLocks.get(lockKey).catch(() => {});
+  let release;
+  loaderInstallLocks.set(lockKey, new Promise((r) => (release = r)));
+  try {
+    return await installLoaderUnlocked(args);
+  } finally {
+    loaderInstallLocks.delete(lockKey);
+    release();
+  }
+}
+async function installLoaderUnlocked({ loaderId, minecraftVersion, gameRoot, javaPath, onProgress }) {
+  const { kind, installerUrls, loaderVersion } = parseLoader(loaderId, minecraftVersion);
+  if (PROFILE_LOADERS[kind]) return installProfileLoader({ kind, loaderVersion, minecraftVersion, gameRoot, onProgress });
+  const cacheDir = path.join(gameRoot, "cache", "installers");
+  let installerPath = installerUrls.map((u) => path.join(cacheDir, path.basename(u))).find((f) => fs.existsSync(f));
+
+  if (!installerPath) {
+    onProgress({ text: `Téléchargement de ${kind === "neoforge" ? "NeoForge" : "Forge"}…` });
+    // Les deux depots Maven publient l'empreinte SHA-1 a cote du fichier. Vieux Forge : 2e nom possible.
+    let lastStatus = 0;
+    for (const url of installerUrls) {
+      const shaRes = await fetch(`${url}.sha1`, { signal: AbortSignal.timeout(15_000) });
+      if (!shaRes.ok) {
+        lastStatus = shaRes.status;
+        continue;
+      }
+      const sha1 = (await shaRes.text()).trim().split(/\s+/)[0];
+      installerPath = path.join(cacheDir, path.basename(url));
+      await downloadFile(url, installerPath, { sha1 });
+      break;
+    }
+    if (!installerPath) throw new ModpackError(`Empreinte du chargeur introuvable (HTTP ${lastStatus}).`, { code: "installer_failed" });
+  }
+
+  // Minecraft avant 1.13 : pas d'installateur a lancer, on pose nous-memes la version de Forge.
+  const legacyId = await installLegacyForge({ installerPath, gameRoot, onProgress });
+  if (legacyId) return legacyId;
+
+  const versionId = readInstalledVersionId(installerPath);
+  const versionJson = safeJoin(path.join(gameRoot, "versions"), path.join(versionId, `${versionId}.json`));
+  // 04/11 (code 1 juste après un import, réglé par « Corriger ») : l'installateur écrit ce .json dès
+  // le début, avant ses « processors » qui fabriquent le jeu modifié dans libraries/ (client-…-srg.jar,
+  // client-…-extra.jar, forge-…-client.jar). Le .json seul ne prouve donc rien : s'il manque un de ces
+  // fichiers (installation interrompue, fichier effacé), l'installateur est relancé.
+  const missing = fs.existsSync(versionJson) ? expectedProcessorOutputs(installerPath, gameRoot, versionJson).filter((f) => !fs.existsSync(f)) : [];
+  if (!fs.existsSync(versionJson) || missing.length) {
+    if (missing.length) onProgress({ text: `Fichiers de ${kind === "neoforge" ? "NeoForge" : "Forge"} incomplets (${missing.map((f) => path.basename(f)).join(", ")}) : réinstallation…` });
+    // L'installateur refuse de demarrer sans profil de lanceur officiel.
+    const profiles = path.join(gameRoot, "launcher_profiles.json");
+    if (!fs.existsSync(profiles)) await fsp.writeFile(profiles, JSON.stringify({ profiles: {}, version: 3 }));
+    await runInstaller({ javaPath, installerPath, gameRoot, onProgress });
+    if (!fs.existsSync(versionJson)) {
+      throw new ModpackError("Le chargeur de mods s'est installé mais sa version est introuvable.", { code: "installer_failed" });
+    }
+    await noteProcessorOutputs(installerPath, gameRoot, versionJson);
+  }
+  return versionId;
+}
+
+// Fichiers fabriqués par les processors de l'installateur Forge / NeoForge et lus au lancement :
+// MC_SRG, MC_EXTRA et PATCHED, côté client, lus dans install_profile.json de l'installateur (en cache).
+const PROCESSOR_KEYS = ["MC_SRG", "MC_EXTRA", "PATCHED"];
+function processorOutputsOf(installerPath, gameRoot) {
+  try {
+    const zip = new AdmZip(installerPath);
+    const entry = zip.getEntry("install_profile.json");
+    if (!entry) return [];
+    const data = JSON.parse(zip.readAsText(entry))?.data || {};
+    const out = [];
+    for (const key of PROCESSOR_KEYS) {
+      const m = /^\[([^\]@]+)(?:@([\w]+))?\]$/.exec(String(data[key]?.client || ""));
+      if (!m || m[1].split(":").length < 3) continue;
+      let rel = mavenPathOf(m[1]);
+      if (m[2]) rel = rel.replace(/\.jar$/, `.${m[2]}`);
+      out.push(safeJoin(path.join(gameRoot, "libraries"), rel));
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+// Après une installation réussie, on note ceux qui existent vraiment (versions/<id>/.omniscient-processors.json) :
+// un fichier que cette version de l'installateur ne garde pas ne relance pas l'installateur à chaque partie.
+const processorNoteOf = (versionJson) => path.join(path.dirname(versionJson), ".omniscient-processors.json");
+function expectedProcessorOutputs(installerPath, gameRoot, versionJson) {
+  try {
+    const list = JSON.parse(fs.readFileSync(processorNoteOf(versionJson), "utf8"));
+    if (Array.isArray(list)) return list.filter((rel) => typeof rel === "string").map((rel) => safeJoin(path.join(gameRoot, "libraries"), rel));
+  } catch {}
+  return processorOutputsOf(installerPath, gameRoot);
+}
+async function noteProcessorOutputs(installerPath, gameRoot, versionJson) {
+  const libs = path.join(gameRoot, "libraries");
+  const there = processorOutputsOf(installerPath, gameRoot)
+    .filter((f) => fs.existsSync(f))
+    .map((f) => path.relative(libs, f).split(path.sep).join("/"));
+  await fsp.writeFile(processorNoteOf(versionJson), JSON.stringify(there)).catch(() => {});
+}
+
+// --- Version a lancer -------------------------------------------------------
+
+const MOJANG_VERSION_MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+
+// Le JSON (et le jar) de Minecraft vanilla que le chargeur "herite". Selon le
+// chargeur, l'installateur les depose ou non : celui de NeoForge oui, celui de
+// Forge depose le jar mais pas le JSON. Ce qui manque est pris chez Mojang
+// (manifeste officiel, empreintes SHA-1 verifiees) — un joueur qui n'a jamais
+// lance cette version vanilla ne doit pas avoir a le faire d'abord.
+async function ensureVanillaVersion(versionsDir, minecraftVersion) {
+  const jsonPath = path.join(versionsDir, minecraftVersion, `${minecraftVersion}.json`);
+  if (!fs.existsSync(jsonPath)) {
+    const res = await fetch(MOJANG_VERSION_MANIFEST);
+    if (!res.ok) throw new ModpackError(`Liste des versions de Minecraft injoignable (HTTP ${res.status}).`, { code: "vanilla_failed" });
+    const entry = (await res.json()).versions?.find((v) => v.id === minecraftVersion);
+    if (!entry) throw new ModpackError(`Version de Minecraft inconnue de Mojang : ${minecraftVersion}.`, { code: "vanilla_failed" });
+    await downloadFile(entry.url, jsonPath, { sha1: entry.sha1 });
+  }
+
+  const vanilla = JSON.parse(await fsp.readFile(jsonPath, "utf8"));
+  const jarPath = path.join(versionsDir, minecraftVersion, `${minecraftVersion}.jar`);
+  const client = vanilla.downloads?.client;
+  if (client?.url && !(await fileMatches(jarPath, { sha1: client.sha1, size: client.size }))) {
+    await downloadFile(client.url, jarPath, { sha1: client.sha1, size: client.size });
+  }
+  return vanilla;
+}
+
+// Verifie que l'installation vanilla est REELLEMENT complete sur le disque — pas seulement le
+// JSON et le jar (ce qu'ensureVanillaVersion garantit deja), mais aussi les bibliotheques et les
+// assets, telecharges par minecraft-launcher-core lui-meme au moment du lancement (son API ne
+// permet pas de les telecharger separement sans surveiller tout son fonctionnement interne, voir
+// components/launcher.js). Sans ce controle, l'auto-test de publication annoncait "Fichiers du
+// jeu installes : reussi" des que json+jar existaient, meme si le joueur avait supprime a la main
+// tout le reste (bibliotheques/assets) juste avant de tester — constate le 2026-10-10.
+function hasVanillaFilesInstalled(gameRoot) {
+  try {
+    return fs.readdirSync(path.join(gameRoot, "libraries")).length > 0 && fs.readdirSync(path.join(gameRoot, "assets", "objects")).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function ruleAllows(rules) {
+  if (!rules) return true;
+  const os = { win32: "windows", darwin: "osx", linux: "linux" }[process.platform];
+  let allowed = false;
+  for (const rule of rules) {
+    if (rule.features) return false;
+    const matches = !rule.os || ((!rule.os.name || rule.os.name === os) && (!rule.os.arch || rule.os.arch === process.arch));
+    if (matches) allowed = rule.action === "allow";
+  }
+  return allowed;
+}
+
+// minecraft-launcher-core ignore "arguments.jvm" du JSON d'un chargeur et ne
+// fusionne les arguments de jeu que par hasard (moins de 11 arguments) : on lui
+// fournit donc un JSON deja fusionne (arguments de jeu vanilla + chargeur) dans
+// une version "-omniscient", et on calcule nous-memes les arguments JVM du
+// chargeur (chemin des modules, --add-opens...) qu'on passera en customArgs.
+const FORBIDDEN_JVM_ARG = /^-(javaagent|agentpath|agentlib|XX:On|Djava\.library\.path)/i;
+
+async function prepareLaunchVersion({ gameRoot, loaderVersionId, minecraftVersion }) {
+  const versionsDir = path.join(gameRoot, "versions");
+  const readJson = async (id) => JSON.parse(await fsp.readFile(safeJoin(versionsDir, path.join(id, `${id}.json`)), "utf8"));
+
+  const loader = await readJson(loaderVersionId);
+  const parentId = loader.inheritsFrom || minecraftVersion;
+  const parent = await ensureVanillaVersion(versionsDir, parentId);
+  // Ancien format (Forge avant 1.13, voir installLegacyForge) : une seule ligne d'arguments de jeu
+  // (minecraftArguments, deja complete), aucun argument Java propre au chargeur.
+  const legacy = Boolean(loader.minecraftArguments) && !loader.arguments;
+  if (!legacy && (!parent.arguments?.game || !loader.arguments)) {
+    throw new ModpackError("Ce chargeur utilise un format de lancement inconnu.", {
+      code: "unsupported_loader",
+    });
+  }
+
+  const customId = `${loaderVersionId}-omniscient`;
+  const customDir = path.join(versionsDir, customId);
+  await fsp.mkdir(customDir, { recursive: true });
+
+  // Le JSON et le jar de Minecraft vanilla, sous les noms que mclc attend
+  // pour une version personnalisee — evite de les retelecharger.
+  const parentJson = path.join(versionsDir, parentId, `${parentId}.json`);
+  const parentJar = path.join(versionsDir, parentId, `${parentId}.jar`);
+  await fsp.copyFile(parentJson, path.join(customDir, `${minecraftVersion}.json`));
+  const customJar = path.join(customDir, `${customId}.jar`);
+  // 04/11 : aussi recopié si sa taille ne correspond plus (copie interrompue) ; avant, seulement s'il manquait.
+  const sizeOf = (f) => (fs.existsSync(f) ? fs.statSync(f).size : -1);
+  if (fs.existsSync(parentJar) && sizeOf(customJar) !== sizeOf(parentJar)) await fsp.copyFile(parentJar, customJar);
+
+  const merged = legacy
+    ? { ...loader, id: customId }
+    : {
+        ...loader,
+        id: customId,
+        arguments: { game: [...parent.arguments.game, ...(loader.arguments.game || [])], jvm: loader.arguments.jvm || [] },
+      };
+  await fsp.writeFile(path.join(customDir, `${customId}.json`), JSON.stringify(merged, null, 2));
+  if (legacy) return { customVersion: customId, jvmArgs: [] };
+
+  const libraryDirectory = path.resolve(gameRoot, "libraries");
+  const fill = (value) =>
+    String(value)
+      .replaceAll("${library_directory}", libraryDirectory)
+      .replaceAll("${classpath_separator}", path.delimiter)
+      .replaceAll("${version_name}", customId);
+  const jvmArgs = [];
+  for (const arg of loader.arguments.jvm || []) {
+    if (typeof arg === "string") jvmArgs.push(fill(arg));
+    else if (ruleAllows(arg.rules)) jvmArgs.push(...[].concat(arg.value).map(fill));
+  }
+  // Aucun chargeur officiel (NeoForge, Forge, Fabric, Quilt) n'a besoin de ces options, qui permettent
+  // de lancer du code ou une commande au demarrage de Java (audit 14/10, L2) : refus net.
+  const forbidden = jvmArgs.find((arg) => FORBIDDEN_JVM_ARG.test(arg));
+  if (forbidden) {
+    throw new ModpackError(`Argument Java refusé dans le chargeur du modpack : ${forbidden.slice(0, 80)}`, { code: "unsafe_jvm_arg" });
+  }
+
+  return { customVersion: customId, jvmArgs };
+}
+
+// --- Point d'entree ---------------------------------------------------------
+
+/**
+ * Installe (ou met a jour) le modpack d'un serveur (CurseForge ou Modrinth) et
+ * prepare son lancement. `config` : { siteUrl, apiKey }.
+ * `onProgress({ text, type?, task?, total? })` recoit des mises a jour lisibles
+ * (meme forme que la progression du jeu).
+ * `resolveJava(major, onProgress(texte))` (facultatif) : renvoie le chemin d'un Java
+ * de cette version (ou null) — voir javaManager.ensureJavaForMajor. Il sert au
+ * chargeur ET au jeu : un Java trop recent fait planter Forge (voir javaManager.js).
+ * Renvoie { instanceDir, minecraftVersion, customVersion, jvmArgs, modpackName,
+ * javaPath, javaMajor } — `javaPath` = le Java a utiliser pour lancer le jeu.
+ */
+// Verrou par instance : deux installations concurrentes pour le MEME serveur (double-clic sur
+// "Jouer", ou "Jouer" + "Réinstaller" avant que le premier ait fini) ecrivaient sinon vers le
+// meme fichier ".part" (downloadFile) — ecritures entremelees au niveau OS que le SHA-1/compteur
+// calcules en memoire (a partir des seuls octets ecrits par CE process) ne detectent pas :
+// chaque appelant peut croire son hash valide alors que le fichier final sur disque est
+// corrompu (course trouvee par l'audit du 2026-10-10). Le second appelant attend simplement le
+// resultat du premier.
+const installLocks = new Map();
+
+function installModpack(options) {
+  if (typeof options.slug !== "string" || !INSTANCE_SLUG_RE.test(options.slug)) {
+    return Promise.reject(new ModpackError("Serveur invalide.", { code: "invalid_slug" }));
+  }
+  const instanceDir = path.join(options.gameRoot, "instances", options.slug);
+  const existing = installLocks.get(instanceDir);
+  if (existing) return existing;
+  const promise = installModpackLocked(options).finally(() => installLocks.delete(instanceDir));
+  installLocks.set(instanceDir, promise);
+  return promise;
+}
+
+// `manualSearchDirs` : dossiers ou chercher les mods bloques que le joueur a telecharges lui-meme
+// (le dossier Telechargements, voir main.js et resolveCurseforgeFiles).
+// `onWarning(texte)` (facultatif) : avertissements pour le journal seulement (jamais affiches
+// dans la progression), ex. fichier sans empreinte a verifier.
+async function installModpackLocked({ config, slug, gameRoot, javaPath, resolveJava, onProgress = () => {}, onWarning = () => {}, signal, waitIfPaused, manualSearchDirs = [], cloud = false }) {
+  // `step` : etape affichee dans le panneau de la pilule (« étape 3 sur 6 », voir renderer.js).
+  onProgress({ step: "prepare", text: "Recherche du modpack…" });
+  const instanceDir = path.join(gameRoot, "instances", slug);
+  // Mon cloud (03/11) : `cloud` = le modpack relie par le proprietaire (liens Modrinth + configs) au
+  // lieu du modpack CurseForge/Modrinth/FTB du serveur. first=1 : premiere installation ici.
+  const firstCloud = cloud && (await readInstalledState(instanceDir))?.source !== "cloud";
+  // Serveur prive : preuve d'acces (voir config.headers dans main.js, game:launch).
+  const info = await siteJson(
+    config,
+    cloud
+      ? `/api/launcher/cloud-pack?slug=${encodeURIComponent(slug)}&install=1${firstCloud ? "&first=1" : ""}`
+      : `/api/launcher/servers/${encodeURIComponent(slug)}/modpack`,
+    { headers: config.headers },
+  );
+  const source = cloud && info.source === "cloud" ? "cloud" : info.source === "modrinth" || info.source === "ftb" ? info.source : "curseforge";
+  const { file } = info;
+  if (cloud && source !== "cloud") throw new ModpackError("Le modpack du serveur n'a pas pu être lu.", { code: "site_error" });
+  // FTB n'a pas d'archive (downloadUrl null) : la liste des fichiers se lit sur leur API. Un modpack
+  // du cloud sans configs n'en a pas non plus.
+  if (source !== "ftb" && source !== "cloud" && !file?.downloadUrl) throw new ModpackError("Ce modpack n'a pas de lien de téléchargement.", { code: "no_download_url" });
+  if (file?.downloadUrl && !(source === "cloud" ? isAllowedCloudConfigUrl(file.downloadUrl) : isAllowedModpackUrl(file.downloadUrl))) {
+    throw new ModpackError("Le fichier du modpack se télécharge depuis un site non autorisé.", { code: "disallowed_download_host" });
+  }
+  // L'API CurseForge/Modrinth ne donne pas toujours l'empreinte : pas bloquant, mais trace.
+  if (source !== "ftb" && file?.downloadUrl && !file.sha1) onWarning(`Modpack "${info.modpack?.name ?? slug}" : aucune empreinte SHA-1 fournie, fichier vérifié sur sa taille seulement.`);
+
+  await fsp.mkdir(instanceDir, { recursive: true });
+
+  let zip = null;
+  let pack;
+  if (source === "ftb") {
+    if (waitIfPaused) await waitIfPaused();
+    onProgress({ text: `Lecture du pack FTB ${info.modpack.name}…` });
+    pack = await readFtbPack(info.ftb);
+  } else if (source === "cloud") {
+    pack = readCloudPack(info);
+    if (file?.downloadUrl) {
+      const zipPath = path.join(gameRoot, "cache", "modpacks", `cloud-${String(file.id).replace(/[^\w.-]/g, "_")}-config.zip`);
+      if (!(await fileMatches(zipPath, { sha1: file.sha1, size: file.fileLength }))) {
+        if (waitIfPaused) await waitIfPaused();
+        onProgress({ text: `Téléchargement des configs de ${info.modpack.name}…` });
+        await downloadFile(file.downloadUrl, zipPath, { sha1: file.sha1, size: file.fileLength, signal });
+      }
+      zip = cloudConfigView(await openPackZip(zipPath));
+    } else {
+      pack.overrideDirs = [];
+    }
+  } else {
+    const cacheName = `${source}-${String(file.id).replace(/[^\w.-]/g, "_")}-${path.basename(file.fileName)}`;
+    const zipPath = path.join(gameRoot, "cache", "modpacks", cacheName);
+    if (!(await fileMatches(zipPath, { sha1: file.sha1, size: file.fileLength }))) {
+      if (waitIfPaused) await waitIfPaused();
+      onProgress({ text: `Téléchargement du modpack ${info.modpack.name}…` });
+      let packBytes = 0;
+      await downloadFile(file.downloadUrl, zipPath, {
+        sha1: file.sha1,
+        size: file.fileLength,
+        signal,
+        onBytes: (n) => {
+          packBytes += n;
+          onProgress({ type: "mods-bytes", bytes: packBytes, totalBytes: file.fileLength || 0 });
+        },
+      });
+    }
+    zip = await openPackZip(zipPath);
+    pack = source === "modrinth" ? readModrinthPack(zip) : readCurseforgePack(zip);
+  }
+
+  // Chargeur non gere = echec immediat, avant de telecharger quoi que ce soit.
+  const { kind: loaderKind } = parseLoader(pack.loaderId, pack.minecraftVersion);
+
+  // Java que Mojang demande pour cette version de Minecraft (17 pour la 1.20.1,
+  // 21 pour la 1.21.1…) : le chargeur et le jeu tourneront avec lui.
+  onProgress({ step: "java", text: "Préparation de Java et de Minecraft…" });
+  const vanilla = await ensureVanillaVersion(path.join(gameRoot, "versions"), pack.minecraftVersion);
+  let javaMajor = vanilla.javaVersion?.majorVersion ?? null;
+  // Mojang donne un minimum. Fabric tourne tres bien sur Java 21 et ses mods sont
+  // souvent compiles pour lui (le pack « Ce Soir la Vendée » plante sous Java 17 :
+  // "compatibility level JAVA_21"). Forge, lui, n'est valide qu'avec le Java de Mojang.
+  // Quilt pareil : il charge les memes mods Fabric.
+  if ((loaderKind === "fabric" || loaderKind === "quilt") && javaMajor === 17) javaMajor = 21;
+  const gameJava = (resolveJava && javaMajor ? await resolveJava(javaMajor, (text) => onProgress({ text })) : null) || javaPath;
+
+  const previousState = await readInstalledState(instanceDir);
+  const previousFiles = previousState?.files ?? [];
+  // Chargeur installe AVANT d'extraire les fichiers du pack (audit 14/10, L2) : les overrides
+  // ne doivent jamais pouvoir fournir eux-memes le JSON de version que le chargeur va lire.
+  const loaderVersionId = await installLoader({
+    loaderId: pack.loaderId,
+    minecraftVersion: pack.minecraftVersion,
+    gameRoot,
+    javaPath: gameJava,
+    onProgress,
+  });
+
+  let overrides = 0;
+  const overrideJars = [];
+  const overrideKept = [];
+  const previousHashes = previousState?.overrideHashes ?? {};
+  const overrideHashes = {};
+  for (const dirName of pack.overrideDirs) {
+    const extracted = await extractOverrides(zip, dirName, instanceDir, previousHashes, overrideHashes);
+    overrides += extracted.count;
+    overrideJars.push(...extracted.jars);
+    overrideKept.push(...extracted.kept);
+  }
+  if (zip) onProgress({ text: `Configuration du modpack copiée (${overrides} fichiers).` });
+  if (overrideKept.length) {
+    onProgress({ text: `${overrideKept.length} fichier(s) modifié(s) par toi conservé(s) : ${overrideKept.slice(0, 5).join(", ")}` });
+  }
+
+  onProgress({ step: "mods" });
+  // previousHashes/nextHashes : seul le format FTB s'en sert (configs livrees comme fichiers a
+  // telecharger, pas dans une archive — voir keptByPlayer).
+  const entries = await pack.resolveFiles({ config, onProgress, instanceDir, manualSearchDirs, previousHashes, nextHashes: overrideHashes });
+  const unhashed = (Array.isArray(entries) ? entries : []).filter((entry) => !entry.sha1 && !entry.sha512);
+  if (unhashed.length) {
+    onWarning(`${unhashed.length} fichier(s) du modpack sans empreinte, non vérifiés : ${unhashed.slice(0, 5).map((entry) => entry.path).join(", ")}`);
+  }
+  const keepPaths = [...overrideJars, ...(Array.isArray(entries.keptPaths) ? entries.keptPaths : [])];
+  const installedFiles = await installFiles({ entries, instanceDir, previousFiles, keepPaths, onProgress, signal, waitIfPaused });
+  await fsp.writeFile(
+    path.join(instanceDir, STATE_FILE),
+    JSON.stringify(
+      {
+        source,
+        modpackFileId: file?.id ?? null,
+        minecraftVersion: pack.minecraftVersion,
+        loaderId: pack.loaderId,
+        // Nom affichable (2026-10-12) : seul moyen de montrer un nom plutot que le
+        // slug brut dans la liste "disponible hors ligne" (listInstalledInstances),
+        // qui n'a pas accès au site pour le redemander. N'existait pas avant cette
+        // date — une instance installée plus tôt retombe sur le slug, voir
+        // listInstalledInstances.
+        modpackName: info.modpack.name,
+        files: [...installedFiles, ...overrideJars],
+        overrideHashes,
+      },
+      null,
+      2,
+    ),
+  );
+
+  const { customVersion, jvmArgs } = await prepareLaunchVersion({
+    gameRoot,
+    loaderVersionId,
+    minecraftVersion: pack.minecraftVersion,
+  });
+
+  return {
+    instanceDir,
+    minecraftVersion: pack.minecraftVersion,
+    customVersion,
+    jvmArgs,
+    modpackName: info.modpack.name,
+    javaPath: gameJava,
+    javaMajor,
+    fromModrinthMods: Array.isArray(entries.fromModrinthMods) ? entries.fromModrinthMods : [],
+    // Origine des mods d'un pack FTB (CurseForge / Modrinth / serveurs FTB), null pour les autres.
+    modOrigins: entries.origins || null,
+  };
+}
+
+module.exports = {
+  setBugSignal,
+  installModpack,
+  installLoader,
+  // Mode Jouer (24/10) : mods d'un pack officiel (playMode.js).
+  installFiles,
+  prepareLaunchVersion,
+  ensureVanillaVersion,
+  hasVanillaFilesInstalled,
+  ruleAllows,
+  findOnModrinth,
+  readFtbPack,
+  isInstalled,
+  readInstalledState,
+  listInstalledInstances,
+  ModpackError,
+};
