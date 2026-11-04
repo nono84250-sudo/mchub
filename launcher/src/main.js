@@ -5671,10 +5671,11 @@ importHandle("cfPack:read", "lecture du fichier", async (_event, src) => {
         on: true,
       };
       // Fichier .zip dans la liste du pack (04/11, « Mekanism CTM w/ Fusion » de Project Infinity) : pack
-      // de ressources ou shaders, pas un mod. Avant, il était retiré du pack (pas un .jar) et « Ouvrir la
-      // page » ne faisait rien. Il va dans resourcepacks/ (ou shaderpacks/), jamais dans mods/.
+      // de ressources, shader ou data pack, pas un mod. Avant, il était retiré du pack (pas un .jar) et
+      // « Ouvrir la page » ne faisait rien. Son type vient de la catégorie du projet sur CurseForge
+      // (classId, renvoyé par le site) ; sans elle, deviné d'après l'adresse de sa page.
       if (mod.file && /\.zip$/i.test(mod.file.filename)) {
-        mod.content = /\/shaders\//i.test(String(info?.pageUrl || "")) ? "sh" : "rp";
+        mod.content = cfContentKind(info);
         mod.file.filename = mod.file.filename.replace(/[^\w.+() \[\]!'&,-]/g, "_");
       }
       mods.push(mod);
@@ -6013,6 +6014,15 @@ function importMeter(send, totalBytes) {
     },
   };
 }
+// Catégories CurseForge (classId) des fichiers .zip d'un pack : 12 pack de ressources, 6552 shader,
+// 6945 data pack. Sans catégorie (site pas encore à jour) : deviné d'après l'adresse de la page.
+const CF_CLASS_KIND = { 12: "rp", 6552: "sh", 6945: "dp" };
+function cfContentKind(info) {
+  const byClass = CF_CLASS_KIND[Number(info?.classId) || 0];
+  if (byClass) return byClass;
+  const page = String(info?.pageUrl || "");
+  return /\/shaders\//i.test(page) ? "sh" : /\/data-packs\//i.test(page) ? "dp" : "rp";
+}
 // Étape de la fenêtre d'import d'un fichier extrait du pack (chemin dans le dossier du jeu).
 const IMPORT_STEP_ORDER = ["packed", "cfg", "rp", "sh", "world"];
 function importStepOf(rel) {
@@ -6030,7 +6040,7 @@ importHandle("cfPack:install", "installation", async (event, id, opts) => {
   const busy = playGameBusy();
   if (busy) return busy;
   const progress = (step) => !event.sender.isDestroyed() && event.sender.send("cfPack:progress", { id, ...step });
-  const parts = Array.isArray(opts?.parts) ? opts.parts.filter((x) => ["mods", "cfg", "rp", "sh"].includes(x)) : [];
+  const parts = Array.isArray(opts?.parts) ? opts.parts.filter((x) => ["mods", "cfg", "rp", "sh", "dp"].includes(x)) : [];
   const folders = (Array.isArray(opts?.worlds) ? opts.worlds : []).filter((f) => job.pack.worlds.some((w) => w.folder === f));
   try {
     if (job.kind === "omni") {
@@ -6110,7 +6120,17 @@ importHandle("cfPack:install", "installation", async (event, id, opts) => {
     } else if (withMods) progress({ step: "dl", n: 0, done: true });
     // Packs de ressources / shaders de la liste du pack que leur auteur laisse télécharger (04/11) :
     // rangés dans leur dossier, avec la même vérification d'empreinte que les mods.
-    const autoContent = job.mods.filter((m) => m.content && parts.includes(m.content) && m.file?.url && m.file.sha1);
+    const autoContent = job.mods.filter((m) => m.content && m.content !== "dp" && parts.includes(m.content) && m.file?.url && m.file.sha1);
+    // Data packs que leur auteur laisse télécharger (04/11) : gardés dans .omniscient/datapacks/, puis
+    // rangés après les mondes (dossier de Paxi / Open Loader / Global Packs, sinon chaque monde).
+    const autoDp = job.mods.filter((m) => m.content === "dp" && parts.includes("dp") && m.file?.url && m.file.sha1);
+    if (autoDp.length) {
+      await PLAY_DEPS.installFiles({
+        entries: autoDp.map((m) => ({ path: m.file.filename, url: m.file.url, sha1: m.file.sha1, size: m.file.size || null })),
+        instanceDir: playMode.datapackStore(v.id),
+        previousFiles: [],
+      }).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Pack CurseForge : data pack non téléchargé (${error.message}).` }));
+    }
     if (autoContent.length) {
       await PLAY_DEPS.installFiles({
         entries: autoContent.map((m) => ({ path: `${CF_CONTENT_DIR[m.content]}/${m.file.filename}`, url: m.file.url, sha1: m.file.sha1, size: m.file.size || null })),
@@ -6197,6 +6217,10 @@ importHandle("cfPack:install", "installation", async (event, id, opts) => {
       progress({ step: "world", done: true });
     }
     if (job.worldKey) await playMode.setWorldVersion(job.worldKey, v.id);
+    for (const m of autoDp) {
+      if (!fs.existsSync(path.join(playMode.datapackStore(v.id), m.file.filename))) continue;
+      await liveSave.enqueue(() => playMode.addCfDatapack(v.id, { file: m.file.filename, name: m.name })).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Data pack « ${m.name} » : ${error.message}` }));
+    }
     const manual = job.mods.filter((m) => !m.file?.url && (m.content ? parts.includes(m.content) : withMods)).length;
     progress({ step: "manual", n: 0, done: manual === 0 });
     installVersionInBackground(v.id).catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Pack ${mr ? "Modrinth" : "CurseForge"} : préparation impossible (${error.message}).` }));
@@ -6206,9 +6230,10 @@ importHandle("cfPack:install", "installation", async (event, id, opts) => {
     return playError(error);
   }
 });
-// Pack de ressources / shaders (.zip) d'un export à télécharger à la main (04/11) : sa page exacte, puis
-// le fichier exact dans Téléchargements (bonne empreinte), copié dans resourcepacks/ ou shaderpacks/
-// de l'installation, puis retiré de Téléchargements 30 s plus tard (analyse antivirus, voir 28/10).
+// Pack de ressources / shaders / data pack (.zip) d'un export à télécharger à la main (04/11) : sa page
+// exacte, puis le fichier exact dans Téléchargements (bonne empreinte), copié dans resourcepacks/ ou
+// shaderpacks/ de l'installation (data pack : .omniscient/datapacks/, puis rangé par addCfDatapack),
+// puis retiré de Téléchargements 30 s plus tard (analyse antivirus, voir 28/10).
 const CF_CONTENT_DIR = { rp: "resourcepacks", sh: "shaderpacks" };
 // Ce qu'on retient d'un .zip à la main (dans la version, pour « Reprendre ») : de quoi ouvrir sa page exacte
 // et reconnaître le bon fichier.
@@ -6220,7 +6245,7 @@ async function cfPackManualContent(versionId, c) {
   const got = await watchDownloads(`${versionId}|${c.id}`, { sha1: c.sha1 || null, size: c.size || null, fileName: c.fileName || null, ext: /\.zip$/i });
   if (!got) return { ok: true, found: false };
   const base = String(c.fileName || got.fileName || `${c.id}.zip`).replace(/[^\w.+() \[\]!'&,-]/g, "_");
-  const dir = path.join(playMode.gameDirOf(versionId), CF_CONTENT_DIR[c.kind] || "resourcepacks");
+  const dir = c.kind === "dp" ? playMode.datapackStore(versionId) : path.join(playMode.gameDirOf(versionId), CF_CONTENT_DIR[c.kind] || "resourcepacks");
   await fsp.mkdir(dir, { recursive: true });
   const target = path.join(dir, base);
   await fsp.copyFile(got.file, `${target}.part`);
@@ -6229,6 +6254,7 @@ async function cfPackManualContent(versionId, c) {
     return { ok: false, error: "La copie du fichier a échoué, réessaie." };
   }
   await fsp.rename(`${target}.part`, target);
+  if (c.kind === "dp") await liveSave.enqueue(() => playMode.addCfDatapack(versionId, { file: base, name: c.name }));
   const stem = path.basename(got.file).replace(/ \(\d+\)(\.zip)$/i, "$1");
   setTimeout(async () => {
     for (const d of manualModsSearchDirs()) {
@@ -6468,9 +6494,19 @@ ipcMain.handle("play:launch", async (event, { versionId, worldKey = null, force 
         // Aide au crash v1 (Laboratoire « crashHelp ») : journal et rapport de crash de CETTE partie,
         // lus à chaque fermeture (l'écran « mods incompatibles » n'est pas un crash).
         if (features.visible("crashHelp")) {
+          // Fichiers du jeu manquants dans libraries/ (04/11 : Forge sans ses fichiers fabriqués à
+          // l'installation, code 1 au démarrage). L'erreur sort sur la console du jeu, pas dans
+          // latest.log : on la cherche aussi dans ce que le jeu a écrit pendant cette partie.
+          const gameOut = exitCode ? logStore.getAll().filter((e) => e.source === "game" && e.ts >= startedAt).map((e) => e.message).join("\n") : "";
+          const libsMissing = (text) => /contained no existing paths/i.test(text) && /[\\/]libraries[\\/]/i.test(text);
           crashHelp
             .analyzeGame(prepared.gameDirectory, { startedAt, exitCode })
             .then((found) => {
+              const missingLibs = libsMissing(`${gameOut}\n${found?.texts?.log || ""}`);
+              if (!found && missingLibs) {
+                logStore.pushLog({ level: "warn", source: "launcher", message: "Jouer : fichiers du jeu manquants (libraries), « Corriger les fichiers du jeu » proposé." });
+                return sendAll("play:crashHelp", { kind: "crash", versionId, packKind: version.pack?.kind || (version.pack ? "official" : null), hasCrash: false, hasLog: false, missingLibs: true });
+              }
               if (!found) return;
               lastCrash = {
                 files: found.files,
@@ -6492,7 +6528,7 @@ ipcMain.handle("play:launch", async (event, { versionId, worldKey = null, force 
                 sendAll("bugs:found", { entry: known, versionId, canRepair: canRepairKind(packKind), hasLogs: true });
                 if (known.status !== "auto") return;
               }
-              sendAll("play:crashHelp", { ...info, versionId, packKind, hasCrash: !!files.crash, hasLog: !!files.log });
+              sendAll("play:crashHelp", { ...info, versionId, packKind, hasCrash: !!files.crash, hasLog: !!files.log, missingLibs });
             })
             .catch(() => {});
         }
@@ -6504,7 +6540,9 @@ ipcMain.handle("play:launch", async (event, { versionId, worldKey = null, force 
               else if (c.error) logStore.pushLog({ level: "warn", source: "launcher", message: `Sauvegarde du monde impossible : ${c.error}` });
             }
             for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("play:worldsChanged");
+            // Data packs d'un pack CurseForge (04/11) : aussi dans les mondes créés pendant la partie.
             if (features.visible("dataPacks")) applyPendingDp(ended?.versionId || versionId).catch(() => {});
+            else liveSave.enqueue(() => playMode.spreadAllWorldDatapacks(ended?.versionId || versionId)).catch(() => {});
           })
           .catch((error) => logStore.pushLog({ level: "warn", source: "launcher", message: `Sauvegarde après la partie impossible : ${error.message}` }))
           .finally(() => worldCloud.setGameRunning(false));

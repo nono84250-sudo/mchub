@@ -232,6 +232,10 @@ export type CurseforgeFileInfo = {
   // fichier, que le launcher montre au joueur pour qu'il le telecharge lui-meme.
   modName?: string | null;
   pageUrl?: string | null;
+  // Catégorie CurseForge du projet (04/11) : 6 mod, 12 pack de ressources, 6552 shader, 6945 data
+  // pack. Seulement pour un fichier sans lien ou qui n'est pas un .jar : le launcher range le .zip
+  // dans le bon dossier au lieu de le deviner.
+  classId?: number | null;
 };
 
 function toFileInfo(file: CurseforgeFileRaw): CurseforgeFileInfo {
@@ -326,9 +330,12 @@ export async function matchCurseforgeFingerprints(fingerprints: number[]): Promi
 // En cas d'echec (cle limitee a la recherche...), le launcher se contente d'une recherche
 // CurseForge par nom de fichier : pas de quoi faire echouer la route.
 async function addBlockedModPages(files: CurseforgeFileInfo[]) {
-  const modIds = [...new Set(files.filter((f) => !f.downloadUrl).map((f) => f.modId))];
+  // Aussi les fichiers qui ne sont pas des .jar (04/11) : leur catégorie (pack de ressources, shader,
+  // data pack). Peu de fichiers, donc peu d'appels en plus.
+  const needsMod = (f: CurseforgeFileInfo) => !f.downloadUrl || !/\.jar$/i.test(f.fileName || "");
+  const modIds = [...new Set(files.filter(needsMod).map((f) => f.modId))];
   if (!modIds.length) return;
-  type Mod = { id: number; name: string; links?: { websiteUrl?: string | null } };
+  type Mod = { id: number; name: string; classId?: number | null; links?: { websiteUrl?: string | null } };
   try {
     const mods = new Map<number, Mod>();
     for (let i = 0; i < modIds.length; i += 100) {
@@ -336,8 +343,10 @@ async function addBlockedModPages(files: CurseforgeFileInfo[]) {
       for (const mod of response.data) mods.set(mod.id, mod);
     }
     for (const file of files) {
-      if (file.downloadUrl) continue;
+      if (!needsMod(file)) continue;
       const mod = mods.get(file.modId);
+      file.classId = typeof mod?.classId === "number" ? mod.classId : null;
+      if (file.downloadUrl) continue;
       file.modName = mod?.name ?? null;
       file.pageUrl = curseforgeFilePage(mod?.links?.websiteUrl, file.id);
     }

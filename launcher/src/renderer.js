@@ -3158,16 +3158,17 @@ function boldLabelIn(el, text, label) {
 // serveur » (jamais d'envoi sans clic, audit du 19/10), une fois par serveur et par session.
 const removedModsReported = new Set();
 // Titre de la fenêtre des fichiers à la main (04/11) : « Encore 2 mods à ajouter » si ce ne sont que des
-// mods, sinon « Encore 1 mod et 1 pack de ressources à ajouter ». kind : "rp", "sh" ou absent (mod).
+// mods, sinon « Encore 1 mod et 1 pack de ressources à ajouter ». kind : "rp", "sh", "dp" (data pack, 04/11)
+// ou absent (mod).
 function manualKindOf(mod) {
-  return mod?.kind === "rp" || mod?.kind === "sh" ? mod.kind : "mod";
+  return mod?.kind === "rp" || mod?.kind === "sh" || mod?.kind === "dp" ? mod.kind : "mod";
 }
 function manualTitle(list) {
-  const c = { mod: 0, rp: 0, sh: 0 };
+  const c = { mod: 0, rp: 0, sh: 0, dp: 0 };
   for (const mod of list) c[manualKindOf(mod)]++;
-  if (!c.rp && !c.sh) return t("manualMods.title", { count: c.mod });
-  const keys = { mod: "manualMods.kMod", rp: "manualMods.kRp", sh: "manualMods.kSh" };
-  const parts = ["mod", "rp", "sh"].filter((k) => c[k]).map((k) => t(keys[k], { count: c[k] }));
+  if (!c.rp && !c.sh && !c.dp) return t("manualMods.title", { count: c.mod });
+  const keys = { mod: "manualMods.kMod", rp: "manualMods.kRp", sh: "manualMods.kSh", dp: "manualMods.kDp" };
+  const parts = ["mod", "rp", "sh", "dp"].filter((k) => c[k]).map((k) => t(keys[k], { count: c[k] }));
   const what = parts.length < 2 ? parts[0] : parts.slice(0, -1).join(", ") + t("manualMods.kAnd") + parts[parts.length - 1];
   return t("manualMods.titleMix", { what });
 }
@@ -3294,8 +3295,8 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
       // Type du fichier (04/11) : mod, pack de ressources ou shader, et où il ira.
       const kindChip = document.createElement("span");
       kindChip.className = `manual-mod-kind ${manualKindOf(mod)}`;
-      kindChip.textContent = t({ mod: "manualMods.chipMod", rp: "manualMods.chipRp", sh: "manualMods.chipSh" }[manualKindOf(mod)]);
-      if (manualKindOf(mod) !== "mod") kindChip.title = t(manualKindOf(mod) === "rp" ? "manualMods.whereRp" : "manualMods.whereSh");
+      kindChip.textContent = t({ mod: "manualMods.chipMod", rp: "manualMods.chipRp", sh: "manualMods.chipSh", dp: "manualMods.chipDp" }[manualKindOf(mod)]);
+      if (manualKindOf(mod) !== "mod") kindChip.title = t({ rp: "manualMods.whereRp", sh: "manualMods.whereSh", dp: "manualMods.whereDp" }[manualKindOf(mod)]);
       name.prepend(kindChip);
       const file = document.createElement("span");
       file.className = "manual-mod-file";
