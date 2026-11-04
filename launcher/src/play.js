@@ -85,12 +85,15 @@
       cfGo: "Importer le pack", cfGoW: "Importer le pack et {n} monde(s)",
       cfStepList: "Liste des mods lue", cfStepDl: "Téléchargement des mods", cfStepPacked: "Mods inclus dans le pack copiés", cfStepOm: "Versions du pack installées", impStepW: "Mondes copiés",
       ipAll: "Import : {p} %", ipAllDone: "Import terminé", ipIn: "en {t}", ipLeft: "environ {t} restante(s)", ipCalc: "calcul…", ipFiles: "{n} / {of} fichiers", ipOf: "{a} sur {b}",
-      cfStepCfg: "Réglages du pack copiés", cfStepWorld: "Monde copié", cfStepManual: "Mods à télécharger à la main",
-      cfManualD: "Ouvre la page, clique sur « Download » SOUS le nom du fichier (pas le gros bouton du haut), et laisse le fichier dans Téléchargements. Le launcher le trouve, le vérifie et le range tout seul.",
+      cfStepCfg: "Réglages du pack copiés", cfStepWorld: "Monde copié", cfStepManual: "À télécharger à la main",
+      cfManualD: "Ouvre la page, clique sur « Download » SOUS le nom du fichier (pas le gros bouton du haut), et laisse le fichier dans Téléchargements. Le launcher le trouve, le vérifie et le range au bon endroit : mods, packs de ressources ou shaders.",
       cfOpenPage: "Ouvrir la page", cfWaiting: "En attente du fichier", cfFound: "✓ Trouvé et installé",
       cfLater: "Finir plus tard", cfDoneB: "Terminé", cfPlay: "Jouer", cfPlayW: "Ouvrir « {w} »",
       cfReady: "Pack « {p} » prêt. {w} s'ouvre maintenant avec ses mods.", cfReadyNoW: "Pack « {p} » prêt.",
-      cfLaterToast: "Le pack attend encore {n} mod(s). Tu pourras finir depuis Mes installations.",
+      cfLaterToast: "Le pack attend encore {n}. Pour finir : Jouer › « {p} » › « Reprendre ».",
+      hdBadge: "⬇ {n} à télécharger", hdTip: "À télécharger à la main : {w}", hdBar: "{w} à télécharger à la main. Sans eux, le pack ne marchera pas bien.", hdGo: "Reprendre", hdT: "Finir l'installation de « {p} »", hdLater: "Plus tard", hdLaterToast: "D'accord. Tu peux reprendre quand tu veux : Jouer › « {p} » › « Reprendre ».", hdAll: "Tout est là, le pack est prêt.",
+      cfPHand: "{m} à télécharger à la main", cfK_mod1: "1 mod", cfK_modN: "{n} mods", cfK_rp1: "1 pack de ressources", cfK_rpN: "{n} packs de ressources", cfK_sh1: "1 shader", cfK_shN: "{n} shaders", cfKAnd: " et ",
+      cfKC_mod: "Mod", cfKC_rp: "Pack de ressources", cfKC_sh: "Shader",
       modWarnCf: "Recréer son pack",
       modWarnCfD: "Le mieux : recréer le pack du monde. Le launcher lit sa liste de mods (pack Modrinth .mrpack, instance CurseForge ou export .zip) et installe exactement les mêmes.",
       modCopyDone: "Copie « {c} » créée : c'est elle qui s'ouvre.",
@@ -222,12 +225,15 @@
       cfGo: "Import the pack", cfGoW: "Import the pack and {n} world(s)",
       cfStepList: "Mod list read", cfStepDl: "Downloading mods", cfStepPacked: "Mods included in the pack copied", cfStepOm: "Pack versions installed", impStepW: "Worlds copied",
       ipAll: "Import: {p} %", ipAllDone: "Import finished", ipIn: "in {t}", ipLeft: "about {t} left", ipCalc: "estimating…", ipFiles: "{n} / {of} files", ipOf: "{a} of {b}",
-      cfStepCfg: "Pack settings copied", cfStepWorld: "World copied", cfStepManual: "Mods to download by hand",
-      cfManualD: "Open the page, click “Download” UNDER the file name (not the big button at the top), and leave the file in Downloads. The launcher finds it, checks it and puts it in place.",
+      cfStepCfg: "Pack settings copied", cfStepWorld: "World copied", cfStepManual: "To download by hand",
+      cfManualD: "Open the page, click “Download” UNDER the file name (not the big button at the top), and leave the file in Downloads. The launcher finds it, checks it and puts it in the right place: mods, resource packs or shaders.",
       cfOpenPage: "Open the page", cfWaiting: "Waiting for the file", cfFound: "✓ Found and installed",
       cfLater: "Finish later", cfDoneB: "Done", cfPlay: "Play", cfPlayW: "Open “{w}”",
       cfReady: "Pack “{p}” ready. {w} now opens with its mods.", cfReadyNoW: "Pack “{p}” ready.",
-      cfLaterToast: "The pack still needs {n} mod(s). You can finish from My installations.",
+      cfLaterToast: "The pack still needs {n}. To finish: Play › “{p}” › “Resume”.",
+      hdBadge: "⬇ {n} to download", hdTip: "To download by hand: {w}", hdBar: "{w} to download by hand. The pack won't work right without them.", hdGo: "Resume", hdT: "Finish installing “{p}”", hdLater: "Later", hdLaterToast: "OK. You can resume any time: Play › “{p}” › “Resume”.", hdAll: "Everything is here, the pack is ready.",
+      cfPHand: "{m} to download by hand", cfK_mod1: "1 mod", cfK_modN: "{n} mods", cfK_rp1: "1 resource pack", cfK_rpN: "{n} resource packs", cfK_sh1: "1 shader", cfK_shN: "{n} shaders", cfKAnd: " and ",
+      cfKC_mod: "Mod", cfKC_rp: "Resource pack", cfKC_sh: "Shader",
       modWarnCf: "Rebuild its pack",
       modWarnCfD: "Best option: rebuild the world's pack. The launcher reads its mod list (Modrinth .mrpack, CurseForge instance or .zip export) and installs exactly the same mods.",
       modCopyDone: "Copy “{c}” made: that is the one that opens.",
@@ -576,6 +582,9 @@
   .cf-man-row:first-child { border-top:0; }
   .cf-man-row .fn { display:block; font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cf-man-row .st { font-size:12px; color:var(--muted); white-space:nowrap; }
+  .cf-kd { display:inline-block; font-size:10.5px; font-weight:600; line-height:1.5; padding:0 7px; border-radius:999px; margin-right:7px; vertical-align:1px; color:var(--muted); background:color-mix(in srgb, var(--muted) 16%, transparent); }
+  .cf-kd.rp { color:var(--accent); background:color-mix(in srgb, var(--accent) 15%, transparent); }
+  .cf-kd.sh { color:var(--warn); background:color-mix(in srgb, var(--warn) 15%, transparent); }
   .cf-man-row.ok .st { color:var(--success); font-weight:600; }
   .cf-man-row .link-btn { margin:0; font-size:12px; white-space:nowrap; }
   .cf-man-note { font-size:12.5px; line-height:1.45; color:var(--muted); margin:0; }
@@ -1560,7 +1569,7 @@
     const n = pjWorlds(v).length;
     return `<div class="pj2-tile${sel ? " sel" : ""}${run ? " run" : ""}${kept || upd || FL.newId === v.id ? " fresh" : ""}${PJ.rm?.id === v.id || PJ.rmQ.some((j) => j.id === v.id) ? " rm-busy" : ""}" data-pj-tile="${esc(v.id)}" tabindex="0" role="button" title="${esc(PJT().tileTip)}">
       ${pjRmLayer(v)}${pjCover(v)}
-      ${pjCanUp(v) ? `<span class="pj2-badge up" title="${esc(PJT().upTip(newerFor(v)))}">⬆ ${esc(newerFor(v))}</span>` : ""}${v.problems ? `<span class="pj2-badge warn" title="${esc(pkT("cardBad", { n: v.problems }))}">⚠ ${v.problems}</span>` : ""}${run ? `<span class="pj2-badge run"><i></i>${esc(PJT().running)}</span>` : kept ? `<span class="pj2-badge fresh" title="${esc(PJT().keptTip(v.minecraftVersion))}">${esc(PJT().keptCopy(v.minecraftVersion))}</span>` : upd ? `<span class="pj2-badge fresh">${esc(PJT().updated(v.minecraftVersion))}</span>` : FL.newId === v.id ? `<span class="pj2-badge fresh">${esc(FLT().badge)}</span>` : ""}
+      ${pjCanUp(v) ? `<span class="pj2-badge up" title="${esc(PJT().upTip(newerFor(v)))}">⬆ ${esc(newerFor(v))}</span>` : ""}${v.hand?.length ? `<button type="button" class="pj2-badge hand" data-pj-hand="${esc(v.id)}" title="${esc(T("hdTip", { w: cfKinds(v.hand) }))}">${esc(T("hdBadge", { n: v.hand.length }))}</button>` : v.problems ? `<span class="pj2-badge warn" title="${esc(pkT("cardBad", { n: v.problems }))}">⚠ ${v.problems}</span>` : ""}${run ? `<span class="pj2-badge run"><i></i>${esc(PJT().running)}</span>` : kept ? `<span class="pj2-badge fresh" title="${esc(PJT().keptTip(v.minecraftVersion))}">${esc(PJT().keptCopy(v.minecraftVersion))}</span>` : upd ? `<span class="pj2-badge fresh">${esc(PJT().updated(v.minecraftVersion))}</span>` : FL.newId === v.id ? `<span class="pj2-badge fresh">${esc(FLT().badge)}</span>` : ""}
       <div class="pj2-body"><b title="${esc(pjName(v))}">${esc(pjName(v))}</b>${testTag(v)}
         <small>${esc([v.pack ? [pjPack(v), v.minecraftVersion, `${v.modCount} ${PJT().mods}`].filter(Boolean).join(" · ") : "Vanilla", pjGroup(v).length > 1 ? PJT().nV(pjGroup(v).length) : ""].filter(Boolean).join(" · "))}</small>
         <small class="lw">${lw ? `${esc(PJT().lastW)} <span class="sensitive" data-mask="${esc(T("mvMask"))}">${esc(lw.name)}</span> · ${esc(ago(lw.lastPlayed))}` : esc(PJT().noW)}</small>
@@ -1586,6 +1595,7 @@
     const meta = [v.pack ? pjPack(v) : "Vanilla", v.name ? v.minecraftVersion : "", v.pack ? `${v.modCount} ${PJT().mods}` : "", PJT().nW(ws.length), v.lastPlayedAt ? ago(v.lastPlayedAt) : PJT().never].filter(Boolean).map(esc).join(" · ");
     return `<div class="pj2-dhead"><div class="mv-txt"><div class="mv-name" style="font-size:15px;"><span>${esc(pjName(v))}</span></div><div class="mv-meta">${meta}</div></div>
         <span class="pj2-dacts">${pjUpBtn(v)}${pageOn(v) ? `<button type="button" class="btn-secondary" data-pj-page="${esc(v.id)}" style="margin:0;">⚙ ${esc(PJT().openPage)}</button>` : ""}<button type="button" class="join-btn" data-play-version="${esc(v.id)}" ${data.running ? "disabled" : ""}>${esc(run ? T("playing") : T("play"))}</button>${pjDots(v)}</span></div>
+      ${v.hand?.length ? `<div class="pj2-hand" role="status"><span>⬇ ${esc(T("hdBar", { w: cfKinds(v.hand) }))}</span><button type="button" class="join-btn" data-pj-hand="${esc(v.id)}">${esc(T("hdGo"))}</button></div>` : ""}
       ${ws.length ? `<div class="mv-list">${show.map((w) => mvRow(w)).join("")}</div>${ws.length > 4 ? `<button type="button" class="mv-more" data-pj-more>${esc(PJ.drawerAll ? PJT().lessW : PJT().moreW(ws.length))}</button>` : ""}` : `<div class="mv-empty">${esc(PJT().noWorlds)}</div>`}`;
   }
   // Boutons d'en-tête : les mêmes qu'avant (Réglages des sauvegardes, cloud, Importer…, + Nouvelle version).
@@ -2325,6 +2335,10 @@
   .pj2-badge { position:absolute; top:7px; right:7px; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff; display:inline-flex; gap:5px; align-items:center; max-width:calc(100% - 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .pj2-badge.up { background:var(--accent); }
   .pj2-badge.warn { left:7px; right:auto; background:var(--warn); color:#000; }
+  button.pj2-badge.hand { left:7px; right:auto; border:0; cursor:pointer; font:inherit; font-size:10.5px; font-weight:700; background:var(--warn); color:#000; }
+  button.pj2-badge.hand:hover, button.pj2-badge.hand:focus-visible { outline:2px solid var(--foreground); outline-offset:1px; }
+  .pj2-hand { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin:10px 0 4px; padding:10px 12px; border-radius:var(--radius-m); border:1px solid color-mix(in srgb, var(--warn) 45%, transparent); background:color-mix(in srgb, var(--warn) 10%, transparent); font-size:13px; line-height:1.45; }
+  .pj2-hand .join-btn { margin:0; }
   .pj2-badge.fresh, .pj2-badge.run { left:7px; right:auto; top:48px; background:var(--success); }
   .pj2-badge.run i { width:7px; height:7px; border-radius:50%; background:#fff; animation:mvp 1.2s infinite; }
   .pj2-new { align-items:center; justify-content:center; gap:6px; border-style:dashed; background:none; color:var(--muted); min-height:150px; }
@@ -5960,6 +5974,7 @@
         <div class="pk-acts">${omGearHtml(p)}
           ${probs.length ? `<button type="button" class="join-btn" data-pk-force>${esc(pkT("force"))}</button>` : `<button type="button" class="join-btn" data-pk-play>${esc(pkT("play"))}</button>`}</div></div>
       ${omBarHtml(p)}
+      ${v.hand?.length ? `<div class="pj2-hand" role="status"><span>⬇ ${esc(T("hdBar", { w: cfKinds(v.hand) }))}</span><button type="button" class="join-btn" data-pj-hand="${esc(v.id)}">${esc(T("hdGo"))}</button></div>` : ""}
       ${probs.length
         ? `<div class="pk-check bad" role="status"><span><b>${esc(pkT("bad", { n: probs.length }))}</b><br>${probs.map((x) => esc(pkProbText(x))).join("<br>")}</span>
           ${p.readonly ? "" : p.partial ? `<button type="button" class="join-btn" disabled><span class="ip-spin" aria-hidden="true"></span> ${esc(pkT("fixWait"))}</button>` : `<button type="button" class="join-btn" data-pk-fix>${esc(probs.length > 1 ? pkT("fixAll") : pkT("fix"))}</button>`}</div>`
@@ -7545,6 +7560,68 @@
     });
   }
 
+  // Fichiers à télécharger à la main, par type (04/11, Rushi) : un .zip de la liste d'un pack CurseForge
+  // peut être un pack de ressources ou un shader, pas seulement un mod. « 6 mods et 1 pack de ressources ».
+  const cfKindOf = (x) => (x?.kind === "rp" || x?.kind === "sh" ? x.kind : "mod");
+  const cfKindPart = (x) => (cfKindOf(x) === "mod" ? "mods" : cfKindOf(x));
+  const cfKinds = (list) => {
+    const c = { mod: 0, rp: 0, sh: 0 };
+    for (const x of list) c[cfKindOf(x)]++;
+    const out = ["mod", "rp", "sh"].filter((k) => c[k]).map((k) => T(c[k] > 1 ? `cfK_${k}N` : `cfK_${k}1`, { n: c[k] }));
+    return out.length < 2 ? out[0] || "" : out.slice(0, -1).join(", ") + T("cfKAnd") + out[out.length - 1];
+  };
+  const cfKindChip = (x) => `<span class="cf-kd ${cfKindOf(x)}">${esc(T(`cfKC_${cfKindOf(x)}`))}</span>`;
+
+  // « Reprendre » (04/11, Rushi : « après Finir plus tard, on ne peut pas redémarrer ») : la même liste
+  // que pendant l'import, pour les fichiers encore à télécharger à la main d'une installation.
+  async function openHandResume(vid) {
+    const v = data.versions.find((x) => x.id === vid);
+    if (!v?.hand?.length) return;
+    const KORD = { mod: 0, rp: 1, sh: 2 };
+    const list = [...v.hand].sort((a, b) => KORD[cfKindOf(a)] - KORD[cfKindOf(b)]);
+    const found = new Set(list.map((x, i) => (x.found ? i : -1)).filter((i) => i >= 0));
+    const name = pjName(v);
+    const m = overlay(`<div class="modal-box pop-in" role="dialog" aria-modal="true" aria-labelledby="hd-t" style="max-width:560px;text-align:left;max-height:calc(100vh - 48px);overflow:auto;"></div>`);
+    const box = m.ov.querySelector(".modal-box");
+    const draw = () => {
+      const left = list.filter((_, i) => !found.has(i));
+      box.innerHTML = `<h3 id="hd-t">${esc(T("hdT", { p: name }))}</h3>
+        <p class="cf-man-note" style="margin:6px 0 8px;">${left.length ? `<b>${esc(T("hdBar", { w: cfKinds(left) }))}</b><br>${esc(T("cfManualD"))}` : `<b style="color:var(--success);">✓ ${esc(T("hdAll"))}</b>`}</p>
+        <div class="cf-man">${list.map((x, i) => `<div class="cf-man-row ${found.has(i) ? "ok" : ""}"><span style="min-width:0;">${cfKindChip(x)}${esc(x.name)}<span class="fn">${esc(x.fileName)}</span></span>
+          <span class="st">${esc(found.has(i) ? T("cfFound") : T("cfWaiting"))}</span>
+          ${found.has(i) ? "<span></span>" : `<button type="button" class="link-btn" data-hd-open="${i}">${esc(T("cfOpenPage"))} ↗</button>`}</div>`).join("")}</div>
+        <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px;">
+          ${left.length ? `<button type="button" class="btn-secondary" id="hd-later">${esc(T("hdLater"))}</button>` : ""}
+          <button type="button" class="join-btn" id="hd-play" ${left.length ? "disabled" : ""}>${esc(T("cfPlay"))}</button></div>`;
+      m.$("#hd-later")?.addEventListener("click", () => { m.close(); toast(T("hdLaterToast", { p: name })); });
+      m.$("#hd-play").addEventListener("click", () => { m.close(); launch({ versionId: vid }, null); });
+      box.querySelectorAll("[data-hd-open]").forEach((b) => b.addEventListener("click", async () => {
+        const i = Number(b.dataset.hdOpen);
+        b.disabled = true;
+        const r = await api.handFiles?.open(vid, list[i].id);
+        if (r?.found) {
+          found.add(i);
+          const h = v.hand.find((x) => x.id === list[i].id);
+          if (h) h.found = true;
+          if (found.size === list.length) v.hand = [];
+          if (document.body.contains(m.ov)) draw();
+          render();
+        } else {
+          b.disabled = false;
+          if (r && r.ok === false && r.error) toast(r.error);
+        }
+      }));
+    };
+    draw();
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-pj-hand]");
+    if (!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openHandResume(b.dataset.pjHand);
+  }, true);
+
   async function openCfPack(src) {
     const m = overlay(`<div class="modal-box pop-in" role="dialog" aria-modal="true" aria-labelledby="cf-t" style="max-width:560px;text-align:left;max-height:calc(100vh - 48px);overflow:auto;">
       <h3 id="cf-t">${esc(src.kind === "omni" ? T("omImpT") : src.kind === "mr" ? T("mrT") : T("cfT"))}</h3><p class="join-note">${esc(T("cfReading"))}</p></div>`);
@@ -7559,16 +7636,24 @@
     const picked = new Set(worlds.filter((w) => !src.worldKey || w.key === src.worldKey).map((w) => w.folder));
     const parts = new Set(["mods", "cfg", "rp", "sh"]);
     const goLabel = () => (picked.size ? T("cfGoW", { n: picked.size }) : T("cfGo"));
+    // Packs de ressources / shaders : ceux du fichier du pack + ceux de sa liste CurseForge (.zip, 04/11).
+    const handOf = (k) => (p.manual || []).filter((x) => cfKindOf(x) === k).length;
+    const contentRow = (k, key, names = []) => {
+      const all = [...(names || []), ...(p.cfContent || []).filter((x) => x.kind === k).map((x) => x.name)];
+      if (!all.length) return "";
+      const hand = handOf(k);
+      return `<label class="play-row"><input type="checkbox" data-cfp="${k}" checked><span class="t">${esc(T(key, { n: all.length }))}<small>${esc(all.join(", "))}${hand ? ` · ${esc(T("cfPHand", { m: hand }))}` : ""}</small></span></label>`;
+    };
     box.innerHTML = `<h3 id="cf-t">${esc(p.from === "omnipack" ? T("omImpT") : p.from === "mrpack" ? T("mrT") : T("cfT"))}</h3>
       <div class="cf-head"><img src="${p.icon || grassThumb(p.name)}" alt=""><div><b>${esc(p.name)}</b>
         <small><span class="cf-src">${esc(p.from === "omnipack" ? T("omImpSrc", { n: (p.versions || []).length }) : p.from === "mrpack" ? T("mrSrc") : p.from === "zip" ? T("cfSrcZip") : T("cfSrcInst"))}</span>${esc(T("cfMeta", { v: p.from === "omnipack" ? (p.versions || []).join(", ") : p.minecraftVersion, l: p.loader ? modLabel({ loader: p.loader }) + (p.loaderVersion ? " " + p.loaderVersion : "") : "Vanilla", n: p.modCount }))}</small></div></div>
       <span class="play-path">${esc(p.path)}</span>
       <div class="cf-sub">${esc(T("cfWhatT"))}</div>
       <div class="play-list">
-        <label class="play-row"><input type="checkbox" data-cfp="mods" checked><span class="t">${esc(T("cfPMods", { n: p.modCount }))}<small>${esc(p.manual.length ? T("cfPModsD", { a: p.modCount - p.manual.length, m: p.manual.length }) : T("cfPModsAll"))}</small></span><span class="sz">${esc(modLabel({ loader: p.loader }))}</span></label>
+        <label class="play-row"><input type="checkbox" data-cfp="mods" checked><span class="t">${esc(T("cfPMods", { n: p.modCount }))}<small>${esc(handOf("mod") ? T("cfPModsD", { a: p.modCount - handOf("mod"), m: handOf("mod") }) : T("cfPModsAll"))}</small></span><span class="sz">${esc(modLabel({ loader: p.loader }))}</span></label>
         <label class="play-row"><input type="checkbox" data-cfp="cfg" checked><span class="t">${esc(T("cfPCfg"))}<small>${esc(T("cfPCfgD", { n: p.configFiles }))}</small></span></label>
-        ${p.resourcepacks?.length ? `<label class="play-row"><input type="checkbox" data-cfp="rp" checked><span class="t">${esc(T("cfPRp", { n: p.resourcepacks.length }))}<small>${esc(p.resourcepacks.join(", "))}</small></span></label>` : ""}
-        ${p.shaders?.length ? `<label class="play-row"><input type="checkbox" data-cfp="sh" checked><span class="t">${esc(T("cfPSh", { n: p.shaders.length }))}<small>${esc(p.shaders.join(", "))}</small></span></label>` : ""}
+        ${contentRow("rp", "cfPRp", p.resourcepacks)}
+        ${contentRow("sh", "cfPSh", p.shaders)}
       </div>
       <p class="cf-man-note" id="cf-nomods" style="color:var(--warn);" hidden>⚠ ${esc(T("cfNoModsW"))}</p>
       <div class="cf-sub">${esc(T("cfWorldsT"))}</div>
@@ -7660,9 +7745,12 @@
 
   async function installCfPack(m, box, p, folders, parts, ram = null) {
     m.ov.dataset.locked = "1";
+    // À la main : seulement ce qui est coché (mods, packs de ressources, shaders), les mods d'abord (04/11).
+    const KORD = { mod: 0, rp: 1, sh: 2 };
+    p = { ...p, manual: (p.manual || []).filter((x) => parts.has(cfKindPart(x))).sort((a, b) => KORD[cfKindOf(a)] - KORD[cfKindOf(b)]) };
     // Compteur du téléchargement : sans les mods déjà dans le fichier du pack (copiés, pas
     // téléchargés) ni ceux à télécharger à la main. Avant : ATM10 restait à « 413/416 » (27/10).
-    const auto = p.modCount - p.manual.length - (p.packedJars || 0);
+    const auto = p.modCount - p.manual.filter((x) => cfKindOf(x) === "mod").length - (p.packedJars || 0);
     const omni = p.from === "omnipack";
     const steps = omni ? [
       { id: "list", label: T("cfStepList"), state: "done" },
@@ -7673,10 +7761,10 @@
       // Mods rangés dans le fichier du pack : ligne à part, sinon on croit qu'il en manque (27/10).
       ...(parts.has("mods") && p.packedJars ? [{ id: "packed", label: T("cfStepPacked"), state: "wait", n: 0, of: p.packedJars }] : []),
       ...(parts.has("cfg") ? [{ id: "cfg", label: T("cfStepCfg"), state: "wait" }] : []),
-      ...(parts.has("rp") && p.resourcepacks?.length ? [{ id: "rp", label: T("cfStepRp"), state: "wait" }] : []),
-      ...(parts.has("sh") && p.shaders?.length ? [{ id: "sh", label: T("cfStepSh"), state: "wait" }] : []),
+      ...(parts.has("rp") && (p.resourcepacks?.length || (p.cfContent || []).some((x) => x.kind === "rp" && !x.manual)) ? [{ id: "rp", label: T("cfStepRp"), state: "wait" }] : []),
+      ...(parts.has("sh") && (p.shaders?.length || (p.cfContent || []).some((x) => x.kind === "sh" && !x.manual)) ? [{ id: "sh", label: T("cfStepSh"), state: "wait" }] : []),
       ...(folders.length ? [{ id: "world", label: T("cfStepWorld"), state: "wait" }] : []),
-      ...(parts.has("mods") && p.manual.length ? [{ id: "manual", label: T("cfStepManual"), state: "wait", n: 0, of: p.manual.length }] : []),
+      ...(p.manual.length ? [{ id: "manual", label: `${T("cfStepManual")} · ${cfKinds(p.manual)}`, state: "wait", n: 0, of: p.manual.length }] : []),
     ];
     if (steps[1] && steps[1].state === "wait") steps[1].state = "run";
     const found = new Set();
@@ -7696,7 +7784,7 @@
         <div class="cf-steps">${steps.map((s) => `<div class="cf-step ${s.state}"><span class="ic">${ipIcon(s)}</span><span>${esc(s.label)}</span><span class="n">${s.of ? `${s.n}/${s.of}` : ""}</span>
           ${s.state === "run" && s.id !== "manual" ? ipStepExtra(s) : ""}</div>`).join("")}</div>`);
       const manHtml = man && man.state !== "wait" ? `<p class="cf-man-note">${esc(T("cfManualD"))}</p>
-          <div class="cf-man">${p.manual.map((x, i) => `<div class="cf-man-row ${found.has(i) ? "ok" : ""}"><span style="min-width:0;">${esc(x.name)}<span class="fn">${esc(x.fileName)}</span></span>
+          <div class="cf-man">${p.manual.map((x, i) => `<div class="cf-man-row ${found.has(i) ? "ok" : ""}"><span style="min-width:0;">${cfKindChip(x)}${esc(x.name)}<span class="fn">${esc(x.fileName)}</span></span>
             <span class="st">${esc(found.has(i) ? T("cfFound") : T("cfWaiting"))}</span>
             ${found.has(i) ? "<span></span>" : `<button type="button" class="link-btn" data-cf-open="${i}">${esc(T("cfOpenPage"))} ↗</button>`}</div>`).join("")}</div>` : "";
       const actsHtml = `${man && !allDone ? `<button type="button" class="btn-secondary" id="cf-later">${esc(T("cfLater"))}</button>` : ""}
@@ -7707,7 +7795,7 @@
       if (newActs) part.acts.innerHTML = drawn.acts = actsHtml;
       if (newActs) m.$("#cf-later")?.addEventListener("click", () => {
         m.close();
-        toast(T("cfLaterToast", { n: p.manual.length - found.size }));
+        toast(T("cfLaterToast", { n: cfKinds(p.manual.filter((_, i) => !found.has(i))), p: p.name }));
         refresh();
       });
       if (newMan) part.man.querySelectorAll("[data-cf-open]").forEach((b) => b.addEventListener("click", async () => {
@@ -7719,7 +7807,11 @@
           man.n = found.size;
           if (found.size === p.manual.length) man.state = "done";
           draw();
-        } else b.disabled = false;
+        } else {
+          b.disabled = false;
+          // Avant (04/11) : une erreur ne montrait rien, le bouton semblait ne rien faire.
+          if (r && r.ok === false && r.error) toast(r.error);
+        }
       }));
       // « Terminé » : le pack est importé, on ne lance pas le jeu.
       if (newActs) m.$("#cf-done")?.addEventListener("click", async () => {

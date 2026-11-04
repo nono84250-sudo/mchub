@@ -201,7 +201,31 @@ function createPlayMode({ gameRoot, appDataDir }) {
 
   // --- Mes versions -----------------------------------------------------------
   function listVersions() {
-    return loadState().versions.map((v) => ({ ...v, files: undefined, mods: undefined, installed: undefined, modCount: (v.mods || v.files || []).length, problems: v.problemCount || 0 }));
+    return loadState().versions.map((v) => ({ ...v, pack: v.pack ? { ...v.pack, cfHand: undefined } : v.pack, files: undefined, mods: undefined, installed: undefined, modCount: (v.mods || v.files || []).length, problems: v.problemCount || 0, hand: handFiles(v) }));
+  }
+  // Fichiers encore à télécharger à la main (04/11, pastille et « Reprendre » de Mes installations) :
+  // mods CurseForge sans lien pas encore dans mods/, et .zip (packs de ressources, shaders) gardés à
+  // l'import et pas encore dans leur dossier.
+  function handFiles(v) {
+    if (!v?.pack) return [];
+    const out = [];
+    try {
+      const mods = modsDirOf(v.id);
+      for (const m of v.mods || []) {
+        if (m.source !== "cf" || m.on === false || m.file?.url) continue;
+        const f = fileNameOf(m);
+        if (!f || fs.existsSync(path.join(mods, f)) || fs.existsSync(path.join(mods, `${f}.disabled`))) continue;
+        out.push({ id: m.id, name: m.name, fileName: f, kind: "mod" });
+      }
+      const dir = gameDirOf(v.id);
+      for (const c of v.pack.cfHand || []) {
+        if (!c?.fileName || fs.existsSync(path.join(dir, c.kind === "sh" ? "shaderpacks" : "resourcepacks", c.fileName))) continue;
+        out.push({ id: c.id, name: c.name, fileName: c.fileName, kind: c.kind === "sh" ? "sh" : "rp" });
+      }
+    } catch {
+      return out;
+    }
+    return out.slice(0, 200);
   }
   function getVersion(id) {
     return loadState().versions.find((v) => v.id === id) || null;

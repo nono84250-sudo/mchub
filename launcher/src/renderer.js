@@ -3157,6 +3157,20 @@ function boldLabelIn(el, text, label) {
 // tout est la), puis « Tout est prêt ». Un fichier retire de CurseForge : bouton « Prévenir le
 // serveur » (jamais d'envoi sans clic, audit du 19/10), une fois par serveur et par session.
 const removedModsReported = new Set();
+// Titre de la fenêtre des fichiers à la main (04/11) : « Encore 2 mods à ajouter » si ce ne sont que des
+// mods, sinon « Encore 1 mod et 1 pack de ressources à ajouter ». kind : "rp", "sh" ou absent (mod).
+function manualKindOf(mod) {
+  return mod?.kind === "rp" || mod?.kind === "sh" ? mod.kind : "mod";
+}
+function manualTitle(list) {
+  const c = { mod: 0, rp: 0, sh: 0 };
+  for (const mod of list) c[manualKindOf(mod)]++;
+  if (!c.rp && !c.sh) return t("manualMods.title", { count: c.mod });
+  const keys = { mod: "manualMods.kMod", rp: "manualMods.kRp", sh: "manualMods.kSh" };
+  const parts = ["mod", "rp", "sh"].filter((k) => c[k]).map((k) => t(keys[k], { count: c[k] }));
+  const what = parts.length < 2 ? parts[0] : parts.slice(0, -1).join(", ") + t("manualMods.kAnd") + parts[parts.length - 1];
+  return t("manualMods.titleMix", { what });
+}
 function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = [], context = {}) {
   window.mchub.bugs?.signal("manual_download_required"); // catalogue de bugs : la marche à suivre, une fois par session
   return new Promise((resolve) => {
@@ -3207,7 +3221,7 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
     };
     document.getElementById("manual-mods-title").textContent = onlyRemoved
       ? t("manualMods.removedTitle")
-      : t("manualMods.title", { count: blocked.length });
+      : manualTitle(blocked);
     document.getElementById("manual-mods-body").textContent = onlyRemoved ? t("manualMods.removedBody") : t("manualMods.body");
     document.getElementById("manual-mods-note").textContent = onlyRemoved ? t("manualMods.removedNote") : t("manualMods.note");
 
@@ -3254,7 +3268,7 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
       row.classList.add("received");
       row.querySelectorAll("button").forEach((button) => button.remove());
       const left = rowsByFile.size - received.size;
-      titleEl.textContent = left > 0 ? t("manualMods.title", { count: left }) : t("manualMods.allHere");
+      titleEl.textContent = left > 0 ? manualTitle([...rowsByFile.keys()].filter((f) => !received.has(f)).map((f) => rowsByFile.get(f).mod)) : t("manualMods.allHere");
       syncProgress();
       if (left === 0 && !onlyRemoved && removed.length === 0) {
         // « Tout est prêt » puis l'installation reprend toute seule.
@@ -3277,6 +3291,12 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
       const name = document.createElement("span");
       name.className = "manual-mod-name";
       name.textContent = mod.modName || mod.fileName || t("manualMods.fileFallback", { id: mod.fileId });
+      // Type du fichier (04/11) : mod, pack de ressources ou shader, et où il ira.
+      const kindChip = document.createElement("span");
+      kindChip.className = `manual-mod-kind ${manualKindOf(mod)}`;
+      kindChip.textContent = t({ mod: "manualMods.chipMod", rp: "manualMods.chipRp", sh: "manualMods.chipSh" }[manualKindOf(mod)]);
+      if (manualKindOf(mod) !== "mod") kindChip.title = t(manualKindOf(mod) === "rp" ? "manualMods.whereRp" : "manualMods.whereSh");
+      name.prepend(kindChip);
       const file = document.createElement("span");
       file.className = "manual-mod-file";
       // Nom exact du fichier toujours affiche (26/10) : c'est lui que le joueur doit prendre sur la page.
@@ -3310,7 +3330,7 @@ function showManualModsModal(manualMods, fromModrinth = 0, fromModrinthMods = []
         row.append(open);
       }
       if (!gone && mod.fileName) {
-        rowsByFile.set(mod.fileName, { chip, row, wrong });
+        rowsByFile.set(mod.fileName, { chip, row, wrong, mod });
         const have = document.createElement("button");
         have.type = "button";
         have.className = "btn-ghost";

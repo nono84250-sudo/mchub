@@ -388,6 +388,10 @@ contextBridge.exposeInMainWorld("mchub", {
       },
       openPage: (url) => ipcRenderer.invoke("packBrowse:openPage", url),
     },
+    // « Reprendre » les fichiers à télécharger à la main d'une installation (04/11).
+    handFiles: {
+      open: (versionId, fileId) => ipcRenderer.invoke("play:handFiles:open", versionId, fileId),
+    },
     // Importer un export CurseForge (.zip) avec ses mondes (26/10).
     cfPack: {
       pickZip: (kind) => ipcRenderer.invoke("cfPack:pickZip", kind === "mr" || kind === "omni" ? kind : "cf"),

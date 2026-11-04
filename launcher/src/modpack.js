@@ -167,6 +167,7 @@ function readCloudPack(info) {
           fileName: item.info.fileName,
           pageUrl: safeCurseforgeUrl(item.info.pageUrl) || curseforgeProjectUrl(item.info.modId),
           reason: item.removed ? "removed" : "blocked",
+          kind: manualKindOfPath(item.entry?.path),
         });
       }
       if (manualMods.length) {
@@ -236,6 +237,11 @@ async function sha1File(file) {
 
 // Chemin a l'interieur de `base` uniquement : un zip malveillant ne doit pas
 // pouvoir ecrire ailleurs via des entrees "../" ("zip slip").
+// Type d'un fichier à télécharger à la main (04/11) : d'après son dossier dans le pack.
+function manualKindOfPath(rel) {
+  const low = String(rel || "").toLowerCase();
+  return low.startsWith("resourcepacks/") ? "rp" : low.startsWith("shaderpacks/") ? "sh" : "mod";
+}
 function safeJoin(base, relative) {
   const root = path.resolve(base);
   const target = path.resolve(root, relative);
@@ -653,6 +659,7 @@ async function resolveFtbFiles({ config, files, onProgress, instanceDir, manualS
       fileName: info.fileName,
       pageUrl: safeCurseforgeUrl(info.pageUrl) || curseforgeProjectUrl(info.modId),
       reason: item.removed ? "removed" : "blocked",
+      kind: manualKindOfPath(item.entry?.path),
     });
   }
   onProgress({
@@ -707,7 +714,11 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
       manualMods.push({ fileId, modId: null, modName: null, fileName: null, pageUrl: null, reason: "removed" });
       continue;
     }
-    const entry = { path: `mods/${path.basename(info.fileName)}`, url: info.downloadUrl, sha1: info.sha1, size: info.fileLength };
+    // .zip de la liste (pack de ressources, ou shader si sa page est dans /shaders/) : rangé dans son
+    // dossier, plus dans mods/ (04/11, « Mekanism CTM w/ Fusion »).
+    const zip = /\.zip$/i.test(String(info.fileName || ""));
+    const dir = !zip ? "mods" : /\/shaders\//i.test(String(info.pageUrl || "")) ? "shaderpacks" : "resourcepacks";
+    const entry = { path: `${dir}/${path.basename(info.fileName)}`, url: info.downloadUrl, sha1: info.sha1, size: info.fileLength };
     if (info.downloadUrl && !isAllowedModpackUrl(info.downloadUrl)) {
       throw new ModpackError(`Le mod "${info.fileName}" du modpack se télécharge depuis un site non autorisé.`, {
         code: "disallowed_download_host",
@@ -739,6 +750,7 @@ async function resolveCurseforgeFiles({ config, manifest, onProgress, instanceDi
         fileName: info.fileName,
         pageUrl: safeCurseforgeUrl(info.pageUrl) || curseforgeProjectUrl(info.modId),
         reason: "blocked",
+        kind: manualKindOfPath(entry.path),
       });
     }
   }

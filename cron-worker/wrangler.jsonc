@@ -2,6 +2,8 @@
   "name": "omniscient-scheduled-broadcasts",
   "main": "src/index.js",
   "compatibility_date": "2025-09-01",
+  // Declenche par le cron seulement : aucune adresse publique workers.dev.
+  "workers_dev": false,
   "triggers": {
     "crons": ["*/5 * * * *"]
   },
