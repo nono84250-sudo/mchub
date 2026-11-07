@@ -242,6 +242,29 @@ function markUserCard(html: string, admin: Awaited<ReturnType<typeof getCurrentA
   return html.split(marker).join(replacement);
 }
 
+// 2026-11-06 : panel sur téléphone. Sous 640 px, le menu latéral devient un tiroir qui s'ouvre
+// avec un bouton « Menu » dans le bandeau du haut (signalé par Rushi : menu coupé sur mobile).
+// Sans JavaScript : une case à cocher cachée, placée juste avant <nav> (sœur précédente, pour
+// que le CSS de nb.css puisse ouvrir le tiroir), un bouton <label> dans le bandeau et un fond
+// sombre <label> qui referme. Changer de page recharge l'écran, donc le tiroir se referme seul.
+function addMobileNav(html: string): string {
+  const navStart = html.indexOf("<nav");
+  if (navStart < 0) return html;
+  const navEnd = html.indexOf("</nav>", navStart);
+  if (navEnd < 0) return html;
+  const afterNav = navEnd + "</nav>".length;
+  const topbarAt = html.indexOf("padding:12px 28px", afterNav);
+  const topbarOpenEnd = topbarAt < 0 ? -1 : html.indexOf(">", topbarAt) + 1;
+  if (topbarOpenEnd <= 0) return html;
+  const toggle = '<input type="checkbox" id="adm-nav-toggle" class="adm-nav-toggle" aria-hidden="true" tabindex="-1">';
+  const backdrop = '<label for="adm-nav-toggle" class="adm-nav-backdrop" aria-hidden="true"></label>';
+  const burger = '<label for="adm-nav-toggle" class="adm-nav-burger" role="button" aria-label="Menu"><i class="ph ph-list" style="font-size:18px;"></i></label>';
+  return (
+    html.slice(0, navStart) + toggle + html.slice(navStart, afterNav) + backdrop +
+    html.slice(afterNav, topbarOpenEnd) + burger + html.slice(topbarOpenEnd)
+  );
+}
+
 // Extrait du composant pour etre reutilisee par AdminChrome.tsx (pages avec de vrais
 // composants client interactifs, injectes via un portail React plutot que du HTML statique —
 // voir le commentaire la-bas) sans dupliquer tout ce pipeline de transformation.
@@ -259,7 +282,7 @@ export async function buildScreenContent({ name, html, markAll }: { name: keyof 
   // markNavBadges, addSettingsNavItem et addContactNavItem doivent tourner avant linkNav :
   // celui-ci transforme le <span style="flex:1"> du libelle en <a>, ce qui change sa balise
   // fermante et casse tout remplacement litteral fait apres coup.
-  let content = markUserCard(
+  let content = addMobileNav(markUserCard(
     markTopbarBell(
       removeTopbarSearch(
         hideNavItems(reorderNav(linkNav(addAnalyticsNavItem(addBugsNavItem(addPlayPacksNavItem(addTeamRequestsNavItem(addTagRequestsNavItem(addLabNavItem(addContactNavItem(addSettingsNavItem(markNavBadges(html ?? SCREENS[name], { verificationPending, reportsOpen })))), tagRequestsPending), teamRequestsPending), playBeta)), analyticsState !== "hidden")))),
@@ -267,7 +290,7 @@ export async function buildScreenContent({ name, html, markAll }: { name: keyof 
     ),
     admin,
     roleLabels,
-  );
+  ));
   if (markAll) content = markAllSections(content, markAll === "proposal" ? "pr" : "nb");
   return content;
 }

@@ -55,23 +55,6 @@ nav[style*="width:232px"] { position: sticky !important; top: 0; height: 100vh; 
    pas de classes dédiées) : le menu devient un rail d'icônes, les grilles
    repassent à 1-2 colonnes. */
 @media (max-width: 900px) {
-  nav[style*="width:232px"] {
-    width: 64px !important;
-    padding: 20px 8px !important;
-  }
-  /* Libellés, badge "Admin", compteurs et texte du bloc utilisateur : masqués,
-     seules les icônes et l'avatar restent visibles. */
-  nav[style*="width:232px"] span[style*="flex:1"],
-  nav[style*="width:232px"] div[style*="padding:4px 10px 22px"] > span:not(:first-child),
-  nav[style*="width:232px"] div[style*="margin-top:auto"] > div {
-    display: none !important;
-  }
-  nav[style*="width:232px"] div[style*="padding:4px 10px 22px"],
-  nav[style*="width:232px"] div[style*="padding:9px 12px"],
-  nav[style*="width:232px"] div[style*="margin-top:auto"] {
-    justify-content: center;
-  }
-
   /* Tuiles de stats (Overview) : 4 colonnes égales -> 2 colonnes. */
   div[style*="grid-template-columns:repeat(4,minmax(0,1fr))"] {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -88,4 +71,85 @@ nav[style*="width:232px"] { position: sticky !important; top: 0; height: 100vh; 
   div[style*="grid-template-columns:repeat(2,minmax(0,1fr))"] {
     grid-template-columns: minmax(0, 1fr) !important;
   }
+}
+
+/* ------------------------------------------------------------------------------------------
+   2026-11-06 : menu du panel sur petit écran (signalé par Rushi : libellés coupés sur téléphone).
+   Avant, le rail d'icônes masquait span[style*="flex:1"], mais linkNav transforme ces <span> en
+   <a style="flex:1;..."> : les libellés n'étaient plus masqués, ils étaient coupés, et les icônes
+   seules n'étaient pas cliquables (seul le libellé était un lien).
+   ------------------------------------------------------------------------------------------ */
+
+/* Toute la ligne du menu est cliquable (icône comprise), pas seulement le texte. */
+nav[style*="width:232px"] div[style*="padding:9px 12px"] { position: relative; }
+nav[style*="width:232px"] div[style*="padding:9px 12px"] > a[style*="flex:1"]::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+}
+nav[style*="width:232px"] div[style*="padding:9px 12px"]:hover { background: var(--raised); }
+
+/* Éléments du tiroir téléphone (voir addMobileNav), invisibles sur grand écran. */
+.adm-nav-toggle { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
+.adm-nav-burger, .adm-nav-backdrop { display: none; }
+
+/* Tablette (641 à 900 px) : rail d'icônes. */
+@media (min-width: 641px) and (max-width: 900px) {
+  nav[style*="width:232px"] {
+    width: 64px !important;
+    padding: 20px 8px !important;
+  }
+  /* Libellés, badges, nom « Omniscient »/« Admin » et texte du bloc utilisateur masqués :
+     seules les icônes et l'avatar restent. Le lien garde sa zone cliquable (::after). */
+  nav[style*="width:232px"] div[style*="padding:9px 12px"] > a[style*="flex:1"] {
+    flex: 0 0 0 !important; width: 0; overflow: hidden; font-size: 0;
+  }
+  nav[style*="width:232px"] div[style*="padding:9px 12px"] > a[style*="flex:1"]::after { font-size: 14px; }
+  nav[style*="width:232px"] div[style*="padding:9px 12px"] > span,
+  nav[style*="width:232px"] div[style*="padding:4px 10px 22px"] > span:not(:first-child),
+  nav[style*="width:232px"] div[style*="margin-top:auto"] > div {
+    display: none !important;
+  }
+  nav[style*="width:232px"] div[style*="padding:4px 10px 22px"],
+  nav[style*="width:232px"] div[style*="padding:9px 12px"],
+  nav[style*="width:232px"] div[style*="margin-top:auto"] {
+    justify-content: center;
+    gap: 0 !important;
+  }
+  nav[style*="width:232px"] div[style*="margin-top:auto"] { flex-direction: column; gap: 10px !important; }
+}
+
+/* Téléphone (640 px et moins) : menu complet dans un tiroir, ouvert par le bouton du bandeau. */
+@media (max-width: 640px) {
+  nav[style*="width:232px"] {
+    position: fixed !important;
+    top: 0; left: 0; bottom: 0;
+    height: 100dvh !important;
+    width: min(280px, 84vw) !important;
+    z-index: 60;
+    background: var(--color-surface) !important;
+    box-shadow: 0 0 40px rgba(0, 0, 0, .35);
+    transform: translateX(-105%);
+    transition: transform .2s ease;
+  }
+  .adm-nav-toggle:checked ~ nav[style*="width:232px"] { transform: none; }
+  .adm-nav-backdrop {
+    position: fixed; inset: 0; z-index: 55;
+    background: rgba(0, 0, 0, .5);
+  }
+  .adm-nav-toggle:checked ~ .adm-nav-backdrop { display: block; }
+  nav[style*="width:232px"] div[style*="padding:9px 12px"] { padding: 12px !important; font-size: 15px !important; }
+
+  .adm-nav-burger {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 36px; height: 36px; margin-left: -6px;
+    border-radius: var(--radius-md); border: 1px solid var(--color-divider);
+    color: var(--color-text); cursor: pointer;
+  }
+
+  /* Bandeau du haut et contenu : marges réduites pour garder la largeur utile. */
+  div[style*="gap:12px;padding:12px 28px"] { padding: 10px 16px !important; }
+  main[style*="padding:28px 32px 40px"] { padding: 20px 16px 32px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  nav[style*="width:232px"] { transition: none !important; }
 }

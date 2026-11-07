@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // Page Laboratoire (/admin/laboratoire, 25/10, preview validée par Rushi) : un interrupteur à 5
 // états par fonctionnalité, les comptes testeurs, et ce que voit chaque type de joueur dans le
@@ -208,7 +208,6 @@ export function AdminFeatureLab({ initial }: { initial: Lab }) {
   const [error, setError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [viewer, setViewer] = useState<Viewer>("tester");
-  const [testerName, setTesterName] = useState("");
   const [testerError, setTesterError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({ cat_play: true });
   const [query, setQuery] = useState("");
@@ -347,15 +346,11 @@ export function AdminFeatureLab({ initial }: { initial: Lab }) {
     }
   }
 
-  async function addTester(event: React.FormEvent) {
-    event.preventDefault();
-    const name = testerName.trim();
-    if (!name) return;
+  async function addTester(uuid: string) {
     setTesterError(null);
     try {
-      const next = await post({ addTester: name });
+      const next = await post({ addTester: uuid });
       if (next) setLab((current) => ({ ...current, testers: next.testers }));
-      setTesterName("");
     } catch (e) {
       setTesterError(e instanceof Error ? e.message : "Ajout impossible.");
     }
@@ -566,25 +561,129 @@ export function AdminFeatureLab({ initial }: { initial: Lab }) {
               </div>
             ) : (
               <p style={{ margin: 0, padding: "14px 8px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-                Aucun compte testeur. Ajoute ton pseudo Minecraft pour voir l&apos;état « Test » dans le launcher et sur le site.
+                Aucun compte testeur. Cherche ton pseudo ci-dessous pour voir l&apos;état « Test » dans le launcher et sur le site.
               </p>
             )}
-            <form onSubmit={addTester} style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <input
-                id="lab-tester"
-                value={testerName}
-                onChange={(e) => setTesterName(e.target.value)}
-                placeholder="Pseudo Minecraft"
-                aria-label="Pseudo Minecraft"
-                autoComplete="off"
-                style={{ flex: 1, minWidth: 0, border: "1px solid var(--color-divider)", borderRadius: "var(--radius-md)", padding: "7px 10px", background: "var(--color-bg)", color: "var(--color-text)", font: "inherit" }}
-              />
-              <button type="submit" style={btn()}>Ajouter</button>
-            </form>
+            <TesterPicker testers={lab.testers} onPick={addTester} />
             {testerError ? <p role="alert" style={{ color: "var(--danger)", margin: "8px 0 0", fontSize: 13 }}>{testerError}</p> : null}
           </section>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Choix d'un compte testeur (06/11) : on cherche parmi les joueurs INSCRITS sur Omniscient
+// (au moins 2 lettres, début du pseudo) et on ne peut ajouter que l'un d'eux. Flèches + Entrée au clavier.
+type Candidate = { uuid: string; name: string; createdAt: string };
+
+function TesterPicker({ testers, onPick }: { testers: Tester[]; onPick: (uuid: string) => Promise<void> }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<Candidate[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [added, setAdded] = useState<string | null>(null);
+  const seq = useRef(0);
+  const needle = q.trim();
+  const ready = /^[A-Za-z0-9_]{2,16}$/.test(needle);
+  const already = new Set(testers.map((t) => t.uuid.toLowerCase().replaceAll("-", "")));
+
+  useEffect(() => {
+    if (!ready) return;
+    const id = ++seq.current;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/admin/features", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ searchPlayers: needle }) });
+        const data = await res.json().catch(() => ({}));
+        if (id === seq.current) setResults(Array.isArray(data.players) ? data.players : []);
+      } finally {
+        if (id === seq.current) setLoading(false);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [needle, ready]);
+
+  async function pick(c: Candidate | undefined) {
+    if (!c || already.has(c.uuid)) return;
+    await onPick(c.uuid);
+    setQ("");
+    setResults([]);
+    setAdded(c.name);
+    setTimeout(() => setAdded(null), 2500);
+  }
+
+  function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open || !results.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, results.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); pick(results[active]); }
+    else if (e.key === "Escape") setOpen(false);
+  }
+
+  const showBox = open && ready;
+  const date = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }); };
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ position: "relative" }}>
+        <i className="ph ph-magnifying-glass" aria-hidden style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted2)", pointerEvents: "none" }} />
+        <input
+          id="lab-tester"
+          role="combobox"
+          aria-expanded={showBox}
+          aria-controls="lab-tester-list"
+          aria-activedescendant={showBox && results.length ? `lab-tester-${active}` : undefined}
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setActive(0); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
+          onKeyDown={onKey}
+          placeholder="Chercher un joueur inscrit…"
+          aria-label="Chercher un joueur inscrit"
+          autoComplete="off"
+          maxLength={16}
+          style={{ width: "100%", boxSizing: "border-box", border: "1px solid var(--color-divider)", borderRadius: "var(--radius-md)", padding: "7px 10px 7px 32px", background: "var(--color-bg)", color: "var(--color-text)", font: "inherit" }}
+        />
+        {showBox ? (
+          <div id="lab-tester-list" role="listbox" style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 4px)", zIndex: 20, background: "var(--color-surface)", border: "1px solid var(--color-divider)", borderRadius: "var(--radius-md)", boxShadow: "0 8px 24px rgb(0 0 0 / .25)", padding: 4, maxHeight: 280, overflowY: "auto" }}>
+            {results.length ? results.map((c, i) => {
+              const done = already.has(c.uuid);
+              return (
+                <div
+                  key={c.uuid}
+                  id={`lab-tester-${i}`}
+                  role="option"
+                  aria-selected={i === active}
+                  aria-disabled={done}
+                  onMouseDown={(e) => { e.preventDefault(); pick(c); }}
+                  onMouseEnter={() => setActive(i)}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 8px", borderRadius: 6, cursor: done ? "default" : "pointer", opacity: done ? 0.55 : 1, background: i === active && !done ? "color-mix(in srgb, var(--color-accent) 14%, transparent)" : "transparent" }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`https://mc-heads.net/avatar/${c.uuid}/26`} alt="" width={26} height={26} style={{ borderRadius: 5, flex: "none" }} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 500 }}>
+                      <span style={{ color: "var(--color-accent)", fontWeight: 600 }}>{c.name.slice(0, needle.length)}</span>
+                      {c.name.slice(needle.length)}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted2)" }}>{done ? "déjà testeur" : `inscrit le ${date(c.createdAt)}`}</div>
+                  </div>
+                </div>
+              );
+            }) : (
+              <div style={{ padding: "10px 8px", fontSize: 13, color: "var(--muted)" }}>
+                {loading ? "Recherche…" : `Aucun joueur inscrit ne commence par « ${needle} ».`}
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+      <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--muted2)", lineHeight: 1.5 }}>
+        Seuls les joueurs inscrits sur Omniscient apparaissent. Tape au moins 2 lettres.
+      </p>
+      {added ? <p role="status" style={{ margin: "6px 0 0", fontSize: 13, color: "var(--success)" }}>{added} ajouté aux testeurs.</p> : null}
     </div>
   );
 }

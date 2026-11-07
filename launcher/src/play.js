@@ -2579,6 +2579,12 @@
       if (!ok) return;
     }
     if (launchInProgress) return;
+    // Avertissement CurseForge (06/11) : une seule fois par PC, avant de lancer un pack CurseForge.
+    {
+      const pw = opts.worldKey ? data.worlds.find((x) => x.key === opts.worldKey) : null;
+      const pv = (opts.versionId && data.versions.find((x) => x.id === opts.versionId)) || (pw?.lastVersionId ? data.versions.find((x) => x.id === pw.lastVersionId) : null);
+      if (pv?.pack?.kind === "cf" && typeof window.confirmCurseforgeWarning === "function" && !(await window.confirmCurseforgeWarning())) return;
+    }
     const mw = opts.worldKey && !opts.modOk ? data.worlds.find((x) => x.key === opts.worldKey) : null;
     if (mw?.modded && !mw.modCopyOf && !mw.lastVersionLabel?.pack) {
       const copyKey = await askModdedWorld(mw);
@@ -7640,6 +7646,8 @@
   }, true);
 
   async function openCfPack(src) {
+    // Avertissement CurseForge (06/11) : une seule fois par PC, avant d'importer un pack CurseForge.
+    if (src?.kind === "cf" && typeof window.confirmCurseforgeWarning === "function" && !(await window.confirmCurseforgeWarning())) return;
     const m = overlay(`<div class="modal-box pop-in" role="dialog" aria-modal="true" aria-labelledby="cf-t" style="max-width:560px;text-align:left;max-height:calc(100vh - 48px);overflow:auto;">
       <h3 id="cf-t">${esc(src.kind === "omni" ? T("omImpT") : src.kind === "mr" ? T("mrT") : T("cfT"))}</h3><p class="join-note">${esc(T("cfReading"))}</p></div>`);
     const p = await api.cfPack.read(src);

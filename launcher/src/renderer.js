@@ -2775,6 +2775,8 @@ async function installedInstanceFor(server) {
 }
 
 async function launchServer(server) {
+  // Avertissement CurseForge (06/11) : une seule fois par PC, avant de lancer un pack CurseForge.
+  if (server?.type === "modded" && server.curseforgeModpackId && typeof window.confirmCurseforgeWarning === "function" && !(await window.confirmCurseforgeWarning())) return null;
   // Le flag doit etre pose ICI, avant le moindre await — pas apres
   // applyRecommendedRamIfNeeded() (qui peut ouvrir une modale bloquante et
   // laisser largement le temps a un second clic de passer le test
