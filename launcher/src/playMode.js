@@ -201,7 +201,25 @@ function createPlayMode({ gameRoot, appDataDir }) {
 
   // --- Mes versions -----------------------------------------------------------
   function listVersions() {
-    return loadState().versions.map((v) => ({ ...v, pack: v.pack ? { ...v.pack, cfHand: undefined } : v.pack, files: undefined, mods: undefined, installed: undefined, modCount: (v.mods || v.files || []).length, problems: v.problemCount || 0, hand: handFiles(v) }));
+    return loadState().versions.map((v) => ({ ...v, pack: v.pack ? { ...v.pack, cfHand: undefined } : v.pack, files: undefined, mods: undefined, installed: undefined, modCount: modCountOf(v), problems: v.problemCount || 0, hand: handFiles(v) }));
+  }
+  // Nombre de mods de la tuile (05/11, Rushi : la tuile disait 10, la page du pack 11). Même compte
+  // que la page du pack : les mods de la liste, plus les .jar posés à la main dans mods/ (« Fichier »),
+  // allumés ou coupés.
+  function modCountOf(v) {
+    const list = v?.mods || v?.files || [];
+    if (!v?.pack || !isCustom(v)) return list.length;
+    try {
+      const known = new Set((v.mods || []).map(fileNameOf).filter(Boolean));
+      let extra = 0;
+      for (const n of fs.readdirSync(modsDirOf(v.id))) {
+        if (!/\.jar(\.disabled)?$/i.test(n)) continue;
+        if (!known.has(n.replace(/\.disabled$/i, ""))) extra++;
+      }
+      return list.length + extra;
+    } catch {
+      return list.length;
+    }
   }
   // Fichiers encore à télécharger à la main (04/11, pastille et « Reprendre » de Mes installations) :
   // mods CurseForge sans lien pas encore dans mods/, et .zip (packs de ressources, shaders) gardés à

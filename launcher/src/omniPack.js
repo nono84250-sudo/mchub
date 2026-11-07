@@ -318,6 +318,18 @@ function createOmniPack({ playMode }) {
     return (await fsp.stat(outFile)).size;
   }
 
+  // .jar posés à la main dans mods/ (hors liste du pack) : l'export les refuse, l'aperçu doit les
+  // montrer aussi (05/11, avant il disait « tout est bon » puis l'export refusait).
+  async function handJars(v) {
+    if (!v?.pack) return [];
+    const known = new Set((v.mods || []).map((m) => m.file?.filename).filter(Boolean));
+    const out = [];
+    for (const f of await fsp.readdir(playMode.modsDirOf(v.id)).catch(() => [])) {
+      const base = f.replace(/\.disabled$/, "");
+      if (/\.jar$/i.test(base) && !known.has(base)) out.push(base);
+    }
+    return out;
+  }
   // Ce que la fenêtre « Exporter pour Omniscient » montre avant d'enregistrer.
   async function exportPreview(id) {
     const { v } = playMode.omniSource(id);
@@ -328,7 +340,7 @@ function createOmniPack({ playMode }) {
       vanilla: !v.pack,
       versions: group.map((g) => ({ mc: g.minecraftVersion, tested: !!g.omni?.tested })).sort((a, b) => cmpMc(b.mc, a.mc)),
       mods: v.pack ? (v.mods || []).filter((m) => !m.auto).length : 0,
-      notModrinth: (v.mods || []).filter((m) => m.source !== "mr").map((m) => m.name),
+      notModrinth: [...(v.mods || []).filter((m) => m.source !== "mr").map((m) => m.name), ...(await handJars(v))],
       worlds: worlds.map((w) => ({ key: w.key, name: w.name, mc: w.minecraftVersion, sizeBytes: w.sizeBytes })),
       resourcepacks: (await zipNames(path.join(playMode.omniSource(id).dir, "resourcepacks"))).length,
       datapacks: (v.datapacks || []).length,
