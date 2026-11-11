@@ -2586,6 +2586,9 @@ ipcMain.handle("account:resetSkin", async () => {
   }
 });
 
+// Page Mon compte > Skins (garde-robe, capes, skin d'un joueur) : voir skinsMain.js.
+require("./skinsMain").register({ getSession: () => currentSession, setSession });
+
 // Boutons de la barre de titre custom (fenêtre sans cadre natif, voir
 // createWindow) — chaque handler agit sur la fenêtre de l'appelant, jamais
 // une fenêtre codée en dur, au cas où plusieurs fenêtres existeraient.

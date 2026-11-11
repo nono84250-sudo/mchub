@@ -80,7 +80,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       { h: { fr: "Plusieurs comptes sur le même PC", en: "Several accounts on the same PC" } },
       { p: { fr: "Dans **Mon compte**, utilise **+ Ajouter un compte**, puis **Basculer** pour changer. **Oublier** retire le compte de ce PC sans le supprimer.", en: "In **My account**, use **+ Add an account**, then **Switch** to change. **Forget** removes the account from this PC without deleting it." } },
       { h: { fr: "Changer de skin", en: "Change your skin" } },
-      { p: { fr: "Toujours dans **Mon compte** : choisis une image PNG de 64×64, le modèle Classic ou Slim, puis valide. **Réinitialiser** remet le skin par défaut.", en: "Still in **My account**: choose a 64×64 PNG image, the Classic or Slim model, then confirm. **Reset** puts the default skin back." } },
+      { p: { fr: "Toujours dans **Mon compte** : tu vois ton skin en 3D (tu peux le faire tourner), ta **garde-robe** et tes capes. **Ajouter un skin** prend un fichier PNG de 64×64 (ou 64×32) qui reste sur ton PC ; clique un skin pour l'essayer en 3D, choisis Bras épais ou Bras fins, puis **Porter ce skin**. **Skin par défaut** remet celui de Minecraft. Tu peux aussi chercher un joueur par son pseudo pour voir son skin et le copier dans ta garde-robe.", en: "Still in **My account**: you see your skin in 3D (you can spin it), your **wardrobe** and your capes. **Add a skin** takes a 64×64 (or 64×32) PNG file that stays on your PC; click a skin to try it in 3D, choose Classic or Slim arms, then **Wear this skin**. **Default skin** puts the Minecraft one back. You can also look up a player by name to see their skin and copy it to your wardrobe." } },
     ],
     related: ["compte-sans-minecraft", "mes-donnees"],
   },

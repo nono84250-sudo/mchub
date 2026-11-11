@@ -229,6 +229,18 @@ contextBridge.exposeInMainWorld("mchub", {
     changeSkin: (variant, fileBuffer) => ipcRenderer.invoke("account:changeSkin", { variant, fileBuffer }),
     resetSkin: () => ipcRenderer.invoke("account:resetSkin"),
   },
+  skins: {
+    list: () => ipcRenderer.invoke("skins:list"),
+    pick: (o) => ipcRenderer.invoke("skins:pick", o),
+    addData: (o) => ipcRenderer.invoke("skins:addData", o),
+    remove: (o) => ipcRenderer.invoke("skins:remove", o),
+    update: (o) => ipcRenderer.invoke("skins:update", o),
+    save: (o) => ipcRenderer.invoke("skins:save", o),
+    apply: (o) => ipcRenderer.invoke("skins:apply", o),
+    reset: () => ipcRenderer.invoke("skins:reset"),
+    setCape: (o) => ipcRenderer.invoke("skins:setCape", o),
+    lookup: (o) => ipcRenderer.invoke("skins:lookup", o),
+  },
   // Mode « Jouer » (bêta, 24/10) : versions sans serveur, mondes et leurs sauvegardes (playMode.js),
   // synchro des mondes avec le cloud pour les Supporters (worldCloud.js).
   play: {
